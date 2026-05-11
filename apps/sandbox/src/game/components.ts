@@ -1,3 +1,4 @@
+import type { RenderObjectDefinition } from "@gamekit/renderer-core";
 import { defineComponent } from "@gamekit/world";
 
 export const Position = defineComponent({
@@ -20,11 +21,13 @@ export const RenderObjectPresentation = defineComponent({
   id: "sandbox.render_object_presentation",
   create: (data?: Partial<SandboxRenderObjectPresentation>): SandboxRenderObjectPresentation => {
     const presentation: SandboxRenderObjectPresentation = {
-      type: data?.type ?? "debug.square",
-      width: data?.width ?? 20,
-      height: data?.height ?? 20,
-      depth: data?.depth ?? 0,
-      props: data?.props ?? {}
+      definition: data?.definition ?? {
+        type: "debug.square",
+        props: {
+          width: 20,
+          height: 20
+        }
+      }
     };
 
     if (data?.renderObjectId) {
@@ -37,9 +40,5 @@ export const RenderObjectPresentation = defineComponent({
 
 export type SandboxRenderObjectPresentation = {
   renderObjectId?: string;
-  type: string;
-  width: number;
-  height: number;
-  depth: number;
-  props: Record<string, unknown>;
+  definition: RenderObjectDefinition;
 };

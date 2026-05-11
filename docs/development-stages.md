@@ -10,6 +10,7 @@
 - Core + World Adapter：`core`、`world`、`world-koota`。
 - EventBus + GameRuntime：低频事件和 runtime lifecycle。
 - Renderer Core + Phaser Adapter：已修正为通用 render object protocol。
+- 已实现基础切片已按长期模块设计重新对齐：renderer-core 不依赖 EventBus，renderer 诊断改为通用 callback，Sandbox 只在 app boot 层接入 Phaser adapter。
 
 新文档新增或强化了 Platform、Input、Camera 三个基础模块。由于当前仓库已经先实现 Runtime/Renderer，后续需要先回补这三个基础层，再进入 Asset/Data、TCA、GAS、UI、Save、DevTools 和 Hero Road。
 
@@ -29,6 +30,8 @@
 - `@gamekit/game-runtime`
 - `@gamekit/test-utils`
 - `apps/sandbox`
+- 已检查 Runtime 不直接拥有 renderer/input/camera/platform。
+- 已检查 Sandbox game module 不直接依赖 Phaser。
 
 完成定义：
 
@@ -52,13 +55,17 @@
 - sandbox render sync module
 - app-owned renderer lifecycle ADR
 - general render object / input decoupling ADR
+- RenderObject / RenderNode / RenderCommand 长期协议
+- renderer diagnostics callback，不让 renderer-core 依赖 EventBus
 
 完成定义：
 
 - Sandbox 中实体由 Phaser adapter 渲染并随 runtime tick 移动。
 - 业务代码和 game module 不直接 import `phaser`。
 - renderer-core 不包含 gameplay input event。
+- renderer-core 不依赖 EventBus。
 - renderer adapter lifecycle、object create/update/destroy、capability/unsupported type 有测试覆盖。
+- renderer object tree、node update、command、diagnostic callback 有契约测试覆盖。
 
 ## Phase 3：Platform Core + Web/Tauri Adapter
 

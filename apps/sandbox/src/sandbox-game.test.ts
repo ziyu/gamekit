@@ -43,7 +43,9 @@ describe("sandbox runtime", () => {
       container: { append() {} } as unknown as HTMLElement,
       width: 100,
       height: 100,
-      eventBus: sandbox.runtime.eventBus
+      onDiagnostic: (event) => {
+        sandbox.runtime.eventBus.emit(event.type, event.payload, event.source);
+      }
     });
     sandbox.runtime.start();
     sandbox.runtime.tick(16);

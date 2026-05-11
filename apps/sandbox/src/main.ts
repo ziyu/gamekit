@@ -24,7 +24,9 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
     container: ui.rendererRoot,
     width: SANDBOX_RENDER_SIZE.width,
     height: SANDBOX_RENDER_SIZE.height,
-    eventBus: sandbox.runtime.eventBus,
+    onDiagnostic: (event) => {
+      sandbox.runtime.eventBus.emit(event.type, event.payload, event.source);
+    },
     debug: true
   });
   sandbox.runtime.start();

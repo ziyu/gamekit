@@ -1,6 +1,10 @@
 import { GameError } from "@gamekit/core";
 import type {
-  RenderObjectConfig,
+  RenderCommand,
+  RenderNodePath,
+  RenderNodePatch,
+  RenderObjectDefinition,
+  RenderObjectHandle,
   RenderObjectId,
   RendererAdapter,
   RendererBootContext,
@@ -40,17 +44,25 @@ export function createPhaserRenderer(options: PhaserRendererOptions = {}): Rende
     }
   };
 
-  const ensureSupportedType = (config: RenderObjectConfig): void => {
+  const emitDiagnostic = (type: string, payload: Record<string, unknown>): void => {
+    bootContext?.onDiagnostic?.({ type, payload, source: rendererId });
+  };
+
+  const ensureSupportedType = (definition: RenderObjectDefinition): void => {
     const capabilities = driver.capabilities();
-    if (!capabilities.objectTypes.includes(config.type)) {
+    if (!capabilities.objectTypes.includes(definition.type)) {
       throw new GameError(
         "renderer.unsupported_object_type",
-        `Renderer does not support render object type: ${config.type}`,
+        `Renderer does not support render object type: ${definition.type}`,
         {
           rendererId,
-          objectType: config.type
+          objectType: definition.type
         }
       );
+    }
+
+    for (const child of definition.children ?? []) {
+      ensureSupportedType(child);
     }
   };
 
@@ -63,16 +75,12 @@ export function createPhaserRenderer(options: PhaserRendererOptions = {}): Rende
 
       bootContext = ctx;
       runtime = await driver.boot(ctx, { backgroundColor, debugTextureId });
-      ctx.eventBus?.emit(
-        "renderer.booted",
-        { rendererId, width: ctx.width, height: ctx.height },
-        rendererId
-      );
+      emitDiagnostic("renderer.booted", { rendererId, width: ctx.width, height: ctx.height });
     },
     destroy() {
       runtime?.destroy();
       runtime = undefined;
-      bootContext?.eventBus?.emit("renderer.destroyed", { rendererId }, rendererId);
+      emitDiagnostic("renderer.destroyed", { rendererId });
       bootContext = undefined;
       liveObjects.clear();
     },
@@ -84,11 +92,11 @@ export function createPhaserRenderer(options: PhaserRendererOptions = {}): Rende
     },
     resize(width, height) {
       requireRuntime().resize(width, height);
-      bootContext?.eventBus?.emit("renderer.resized", { rendererId, width, height }, rendererId);
+      emitDiagnostic("renderer.resized", { rendererId, width, height });
     },
-    createObject(config: RenderObjectConfig) {
-      ensureSupportedType(config);
-      const objectId = config.id ?? `render-object-${nextObjectId}`;
+    createObject(definition: RenderObjectDefinition) {
+      ensureSupportedType(definition);
+      const objectId = definition.id ?? `render-object-${nextObjectId}`;
       nextObjectId += 1;
       if (liveObjects.has(objectId)) {
         throw new GameError("renderer.duplicate_object", `Duplicate render object: ${objectId}`, {
@@ -97,40 +105,32 @@ export function createPhaserRenderer(options: PhaserRendererOptions = {}): Rende
         });
       }
 
-      requireRuntime().createObject(objectId, config);
+      requireRuntime().createObject(objectId, definition);
       liveObjects.add(objectId);
-      bootContext?.eventBus?.emit(
-        "renderer.object_created",
-        { rendererId, objectId, type: config.type },
-        rendererId
-      );
+      emitDiagnostic("renderer.object_created", { rendererId, objectId, type: definition.type });
       return objectId;
     },
     updateObject(objectId, patch: RenderObjectPatch) {
       requireObject(objectId);
       requireRuntime().updateObject(objectId, patch);
     },
-    setParent(objectId, parentId) {
+    updateNode(objectId, nodePath: RenderNodePath, patch: RenderNodePatch) {
       requireObject(objectId);
-      if (parentId) {
-        requireObject(parentId);
-      }
-
-      requireRuntime().setParent(objectId, parentId);
+      requireRuntime().updateNode(objectId, nodePath, patch);
     },
     destroyObject(objectId) {
       requireObject(objectId);
       requireRuntime().destroyObject(objectId);
       liveObjects.delete(objectId);
-      bootContext?.eventBus?.emit(
-        "renderer.object_destroyed",
-        { rendererId, objectId },
-        rendererId
-      );
+      emitDiagnostic("renderer.object_destroyed", { rendererId, objectId });
     },
-    playAnimation(objectId, animationId) {
+    command(objectId, command: RenderCommand) {
       requireObject(objectId);
-      requireRuntime().playAnimation(objectId, animationId);
+      requireRuntime().command(objectId, command);
+    },
+    getObjectHandle(objectId): RenderObjectHandle<unknown, unknown> {
+      requireObject(objectId);
+      return requireRuntime().getObjectHandle(objectId);
     }
   };
 }

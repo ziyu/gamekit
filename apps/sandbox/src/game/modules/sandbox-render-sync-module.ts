@@ -1,6 +1,6 @@
 import { defineGameModule } from "@gamekit/core";
 import type { GameInstallContext } from "@gamekit/game-runtime";
-import type { RenderObjectConfig, RendererAdapter } from "@gamekit/renderer-core";
+import type { RenderObjectDefinition, RendererAdapter } from "@gamekit/renderer-core";
 import { Position, RenderObjectPresentation } from "../components";
 
 export type SandboxRenderSize = {
@@ -38,7 +38,7 @@ export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions)
 
             if (!presentation.renderObjectId) {
               const renderObjectId = options.renderer.createObject(
-                createObjectConfig({ x, y, presentation })
+                createObjectDefinition({ x, y, presentation })
               );
               world.set(entity, RenderObjectPresentation, { ...presentation, renderObjectId });
               ctx.eventBus.emit(
@@ -50,7 +50,7 @@ export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions)
             }
 
             options.renderer.updateObject(presentation.renderObjectId, {
-              transform: { x, y }
+              transform: { position: { x, y } }
             });
           }
 
@@ -63,21 +63,21 @@ export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions)
   });
 }
 
-function createObjectConfig(input: {
+function createObjectDefinition(input: {
   x: number;
   y: number;
   presentation: ReturnType<typeof RenderObjectPresentation.create>;
-}): RenderObjectConfig {
+}): RenderObjectDefinition {
   return {
-    type: input.presentation.type,
+    ...input.presentation.definition,
     transform: {
-      x: input.x,
-      y: input.y,
-      width: input.presentation.width,
-      height: input.presentation.height
-    },
-    depth: input.presentation.depth,
-    props: input.presentation.props
+      ...input.presentation.definition.transform,
+      position: {
+        ...input.presentation.definition.transform?.position,
+        x: input.x,
+        y: input.y
+      }
+    }
   };
 }
 

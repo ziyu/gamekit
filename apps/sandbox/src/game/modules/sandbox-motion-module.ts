@@ -18,12 +18,14 @@ export const sandboxMotionModule = defineGameModule<GameInstallContext>({
         y: ctx.rng.int(1, 3)
       });
       ctx.world.add(entity, RenderObjectPresentation, {
-        type: "debug.square",
-        width: 20 + (i % 2) * 6,
-        height: 20 + (i % 2) * 6,
-        depth: i,
-        props: {
-          tint: ENTITY_TINTS[i] ?? ENTITY_TINTS[0]
+        definition: {
+          type: "debug.square",
+          props: {
+            width: 20 + (i % 2) * 6,
+            height: 20 + (i % 2) * 6,
+            depth: i,
+            tint: ENTITY_TINTS[i] ?? ENTITY_TINTS[0]
+          }
         }
       });
       ctx.eventBus.emit("sandbox.entity_spawned", { entity }, "sandbox.motion");

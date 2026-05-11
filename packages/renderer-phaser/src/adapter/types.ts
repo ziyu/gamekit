@@ -1,5 +1,9 @@
 import type {
-  RenderObjectConfig,
+  RenderCommand,
+  RenderNodePatch,
+  RenderNodePath,
+  RenderObjectDefinition,
+  RenderObjectHandle,
   RenderObjectPatch,
   RendererCapabilities,
   RendererBootContext
@@ -24,9 +28,10 @@ export type PhaserRendererDriverRuntime = {
   view: HTMLElement | HTMLCanvasElement;
   resize(width: number, height: number): void;
   destroy(): void;
-  createObject(id: string, config: RenderObjectConfig): void;
+  createObject(id: string, definition: RenderObjectDefinition): void;
   updateObject(id: string, patch: RenderObjectPatch): void;
-  setParent(id: string, parentId?: string): void;
+  updateNode(id: string, nodePath: RenderNodePath, patch: RenderNodePatch): void;
   destroyObject(id: string): void;
-  playAnimation(id: string, animationId: string): void;
+  command(id: string, command: RenderCommand): void;
+  getObjectHandle(id: string): RenderObjectHandle<unknown, unknown>;
 };

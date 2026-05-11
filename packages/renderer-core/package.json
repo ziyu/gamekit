@@ -15,8 +15,5 @@
     "build": "tsc -b",
     "test": "vitest run --root ../.. --config vitest.config.ts packages/renderer-core/test --passWithNoTests",
     "lint": "oxlint ."
-  },
-  "dependencies": {
-    "@gamekit/event-bus": "workspace:*"
   }
 }

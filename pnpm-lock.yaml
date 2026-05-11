@@ -90,11 +90,7 @@ importers:
         specifier: workspace:*
         version: link:../world
 
-  packages/renderer-core:
-    dependencies:
-      '@gamekit/event-bus':
-        specifier: workspace:*
-        version: link:../event-bus
+  packages/renderer-core: {}
 
   packages/renderer-phaser:
     dependencies:

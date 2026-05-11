@@ -21,35 +21,55 @@ export function defineRendererConformanceTests(
     it("boots, exposes a view, reports capabilities, and resizes", async () => {
       const renderer = createRenderer();
       const container = createTestContainer();
+      const diagnostics: string[] = [];
 
-      await renderer.boot({ container, width: 320, height: 240 });
+      await renderer.boot({
+        container,
+        width: 320,
+        height: 240,
+        onDiagnostic: (event) => diagnostics.push(event.type)
+      });
       renderer.resize(640, 480);
 
       expect(renderer.getView()).toBeTruthy();
       expect(renderer.capabilities().objectTypes).toContain("debug.square");
+      expect(diagnostics).toContain("renderer.booted");
       renderer.destroy();
     });
 
-    it("creates, updates, animates, parents, and destroys render objects", async () => {
+    it("creates, updates, commands, updates nodes, and destroys render objects", async () => {
       const renderer = createRenderer();
       const container = createTestContainer();
 
       await renderer.boot({ container, width: 320, height: 240 });
-      const parentId = renderer.createObject({
-        type: "container",
-        transform: { x: 0, y: 0 }
-      });
       const objectId = renderer.createObject({
-        type: "debug.square",
-        transform: { x: 10, y: 20, width: 16, height: 16 }
+        type: "container",
+        transform: { position: { x: 10, y: 20 } },
+        children: [
+          {
+            id: "body",
+            type: "debug.square",
+            transform: { position: { x: 1, y: 2 } },
+            props: { width: 16, height: 16 }
+          }
+        ]
       });
 
       expect(objectId).toBeTruthy();
-      expect(() => renderer.updateObject(objectId, { transform: { x: 24, y: 32 } })).not.toThrow();
-      expect(() => renderer.setParent(objectId, parentId)).not.toThrow();
-      expect(() => renderer.playAnimation(objectId, "idle")).not.toThrow();
+      expect(() =>
+        renderer.updateObject(objectId, { transform: { position: { x: 24, y: 32 } } })
+      ).not.toThrow();
+      expect(() =>
+        renderer.updateNode?.(objectId, "body", { transform: { position: { x: 3, y: 4 } } })
+      ).not.toThrow();
+      expect(() =>
+        renderer.command?.(objectId, { type: "animation.play", args: { animationId: "idle" } })
+      ).not.toThrow();
+      expect(renderer.getObjectHandle?.(objectId)).toMatchObject({ id: objectId });
       expect(() => renderer.destroyObject(objectId)).not.toThrow();
-      expect(() => renderer.updateObject(objectId, { transform: { x: 0 } })).toThrow();
+      expect(() =>
+        renderer.updateObject(objectId, { transform: { position: { x: 0 } } })
+      ).toThrow();
       renderer.destroy();
     });
 
@@ -62,9 +82,26 @@ export function defineRendererConformanceTests(
       expect(() =>
         renderer.createObject({
           type: "unsupported.test_object",
-          transform: { x: 0, y: 0 }
+          transform: { position: { x: 0, y: 0 } }
         })
       ).toThrow();
+      renderer.destroy();
+    });
+
+    it("fails clearly for missing nodes and unsupported commands", async () => {
+      const renderer = createRenderer();
+      const container = createTestContainer();
+
+      await renderer.boot({ container, width: 320, height: 240 });
+      const objectId = renderer.createObject({
+        type: "container",
+        children: [{ id: "body", type: "debug.square" }]
+      });
+
+      expect(() =>
+        renderer.updateNode?.(objectId, "missing", { transform: { position: { x: 1 } } })
+      ).toThrow();
+      expect(() => renderer.command?.(objectId, { type: "unknown.command" })).toThrow();
       renderer.destroy();
     });
   });
