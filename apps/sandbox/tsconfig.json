@@ -9,7 +9,10 @@
   "references": [
     { "path": "../../packages/camera-core" },
     { "path": "../../packages/camera-phaser" },
+    { "path": "../../packages/asset" },
+    { "path": "../../packages/asset-phaser" },
     { "path": "../../packages/core" },
+    { "path": "../../packages/data" },
     { "path": "../../packages/event-bus" },
     { "path": "../../packages/game-runtime" },
     { "path": "../../packages/input-core" },

@@ -145,27 +145,64 @@
 - Renderer/camera 坐标转换有最小测试覆盖。
 - 本阶段暂不实现 3D camera 和复杂 cinematic rig。
 
-## Phase 6：Asset System + DataPack 基础
+## Phase 6：Data Core
 
-目标：资源通过 AssetManifest 声明和加载，DataPack 统一注册 assets、renderObjects、gameplay definitions、rules。
+目标：先建立全局可扩展数据模块，让游戏中的所有可数据化定义都能通过统一 DataKind / DataPack / DataRegistry 管理、校验、查询和追踪来源。
 
 模块设计：`docs/modules/asset-data.md`
+
+当前状态：已实现。
+
+预期新增：
+
+- `@gamekit/data`
+- DataKind registration
+- DataRegistry
+- DataPack registration
+- Data reference graph
+- Data validation tests
+- Sandbox Data panel
+
+完成定义：
+
+- `@gamekit/data` 不依赖 renderer、asset、TCA、GAS、UI 或具体游戏业务。
+- 模块可以注册自定义 DataKind，并提供 validate / normalize / references / index 扩展点。
+- DataPack 可以注册多种 kind 的数据，并保留 source pack、namespace、priority 等来源信息。
+- DataRegistry 支持 get/list/query/snapshot 和 duplicate id 校验。
+- Reference graph 能报告缺失引用，并能反查某个 definition 被谁引用。
+- Sandbox 或测试夹具能注册至少 `asset`、`renderObject`、`actor` 风格的示例 kind，证明 Data 不是 renderObject 专用注册表。
+- Sandbox UI 能展示 DataPack、DataKind、document 和 reference 的基本状态。
+- Sandbox DataPack 包含 actor、ability、biome、spawnProfile、renderRig 等较复杂示例数据，用于验证多 kind、嵌套结构、索引、引用图和运行时消费路径。
+
+## Phase 7：Asset System
+
+目标：在 Data Core 之上实现资源声明和运行时加载。AssetDefinition 作为数据被 DataRegistry 管理，AssetManager 负责运行时加载状态，adapter 负责接入 Phaser 等后端。
+
+模块设计：`docs/modules/asset-data.md`
+
+当前状态：已实现。
 
 预期新增：
 
 - `@gamekit/asset`
 - `@gamekit/asset-phaser`
-- `@gamekit/data`
-- DataPack validation tests
+- Asset data kind registration
+- AssetManager
+- Phaser asset adapter fake-driver contract
+- Sandbox DataPack asset preload
+- Sandbox Assets panel
 
 完成定义：
 
-- Sandbox 可以通过 manifest 注册并加载至少一个 image/spritesheet asset。
-- DataPack 支持 `renderObjects`。
+- `@gamekit/asset` 依赖 `@gamekit/data`，但不依赖 Phaser、DOM、Tauri 或 renderer 具体实现。
+- Sandbox 可以通过 DataPack 声明并加载至少一个 image/spritesheet asset。
+- AssetManager 可以从 DataRegistry 读取 asset definitions，并跟踪 registered/loading/loaded/failed 状态。
 - renderer-phaser 从 AssetManager/asset adapter 获取资源，而不是硬编码 URL。
-- DataPack 校验能报告缺失 assetId、重复 id、未知 render type、未知资源类型。
+- Asset 校验能报告缺失 assetId、重复 id、未知资源类型、运行环境不支持的 source。
+- Sandbox UI 能展示 asset registered/loaded/failed 状态，资源加载事件进入 EventBus。
+- Sandbox 通过多个 tintable image asset 驱动复合 RenderObject，验证 asset definition、Phaser 加载和 render props 的端到端链路。
 
-## Phase 7：TCA 规则系统
+## Phase 8：TCA 规则系统
 
 目标：Trigger / Condition / Action 数据驱动规则系统跑通，并从第一版开始可追踪。
 
@@ -184,7 +221,7 @@
 - trace 能回答“哪个事件触发了哪些规则、哪些 condition 失败、执行了哪些 action”。
 - TCA 不用于每帧高频逻辑；规则按 event type 索引并预编译。
 
-## Phase 8：GAS
+## Phase 9：GAS
 
 目标：Actor、Attribute、Tag、Ability、Effect、Cue、Clue 基于 TCA 跑通。
 
@@ -203,7 +240,7 @@
 - GAS trace 能关联 ability/effect 与 TCA rule trace。
 - 示例 actor 数据通过 DataPack 注册和校验。
 
-## Phase 9：UI Core + React UI
+## Phase 10：UI Core + React UI
 
 目标：通用 UI 状态模型和 React 实现跑通，React 只处理 HUD/window/modal/devtools，不进入主循环。
 
@@ -224,7 +261,7 @@
 - UI focus 能和 Input Context 协作。
 - 游戏业务不直接依赖原始 shadcn/base primitive。
 
-## Phase 10：Save / Load / Migration
+## Phase 11：Save / Load / Migration
 
 目标：长期状态可以序列化、恢复和迁移，为真实 demo 提供基础。
 
@@ -243,7 +280,7 @@
 - 缺失/未知版本能给出明确错误。
 - migration 至少有一个测试样例。
 
-## Phase 11：DevTools
+## Phase 12：DevTools
 
 目标：游戏可调试，尤其是数据驱动逻辑可解释。
 
@@ -263,7 +300,7 @@
 - system profiler 至少记录 system id、调用次数、最近耗时。
 - renderer escaped/native/direct path 可被标记。
 
-## Phase 12：Hero Road Demo
+## Phase 13：Hero Road Demo
 
 目标：用一个真实小 demo 验证整套架构，而不是只靠 sandbox。
 
@@ -285,7 +322,7 @@
 - Event Log / Actor Detail / TCA Trace 可查看。
 - Save/Load 能恢复 demo 基础状态。
 
-## Phase 13：Editor / Tooling
+## Phase 14：Editor / Tooling
 
 目标：为 DataPack、地图、规则、资源提供编辑和验证入口。
 
@@ -302,7 +339,7 @@
 - 能验证并展示 assets、actors、rules、renderObjects。
 - 不把 editor-only 状态泄漏到 runtime core。
 
-## Phase 14：Three.js / 3D Renderer Backlog
+## Phase 15：Three.js / 3D Renderer Backlog
 
 目标：验证 RendererAdapter 能支持未来 3D 后端。
 

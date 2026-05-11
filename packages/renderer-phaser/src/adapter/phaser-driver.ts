@@ -88,6 +88,26 @@ export function createDefaultPhaserDriver(): PhaserRendererDriver {
             };
           }
         },
+        assets: {
+          hasTexture(id) {
+            return sceneRef.textures.exists(id);
+          },
+          loadImage(assetId, url) {
+            return loadPhaserAsset(sceneRef, assetId, () => {
+              sceneRef.load.image(assetId, url);
+            });
+          },
+          loadSpritesheet(assetId, url, frame) {
+            return loadPhaserAsset(sceneRef, assetId, () => {
+              sceneRef.load.spritesheet(assetId, url, {
+                frameWidth: frame.width,
+                frameHeight: frame.height,
+                margin: frame.margin ?? 0,
+                spacing: frame.spacing ?? 0
+              });
+            });
+          }
+        },
         resize(width, height) {
           game.scale.resize(width, height);
         },
@@ -134,4 +154,34 @@ export function createDefaultPhaserDriver(): PhaserRendererDriver {
       };
     }
   };
+}
+
+function loadPhaserAsset(scene: any, assetId: string, enqueue: () => void): Promise<void> {
+  if (scene.textures.exists(assetId)) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const loader = scene.load;
+    const cleanup = () => {
+      loader.off("complete", onComplete);
+      loader.off("loaderror", onError);
+    };
+    const onComplete = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (file: { key?: string }) => {
+      if (file.key !== undefined && file.key !== assetId) {
+        return;
+      }
+      cleanup();
+      reject(new Error(`Failed to load Phaser asset: ${assetId}`));
+    };
+
+    loader.once("complete", onComplete);
+    loader.on("loaderror", onError);
+    enqueue();
+    loader.start();
+  });
 }

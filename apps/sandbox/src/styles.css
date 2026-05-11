@@ -87,7 +87,7 @@ h1 {
 
 .grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr) minmax(260px, 0.55fr);
   gap: 16px;
   margin-top: 18px;
 }
@@ -100,7 +100,11 @@ h1 {
 }
 
 .panel--stage {
-  grid-row: span 2;
+  grid-row: span 3;
+}
+
+.panel--world {
+  min-height: 260px;
 }
 
 .panel__title {
@@ -173,6 +177,10 @@ h1 {
   background: #141511;
 }
 
+.metrics--compact div {
+  padding: 13px 16px;
+}
+
 dt {
   color: #b9b3a7;
   font-size: 0.8rem;
@@ -197,11 +205,23 @@ dd {
   background: rgba(243, 240, 232, 0.1);
 }
 
-.events li {
+.events li,
+.compact-list li {
   display: grid;
   gap: 4px;
   padding: 12px 16px;
   background: #141511;
+}
+
+.compact-list {
+  display: grid;
+  gap: 1px;
+  max-height: 236px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  background: rgba(243, 240, 232, 0.1);
 }
 
 code {
@@ -210,7 +230,8 @@ code {
   font-size: 0.82rem;
 }
 
-.events span {
+.events span,
+.compact-list span {
   color: #b9b3a7;
   font-size: 0.74rem;
 }

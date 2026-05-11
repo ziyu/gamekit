@@ -35,6 +35,9 @@
       "@gamekit/platform-core": ["packages/platform-core/src/index.ts"],
       "@gamekit/platform-web": ["packages/platform-web/src/index.ts"],
       "@gamekit/platform-tauri": ["packages/platform-tauri/src/index.ts"],
+      "@gamekit/data": ["packages/data/src/index.ts"],
+      "@gamekit/asset": ["packages/asset/src/index.ts"],
+      "@gamekit/asset-phaser": ["packages/asset-phaser/src/index.ts"],
       "@gamekit/test-utils": ["packages/test-utils/src/index.ts"]
     }
   }

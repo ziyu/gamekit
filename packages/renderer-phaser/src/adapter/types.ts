@@ -28,6 +28,7 @@ export type PhaserRendererDriver = {
 export type PhaserRendererDriverRuntime = {
   view: HTMLElement | HTMLCanvasElement;
   camera?: PhaserRendererCameraRuntime;
+  assets?: PhaserRendererAssetRuntime;
   resize(width: number, height: number): void;
   destroy(): void;
   createObject(id: string, definition: RenderObjectDefinition): void;
@@ -44,4 +45,17 @@ export type PhaserRendererCameraRuntime = {
   setRotation(rotation: number): void;
   screenToWorld(point: { x: number; y: number }): { x: number; y: number };
   worldToScreen(point: { x: number; y: number }): { x: number; y: number };
+};
+
+export type PhaserSpritesheetFrameConfig = {
+  width: number;
+  height: number;
+  margin?: number;
+  spacing?: number;
+};
+
+export type PhaserRendererAssetRuntime = {
+  hasTexture(id: string): boolean;
+  loadImage(assetId: string, url: string): Promise<void>;
+  loadSpritesheet(assetId: string, url: string, frame: PhaserSpritesheetFrameConfig): Promise<void>;
 };

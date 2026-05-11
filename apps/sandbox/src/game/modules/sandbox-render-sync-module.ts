@@ -1,7 +1,11 @@
 import { defineGameModule } from "@gamekit/core";
 import type { GameInstallContext } from "@gamekit/game-runtime";
-import type { RenderObjectDefinition, RendererAdapter } from "@gamekit/renderer-core";
-import { Position, RenderObjectPresentation } from "../components";
+import type {
+  RenderNodePatch,
+  RenderObjectDefinition,
+  RendererAdapter
+} from "@gamekit/renderer-core";
+import { Position, RenderObjectPresentation, type SandboxRenderNodeAnimation } from "../components";
 
 export type SandboxRenderSize = {
   width: number;
@@ -25,7 +29,7 @@ export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions)
 
       ctx.systems.register({
         id: "sandbox.render_sync_system",
-        update({ world, tick }) {
+        update({ world, tick, elapsed }) {
           for (const entity of world.query([Position, RenderObjectPresentation])) {
             const position = world.get(entity, Position);
             const presentation = world.get(entity, RenderObjectPresentation);
@@ -52,6 +56,12 @@ export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions)
             options.renderer.updateObject(presentation.renderObjectId, {
               transform: { position: { x, y } }
             });
+            applyNodeAnimations(
+              options.renderer,
+              presentation.renderObjectId,
+              presentation,
+              elapsed
+            );
           }
 
           if (tick % 120 === 0) {
@@ -61,6 +71,62 @@ export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions)
       });
     }
   });
+}
+
+function applyNodeAnimations(
+  renderer: RendererAdapter,
+  renderObjectId: string,
+  presentation: ReturnType<typeof RenderObjectPresentation.create>,
+  elapsed: number
+): void {
+  if (!renderer.updateNode || !presentation.nodeAnimations) {
+    return;
+  }
+
+  const seconds = elapsed / 1000;
+  for (const animation of presentation.nodeAnimations) {
+    renderer.updateNode(renderObjectId, animation.nodePath, createNodePatch(animation, seconds));
+  }
+}
+
+function createNodePatch(animation: SandboxRenderNodeAnimation, seconds: number): RenderNodePatch {
+  const phase = animation.phase ?? 0;
+  const wave = Math.sin(seconds * animation.speed + phase);
+
+  if (animation.kind === "orbit") {
+    return {
+      transform: {
+        position: {
+          x: Math.cos(seconds * animation.speed + phase) * animation.radius,
+          y: Math.sin(seconds * animation.speed + phase) * animation.radius
+        }
+      }
+    };
+  }
+
+  if (animation.kind === "pulse") {
+    const scale = 1 + wave * animation.scale;
+    const patch: RenderNodePatch = {
+      transform: {
+        scale: { x: scale, y: scale }
+      }
+    };
+
+    if (animation.alpha) {
+      patch.alpha =
+        animation.alpha.min + ((wave + 1) / 2) * (animation.alpha.max - animation.alpha.min);
+    }
+
+    return patch;
+  }
+
+  return {
+    transform: {
+      rotation: {
+        z: seconds * animation.speed + phase
+      }
+    }
+  };
 }
 
 function createObjectDefinition(input: {

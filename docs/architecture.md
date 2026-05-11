@@ -49,9 +49,9 @@ packages/
   platform-web/
   platform-tauri/
 
+  data/
   asset/
   asset-phaser/
-  data/
   tca/
   gas/
   ui-core/
@@ -81,6 +81,7 @@ renderer-three → renderer-core / core / three
 input-dom/input-phaser/input-tauri → input-core
 camera-phaser/camera-three → camera-core
 platform-web/platform-tauri → platform-core
+asset → data / core
 asset-phaser → asset / renderer-phaser
 react-ui → ui-core
 ```
@@ -138,6 +139,12 @@ Camera 是 Runtime 能力，不是 Phaser 或 Three.js 私有对象。Input、TC
 Platform 隔离 Web/Tauri/未来平台差异。文件、窗口、权限、路径、存储和系统能力都通过 platform-core。
 
 详细设计见 `docs/modules/platform.md`。
+
+### Data / Asset
+
+Data 是全局内容数据层，Asset 是资源加载运行时。AssetDefinition 作为 DataKind 进入 DataRegistry，AssetManager 从 DataRegistry 读取资源声明并委托 adapter 加载。Asset adapter 不管理 gameplay definitions，DataRegistry 不管理加载状态。
+
+详细设计见 `docs/modules/asset-data.md`。
 
 ## 包内拆分约定
 

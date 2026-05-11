@@ -1,15 +1,28 @@
 import "./styles.css";
+import { createAssetManager } from "@gamekit/asset";
+import { createPhaserAssetAdapter } from "@gamekit/asset-phaser";
 import type { CameraState2D } from "@gamekit/camera-core";
 import { createPhaserCameraAdapter, type PhaserCameraAdapter } from "@gamekit/camera-phaser";
 import { createInputRouter, type InputBinding } from "@gamekit/input-core";
 import { createDomInputAdapter } from "@gamekit/input-dom";
 import { createWebPlatform } from "@gamekit/platform-web";
-import { createPhaserRenderer, type PhaserRendererDriverRuntime } from "@gamekit/renderer-phaser";
+import {
+  createPhaserRenderer,
+  type PhaserRendererAssetRuntime,
+  type PhaserRendererDriverRuntime
+} from "@gamekit/renderer-phaser";
 import { applySandboxCameraAction, createSandboxCameraController } from "./camera";
-import { createSandboxRuntime, SANDBOX_RENDER_SIZE } from "./game";
+import {
+  createSandboxDataRegistry,
+  createSandboxRuntime,
+  SANDBOX_ASSET_GROUP,
+  SANDBOX_RENDER_SIZE
+} from "./game";
 import {
   renderSandboxShell,
+  updateAssetStatus,
   updateCameraStatus,
+  updateDataStatus,
   updateInputStatus,
   updatePlatformStatus,
   updateSandboxHud
@@ -41,9 +54,11 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
     }
   });
   const camera = createSandboxCameraController(SANDBOX_RENDER_SIZE);
+  const dataRegistry = createSandboxDataRegistry();
   const sandbox = createSandboxRuntime({
     renderer,
-    renderSize: SANDBOX_RENDER_SIZE
+    renderSize: SANDBOX_RENDER_SIZE,
+    dataRegistry
   });
   const inputRouter = createInputRouter();
 
@@ -56,6 +71,19 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
     },
     debug: true
   });
+  const assetManager = createAssetManager({
+    adapter: createPhaserAssetAdapter({
+      runtime: requirePhaserAssetRuntime(phaserRuntime)
+    }),
+    onDiagnostic: (event) => {
+      sandbox.runtime.eventBus.emit(event.type, event.payload, event.source);
+    }
+  });
+  assetManager.registerFromDataRegistry(dataRegistry);
+  updateDataStatus(ui, dataRegistry);
+  updateAssetStatus(ui, assetManager);
+  await assetManager.loadGroup(SANDBOX_ASSET_GROUP);
+  updateAssetStatus(ui, assetManager);
   const cameraAdapter = createCameraAdapter(phaserRuntime);
   applyCamera(cameraAdapter, camera.getState());
   updateCameraStatus(ui, camera.getState());
@@ -187,6 +215,7 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
     lastTime = now;
     sandbox.runtime.tick(delta);
     updateSandboxHud(ui, sandbox);
+    updateAssetStatus(ui, assetManager);
     requestAnimationFrame(frame);
   }
 
@@ -204,6 +233,16 @@ function createCameraAdapter(
   return createPhaserCameraAdapter({
     driver: runtime.camera
   });
+}
+
+function requirePhaserAssetRuntime(
+  runtime: PhaserRendererDriverRuntime | undefined
+): PhaserRendererAssetRuntime {
+  if (!runtime?.assets) {
+    throw new Error("Phaser renderer asset runtime is unavailable");
+  }
+
+  return runtime.assets;
 }
 
 function applyCamera(adapter: PhaserCameraAdapter | undefined, state: CameraState2D): void {

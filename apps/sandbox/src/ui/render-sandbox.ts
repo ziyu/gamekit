@@ -1,3 +1,5 @@
+import type { AssetManager } from "@gamekit/asset";
+import type { DataRegistry } from "@gamekit/data";
 import type { SandboxRuntime } from "../game";
 
 export type SandboxUiHandles = {
@@ -16,6 +18,17 @@ export type SandboxUiHandles = {
   elapsed: HTMLElement;
   delta: HTMLElement;
   systems: HTMLElement;
+  modules: HTMLElement;
+  entityList: HTMLElement;
+  dataPacks: HTMLElement;
+  dataKinds: HTMLElement;
+  dataDocuments: HTMLElement;
+  dataReferences: HTMLElement;
+  dataList: HTMLElement;
+  assetLoaded: HTMLElement;
+  assetRegistered: HTMLElement;
+  assetFailed: HTMLElement;
+  assetList: HTMLElement;
   events: HTMLOListElement;
 };
 
@@ -53,7 +66,16 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
             <div><dt>Elapsed</dt><dd data-ui="elapsed">0.0 ms</dd></div>
             <div><dt>Delta</dt><dd data-ui="delta">0.0 ms</dd></div>
             <div><dt>Systems</dt><dd data-ui="systems">0</dd></div>
+            <div><dt>Modules</dt><dd data-ui="modules">0</dd></div>
           </dl>
+        </article>
+
+        <article class="panel panel--world">
+          <div class="panel__title">
+            <span>World</span>
+            <strong>entities</strong>
+          </div>
+          <ol class="compact-list" data-ui="entity-list"></ol>
         </article>
 
         <article class="panel">
@@ -89,6 +111,31 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
           </dl>
         </article>
 
+        <article class="panel">
+          <div class="panel__title">
+            <span>Data</span>
+            <strong><span data-ui="data-documents">0</span> docs</strong>
+          </div>
+          <dl class="metrics metrics--compact">
+            <div><dt>Packs</dt><dd data-ui="data-packs">0</dd></div>
+            <div><dt>Kinds</dt><dd data-ui="data-kinds">0</dd></div>
+            <div><dt>Refs</dt><dd data-ui="data-references">0</dd></div>
+          </dl>
+          <ol class="compact-list" data-ui="data-list"></ol>
+        </article>
+
+        <article class="panel">
+          <div class="panel__title">
+            <span>Assets</span>
+            <strong><span data-ui="asset-loaded">0</span> loaded</strong>
+          </div>
+          <dl class="metrics metrics--compact">
+            <div><dt>Registered</dt><dd data-ui="asset-registered">0</dd></div>
+            <div><dt>Failed</dt><dd data-ui="asset-failed">0</dd></div>
+          </dl>
+          <ol class="compact-list" data-ui="asset-list"></ol>
+        </article>
+
         <article class="panel panel--events">
           <div class="panel__title">
             <span>EventBus</span>
@@ -116,6 +163,17 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
     elapsed: readElement(appElement, "elapsed", HTMLElement),
     delta: readElement(appElement, "delta", HTMLElement),
     systems: readElement(appElement, "systems", HTMLElement),
+    modules: readElement(appElement, "modules", HTMLElement),
+    entityList: readElement(appElement, "entity-list", HTMLElement),
+    dataPacks: readElement(appElement, "data-packs", HTMLElement),
+    dataKinds: readElement(appElement, "data-kinds", HTMLElement),
+    dataDocuments: readElement(appElement, "data-documents", HTMLElement),
+    dataReferences: readElement(appElement, "data-references", HTMLElement),
+    dataList: readElement(appElement, "data-list", HTMLElement),
+    assetLoaded: readElement(appElement, "asset-loaded", HTMLElement),
+    assetRegistered: readElement(appElement, "asset-registered", HTMLElement),
+    assetFailed: readElement(appElement, "asset-failed", HTMLElement),
+    assetList: readElement(appElement, "asset-list", HTMLElement),
     events: readElement(appElement, "events", HTMLOListElement)
   };
 }
@@ -169,17 +227,69 @@ export function updateSandboxHud(handles: SandboxUiHandles, sandbox: SandboxRunt
   handles.elapsed.textContent = `${clock.elapsed.toFixed(1)} ms`;
   handles.delta.textContent = `${clock.delta.toFixed(1)} ms`;
   handles.systems.textContent = String(sandbox.runtime.systems.values().length);
+  handles.modules.textContent = String(sandbox.runtime.modules.length);
+  handles.entityList.innerHTML = state.entities
+    .map(
+      (entity) => `
+      <li>
+        <code>${escapeHtml(String(entity.id))}</code>
+        <span>pos ${formatNumber(entity.x)}, ${formatNumber(entity.y)} · vel ${formatNumber(entity.vx)}, ${formatNumber(entity.vy)}</span>
+      </li>
+    `
+    )
+    .join("");
   handles.events.innerHTML = state.events
     .slice()
     .reverse()
     .map(
       (event) => `
       <li>
-        <code>${event.type}</code>
-        <span>${event.source ?? "unknown"} · ${event.timestamp}</span>
+        <code>${escapeHtml(event.type)}</code>
+        <span>${escapeHtml(event.source ?? "unknown")} · ${event.timestamp}</span>
       </li>
     `
     )
+    .join("");
+}
+
+export function updateDataStatus(handles: SandboxUiHandles, registry: DataRegistry): void {
+  const snapshot = registry.snapshot();
+  handles.dataPacks.textContent = String(snapshot.packs.length);
+  handles.dataKinds.textContent = String(snapshot.kinds.length);
+  handles.dataDocuments.textContent = String(snapshot.documents.length);
+  handles.dataReferences.textContent = String(snapshot.references.length);
+  handles.dataList.innerHTML = snapshot.documents
+    .slice(0, 12)
+    .map(
+      (document) => `
+      <li>
+        <code>${escapeHtml(document.kind)}:${escapeHtml(document.id)}</code>
+        <span>${document.tags.map(escapeHtml).join(" · ") || "untagged"}</span>
+      </li>
+    `
+    )
+    .join("");
+}
+
+export function updateAssetStatus(handles: SandboxUiHandles, assetManager: AssetManager): void {
+  const states = assetManager.states();
+  const loaded = states.filter((state) => state.status === "loaded").length;
+  const failed = states.filter((state) => state.status === "failed").length;
+
+  handles.assetLoaded.textContent = String(loaded);
+  handles.assetRegistered.textContent = String(states.length);
+  handles.assetFailed.textContent = String(failed);
+  handles.assetList.innerHTML = states
+    .map((state) => {
+      const asset = assetManager.get(state.id);
+
+      return `
+        <li>
+          <code>${escapeHtml(state.id)}</code>
+          <span>${escapeHtml(asset.type)} · ${escapeHtml(state.status)}</span>
+        </li>
+      `;
+    })
     .join("");
 }
 
@@ -190,4 +300,16 @@ function readElement<T extends Element>(root: Element, key: string, elementType:
   }
 
   return element;
+}
+
+function formatNumber(value: number): string {
+  return value.toFixed(1);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }

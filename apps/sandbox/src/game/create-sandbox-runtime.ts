@@ -2,9 +2,16 @@ import { createEventBus, type GameEvent } from "@gamekit/event-bus";
 import { createGame } from "@gamekit/game-runtime";
 import type { RendererAdapter } from "@gamekit/renderer-core";
 import { createKootaWorld } from "@gamekit/world-koota";
+import type { DataRegistry } from "@gamekit/data";
 import { Position, Velocity } from "./components";
+import {
+  createSandboxDataRegistry,
+  getSandboxActorDefinition,
+  getSandboxEntityRenderObject,
+  getSandboxRenderRigDefinition
+} from "./sandbox-data";
 import { createSandboxRenderSyncModule } from "./modules/sandbox-render-sync-module";
-import { sandboxMotionModule } from "./modules/sandbox-motion-module";
+import { createSandboxMotionModule } from "./modules/sandbox-motion-module";
 import type { SandboxRuntime } from "./types";
 
 export const SANDBOX_RENDER_SIZE = {
@@ -15,6 +22,7 @@ export const SANDBOX_RENDER_SIZE = {
 export type CreateSandboxRuntimeOptions = {
   seed?: string;
   renderer?: RendererAdapter;
+  dataRegistry?: DataRegistry;
   renderSize?: {
     width: number;
     height: number;
@@ -28,7 +36,14 @@ export function createSandboxRuntime(
   const world = createKootaWorld();
   const eventBus = createEventBus({ clock: () => Math.round(performance.now()) });
   const events: GameEvent[] = [];
-  const modules = [sandboxMotionModule];
+  const dataRegistry = options.dataRegistry ?? createSandboxDataRegistry();
+  const modules = [
+    createSandboxMotionModule({
+      actorDefinition: getSandboxActorDefinition(dataRegistry),
+      renderObjectDefinition: getSandboxEntityRenderObject(dataRegistry),
+      renderRigDefinition: getSandboxRenderRigDefinition(dataRegistry)
+    })
+  ];
 
   if (options.renderer) {
     modules.push(

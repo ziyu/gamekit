@@ -16,17 +16,28 @@ export function applyObjectPatch(
       transform.position.z ?? object.z
     );
   }
-  if (transform?.scale) {
-    object.setScale?.(transform.scale.x ?? object.scaleX, transform.scale.y ?? object.scaleY);
-  }
   if (transform?.rotation) {
     object.setRotation?.(transform.rotation.z ?? transform.rotation.y ?? transform.rotation.x ?? 0);
   }
   if (typeof patch.props?.width === "number" || typeof patch.props?.height === "number") {
-    object.setDisplaySize?.(
-      typeof patch.props?.width === "number" ? patch.props.width : object.displayWidth,
-      typeof patch.props?.height === "number" ? patch.props.height : object.displayHeight
-    );
+    const width = typeof patch.props?.width === "number" ? patch.props.width : object.displayWidth;
+    const height =
+      typeof patch.props?.height === "number" ? patch.props.height : object.displayHeight;
+    object.setData?.("gamekit.baseDisplayWidth", width);
+    object.setData?.("gamekit.baseDisplayHeight", height);
+    object.setDisplaySize?.(width, height);
+  }
+  if (transform?.scale) {
+    const scaleX = transform.scale.x ?? 1;
+    const scaleY = transform.scale.y ?? scaleX;
+    const baseWidth = object.getData?.("gamekit.baseDisplayWidth");
+    const baseHeight = object.getData?.("gamekit.baseDisplayHeight");
+
+    if (typeof baseWidth === "number" && typeof baseHeight === "number") {
+      object.setDisplaySize?.(baseWidth * scaleX, baseHeight * scaleY);
+    } else {
+      object.setScale?.(scaleX, scaleY);
+    }
   }
   if (patch.alpha !== undefined) {
     object.setAlpha?.(patch.alpha);

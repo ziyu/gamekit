@@ -12,7 +12,10 @@
   "dependencies": {
     "@gamekit/camera-core": "workspace:*",
     "@gamekit/camera-phaser": "workspace:*",
+    "@gamekit/asset": "workspace:*",
+    "@gamekit/asset-phaser": "workspace:*",
     "@gamekit/core": "workspace:*",
+    "@gamekit/data": "workspace:*",
     "@gamekit/event-bus": "workspace:*",
     "@gamekit/game-runtime": "workspace:*",
     "@gamekit/input-core": "workspace:*",
