@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run --root ../.. --config vitest.config.ts packages/test-utils/test --passWithNoTests",
-    "lint": "eslint ."
+    "lint": "oxlint ."
   },
   "dependencies": {
     "@gamekit/event-bus": "workspace:*",

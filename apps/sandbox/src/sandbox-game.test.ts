@@ -24,7 +24,9 @@ describe("sandbox runtime", () => {
     expect(sandbox.snapshot().events.map((event) => event.type)).toContain(
       "runtime.module_installed"
     );
-    expect(sandbox.snapshot().events.map((event) => event.type)).toContain("sandbox.entity_spawned");
+    expect(sandbox.snapshot().events.map((event) => event.type)).toContain(
+      "sandbox.entity_spawned"
+    );
     expect(sandbox.snapshot().events.map((event) => event.type)).toContain("runtime.started");
   });
 });

@@ -70,6 +70,7 @@
 corepack pnpm test
 corepack pnpm build
 corepack pnpm lint
+corepack pnpm format
 ```
 
 涉及 world/adapter/性能相关改动时，额外运行：

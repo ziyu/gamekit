@@ -1,4 +1,10 @@
-import type { AnyEventListener, EventBus, EventBusOptions, EventListener, GameEvent } from "./types";
+import type {
+  AnyEventListener,
+  EventBus,
+  EventBusOptions,
+  EventListener,
+  GameEvent
+} from "./types";
 
 export function createEventBus(options: EventBusOptions = {}): EventBus {
   const clock = options.clock ?? (() => Date.now());
@@ -14,12 +20,12 @@ export function createEventBus(options: EventBusOptions = {}): EventBus {
 
       const listeners = listenersByType.get(type);
       if (listeners) {
-        for (const listener of [...listeners]) {
+        for (const listener of Array.from(listeners)) {
           listener(event);
         }
       }
 
-      for (const listener of [...anyListeners]) {
+      for (const listener of Array.from(anyListeners)) {
         listener(event);
       }
     },

@@ -10,6 +10,7 @@ corepack pnpm dev
 corepack pnpm test
 corepack pnpm build
 corepack pnpm lint
+corepack pnpm format
 corepack pnpm bench:world
 ```
 

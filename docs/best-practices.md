@@ -4,6 +4,7 @@
 
 - 使用 pnpm workspace 管理 `apps/*` 和 `packages/*`。
 - 使用 Turbo 编排 `build`、`test`、`dev`。
+- 使用 oxlint 进行 lint，使用 oxfmt 进行格式检查和写入。
 - 根目录命令应面向日常开发，包内命令应面向 Turbo 和局部验证。
 
 ## TypeScript
