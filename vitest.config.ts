@@ -17,6 +17,12 @@ export default defineConfig({
       "@gamekit/event-bus": new URL("./packages/event-bus/src/index.ts", import.meta.url).pathname,
       "@gamekit/game-runtime": new URL("./packages/game-runtime/src/index.ts", import.meta.url)
         .pathname,
+      "@gamekit/renderer-core": new URL("./packages/renderer-core/src/index.ts", import.meta.url)
+        .pathname,
+      "@gamekit/renderer-phaser": new URL(
+        "./packages/renderer-phaser/src/index.ts",
+        import.meta.url
+      ).pathname,
       "@gamekit/test-utils": new URL("./packages/test-utils/src/index.ts", import.meta.url).pathname
     }
   }

@@ -13,10 +13,13 @@
     "@gamekit/core": "workspace:*",
     "@gamekit/event-bus": "workspace:*",
     "@gamekit/game-runtime": "workspace:*",
+    "@gamekit/renderer-core": "workspace:*",
+    "@gamekit/renderer-phaser": "workspace:*",
     "@gamekit/world": "workspace:*",
     "@gamekit/world-koota": "workspace:*"
   },
   "devDependencies": {
+    "@gamekit/test-utils": "workspace:*",
     "vite": "^6.3.5",
     "vitest": "^3.1.3"
   }

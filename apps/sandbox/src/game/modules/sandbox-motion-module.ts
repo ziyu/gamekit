@@ -1,6 +1,8 @@
 import { defineGameModule } from "@gamekit/core";
 import type { GameInstallContext } from "@gamekit/game-runtime";
-import { Position, Velocity } from "../components";
+import { Position, RenderObjectPresentation, Velocity } from "../components";
+
+const ENTITY_TINTS = [0xf3f0e8, 0x7fd16b, 0xdd3627, 0xf0bd4f, 0x64c2d0] as const;
 
 export const sandboxMotionModule = defineGameModule<GameInstallContext>({
   id: "sandbox.motion",
@@ -14,6 +16,15 @@ export const sandboxMotionModule = defineGameModule<GameInstallContext>({
       ctx.world.add(entity, Velocity, {
         x: ctx.rng.int(1, 4),
         y: ctx.rng.int(1, 3)
+      });
+      ctx.world.add(entity, RenderObjectPresentation, {
+        type: "debug.square",
+        width: 20 + (i % 2) * 6,
+        height: 20 + (i % 2) * 6,
+        depth: i,
+        props: {
+          tint: ENTITY_TINTS[i] ?? ENTITY_TINTS[0]
+        }
       });
       ctx.eventBus.emit("sandbox.entity_spawned", { entity }, "sandbox.motion");
     }

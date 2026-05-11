@@ -10,6 +10,9 @@
     { "path": "../../packages/core" },
     { "path": "../../packages/event-bus" },
     { "path": "../../packages/game-runtime" },
+    { "path": "../../packages/renderer-core" },
+    { "path": "../../packages/renderer-phaser" },
+    { "path": "../../packages/test-utils" },
     { "path": "../../packages/world" },
     { "path": "../../packages/world-koota" }
   ]

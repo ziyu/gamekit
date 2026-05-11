@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createMemoryRenderer } from "@gamekit/test-utils";
 import { createSandboxRuntime } from "./sandbox-game";
 
 describe("sandbox runtime", () => {
@@ -28,5 +29,29 @@ describe("sandbox runtime", () => {
       "sandbox.entity_spawned"
     );
     expect(sandbox.snapshot().events.map((event) => event.type)).toContain("runtime.started");
+  });
+
+  it("syncs renderable entities to the renderer", async () => {
+    const renderer = createMemoryRenderer();
+    const sandbox = createSandboxRuntime({
+      seed: "render-seed",
+      renderer,
+      renderSize: { width: 100, height: 100 }
+    });
+
+    await renderer.boot({
+      container: { append() {} } as unknown as HTMLElement,
+      width: 100,
+      height: 100,
+      eventBus: sandbox.runtime.eventBus
+    });
+    sandbox.runtime.start();
+    sandbox.runtime.tick(16);
+
+    expect(renderer.objects()).toHaveLength(5);
+    expect(new Set(renderer.objects().map((object) => object.id)).size).toBe(5);
+    expect(sandbox.snapshot().events.map((event) => event.type)).toContain(
+      "sandbox.render_object_linked"
+    );
   });
 });

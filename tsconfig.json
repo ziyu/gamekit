@@ -6,6 +6,8 @@
     { "path": "./packages/world-koota" },
     { "path": "./packages/event-bus" },
     { "path": "./packages/game-runtime" },
+    { "path": "./packages/renderer-core" },
+    { "path": "./packages/renderer-phaser" },
     { "path": "./packages/test-utils" },
     { "path": "./apps/sandbox" }
   ]

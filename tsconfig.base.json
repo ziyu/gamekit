@@ -25,6 +25,8 @@
       "@gamekit/world-koota": ["packages/world-koota/src/index.ts"],
       "@gamekit/event-bus": ["packages/event-bus/src/index.ts"],
       "@gamekit/game-runtime": ["packages/game-runtime/src/index.ts"],
+      "@gamekit/renderer-core": ["packages/renderer-core/src/index.ts"],
+      "@gamekit/renderer-phaser": ["packages/renderer-phaser/src/index.ts"],
       "@gamekit/test-utils": ["packages/test-utils/src/index.ts"]
     }
   }

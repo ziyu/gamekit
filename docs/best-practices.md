@@ -36,13 +36,15 @@
 - 每帧 system 中避免创建临时对象、闭包和大量数组。
 - 不在高频路径里做 JSON path 解析、动态字符串匹配、深拷贝或复杂 schema 校验。
 - 高频状态留在 ECS/world 内，React/UI 只消费低频快照。
-- EventBus 只用于低频事实，不用于每帧 position、sprite、pointer move 广播。
+- EventBus 只用于低频事实，不用于每帧 position、render object patch、pointer move 广播。
 
 数据结构：
 
 - 查询和规则执行需要索引，不能长期依赖全量扫描。
 - adapter 可以为了第三方库兼容保留映射表，但映射关系必须由 adapter 私有维护。
 - 大规模集合更新优先批处理，避免在循环里触发 UI 或外部副作用。
+- renderer sync 只做状态镜像：创建/销毁 renderer object 时可以发低频事件，逐帧 transform/visibility/layer patch 不进入 EventBus。
+- Phaser 等大型 adapter 依赖应隔离在 adapter 包中；app bundle 体积告警先记录，等 Asset/加载阶段再做 code splitting 或 chunk 策略。
 
 测量：
 

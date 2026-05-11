@@ -35,6 +35,8 @@
 - 成熟库负责底层能力，GameKit 负责稳定协议和组合边界。
 - 核心包保持薄内核，不直接绑定具体 ECS、renderer、animation、UI primitive。
 - 第三方库必须通过 adapter 或 app 层接入，不能泄漏进业务公共 API。
+- Renderer/Input 边界以 `docs/architecture.md` 和 `docs/adr/0003-general-render-objects-and-input-decoupling.md` 为准；不要继续扩展 Phase 2 prototype 的 sprite/input API。
+- Renderer lifecycle 当前由 app 持有，详见 `docs/adr/0002-app-owned-renderer-lifecycle.md`。
 - 数据驱动能力必须同步设计 trace/debug 入口。
 - 高频逻辑、低频规则、表现动画、React UI 必须分层，不互相穿透。
 - Sandbox 是验证场，不是长期玩法承载层。
