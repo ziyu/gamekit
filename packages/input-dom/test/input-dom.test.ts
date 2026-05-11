@@ -24,6 +24,20 @@ describe("DOM input normalizers", () => {
     });
   });
 
+  it("normalizes optional input scope", () => {
+    expect(
+      normalizeDomKeyboardEvent({
+        id: "k1",
+        event: { code: "KeyW" },
+        type: "keydown",
+        timestamp: 10,
+        scope: "game"
+      })
+    ).toMatchObject({
+      scope: "game"
+    });
+  });
+
   it("normalizes wheel events", () => {
     expect(
       normalizeDomWheelEvent({
@@ -60,6 +74,24 @@ describe("createDomInputAdapter", () => {
     expect(events[0]).toMatchObject({
       code: "Enter",
       timestamp: 100
+    });
+  });
+
+  it("resolves event scope before emitting normalized input", () => {
+    const target = new FakeTarget();
+    const events: unknown[] = [];
+    const adapter = createDomInputAdapter({
+      target,
+      scope: () => "game",
+      onInput: (event) => events.push(event)
+    });
+
+    adapter.start();
+    target.dispatch("keydown", { code: "KeyW" });
+
+    expect(events[0]).toMatchObject({
+      code: "KeyW",
+      scope: "game"
     });
   });
 });

@@ -176,6 +176,21 @@ describe("createPhaserRenderer", () => {
     ).toThrow("Renderer does not support render object type");
     expect(driver.objects()).toHaveLength(0);
   });
+
+  it("exposes the driver runtime after boot", async () => {
+    const driver = createFakeDriver();
+    let runtime: PhaserRendererDriverRuntime | undefined;
+    const renderer = createPhaserRenderer({
+      driver,
+      onRuntime: (nextRuntime) => {
+        runtime = nextRuntime;
+      }
+    });
+
+    await renderer.boot({ container: createTestContainer(), width: 320, height: 240 });
+
+    expect(runtime).toBeDefined();
+  });
 });
 
 function createNodeMap(

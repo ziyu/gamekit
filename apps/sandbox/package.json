@@ -10,6 +10,8 @@
     "lint": "oxlint ."
   },
   "dependencies": {
+    "@gamekit/camera-core": "workspace:*",
+    "@gamekit/camera-phaser": "workspace:*",
     "@gamekit/core": "workspace:*",
     "@gamekit/event-bus": "workspace:*",
     "@gamekit/game-runtime": "workspace:*",

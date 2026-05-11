@@ -8,6 +8,9 @@ export type SandboxUiHandles = {
   platformFs: HTMLElement;
   inputAction: HTMLElement;
   inputContext: HTMLElement;
+  cameraPosition: HTMLElement;
+  cameraZoom: HTMLElement;
+  cameraMode: HTMLElement;
   entityCount: HTMLElement;
   tick: HTMLElement;
   elapsed: HTMLElement;
@@ -37,7 +40,7 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
             <strong><span data-ui="entity-count">0</span> entities</strong>
           </div>
           <div class="stage">
-            <div class="renderer-root" data-ui="renderer-root"></div>
+            <div class="renderer-root" data-ui="renderer-root" tabindex="0"></div>
           </div>
         </article>
 
@@ -75,6 +78,17 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
           </dl>
         </article>
 
+        <article class="panel">
+          <div class="panel__title">
+            <span>Camera</span>
+            <strong data-ui="camera-mode">free</strong>
+          </div>
+          <dl class="metrics">
+            <div><dt>Position</dt><dd data-ui="camera-position">0, 0</dd></div>
+            <div><dt>Zoom</dt><dd data-ui="camera-zoom">1.00</dd></div>
+          </dl>
+        </article>
+
         <article class="panel panel--events">
           <div class="panel__title">
             <span>EventBus</span>
@@ -94,6 +108,9 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
     platformFs: readElement(appElement, "platform-fs", HTMLElement),
     inputAction: readElement(appElement, "input-action", HTMLElement),
     inputContext: readElement(appElement, "input-context", HTMLElement),
+    cameraPosition: readElement(appElement, "camera-position", HTMLElement),
+    cameraZoom: readElement(appElement, "camera-zoom", HTMLElement),
+    cameraMode: readElement(appElement, "camera-mode", HTMLElement),
     entityCount: readElement(appElement, "entity-count", HTMLElement),
     tick: readElement(appElement, "tick", HTMLElement),
     elapsed: readElement(appElement, "elapsed", HTMLElement),
@@ -101,6 +118,19 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
     systems: readElement(appElement, "systems", HTMLElement),
     events: readElement(appElement, "events", HTMLOListElement)
   };
+}
+
+export type SandboxCameraStatus = {
+  x: number;
+  y: number;
+  zoom: number;
+  mode: string;
+};
+
+export function updateCameraStatus(handles: SandboxUiHandles, status: SandboxCameraStatus): void {
+  handles.cameraPosition.textContent = `${status.x.toFixed(1)}, ${status.y.toFixed(1)}`;
+  handles.cameraZoom.textContent = status.zoom.toFixed(2);
+  handles.cameraMode.textContent = status.mode;
 }
 
 export type SandboxInputStatus = {

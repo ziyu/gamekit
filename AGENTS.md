@@ -41,6 +41,7 @@
 - 第三方库必须通过 adapter 或 app 层接入，不能泄漏进业务公共 API。
 - Renderer 以 RenderObject / RenderNode / RenderCommand 为核心抽象，不以 Sprite 作为公共协议中心。
 - Input 是独立大模块，不属于 Renderer；Renderer 只能通过预留桥接点接收已经归一化后的语义指令。
+- Gameplay/Camera 输入必须能通过 Input Scope 约束到 game viewport 等交互域，避免在 UI、DevTools、文本输入或其他窗口中误触发。
 - Camera 是独立模块，负责镜头状态、控制器和 adapter 同步，不应该被散落在 renderer 或 gameplay 内。
 - Platform 是运行环境抽象；Tauri 是当前重要目标 adapter，不是核心架构本身。
 - Effect/Fx 不是首层独立业务包；Effect 是 Asset、Renderer、GAS、UI 等基础设施内部可选实现手段。

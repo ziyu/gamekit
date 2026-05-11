@@ -105,17 +105,18 @@
 - `@gamekit/input-dom`
 - `@gamekit/input-phaser`
 - InputAction / InputBinding / InputContext / InputRouter
+- Input scope 过滤，支持 action/context 按 `game`、`ui` 等输入域生效
 - DOM input adapter
 - Phaser input adapter fake-driver contract
-- Sandbox Input 状态展示和低频 `input.action` 事件桥接
+- Sandbox Input 状态展示、game viewport scope gate 和低频 `input.action` 事件桥接
 
 完成定义：
 
 - input-core 不依赖 DOM、Phaser、Tauri。
-- Sandbox 能观察一个最小 input action。
+- Sandbox 能观察 input action，并能限制 gameplay/camera action 只在 game viewport 生效。
 - Renderer 不重新引入 `onInput`。
 - EventBus 只接收低频输入事实或 gameplay command，不接收高频 raw event。
-- binding、context 优先级、adapter normalization 有测试覆盖。
+- binding、scope、context 优先级、adapter normalization 有测试覆盖。
 
 ## Phase 5：Camera Core
 
@@ -123,13 +124,18 @@
 
 模块设计：`docs/modules/camera.md`
 
-预期新增：
+当前状态：已实现。
+
+已实现：
 
 - `@gamekit/camera-core`
 - `@gamekit/camera-phaser`
 - CameraState2D
 - CameraController
-- GridMapRig
+- Phaser camera adapter fake-driver contract
+- Sandbox input action 驱动 camera pan/zoom
+- Sandbox camera action 受 game scope 保护，非 game viewport 不响应
+- Sandbox Camera 状态展示
 
 完成定义：
 
@@ -137,6 +143,7 @@
 - Phaser adapter 能应用 CameraState2D。
 - Input action 可以驱动 pan/zoom/follow。
 - Renderer/camera 坐标转换有最小测试覆盖。
+- 本阶段暂不实现 3D camera 和复杂 cinematic rig。
 
 ## Phase 6：Asset System + DataPack 基础
 

@@ -112,6 +112,28 @@ describe("createInputRouter", () => {
       "game.confirm"
     ]);
   });
+
+  it("filters scoped contexts by input scope", () => {
+    const router = createInputRouter();
+
+    router.registerAction({
+      id: "camera.pan_left",
+      name: "Pan Left",
+      scopes: ["game"],
+      defaultBindings: [{ device: "keyboard", code: "KeyA", phase: "pressed" }]
+    });
+    router.addContext({
+      id: "camera",
+      priority: 10,
+      actionIds: ["camera.pan_left"],
+      scopes: ["game"]
+    });
+
+    expect(router.handle(input({ code: "KeyA", scope: "ui" }))).toEqual([]);
+    expect(
+      router.handle(input({ code: "KeyA", scope: "game" })).map((event) => event.actionId)
+    ).toEqual(["camera.pan_left"]);
+  });
 });
 
 function input(patch: Partial<NormalizedInputEvent> = {}): NormalizedInputEvent {

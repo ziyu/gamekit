@@ -1,11 +1,15 @@
 import "./styles.css";
-import { createInputRouter } from "@gamekit/input-core";
+import type { CameraState2D } from "@gamekit/camera-core";
+import { createPhaserCameraAdapter, type PhaserCameraAdapter } from "@gamekit/camera-phaser";
+import { createInputRouter, type InputBinding } from "@gamekit/input-core";
 import { createDomInputAdapter } from "@gamekit/input-dom";
 import { createWebPlatform } from "@gamekit/platform-web";
-import { createPhaserRenderer } from "@gamekit/renderer-phaser";
+import { createPhaserRenderer, type PhaserRendererDriverRuntime } from "@gamekit/renderer-phaser";
+import { applySandboxCameraAction, createSandboxCameraController } from "./camera";
 import { createSandboxRuntime, SANDBOX_RENDER_SIZE } from "./game";
 import {
   renderSandboxShell,
+  updateCameraStatus,
   updateInputStatus,
   updatePlatformStatus,
   updateSandboxHud
@@ -22,8 +26,21 @@ void bootSandbox(appElement);
 
 async function bootSandbox(root: HTMLElement): Promise<void> {
   const ui = renderSandboxShell(root);
+  let activeInputScope: SandboxInputScope = "ui";
+  ui.rendererRoot.addEventListener("focus", () => {
+    activeInputScope = "game";
+  });
+  ui.rendererRoot.addEventListener("blur", () => {
+    activeInputScope = "ui";
+  });
   const platform = createWebPlatform({ appName: "GameKit Sandbox" });
-  const renderer = createPhaserRenderer();
+  let phaserRuntime: PhaserRendererDriverRuntime | undefined;
+  const renderer = createPhaserRenderer({
+    onRuntime: (runtime) => {
+      phaserRuntime = runtime;
+    }
+  });
+  const camera = createSandboxCameraController(SANDBOX_RENDER_SIZE);
   const sandbox = createSandboxRuntime({
     renderer,
     renderSize: SANDBOX_RENDER_SIZE
@@ -39,42 +56,86 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
     },
     debug: true
   });
+  const cameraAdapter = createCameraAdapter(phaserRuntime);
+  applyCamera(cameraAdapter, camera.getState());
+  updateCameraStatus(ui, camera.getState());
   inputRouter.registerAction({
     id: "camera.pan_up",
     name: "Pan Up",
     category: "camera",
-    defaultBindings: [{ device: "keyboard", code: "KeyW", phase: "pressed" }]
+    scopes: ["game"],
+    defaultBindings: keyboardPanBindings("KeyW")
   });
   inputRouter.registerAction({
     id: "camera.pan_down",
     name: "Pan Down",
     category: "camera",
-    defaultBindings: [{ device: "keyboard", code: "KeyS", phase: "pressed" }]
+    scopes: ["game"],
+    defaultBindings: keyboardPanBindings("KeyS")
+  });
+  inputRouter.registerAction({
+    id: "camera.pan_left",
+    name: "Pan Left",
+    category: "camera",
+    scopes: ["game"],
+    defaultBindings: keyboardPanBindings("KeyA")
+  });
+  inputRouter.registerAction({
+    id: "camera.pan_right",
+    name: "Pan Right",
+    category: "camera",
+    scopes: ["game"],
+    defaultBindings: keyboardPanBindings("KeyD")
   });
   inputRouter.registerAction({
     id: "camera.zoom_in",
     name: "Zoom In",
     category: "camera",
-    defaultBindings: [{ device: "mouse", phase: "scrolled" }]
+    scopes: ["game"],
+    defaultBindings: [
+      { device: "mouse", phase: "scrolled" },
+      { device: "keyboard", code: "Equal", phase: "pressed" }
+    ]
+  });
+  inputRouter.registerAction({
+    id: "camera.zoom_out",
+    name: "Zoom Out",
+    category: "camera",
+    scopes: ["game"],
+    defaultBindings: [{ device: "keyboard", code: "Minus", phase: "pressed" }]
   });
   inputRouter.registerAction({
     id: "game.confirm",
     name: "Confirm",
     category: "gameplay",
+    scopes: ["game"],
     defaultBindings: [{ device: "keyboard", code: "Enter", phase: "pressed" }]
   });
   inputRouter.addContext({
     id: "camera",
     priority: 10,
-    actionIds: ["camera.pan_up", "camera.pan_down", "camera.zoom_in"],
+    actionIds: [
+      "camera.pan_up",
+      "camera.pan_down",
+      "camera.pan_left",
+      "camera.pan_right",
+      "camera.zoom_in",
+      "camera.zoom_out"
+    ],
+    scopes: ["game"],
     capture: false
   });
   inputRouter.addContext({
     id: "gameplay",
     priority: 5,
-    actionIds: ["game.confirm"]
+    actionIds: ["game.confirm"],
+    scopes: ["game"]
   });
   inputRouter.onAction((event) => {
+    if (applySandboxCameraAction(camera, event)) {
+      applyCamera(cameraAdapter, camera.getState());
+      updateCameraStatus(ui, camera.getState());
+    }
     sandbox.runtime.eventBus.emit(
       "input.action",
       {
@@ -92,6 +153,16 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
   });
   const inputAdapter = createDomInputAdapter({
     target: window,
+    scope: (event) => {
+      if (isPointerLikeInput(event)) {
+        activeInputScope = isEventInElement(event, ui.rendererRoot) ? "game" : "ui";
+        if (activeInputScope === "game" && event.type === "pointerdown") {
+          ui.rendererRoot.focus({ preventScroll: true });
+        }
+      }
+
+      return activeInputScope;
+    },
     onInput: (event) => {
       inputRouter.handle(event);
     }
@@ -121,4 +192,37 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
 
   updateSandboxHud(ui, sandbox);
   requestAnimationFrame(frame);
+}
+
+function createCameraAdapter(
+  runtime: PhaserRendererDriverRuntime | undefined
+): PhaserCameraAdapter | undefined {
+  if (!runtime?.camera) {
+    return undefined;
+  }
+
+  return createPhaserCameraAdapter({
+    driver: runtime.camera
+  });
+}
+
+function applyCamera(adapter: PhaserCameraAdapter | undefined, state: CameraState2D): void {
+  adapter?.applyCameraState(state);
+}
+
+function keyboardPanBindings(code: string): InputBinding[] {
+  return [
+    { device: "keyboard", code, phase: "pressed" },
+    { device: "keyboard", code, phase: "held" }
+  ];
+}
+
+type SandboxInputScope = "game" | "ui";
+
+function isPointerLikeInput(event: Event): boolean {
+  return event.type.startsWith("pointer") || event.type === "wheel";
+}
+
+function isEventInElement(event: Event, element: Element): boolean {
+  return event.target instanceof Node && element.contains(event.target);
 }

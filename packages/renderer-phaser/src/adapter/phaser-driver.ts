@@ -63,6 +63,31 @@ export function createDefaultPhaserDriver(): PhaserRendererDriver {
 
       return {
         view,
+        camera: {
+          setScroll(x, y) {
+            sceneRef.cameras.main.setScroll(x, y);
+          },
+          setZoom(zoom) {
+            sceneRef.cameras.main.setZoom(zoom);
+          },
+          setRotation(rotation) {
+            sceneRef.cameras.main.setRotation(rotation);
+          },
+          screenToWorld(point) {
+            const worldPoint = sceneRef.cameras.main.getWorldPoint(point.x, point.y);
+            return {
+              x: worldPoint.x,
+              y: worldPoint.y
+            };
+          },
+          worldToScreen(point) {
+            const camera = sceneRef.cameras.main;
+            return {
+              x: (point.x - camera.scrollX) * camera.zoom,
+              y: (point.y - camera.scrollY) * camera.zoom
+            };
+          }
+        },
         resize(width, height) {
           game.scale.resize(width, height);
         },

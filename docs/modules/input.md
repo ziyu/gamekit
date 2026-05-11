@@ -25,6 +25,7 @@ Input 不能归 Phaser 独占，也不能散落在 React 组件中：
 ```txt
 Raw Input
 → Normalized Input Event
+→ Input Scope
 → Input Binding / Mapping
 → Input Action
 → Command / UI Action / Camera Action
@@ -55,11 +56,39 @@ export type NormalizedInputEvent = {
     alt?: boolean;
     meta?: boolean;
   };
+  scope?: InputScopeId;
   timestamp: number;
   source?: string;
   originalEvent?: unknown;
 };
 ```
+
+## Input Scope
+
+Input scope 描述一个输入事件当前属于哪个交互区域或焦点域。它不是 UI 组件状态本身，而是 input-core 可以理解的稳定路由标签。
+
+常见 scope：
+
+- `global`：应用级快捷键。
+- `game`：游戏 viewport、game canvas 或真实 gameplay 操作区域。
+- `ui`：普通 UI 面板、HUD、窗口区域。
+- `editor`：编辑器工具区域。
+- `text-input`：文本输入焦点。
+- `devtools`：调试工具区域。
+
+scope 可以由 adapter 或 app shell 根据底层事件、焦点、active window、pointer capture、platform shortcut 状态解析。
+
+示例：
+
+```ts
+export type InputScopeId = string;
+
+export type NormalizedInputEvent = {
+  scope?: InputScopeId;
+};
+```
+
+scope 是可选字段。没有声明 scope 约束的 action/context 可以继续接收未标记事件；声明了 scope 的 action/context 只能接收匹配 scope 的事件。
 
 ## Input Action
 
@@ -70,6 +99,7 @@ export type InputActionDefinition = {
   id: string;
   name: string;
   category?: string;
+  scopes?: InputScopeId[];
   defaultBindings: InputBinding[];
 };
 
@@ -89,6 +119,10 @@ export type InputBinding = {
 - `game.confirm`
 - `tool.place_road`
 - `ui.close_window`
+
+Action 可以声明 `scopes`，用于限制“这个语义动作只能在哪些输入域里成立”。例如 `camera.pan_left` 通常只应该在 `game` scope 中成立，而 `debug.toggle_panel` 可以不限制或使用 `global` scope。
+
+Action 级 scope 是防漏边界：即使某个高层 context 没有声明 scope，带 scope 限制的 action 也不会在错误输入域被触发。
 
 ## Input Context
 
@@ -113,12 +147,32 @@ modal > text-input > ui > editor > gameplay > camera > global
 
 打开 modal 或文本输入框时，gameplay 输入应被阻断。
 
+Context 可以声明 `scopes`，用于限制“这个上下文只参与哪些输入域的匹配”：
+
+```ts
+export type InputContext = {
+  id: string;
+  priority: number;
+  actionIds?: string[];
+  scopes?: InputScopeId[];
+  capture?: boolean;
+};
+```
+
+推荐组合：
+
+- gameplay / camera context 通常绑定 `game` scope。
+- modal / text-input context 通常绑定 `ui` 或 `text-input` scope，并以更高 priority 捕获输入。
+- debug/global context 可以不绑定 scope，或明确绑定 `global`，由 app 决定。
+- 同时使用 action scope 和 context scope，防止 action 从默认 global context 泄漏。
+
 ## Input Router
 
 ```txt
 DOM / Phaser / Touch / Gamepad Event
 → NormalizedInputEvent
 → InputManager
+→ Scope Filter
 → Active InputContexts
 → InputAction
 → CommandBus / EventBus / CameraController / UI Runtime
@@ -149,3 +203,5 @@ Input 不直接执行复杂 TCA 逻辑。
 ## 与 UI 的关系
 
 UI focus、active window、active tool 可以由 UI 状态管理，但物理输入到语义 action 的映射归 input-core。
+
+UI 不直接改 gameplay 状态。UI 应输出焦点/scope 信号，Input adapter 或 app shell 将其转成 `NormalizedInputEvent.scope`，再由 input-core 按 action/context 规则路由。

@@ -6,6 +6,8 @@ export type InputModifierKey = "shift" | "ctrl" | "alt" | "meta";
 
 export type InputModifiers = Partial<Record<InputModifierKey, boolean>>;
 
+export type InputScopeId = string;
+
 export type NormalizedInputEvent = {
   id: string;
   device: InputDevice;
@@ -19,6 +21,7 @@ export type NormalizedInputEvent = {
   dy?: number;
   wheelDelta?: number;
   modifiers?: InputModifiers;
+  scope?: InputScopeId;
   timestamp: number;
   source?: string;
   originalEvent?: unknown;
@@ -38,6 +41,7 @@ export type InputActionDefinition = {
   id: InputActionId;
   name: string;
   category?: string;
+  scopes?: InputScopeId[];
   defaultBindings: InputBinding[];
 };
 
@@ -48,6 +52,7 @@ export type InputContext = {
   priority: number;
   enabled?: boolean;
   actionIds?: InputActionId[];
+  scopes?: InputScopeId[];
   capture?: boolean;
 };
 

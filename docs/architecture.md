@@ -123,6 +123,8 @@ Renderer 公共协议以通用 render object 为中心，不以 Sprite API 为�
 
 Input 是独立系统，负责 raw input、action mapping、context、focus 和 command routing。Renderer 可以提供 view/picking/hit-test capability，但不拥有 gameplay input 语义。
 
+Input 使用 scope 表达输入事件当前所属交互域，例如 `game`、`ui`、`editor`、`text-input` 或 `devtools`。Action 和 Context 都可以声明允许的 scope，避免 gameplay/camera 快捷键在非游戏窗口误触发。
+
 详细设计见 `docs/modules/input.md`。
 
 ### Camera

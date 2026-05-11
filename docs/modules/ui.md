@@ -94,11 +94,13 @@ UI action 可以由 TCA 调用：
 
 ## 与 Input 的关系
 
-UI focus、modal、text input 会影响 Input Context。
+UI focus、modal、text input 会影响 Input Context 和 Input Scope。
 
 - Text input focused：阻断 gameplay hotkeys。
 - Modal opened：modal context 优先。
 - Window focused：Esc / Ctrl+W 等快捷键由 UI context 处理。
+- Game viewport focused：gameplay/camera action 使用 `game` scope。
+- UI panel focused：gameplay/camera action 不应响应，除非该 action 明确允许对应 scope。
 
 ## 状态边界
 

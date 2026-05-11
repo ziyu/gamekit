@@ -75,6 +75,7 @@ export function createPhaserRenderer(options: PhaserRendererOptions = {}): Rende
 
       bootContext = ctx;
       runtime = await driver.boot(ctx, { backgroundColor, debugTextureId });
+      options.onRuntime?.(runtime);
       emitDiagnostic("renderer.booted", { rendererId, width: ctx.width, height: ctx.height });
     },
     destroy() {

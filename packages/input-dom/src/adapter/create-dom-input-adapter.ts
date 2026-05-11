@@ -1,4 +1,4 @@
-import type { InputSourceAdapter } from "@gamekit/input-core";
+import type { InputScopeId, InputSourceAdapter } from "@gamekit/input-core";
 import {
   normalizeDomKeyboardEvent,
   normalizeDomPointerEvent,
@@ -14,6 +14,7 @@ export function createDomInputAdapter(options: DomInputAdapterOptions): InputSou
   const source = options.source ?? "input.dom";
 
   const keydown = (event: Event) => {
+    const scope = resolveScope(options.scope, event);
     options.onInput(
       normalizeDomKeyboardEvent({
         id: nextId(source, ++sequence),
@@ -21,11 +22,13 @@ export function createDomInputAdapter(options: DomInputAdapterOptions): InputSou
         type: "keydown",
         timestamp: clock(),
         source,
+        scope,
         originalEvent: event
       })
     );
   };
   const keyup = (event: Event) => {
+    const scope = resolveScope(options.scope, event);
     options.onInput(
       normalizeDomKeyboardEvent({
         id: nextId(source, ++sequence),
@@ -33,12 +36,14 @@ export function createDomInputAdapter(options: DomInputAdapterOptions): InputSou
         type: "keyup",
         timestamp: clock(),
         source,
+        scope,
         originalEvent: event
       })
     );
   };
   const pointer = (type: "pointerdown" | "pointerup" | "pointermove" | "pointercancel") => {
     return (event: Event) => {
+      const scope = resolveScope(options.scope, event);
       options.onInput(
         normalizeDomPointerEvent({
           id: nextId(source, ++sequence),
@@ -46,18 +51,21 @@ export function createDomInputAdapter(options: DomInputAdapterOptions): InputSou
           type,
           timestamp: clock(),
           source,
+          scope,
           originalEvent: event
         })
       );
     };
   };
   const wheel = (event: Event) => {
+    const scope = resolveScope(options.scope, event);
     options.onInput(
       normalizeDomWheelEvent({
         id: nextId(source, ++sequence),
         event: event as WheelEvent,
         timestamp: clock(),
         source,
+        scope,
         originalEvent: event
       })
     );
@@ -104,4 +112,15 @@ export function createDomInputAdapter(options: DomInputAdapterOptions): InputSou
 
 function nextId(source: string, sequence: number): string {
   return `${source}:${sequence}`;
+}
+
+function resolveScope(
+  scope: DomInputAdapterOptions["scope"],
+  event: Event
+): InputScopeId | undefined {
+  if (typeof scope === "function") {
+    return scope(event);
+  }
+
+  return scope;
 }

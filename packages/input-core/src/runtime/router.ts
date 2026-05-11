@@ -82,13 +82,14 @@ export function createInputRouter(options: CreateInputRouterOptions = {}): Input
       const emittedActionIds = new Set<InputActionId>();
 
       for (const context of sortInputContexts([...contexts.values()])) {
-        if (!isInputContextEnabled(context)) {
+        if (!isInputContextEnabled(context) || !contextAcceptsInputScope(context, input)) {
           continue;
         }
 
         const contextEvents = sortActionEvents(
           [...actions.values()]
             .filter((action) => contextAcceptsAction(context, action.id))
+            .filter((action) => actionAcceptsInputScope(action, input))
             .filter((action) => !emittedActionIds.has(action.id))
             .filter((action) =>
               (actionBindings.get(action.id) ?? []).some((binding) =>
@@ -143,6 +144,25 @@ const DEFAULT_GLOBAL_CONTEXT: InputContext = {
   priority: 0,
   capture: false
 };
+
+function contextAcceptsInputScope(context: InputContext, input: { scope?: string }): boolean {
+  if (!context.scopes) {
+    return true;
+  }
+
+  return input.scope !== undefined && context.scopes.includes(input.scope);
+}
+
+function actionAcceptsInputScope(
+  action: InputActionDefinition,
+  input: { scope?: string }
+): boolean {
+  if (!action.scopes) {
+    return true;
+  }
+
+  return input.scope !== undefined && action.scopes.includes(input.scope);
+}
 
 function updateContext(
   contexts: Map<InputContextId, InputContext>,

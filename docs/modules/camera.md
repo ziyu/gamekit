@@ -101,12 +101,14 @@ Hero Road 默认适合 `GridMapRig`：
 Camera 不直接监听 DOM 或 Phaser input。
 
 ```txt
-input.action.camera.pan_up
+game-scoped input action: camera.pan_up
 → CameraController.pan(0, -speed)
 
-input.action.camera.zoom_in
+game-scoped input action: camera.zoom_in
 → CameraController.zoom(+1)
 ```
+
+Camera action 应由 Input 系统做 scope/context 过滤。常规游戏镜头控制只在 `game` scope 下生效；编辑器镜头、DevTools 镜头预览或 UI 快捷键可以定义自己的 action/context/scope 组合。
 
 ## 与 TCA/Cue 的关系
 

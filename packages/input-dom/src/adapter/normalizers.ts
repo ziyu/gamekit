@@ -41,6 +41,7 @@ export function normalizeDomKeyboardEvent(args: {
   type: "keydown" | "keyup";
   timestamp: number;
   source?: string;
+  scope?: string | undefined;
   originalEvent?: unknown;
 }): NormalizedInputEvent {
   const event = withOptionalFields(
@@ -54,6 +55,7 @@ export function normalizeDomKeyboardEvent(args: {
     {
       code: args.event.code || args.event.key,
       source: args.source,
+      scope: args.scope,
       originalEvent: args.originalEvent
     }
   );
@@ -67,6 +69,7 @@ export function normalizeDomPointerEvent(args: {
   type: "pointerdown" | "pointerup" | "pointermove" | "pointercancel";
   timestamp: number;
   source?: string;
+  scope?: string | undefined;
   originalEvent?: unknown;
 }): NormalizedInputEvent {
   return withOptionalFields(
@@ -85,6 +88,7 @@ export function normalizeDomPointerEvent(args: {
     {
       button: pointerButton(args.event.button),
       source: args.source,
+      scope: args.scope,
       originalEvent: args.originalEvent
     }
   );
@@ -95,6 +99,7 @@ export function normalizeDomWheelEvent(args: {
   event: DomWheelEventLike;
   timestamp: number;
   source?: string;
+  scope?: string | undefined;
   originalEvent?: unknown;
 }): NormalizedInputEvent {
   return withOptionalFields(
@@ -110,6 +115,7 @@ export function normalizeDomWheelEvent(args: {
     },
     {
       source: args.source,
+      scope: args.scope,
       originalEvent: args.originalEvent
     }
   );
