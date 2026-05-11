@@ -6,12 +6,39 @@
 
 每轮开发至少检查：
 
+- `docs/project-design.md`：确认项目定位、目标、非目标和设计信条。
 - `docs/architecture.md`：确认包边界和依赖方向。
 - `docs/implementation-principles.md`：确认实现原则和代码质量要求。
 - `docs/best-practices.md`：确认测试、性能、模块拆分实践。
 - `docs/development-stages.md`：确认当前阶段目标和完成定义。
 
 涉及重大技术选择、包边界变化、第三方库引入、公共 API 调整时，必须新增或更新 `docs/adr/`。
+
+## 文档职责边界
+
+不要在多个文档中重复维护同一段事实。选择文档时按以下规则：
+
+- 项目定位、为什么做、长期目标、非目标、设计信条：写入 `docs/project-design.md`。
+- 包职责、依赖方向、分层结构、公共架构约束：写入 `docs/architecture.md`。
+- 代码质量、实现约束、可测试性、可解释性：写入 `docs/implementation-principles.md`。
+- 已验证的开发实践、性能经验、测试策略、反模式：写入 `docs/best-practices.md`。
+- 当前阶段状态、完成定义、下一阶段计划：写入 `docs/development-stages.md`。
+- 重大决策的背景、候选方案、取舍和后果：写入 `docs/adr/`。
+
+如果一个改动看起来需要更新多个文档，先判断它是不是由两类不同事实组成。不要复制粘贴同一内容；在次要文档中只保留一句引用。
+
+## 核心设计约束
+
+后续开发必须持续维护这些设计约束：
+
+- GameKit 是可复用游戏框架，不是单一游戏业务仓库，也不是完整自研引擎。
+- 成熟库负责底层能力，GameKit 负责稳定协议和组合边界。
+- 核心包保持薄内核，不直接绑定具体 ECS、renderer、animation、UI primitive。
+- 第三方库必须通过 adapter 或 app 层接入，不能泄漏进业务公共 API。
+- 数据驱动能力必须同步设计 trace/debug 入口。
+- 高频逻辑、低频规则、表现动画、React UI 必须分层，不互相穿透。
+- Sandbox 是验证场，不是长期玩法承载层。
+- 文档是架构的一部分，设计变化必须同步更新文档。
 
 ## 开发规则
 
@@ -26,6 +53,7 @@
 
 每个阶段或较大改动结束前，必须判断是否需要更新文档：
 
+- 项目定位、目标、非目标、设计信条变化：更新 `docs/project-design.md`。
 - 公共 API 或包边界变化：更新 `docs/architecture.md`。
 - 实现约束、代码质量标准变化：更新 `docs/implementation-principles.md`。
 - 新形成的实践、反模式、性能经验：更新 `docs/best-practices.md`。
