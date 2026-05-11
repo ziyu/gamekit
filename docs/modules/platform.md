@@ -14,8 +14,13 @@ Platform 隔离 Web、Tauri、Electron、移动端等平台差异。业务代码
 
 ```ts
 export type PlatformRuntime = {
-  id: "web" | "tauri" | "electron" | "native";
+  id: "web" | "tauri" | "electron" | "native" | string;
 
+  services: PlatformServices;
+  capabilities: PlatformCapabilityRegistry;
+};
+
+export type PlatformServices = PlatformServiceRegistry & {
   fs: PlatformFileSystem;
   path: PlatformPath;
   storage: PlatformStorage;
@@ -27,6 +32,64 @@ export type PlatformRuntime = {
   app: PlatformApp;
 };
 ```
+
+PlatformRuntime 不是一张无限膨胀的底层 API 列表。它由三层组成：
+
+- Runtime identity：平台 id、运行环境 profile。
+- Services：标准服务和扩展服务的统一入口。
+- Capabilities：能力发现、权限状态和调试可见性。
+
+标准服务只覆盖跨游戏最稳定、最基础的能力，例如 `platform.services.fs`、`platform.services.storage`、`platform.services.window`。其他能力通过 service/capability 扩展，不继续往 PlatformRuntime 顶层增加字段。
+
+## Capability / Service 扩展
+
+Platform 需要同时表达“有没有能力”和“能力由哪个服务提供”。
+
+```ts
+export type PlatformServiceKey<TService> = {
+  id: string;
+  optional?: boolean;
+  description?: string;
+};
+
+export type PlatformServiceRegistry = {
+  has<TService>(key: PlatformServiceKey<TService>): boolean;
+  get<TService>(key: PlatformServiceKey<TService>): TService | undefined;
+  require<TService>(key: PlatformServiceKey<TService>): TService;
+  register<TService>(key: PlatformServiceKey<TService>, service: TService): void;
+  list(): string[];
+};
+
+export type PlatformCapabilityDescriptor = {
+  id: string;
+  service?: string;
+  description?: string;
+  details?: Record<string, unknown>;
+};
+```
+
+设计原则：
+
+- `capabilities` 负责 feature detection、权限状态、DevTools 可见性。
+- `services` 负责实际高层能力访问。
+- 标准服务必须能通过 `platform.services.fs` 直接访问，也必须注册为标准 service key，例如 `platform.fs`、`platform.storage`、`platform.window`。
+- service 可以是底层 adapter 包装，也可以是由多个标准端口组合出的高层服务。
+- 业务模块依赖 service key / service interface，不依赖 Tauri、DOM 或 adapter 私有对象。
+- 缺失 required service 必须抛明确错误；optional service 由调用方降级。
+
+示例服务：
+
+- `platform.saveLocation`：基于 fs/path/storage 组合出存档目录策略。
+- `platform.assetSourceResolver`：把 `resource`、`platform-file`、`url` 转成 loader 可消费的 source。
+- `platform.modMounts`：管理用户授权的 Mod 目录。
+- `platform.editorWorkspace`：编辑器工作区、recent files、import/export。
+- `platform.windowManager`：多窗口、窗口布局、窗口间消息。
+- `platform.systemMenu`：桌面菜单和命令。
+- `platform.notifications`：系统通知。
+- `platform.telemetry`：可关闭的诊断/遥测上报。
+- `platform.cloudStorage`：云存档或远端同步。
+
+这些服务不进入 Platform Core 顶层字段。Platform Core 只定义注册、查询、错误和边界。
 
 ## 文件系统
 

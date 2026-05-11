@@ -73,12 +73,16 @@
 
 模块设计：`docs/modules/platform.md`
 
-预期新增：
+当前状态：已实现。
+
+已实现：
 
 - `@gamekit/platform-core`
 - `@gamekit/platform-web`
 - `@gamekit/platform-tauri`
 - Tauri capabilities 最小权限样例
+- platform conformance helper
+- Sandbox Web Platform 状态展示
 
 完成定义：
 

@@ -3,6 +3,9 @@ import type { SandboxRuntime } from "../game";
 export type SandboxUiHandles = {
   rendererRoot: HTMLDivElement;
   status: HTMLDivElement;
+  platformId: HTMLElement;
+  platformStorage: HTMLElement;
+  platformFs: HTMLElement;
   entityCount: HTMLElement;
   tick: HTMLElement;
   elapsed: HTMLElement;
@@ -48,6 +51,17 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
           </dl>
         </article>
 
+        <article class="panel">
+          <div class="panel__title">
+            <span>Platform</span>
+            <strong data-ui="platform-id">web</strong>
+          </div>
+          <dl class="metrics">
+            <div><dt>Storage</dt><dd data-ui="platform-storage">checking</dd></div>
+            <div><dt>FS</dt><dd data-ui="platform-fs">checking</dd></div>
+          </dl>
+        </article>
+
         <article class="panel panel--events">
           <div class="panel__title">
             <span>EventBus</span>
@@ -62,6 +76,9 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
   return {
     rendererRoot: readElement(appElement, "renderer-root", HTMLDivElement),
     status: readElement(appElement, "status", HTMLDivElement),
+    platformId: readElement(appElement, "platform-id", HTMLElement),
+    platformStorage: readElement(appElement, "platform-storage", HTMLElement),
+    platformFs: readElement(appElement, "platform-fs", HTMLElement),
     entityCount: readElement(appElement, "entity-count", HTMLElement),
     tick: readElement(appElement, "tick", HTMLElement),
     elapsed: readElement(appElement, "elapsed", HTMLElement),
@@ -69,6 +86,21 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
     systems: readElement(appElement, "systems", HTMLElement),
     events: readElement(appElement, "events", HTMLOListElement)
   };
+}
+
+export type SandboxPlatformStatus = {
+  id: string;
+  storage: string;
+  fs: string;
+};
+
+export function updatePlatformStatus(
+  handles: SandboxUiHandles,
+  status: SandboxPlatformStatus
+): void {
+  handles.platformId.textContent = status.id;
+  handles.platformStorage.textContent = status.storage;
+  handles.platformFs.textContent = status.fs;
 }
 
 export function updateSandboxHud(handles: SandboxUiHandles, sandbox: SandboxRuntime): void {

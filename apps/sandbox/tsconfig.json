@@ -10,6 +10,7 @@
     { "path": "../../packages/core" },
     { "path": "../../packages/event-bus" },
     { "path": "../../packages/game-runtime" },
+    { "path": "../../packages/platform-web" },
     { "path": "../../packages/renderer-core" },
     { "path": "../../packages/renderer-phaser" },
     { "path": "../../packages/test-utils" },

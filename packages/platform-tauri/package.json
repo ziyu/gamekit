@@ -1,0 +1,49 @@
+{
+  "name": "@gamekit/platform-tauri",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run --root ../.. --config vitest.config.ts packages/platform-tauri/test --passWithNoTests",
+    "lint": "oxlint ."
+  },
+  "dependencies": {
+    "@gamekit/platform-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@gamekit/test-utils": "workspace:*"
+  },
+  "peerDependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-clipboard-manager": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.0.0",
+    "@tauri-apps/plugin-fs": "^2.0.0",
+    "@tauri-apps/plugin-shell": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@tauri-apps/api": {
+      "optional": true
+    },
+    "@tauri-apps/plugin-clipboard-manager": {
+      "optional": true
+    },
+    "@tauri-apps/plugin-dialog": {
+      "optional": true
+    },
+    "@tauri-apps/plugin-fs": {
+      "optional": true
+    },
+    "@tauri-apps/plugin-shell": {
+      "optional": true
+    }
+  }
+}

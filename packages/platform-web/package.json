@@ -1,5 +1,5 @@
 {
-  "name": "@gamekit/test-utils",
+  "name": "@gamekit/platform-web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,13 +13,13 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run --root ../.. --config vitest.config.ts packages/test-utils/test --passWithNoTests",
+    "test": "vitest run --root ../.. --config vitest.config.ts packages/platform-web/test --passWithNoTests",
     "lint": "oxlint ."
   },
   "dependencies": {
-    "@gamekit/event-bus": "workspace:*",
-    "@gamekit/platform-core": "workspace:*",
-    "@gamekit/renderer-core": "workspace:*",
-    "@gamekit/world": "workspace:*"
+    "@gamekit/platform-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@gamekit/test-utils": "workspace:*"
   }
 }
