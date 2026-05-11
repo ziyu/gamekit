@@ -10,6 +10,8 @@
     { "path": "../../packages/core" },
     { "path": "../../packages/event-bus" },
     { "path": "../../packages/game-runtime" },
+    { "path": "../../packages/input-core" },
+    { "path": "../../packages/input-dom" },
     { "path": "../../packages/platform-web" },
     { "path": "../../packages/renderer-core" },
     { "path": "../../packages/renderer-phaser" },

@@ -6,6 +6,8 @@ export type SandboxUiHandles = {
   platformId: HTMLElement;
   platformStorage: HTMLElement;
   platformFs: HTMLElement;
+  inputAction: HTMLElement;
+  inputContext: HTMLElement;
   entityCount: HTMLElement;
   tick: HTMLElement;
   elapsed: HTMLElement;
@@ -62,6 +64,17 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
           </dl>
         </article>
 
+        <article class="panel">
+          <div class="panel__title">
+            <span>Input</span>
+            <strong data-ui="input-action">waiting</strong>
+          </div>
+          <dl class="metrics">
+            <div><dt>Context</dt><dd data-ui="input-context">global</dd></div>
+            <div><dt>Source</dt><dd>DOM adapter</dd></div>
+          </dl>
+        </article>
+
         <article class="panel panel--events">
           <div class="panel__title">
             <span>EventBus</span>
@@ -79,6 +92,8 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
     platformId: readElement(appElement, "platform-id", HTMLElement),
     platformStorage: readElement(appElement, "platform-storage", HTMLElement),
     platformFs: readElement(appElement, "platform-fs", HTMLElement),
+    inputAction: readElement(appElement, "input-action", HTMLElement),
+    inputContext: readElement(appElement, "input-context", HTMLElement),
     entityCount: readElement(appElement, "entity-count", HTMLElement),
     tick: readElement(appElement, "tick", HTMLElement),
     elapsed: readElement(appElement, "elapsed", HTMLElement),
@@ -86,6 +101,16 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
     systems: readElement(appElement, "systems", HTMLElement),
     events: readElement(appElement, "events", HTMLOListElement)
   };
+}
+
+export type SandboxInputStatus = {
+  action: string;
+  context: string;
+};
+
+export function updateInputStatus(handles: SandboxUiHandles, status: SandboxInputStatus): void {
+  handles.inputAction.textContent = status.action;
+  handles.inputContext.textContent = status.context;
 }
 
 export type SandboxPlatformStatus = {

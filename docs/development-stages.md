@@ -97,12 +97,17 @@
 
 模块设计：`docs/modules/input.md`
 
-预期新增：
+当前状态：已实现。
+
+已实现：
 
 - `@gamekit/input-core`
 - `@gamekit/input-dom`
 - `@gamekit/input-phaser`
 - InputAction / InputBinding / InputContext / InputRouter
+- DOM input adapter
+- Phaser input adapter fake-driver contract
+- Sandbox Input 状态展示和低频 `input.action` 事件桥接
 
 完成定义：
 
@@ -110,6 +115,7 @@
 - Sandbox 能观察一个最小 input action。
 - Renderer 不重新引入 `onInput`。
 - EventBus 只接收低频输入事实或 gameplay command，不接收高频 raw event。
+- binding、context 优先级、adapter normalization 有测试覆盖。
 
 ## Phase 5：Camera Core
 

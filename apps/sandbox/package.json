@@ -13,6 +13,8 @@
     "@gamekit/core": "workspace:*",
     "@gamekit/event-bus": "workspace:*",
     "@gamekit/game-runtime": "workspace:*",
+    "@gamekit/input-core": "workspace:*",
+    "@gamekit/input-dom": "workspace:*",
     "@gamekit/platform-web": "workspace:*",
     "@gamekit/renderer-core": "workspace:*",
     "@gamekit/renderer-phaser": "workspace:*",

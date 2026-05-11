@@ -1,0 +1,125 @@
+import { describe, expect, it } from "vitest";
+import { createInputRouter, matchesInputBinding, type NormalizedInputEvent } from "../src";
+
+describe("input binding", () => {
+  it("matches device, phase, code, button, and modifiers", () => {
+    expect(
+      matchesInputBinding(
+        {
+          device: "keyboard",
+          phase: "pressed",
+          code: "KeyK",
+          modifiers: ["shift"]
+        },
+        input({ code: "KeyK", modifiers: { shift: true } })
+      )
+    ).toBe(true);
+
+    expect(
+      matchesInputBinding(
+        {
+          device: "keyboard",
+          phase: "pressed",
+          code: "KeyK",
+          modifiers: ["ctrl"]
+        },
+        input({ code: "KeyK", modifiers: { shift: true } })
+      )
+    ).toBe(false);
+  });
+});
+
+describe("createInputRouter", () => {
+  it("emits actions for matching bindings", () => {
+    const router = createInputRouter();
+    const observed: string[] = [];
+
+    router.registerAction({
+      id: "game.confirm",
+      name: "Confirm",
+      defaultBindings: [{ device: "keyboard", code: "Enter", phase: "pressed" }]
+    });
+    router.onAction((event) => observed.push(event.actionId));
+
+    const events = router.handle(input({ code: "Enter" }));
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      actionId: "game.confirm",
+      contextId: "global",
+      value: 1
+    });
+    expect(observed).toEqual(["game.confirm"]);
+  });
+
+  it("uses context priority and capture to block lower contexts", () => {
+    const router = createInputRouter();
+
+    router.registerAction({
+      id: "game.confirm",
+      name: "Confirm",
+      defaultBindings: [{ device: "keyboard", code: "Enter", phase: "pressed" }]
+    });
+    router.registerAction({
+      id: "ui.close_window",
+      name: "Close",
+      defaultBindings: [{ device: "keyboard", code: "Enter", phase: "pressed" }]
+    });
+    router.addContext({
+      id: "gameplay",
+      priority: 10,
+      actionIds: ["game.confirm"]
+    });
+    router.addContext({
+      id: "modal",
+      priority: 100,
+      actionIds: ["ui.close_window"]
+    });
+
+    expect(router.handle(input({ code: "Enter" })).map((event) => event.actionId)).toEqual([
+      "ui.close_window"
+    ]);
+
+    router.disableContext("modal");
+
+    expect(router.handle(input({ code: "Enter" })).map((event) => event.actionId)).toEqual([
+      "game.confirm"
+    ]);
+  });
+
+  it("allows non-capturing contexts to pass through", () => {
+    const router = createInputRouter();
+
+    router.registerAction({
+      id: "debug.toggle",
+      name: "Debug",
+      defaultBindings: [{ device: "keyboard", code: "Backquote", phase: "pressed" }]
+    });
+    router.registerAction({
+      id: "game.confirm",
+      name: "Confirm",
+      defaultBindings: [{ device: "keyboard", code: "Backquote", phase: "pressed" }]
+    });
+    router.addContext({
+      id: "debug",
+      priority: 100,
+      actionIds: ["debug.toggle"],
+      capture: false
+    });
+
+    expect(router.handle(input({ code: "Backquote" })).map((event) => event.actionId)).toEqual([
+      "debug.toggle",
+      "game.confirm"
+    ]);
+  });
+});
+
+function input(patch: Partial<NormalizedInputEvent> = {}): NormalizedInputEvent {
+  return {
+    id: "input-1",
+    device: "keyboard",
+    phase: "pressed",
+    timestamp: 10,
+    ...patch
+  };
+}
