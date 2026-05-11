@@ -1,0 +1,19 @@
+{
+  "name": "@gamekit/event-bus",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run --root ../.. --config vitest.config.ts packages/event-bus/test --passWithNoTests",
+    "lint": "eslint ."
+  }
+}

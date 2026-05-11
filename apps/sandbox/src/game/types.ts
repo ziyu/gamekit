@@ -1,0 +1,25 @@
+import type { GameEvent } from "@gamekit/event-bus";
+import type { GameRuntime } from "@gamekit/game-runtime";
+import type { EntityId } from "@gamekit/world";
+
+export type SandboxEntitySnapshot = {
+  id: EntityId;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+};
+
+export type SandboxSnapshot = {
+  running: boolean;
+  clock: ReturnType<GameRuntime["clock"]["snapshot"]>;
+  entityCount: number;
+  entities: SandboxEntitySnapshot[];
+  events: GameEvent[];
+};
+
+export type SandboxRuntime = {
+  runtime: GameRuntime;
+  events: GameEvent[];
+  snapshot(): SandboxSnapshot;
+};

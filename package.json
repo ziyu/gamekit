@@ -1,0 +1,33 @@
+{
+  "name": "gamekit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --filter=sandbox",
+    "test": "turbo run test",
+    "test:unit": "turbo run test",
+    "test:vitest": "turbo run test",
+    "lint": "turbo run lint",
+    "format": "prettier --check .",
+    "bench:world": "tsx scripts/world-benchmark.ts"
+  },
+  "dependencies": {
+    "@gamekit/world": "workspace:*",
+    "@gamekit/world-koota": "workspace:*"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.26.0",
+    "@types/node": "^22.15.17",
+    "eslint": "^9.26.0",
+    "prettier": "^3.5.3",
+    "turbo": "^2.6.1",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.32.0",
+    "vite": "^6.3.5",
+    "vitest": "^3.1.3"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/world" },
+    { "path": "./packages/world-koota" },
+    { "path": "./packages/event-bus" },
+    { "path": "./packages/game-runtime" },
+    { "path": "./packages/test-utils" },
+    { "path": "./apps/sandbox" }
+  ]
+}

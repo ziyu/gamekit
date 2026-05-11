@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": true
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/event-bus" },
+    { "path": "../../packages/game-runtime" },
+    { "path": "../../packages/world" },
+    { "path": "../../packages/world-koota" }
+  ]
+}
