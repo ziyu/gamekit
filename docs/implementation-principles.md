@@ -20,6 +20,19 @@
 
 若答案不清晰，先不要把库暴露到公共接口。
 
+## 扩展/逃生口
+
+通用架构不能接管一切。热点路径、复杂表现、平台能力和第三方生态接入需要受控 escape hatch。
+
+要求：
+
+- 默认路径保持稳定协议和可调试性。
+- Escape hatch 必须由 adapter 创建和释放。
+- Runtime 仍负责生命周期。
+- 调用方必须明确知道自己进入 renderer/platform/object-specific 路径。
+- DevTools 需要能标记 escaped/native/direct/custom path。
+- Escape hatch 不作为默认数据驱动路径。
+
 ## 可测试优先
 
 每个 facade/adapter 必须有契约测试。
@@ -29,6 +42,7 @@
 - `@gamekit/world` 的实现必须通过 world conformance tests。
 - `@gamekit/event-bus` 必须测试顺序、取消订阅、timestamp/source。
 - `@gamekit/game-runtime` 必须测试生命周期和系统调度顺序。
+- 新增 facade 必须补 conformance helper；新增 adapter 必须通过 facade 契约测试。
 
 ## 代码质量
 

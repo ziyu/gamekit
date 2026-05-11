@@ -33,7 +33,8 @@ GameKit 的长期目标是支撑多个独立游戏快速开发，同时保持架
 - 支持数据驱动：Actor、Ability、Effect、TCA Rule、AssetManifest、UI Window Definition 等由数据定义。
 - 保持可解释性：事件、规则、能力、效果、资源、系统执行都应能被 trace/debug。
 - 支撑长期复用：具体游戏通过 GameModule、DataPack、Renderer Adapter、UI Window 扩展。
-- 保持性能分层：高频逻辑在 ECS system，低频规则在 TCA/GAS/EventBus，表现动画在 Cue/Animation，UI 在 React/Zustand。
+- 保持性能分层：高频逻辑在 ECS system，低频规则在 TCA/GAS/EventBus，表现层在 Renderer/Cue/Camera，UI 在 React/Zustand。
+- 保持平台独立：文件、窗口、权限、输入、镜头、资源来源都通过 GameKit 协议或 adapter 接入。
 
 ## 非目标
 
@@ -46,6 +47,8 @@ GameKit 不追求成为完整通用引擎。
 - 不把 React 放进主循环。
 - 不把 TCA/GAS 用作每帧高频逻辑。
 - 不在核心包中直接绑定 Phaser、Koota、GSAP、shadcn/ui 等具体库。
+- 不把 Tauri、DOM、Phaser input、renderer camera 等平台/后端能力直接泄漏给 gameplay。
+- 不为了工具本身引入独立 Effect/Fx/Animation 业务层；它们应按需存在于基础设施或表现层内部。
 - 不为了提前泛化而设计没有真实使用场景的复杂抽象。
 
 ## 设计信条

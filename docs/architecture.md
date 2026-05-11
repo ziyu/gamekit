@@ -4,20 +4,68 @@
 
 GameKit 采用“薄内核 + 成熟库 + 自定义协议 + Adapter”的架构。
 
-核心包负责稳定协议：
+成熟库负责底层能力，GameKit 负责稳定协议、组合边界、数据驱动和可解释性。
 
-- `@gamekit/core`：错误、结果、Registry、GameModule、RNG、Clock。
-- `@gamekit/world`：ECS facade，只暴露 GameKit 自己的组件和世界接口。
-- `@gamekit/world-koota`：Koota adapter，第三方 ECS 只存在于该包内部。
-- `@gamekit/event-bus`：低频 gameplay/runtime event。
-- `@gamekit/game-runtime`：模块安装、系统调度、生命周期。
-- `@gamekit/renderer-core`：RendererAdapter facade，只描述通用渲染对象、对象树、变更 patch 和生命周期协议。
-- `@gamekit/renderer-phaser`：Phaser adapter，Phaser 生命周期、Scene、Canvas、渲染对象类型映射只存在于该包内部。
-- `@gamekit/input`：后续独立输入 facade，负责设备输入、动作映射、上下文、焦点和输入事件。
+## 总体分层
 
-应用包负责验证真实使用方式：
+```txt
+Game App
+  ↓
+Game Modules / DataPack
+  ↓
+Gameplay Framework
+  ↓
+Core Runtime
+  ↓
+Adapters / Libraries
+```
 
-- `apps/sandbox`：runtime/renderer 垂直切片，不承载长期玩法代码。
+## 包结构
+
+当前和规划包拆分如下：
+
+```txt
+packages/
+  core/
+  event-bus/
+  game-runtime/
+  world/
+  world-koota/
+
+  renderer-core/
+  renderer-phaser/
+  renderer-three/
+
+  input-core/
+  input-dom/
+  input-phaser/
+  input-tauri/
+
+  camera-core/
+  camera-phaser/
+  camera-three/
+
+  platform-core/
+  platform-web/
+  platform-tauri/
+
+  asset/
+  asset-phaser/
+  data/
+  tca/
+  gas/
+  ui-core/
+  react-ui/
+  save/
+  devtools/
+  test-utils/
+```
+
+说明：
+
+- `@gamekit/fx` 不作为独立业务包规划；Effect 可作为 Asset/Data/Save/Platform/Editor 等基础设施包内部实现选择。
+- `@gamekit/animation` 不作为早期独立包规划；动画主要归入 RenderObject、Renderer Adapter、Cue/Presentation、UI、Camera。
+- 模块长期设计见 `docs/modules/`。
 
 ## 依赖方向
 
@@ -29,41 +77,65 @@ adapter packages → facade packages
 game-runtime → core / world / event-bus
 world-koota → world / core / koota
 renderer-phaser → renderer-core / core / phaser
-renderer-core → event-bus(type only)
-input → core / event-bus
-world → 无第三方 ECS 依赖
+renderer-three → renderer-core / core / three
+input-dom/input-phaser/input-tauri → input-core
+camera-phaser/camera-three → camera-core
+platform-web/platform-tauri → platform-core
+asset-phaser → asset / renderer-phaser
+react-ui → ui-core
 ```
 
 禁止方向：
 
 - `@gamekit/world` 依赖 Koota、bitecs 或任意具体 ECS。
-- 业务模块直接导入 Koota、Phaser、GSAP 等第三方库。
-- `@gamekit/renderer-core` 暴露 Phaser、DOM-heavy 实现或 ECS 类型。
-- `@gamekit/renderer-core` 把公共协议限定为 sprite、mesh、particle 等任意单一渲染类型。
-- Renderer adapter 直接拥有 gameplay input 语义、快捷键、动作映射或 UI 焦点。
+- `@gamekit/renderer-core` 依赖 Phaser、Three.js、DOM-heavy 实现或 ECS。
+- `@gamekit/input-core` 依赖 DOM、Phaser、Tauri。
+- `@gamekit/camera-core` 依赖 Phaser、Three.js。
+- `@gamekit/platform-core` 依赖 Tauri 或浏览器私有 API。
+- 业务模块直接导入 Koota、Phaser、Three.js、GSAP、Tauri、shadcn/ui 等第三方库。
 - Runtime 包直接依赖具体游戏 app。
 
-## Renderer 边界
+## 模块设计索引
 
-Renderer 采用和 ECS 相同的 facade + adapter 结构：
+- Core / Runtime：`docs/modules/core-runtime.md`
+- World：`docs/modules/world.md`
+- Renderer：`docs/modules/renderer.md`
+- Input：`docs/modules/input.md`
+- Camera：`docs/modules/camera.md`
+- Platform：`docs/modules/platform.md`
+- Asset / Data：`docs/modules/asset-data.md`
+- TCA：`docs/modules/tca.md`
+- GAS：`docs/modules/gas.md`
+- UI：`docs/modules/ui.md`
+- Save：`docs/modules/save.md`
+- DevTools：`docs/modules/devtools.md`
+- Hero Road：`docs/modules/hero-road.md`
 
-- game module、runtime system 和 gameplay 数据只依赖 `@gamekit/renderer-core` 的 `RendererAdapter`。
-- `@gamekit/renderer-phaser` 可以依赖 Phaser，但不得从公共出口导出 Phaser 类型。
-- Renderer 公共协议以通用 render object 为中心，不以 `Sprite` API 为中心。
-- Render object 类型由 adapter 声明和解释；core 只定义稳定 envelope、对象生命周期、父子关系和 capability 查询。
-- 复合对象是一等能力，对象树可以混合不同 adapter-defined render type。
-- Phase 2 的 renderer lifecycle 由 app 持有：app 提供 DOM container，boot adapter，再把 adapter 注入 render sync module。
-- Runtime 不持有 DOM container，也不直接 boot renderer。后续如果改为 runtime-owned lifecycle，必须通过 ADR 记录。
-- Asset 系统尚未接入前，adapter 可以提供内置 debug texture；真实资源加载从 Asset System 阶段开始收口。
-- 详细决策背景和取舍见 `docs/adr/0003-general-render-objects-and-input-decoupling.md`。
+## 关键边界
 
-## Input 边界
+### Renderer
 
-Input 是独立系统，不属于 renderer core。
+Renderer 公共协议以通用 render object 为中心，不以 Sprite API 为中心。Render type 由 adapter 声明和解释，复合对象是一等能力。
 
-- Renderer 可以暴露 view/canvas/container 或可选 picking/hit-test adapter，但不定义 gameplay input event。
-- 设备输入、动作映射、输入上下文和 UI focus 都归 `@gamekit/input` 或 UI/Input adapter 设计。
-- 未来 input 可以消费 renderer 的对象命中结果，但依赖方向应是 input adapter 使用 renderer capability，而不是 renderer 拥有 input module。
+详细设计见 `docs/modules/renderer.md`，决策背景见 `docs/adr/0003-general-render-objects-and-input-decoupling.md`。
+
+### Input
+
+Input 是独立系统，负责 raw input、action mapping、context、focus 和 command routing。Renderer 可以提供 view/picking/hit-test capability，但不拥有 gameplay input 语义。
+
+详细设计见 `docs/modules/input.md`。
+
+### Camera
+
+Camera 是 Runtime 能力，不是 Phaser 或 Three.js 私有对象。Input、TCA、Cue、Editor 都通过 CameraController 控制镜头。
+
+详细设计见 `docs/modules/camera.md`。
+
+### Platform
+
+Platform 隔离 Web/Tauri/未来平台差异。文件、窗口、权限、路径、存储和系统能力都通过 platform-core。
+
+详细设计见 `docs/modules/platform.md`。
 
 ## 包内拆分约定
 

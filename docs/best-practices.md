@@ -37,6 +37,7 @@
 - 不在高频路径里做 JSON path 解析、动态字符串匹配、深拷贝或复杂 schema 校验。
 - 高频状态留在 ECS/world 内，React/UI 只消费低频快照。
 - EventBus 只用于低频事实，不用于每帧 position、render object patch、pointer move 广播。
+- TCA/GAS 不用于每帧高频微逻辑；输入、镜头、渲染同步等高频路径走 system 或专用 runtime state。
 
 数据结构：
 
@@ -45,6 +46,7 @@
 - 大规模集合更新优先批处理，避免在循环里触发 UI 或外部副作用。
 - renderer sync 只做状态镜像：创建/销毁 renderer object 时可以发低频事件，逐帧 transform/visibility/layer patch 不进入 EventBus。
 - Phaser 等大型 adapter 依赖应隔离在 adapter 包中；app bundle 体积告警先记录，等 Asset/加载阶段再做 code splitting 或 chunk 策略。
+- 海量 tile、particle、instanced mesh、复杂骨骼/挂点等热点路径应使用 adapter 提供的受控 handle 或 batch API，不强迫每帧走通用 patch。
 
 测量：
 
