@@ -1,0 +1,37 @@
+import { createTcaModule } from "@gamekit/tca";
+import type { DataRegistry } from "@gamekit/data";
+import type { StandardServiceBuildContext, StandardTcaGameModuleOptions } from "../types";
+import { resolveStandardValue } from "../resolve";
+
+export function createStandardTcaModule<TContext>(
+  ctx: StandardServiceBuildContext<TContext>,
+  options: StandardTcaGameModuleOptions<TContext>
+) {
+  const dataRegistry = resolveTcaDataRegistry(ctx, options);
+  const definitions =
+    options.definitions === undefined ? undefined : resolveStandardValue(ctx, options.definitions);
+  const traceStore =
+    options.traceStore === undefined ? undefined : resolveStandardValue(ctx, options.traceStore);
+
+  return createTcaModule({
+    id: options.id ?? "gamekit.tca",
+    dataRegistry,
+    ruleKind: options.ruleKind,
+    definitions,
+    traceStore,
+    onRuntime(runtime) {
+      options.onRuntime?.(ctx, runtime);
+    }
+  });
+}
+
+function resolveTcaDataRegistry<TContext>(
+  ctx: StandardServiceBuildContext<TContext>,
+  options: StandardTcaGameModuleOptions<TContext>
+): DataRegistry {
+  const registry = options.dataRegistry?.(ctx) ?? ctx.state.data;
+  if (!registry) {
+    throw new Error("Standard TCA game module requires a data registry");
+  }
+  return registry;
+}

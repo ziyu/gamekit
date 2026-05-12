@@ -37,16 +37,12 @@ export const sandboxAppDefinition = defineGameApp({
       dependencies: ["data", "renderer"]
     },
     {
-      id: "camera",
+      id: "input",
       dependencies: ["renderer"]
     },
     {
-      id: "input",
-      dependencies: ["renderer", "camera"]
-    },
-    {
       id: "game",
-      dependencies: ["assets", "renderer", "camera"]
+      dependencies: ["data", "assets", "renderer", "input"]
     }
   ]
 });

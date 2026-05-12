@@ -24,6 +24,7 @@
     "@gamekit/game-runtime": "workspace:*",
     "@gamekit/input-core": "workspace:*",
     "@gamekit/platform-core": "workspace:*",
-    "@gamekit/renderer-core": "workspace:*"
+    "@gamekit/renderer-core": "workspace:*",
+    "@gamekit/tca": "workspace:*"
   }
 }

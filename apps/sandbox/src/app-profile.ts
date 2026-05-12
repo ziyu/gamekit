@@ -1,7 +1,10 @@
 import { createAssetManager, type AssetLoaderAdapter, type AssetManager } from "@gamekit/asset";
-import { createStandardAppProfile, type AppProfile } from "@gamekit/app-host";
+import {
+  createStandardAppProfile,
+  type AppProfile,
+  type StandardCameraActionBinding
+} from "@gamekit/app-host";
 import { createPhaserAssetAdapter } from "@gamekit/asset-phaser";
-import type { CameraController } from "@gamekit/camera-core";
 import { createPhaserCameraAdapter, type PhaserCameraAdapter } from "@gamekit/camera-phaser";
 import type { DataRegistry } from "@gamekit/data";
 import { createInputRouter, type InputRouter } from "@gamekit/input-core";
@@ -14,13 +17,15 @@ import {
   type PhaserRendererAssetRuntime,
   type PhaserRendererDriverRuntime
 } from "@gamekit/renderer-phaser";
-import { createSandboxCameraController } from "./camera";
+import { createTcaTraceStore } from "@gamekit/tca";
+import { createSandboxCameraController, SANDBOX_CAMERA_PAN_STEP } from "./camera";
 import {
   createSandboxDataRegistry,
   createSandboxRuntime,
   SANDBOX_RENDER_SIZE,
   type SandboxRuntime
 } from "./game";
+import { createSandboxTcaDefinitions } from "./game/modules/sandbox-tca-definitions";
 import {
   configureSandboxInputRouter,
   resolveSandboxInputScope,
@@ -37,7 +42,6 @@ export type SandboxAppContext = {
   renderer?: RendererAdapter | undefined;
   assetManager?: AssetManager | undefined;
   inputRouter?: InputRouter | undefined;
-  camera?: CameraController | undefined;
   cameraAdapter?: PhaserCameraAdapter | undefined;
   sandbox?: SandboxRuntime | undefined;
   phaserRuntime?: PhaserRendererDriverRuntime | undefined;
@@ -65,6 +69,7 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
   });
   const camera = createSandboxCameraController(SANDBOX_RENDER_SIZE);
   const inputRouter = createInputRouter();
+  const tcaTraceStore = createTcaTraceStore({ limit: 20 });
 
   return createStandardAppProfile({
     id: "web",
@@ -78,7 +83,6 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
       context.renderer = state.renderer;
       context.assetManager = state.assets;
       context.inputRouter = state.input;
-      context.camera = state.camera;
       context.phaserRuntime = refs.phaserRuntime;
       context.sandbox = refs.sandbox;
     },
@@ -113,14 +117,6 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
       assets: {
         manager: assetManager
       },
-      camera: {
-        controller: camera,
-        apply({ context }, camera) {
-          context.cameraAdapter = createCameraAdapter(refs.phaserRuntime);
-          context.cameraAdapter?.applyCameraState(camera.getState());
-          updateCameraStatus(context.ui, camera.getState());
-        }
-      },
       input: {
         router: inputRouter,
         configure({ context }, inputRouter) {
@@ -139,11 +135,37 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
         }
       },
       game: {
-        createRuntime({ context, state }) {
+        standardModules: {
+          tca: {
+            id: "sandbox.tca",
+            definitions: createSandboxTcaDefinitions(),
+            traceStore: tcaTraceStore
+          },
+          camera: {
+            id: "sandbox.camera",
+            controller: camera,
+            actions: sandboxCameraActions(),
+            smoothing: {
+              enabled: true,
+              stiffness: 12,
+              positionEpsilon: 0.1,
+              zoomEpsilon: 0.002
+            },
+            sync({ context }, camera, _action, state) {
+              ensureCameraAdapter(context, refs.phaserRuntime)?.applyCameraState(state);
+              updateCameraStatus(context.ui, camera.getState());
+            }
+          }
+        },
+        createRuntime({ context, state }, modules) {
+          ensureCameraAdapter(context, refs.phaserRuntime)?.applyCameraState(camera.getState());
+          updateCameraStatus(context.ui, camera.getState());
           const sandbox = createSandboxRuntime({
             renderer: requireStandardState(state.renderer, "renderer"),
             renderSize: SANDBOX_RENDER_SIZE,
-            dataRegistry: requireStandardState(state.data, "data")
+            dataRegistry: requireStandardState(state.data, "data"),
+            modules,
+            tcaTraceStore
           });
           refs.sandbox = sandbox;
           context.sandbox = sandbox;
@@ -152,6 +174,49 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
       }
     }
   });
+}
+
+function sandboxCameraActions(): StandardCameraActionBinding[] {
+  return [
+    {
+      actionId: "camera.pan_up",
+      phases: ["pressed", "held"],
+      pan: { y: -SANDBOX_CAMERA_PAN_STEP }
+    },
+    {
+      actionId: "camera.pan_down",
+      phases: ["pressed", "held"],
+      pan: { y: SANDBOX_CAMERA_PAN_STEP }
+    },
+    {
+      actionId: "camera.pan_left",
+      phases: ["pressed", "held"],
+      pan: { x: -SANDBOX_CAMERA_PAN_STEP }
+    },
+    {
+      actionId: "camera.pan_right",
+      phases: ["pressed", "held"],
+      pan: { x: SANDBOX_CAMERA_PAN_STEP }
+    },
+    {
+      actionId: "camera.zoom_in",
+      phases: ["pressed", "scrolled"],
+      zoom: { delta: 1, wheel: true, anchorFromInput: true }
+    },
+    {
+      actionId: "camera.zoom_out",
+      phases: ["pressed"],
+      zoom: { delta: -1 }
+    }
+  ];
+}
+
+function ensureCameraAdapter(
+  context: SandboxAppContext,
+  runtime: PhaserRendererDriverRuntime | undefined
+): PhaserCameraAdapter | undefined {
+  context.cameraAdapter ??= createCameraAdapter(runtime);
+  return context.cameraAdapter;
 }
 
 function createLazyPhaserAssetAdapter(options: {

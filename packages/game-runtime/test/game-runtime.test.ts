@@ -115,4 +115,61 @@ describe("createGame", () => {
 
     expect(updates).toBe(1);
   });
+
+  it("runs module cleanup in reverse install order on dispose", () => {
+    const world = createMemoryWorld();
+    const eventBus = createEventBus({ clock: () => 0 });
+    const calls: string[] = [];
+
+    const first = defineGameModule<GameInstallContext>({
+      id: "first",
+      install() {
+        calls.push("first.install");
+        return () => {
+          calls.push("first.cleanup");
+        };
+      }
+    });
+    const second = defineGameModule<GameInstallContext>({
+      id: "second",
+      install() {
+        calls.push("second.install");
+        return {
+          dispose() {
+            calls.push("second.dispose");
+          }
+        };
+      }
+    });
+
+    const runtime = createGame({ modules: [first, second], world, eventBus, seed: "seed" });
+    runtime.dispose();
+    runtime.dispose();
+
+    expect(calls).toEqual(["first.install", "second.install", "second.dispose", "first.cleanup"]);
+  });
+
+  it("does not run module cleanup on stop", () => {
+    const world = createMemoryWorld();
+    const eventBus = createEventBus({ clock: () => 0 });
+    const calls: string[] = [];
+    const module = defineGameModule<GameInstallContext>({
+      id: "cleanup.module",
+      install() {
+        return () => {
+          calls.push("cleanup");
+        };
+      }
+    });
+
+    const runtime = createGame({ modules: [module], world, eventBus, seed: "seed" });
+    runtime.start();
+    runtime.stop();
+
+    expect(calls).toEqual([]);
+
+    runtime.dispose();
+
+    expect(calls).toEqual(["cleanup"]);
+  });
 });

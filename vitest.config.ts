@@ -22,6 +22,7 @@ export default defineConfig({
       "@gamekit/asset-phaser": new URL("./packages/asset-phaser/src/index.ts", import.meta.url)
         .pathname,
       "@gamekit/app-host": new URL("./packages/app-host/src/index.ts", import.meta.url).pathname,
+      "@gamekit/tca": new URL("./packages/tca/src/index.ts", import.meta.url).pathname,
       "@gamekit/camera-core": new URL("./packages/camera-core/src/index.ts", import.meta.url)
         .pathname,
       "@gamekit/input-core": new URL("./packages/input-core/src/index.ts", import.meta.url)

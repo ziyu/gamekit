@@ -31,6 +31,32 @@ describe("sandbox runtime", () => {
     expect(sandbox.snapshot().events.map((event) => event.type)).toContain("runtime.started");
   });
 
+  it("runs sandbox TCA rules from data pack events", () => {
+    const sandbox = createSandboxRuntime("tca-seed");
+
+    sandbox.runtime.eventBus.emit(
+      "input.action",
+      { actionId: "game.confirm", contextId: "gameplay", phase: "pressed", value: 1 },
+      "test"
+    );
+
+    const trace = sandbox
+      .snapshot()
+      .tcaTraces.find((entry) => entry.ruleId === "rule.sandbox.confirm_signal");
+
+    expect(sandbox.snapshot().tcaRuleCount).toBe(4);
+    expect(trace).toMatchObject({
+      ruleId: "rule.sandbox.confirm_signal",
+      status: "passed",
+      actions: [
+        { type: "sandbox.log", status: "executed" },
+        { type: "event.emit", status: "executed" }
+      ]
+    });
+    expect(sandbox.snapshot().events.map((event) => event.type)).toContain("sandbox.tca_log");
+    expect(sandbox.snapshot().events.map((event) => event.type)).toContain("sandbox.tca_confirmed");
+  });
+
   it("syncs renderable entities to the renderer", async () => {
     const renderer = createMemoryRenderer();
     const sandbox = createSandboxRuntime({
@@ -76,7 +102,8 @@ describe("sandbox runtime", () => {
     expect(snapshot.kinds).toContain("ability");
     expect(snapshot.kinds).toContain("biome");
     expect(snapshot.kinds).toContain("spawnProfile");
-    expect(snapshot.documents).toHaveLength(9);
+    expect(snapshot.kinds).toContain("tcaRule");
+    expect(snapshot.documents).toHaveLength(13);
     expect(snapshot.references).toContainEqual(
       expect.objectContaining({
         from: { kind: "renderObject", id: "render.sandbox.entity" },

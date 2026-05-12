@@ -34,6 +34,10 @@ export type SandboxUiHandles = {
   assetRegistered: HTMLElement;
   assetFailed: HTMLElement;
   assetList: HTMLElement;
+  tcaRules: HTMLElement;
+  tcaTraces: HTMLElement;
+  tcaLastStatus: HTMLElement;
+  tcaList: HTMLElement;
   events: HTMLOListElement;
 };
 
@@ -153,6 +157,18 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
           <ol class="compact-list" data-ui="asset-list"></ol>
         </article>
 
+        <article class="panel">
+          <div class="panel__title">
+            <span>TCA</span>
+            <strong data-ui="tca-last-status">waiting</strong>
+          </div>
+          <dl class="metrics metrics--compact">
+            <div><dt>Rules</dt><dd data-ui="tca-rules">0</dd></div>
+            <div><dt>Traces</dt><dd data-ui="tca-traces">0</dd></div>
+          </dl>
+          <ol class="compact-list" data-ui="tca-list"></ol>
+        </article>
+
         <article class="panel panel--events">
           <div class="panel__title">
             <span>EventBus</span>
@@ -195,6 +211,10 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
     assetRegistered: readElement(appElement, "asset-registered", HTMLElement),
     assetFailed: readElement(appElement, "asset-failed", HTMLElement),
     assetList: readElement(appElement, "asset-list", HTMLElement),
+    tcaRules: readElement(appElement, "tca-rules", HTMLElement),
+    tcaTraces: readElement(appElement, "tca-traces", HTMLElement),
+    tcaLastStatus: readElement(appElement, "tca-last-status", HTMLElement),
+    tcaList: readElement(appElement, "tca-list", HTMLElement),
     events: readElement(appElement, "events", HTMLOListElement)
   };
 }
@@ -249,6 +269,22 @@ export function updateSandboxHud(handles: SandboxUiHandles, sandbox: SandboxRunt
   handles.delta.textContent = `${clock.delta.toFixed(1)} ms`;
   handles.systems.textContent = String(sandbox.runtime.systems.values().length);
   handles.modules.textContent = String(sandbox.runtime.modules.length);
+  handles.tcaRules.textContent = String(state.tcaRuleCount);
+  handles.tcaTraces.textContent = String(state.tcaTraces.length);
+  handles.tcaLastStatus.textContent = state.tcaTraces.at(-1)?.status ?? "waiting";
+  handles.tcaList.innerHTML = state.tcaTraces
+    .slice()
+    .reverse()
+    .slice(0, 6)
+    .map(
+      (trace) => `
+      <li>
+        <code>${escapeHtml(trace.ruleId)}</code>
+        <span>${escapeHtml(trace.status)} · ${escapeHtml(trace.eventType)} · ${trace.actions.length} actions</span>
+      </li>
+    `
+    )
+    .join("");
   handles.entityList.innerHTML = state.entities
     .map(
       (entity) => `

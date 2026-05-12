@@ -2,7 +2,6 @@ import type { AppProfile, AppServiceFactory } from "../definition/types";
 import type { AppServiceBinding } from "../runtime/types";
 import {
   ASSET_SERVICE,
-  CAMERA_SERVICE,
   DATA_SERVICE,
   GAME_SERVICE,
   INPUT_SERVICE,
@@ -10,6 +9,7 @@ import {
   RENDERER_SERVICE
 } from "../runtime/standard-keys";
 import { createStandardContext, exposeStandardState } from "./context";
+import { createStandardGameModules } from "./game-modules";
 import { resolveStandardAdapter, resolveStandardValue } from "./resolve";
 import type { StandardAppServiceState, StandardServiceBuildContext } from "./types";
 
@@ -178,38 +178,6 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
       }
     );
   },
-  camera<TContext>(
-    profile: AppProfile<TContext>,
-    stateByContext: Map<TContext, StandardAppServiceState>
-  ) {
-    return createManagedStandardServiceFactory(
-      profile,
-      stateByContext,
-      profile.standard?.camera,
-      (ctx, options) => {
-        const controller = resolveStandardValue(ctx, options.controller);
-        ctx.state.camera = controller;
-        return {
-          key: CAMERA_SERVICE,
-          service: controller,
-          standard: "camera",
-          lifecycle: {
-            id: CAMERA_SERVICE.id,
-            dependencies: ctx.service.dependencies,
-            boot() {
-              options.apply?.(ctx, controller);
-            },
-            start() {
-              options.apply?.(ctx, controller);
-            },
-            snapshot() {
-              return controller.getState();
-            }
-          }
-        };
-      }
-    );
-  },
   input<TContext>(
     profile: AppProfile<TContext>,
     stateByContext: Map<TContext, StandardAppServiceState>
@@ -264,9 +232,10 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
       stateByContext,
       profile.standard?.game,
       (ctx, options) => {
+        const modules = createStandardGameModules(ctx, options);
         const runtime =
           options.runtime === undefined
-            ? options.createRuntime?.(ctx)
+            ? options.createRuntime?.(ctx, modules)
             : resolveStandardValue(ctx, options.runtime);
         if (!runtime) {
           throw new Error("Standard game service requires runtime or createRuntime");
@@ -287,9 +256,7 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
               runtime.stop();
             },
             dispose() {
-              if (runtime.isRunning()) {
-                runtime.stop();
-              }
+              runtime.dispose();
             },
             snapshot() {
               return {

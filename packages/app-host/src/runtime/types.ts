@@ -1,5 +1,4 @@
 import type { AssetManager } from "@gamekit/asset";
-import type { CameraController } from "@gamekit/camera-core";
 import type { DataRegistry } from "@gamekit/data";
 import type { GameRuntime } from "@gamekit/game-runtime";
 import type { InputRouter } from "@gamekit/input-core";
@@ -111,7 +110,6 @@ export type AppServiceRegistry = {
   assets?: AssetManager;
   renderer?: RendererAdapter;
   input?: InputRouter;
-  camera?: CameraController;
   game?: GameRuntime;
   has<TService>(key: AppServiceKey<TService>): boolean;
   get<TService>(key: AppServiceKey<TService>): TService | undefined;
@@ -144,14 +142,7 @@ export type AppHost = {
   snapshot(): AppHostSnapshot;
 };
 
-export type AppStandardServiceId =
-  | "platform"
-  | "data"
-  | "assets"
-  | "renderer"
-  | "input"
-  | "camera"
-  | "game";
+export type AppStandardServiceId = "platform" | "data" | "assets" | "renderer" | "input" | "game";
 
 export type CreateAppHostOptions = {
   id: string;

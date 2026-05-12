@@ -1,6 +1,5 @@
 import {
   ASSET_SERVICE,
-  CAMERA_SERVICE,
   DATA_SERVICE,
   GAME_SERVICE,
   INPUT_SERVICE,
@@ -120,9 +119,6 @@ function assignStandardService(
   if (standard === "input") {
     registry.input = binding.service as never;
   }
-  if (standard === "camera") {
-    registry.camera = binding.service as never;
-  }
   if (standard === "game") {
     registry.game = binding.service as never;
   }
@@ -147,9 +143,6 @@ function standardFromKey(key: AppServiceKey<unknown>): AppStandardServiceId | un
   }
   if (key.id === INPUT_SERVICE.id) {
     return "input";
-  }
-  if (key.id === CAMERA_SERVICE.id) {
-    return "camera";
   }
   if (key.id === GAME_SERVICE.id) {
     return "game";

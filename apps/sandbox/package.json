@@ -24,6 +24,7 @@
     "@gamekit/platform-web": "workspace:*",
     "@gamekit/renderer-core": "workspace:*",
     "@gamekit/renderer-phaser": "workspace:*",
+    "@gamekit/tca": "workspace:*",
     "@gamekit/world": "workspace:*",
     "@gamekit/world-koota": "workspace:*"
   },

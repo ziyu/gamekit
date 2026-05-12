@@ -1,4 +1,10 @@
-import { Clock, Registry, createSeededRng, type GameModule } from "@gamekit/core";
+import {
+  Clock,
+  Registry,
+  createSeededRng,
+  type GameModule,
+  type GameModuleInstallResult
+} from "@gamekit/core";
 import { createSystemRegistry } from "./system-registry";
 import type { CreateGameConfig, GameInstallContext, GameRuntime } from "./types";
 
@@ -7,6 +13,8 @@ export function createGame(config: CreateGameConfig): GameRuntime {
   const rng = createSeededRng(config.seed);
   const systemRegistry = createSystemRegistry();
   const installedModules = new Registry<GameModule<GameInstallContext>>();
+  const cleanups: Array<() => void> = [];
+  let disposed = false;
 
   const installContext: GameInstallContext = {
     world: config.world,
@@ -17,7 +25,10 @@ export function createGame(config: CreateGameConfig): GameRuntime {
 
   for (const module of config.modules) {
     installedModules.register(module.id, module);
-    module.install(installContext);
+    const cleanup = toModuleCleanup(module.install(installContext));
+    if (cleanup) {
+      cleanups.push(cleanup);
+    }
     config.eventBus.emit("runtime.module_installed", { moduleId: module.id }, "game-runtime");
   }
 
@@ -29,6 +40,10 @@ export function createGame(config: CreateGameConfig): GameRuntime {
     systems: systemRegistry,
     modules: installedModules.values(),
     start() {
+      if (disposed) {
+        return;
+      }
+
       if (clock.snapshot().running) {
         return;
       }
@@ -37,6 +52,10 @@ export function createGame(config: CreateGameConfig): GameRuntime {
       config.eventBus.emit("runtime.started", { seed: config.seed }, "game-runtime");
     },
     stop() {
+      if (disposed) {
+        return;
+      }
+
       if (!clock.snapshot().running) {
         return;
       }
@@ -45,6 +64,10 @@ export function createGame(config: CreateGameConfig): GameRuntime {
       config.eventBus.emit("runtime.stopped", {}, "game-runtime");
     },
     tick(delta) {
+      if (disposed) {
+        return;
+      }
+
       const snapshot = clock.tick(delta);
       if (!snapshot.running) {
         return;
@@ -59,8 +82,37 @@ export function createGame(config: CreateGameConfig): GameRuntime {
         });
       }
     },
+    dispose() {
+      if (disposed) {
+        return;
+      }
+
+      disposed = true;
+      if (clock.snapshot().running) {
+        clock.stop();
+        config.eventBus.emit("runtime.stopped", {}, "game-runtime");
+      }
+
+      for (const cleanup of [...cleanups].reverse()) {
+        cleanup();
+      }
+      cleanups.length = 0;
+      config.eventBus.emit("runtime.disposed", {}, "game-runtime");
+    },
     isRunning() {
-      return clock.snapshot().running;
+      return !disposed && clock.snapshot().running;
     }
   };
+}
+
+function toModuleCleanup(result: GameModuleInstallResult): (() => void) | undefined {
+  if (typeof result === "function") {
+    return result;
+  }
+
+  if (result && typeof result.dispose === "function") {
+    return () => result.dispose();
+  }
+
+  return undefined;
 }

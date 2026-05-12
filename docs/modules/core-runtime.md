@@ -70,6 +70,7 @@ export type GameEvent<TPayload = unknown> = {
 - 管理 world、eventBus、clock、rng。
 - 注册和执行 systems。
 - 提供 `start()`、`stop()`、`tick(delta)`。
+- 释放 GameModule 安装时注册的订阅、桥接和内部 runtime。
 
 长期方向：
 
@@ -83,22 +84,30 @@ export type GameRuntime = {
   start(): void;
   stop(): void;
   tick(delta: number): void;
+  dispose(): void;
 };
 ```
 
 应用级能力：
 
 - `input`
-- `camera`
 - `platform`
 - `assets`
 - `data`
-- `tca`
-- `gas`
 - `ui`
 - `devtools`
 
 这些能力不进入 `game-runtime` 顶层，也不让 `game-runtime` 直接绑定具体实现。它们由 App Host 通过 service registry、lifecycle 和 bridge module 组合到应用中。长期设计见 `docs/modules/app-host.md`。
+
+游戏会话能力：
+
+- `camera`
+- `tca`
+- `gas`
+- gameplay save capture / restore
+- gameplay-specific UI binding
+
+这些能力不进入 `game-runtime` 顶层，但应优先通过标准 GameModule helper 安装，而不是让每个 app 手写 EventBus 订阅、system 注册和 cleanup。
 
 ## GameModule
 
@@ -115,11 +124,29 @@ GameModule 是功能安装单位。
 - Asset loaders
 - DevTools panels
 
+长期安装协议：
+
+```ts
+export type GameModule<TInstallContext = unknown> = {
+  id: string;
+  install(ctx: TInstallContext): void | GameModuleCleanup | GameModuleDisposable;
+};
+
+export type GameModuleCleanup = () => void;
+
+export type GameModuleDisposable = {
+  dispose(): void;
+};
+```
+
+`install()` 可以返回 cleanup。GameRuntime 在 `dispose()` 时按模块安装反序执行 cleanup。`stop()` 只停止 tick，不释放模块订阅；`dispose()` 释放 EventBus 订阅、adapter bridge、trace runtime、camera controller runtime 等长期句柄。
+
 模块原则：
 
 - 模块安装应可测试、可重复推理。
 - 模块不得直接导入底层 adapter 私有类型。
 - 模块注册顺序影响运行时行为时，必须通过文档或测试固定。
+- 标准模块 helper 应隐藏重复装配，例如 TCA 的 EventBus 订阅和 trace store lifecycle、Camera 的 input action 绑定和 renderer adapter sync。
 
 ## Tick 边界
 

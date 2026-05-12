@@ -1,0 +1,188 @@
+import { defineGameModule } from "@gamekit/core";
+import type { CameraController, CameraState2D, PointLike } from "@gamekit/camera-core";
+import type { GameInstallContext } from "@gamekit/game-runtime";
+import type {
+  StandardCameraActionBinding,
+  StandardCameraSmoothingOptions,
+  StandardServiceBuildContext
+} from "../types";
+
+type CameraInputEvent = {
+  payload: unknown;
+};
+
+export type CreateStandardCameraModuleOptions<TContext> = {
+  id?: string | undefined;
+  controller: CameraController;
+  inputEventType?: string | undefined;
+  actions: StandardCameraActionBinding[];
+  smoothing?: StandardCameraSmoothingOptions | undefined;
+  sync?:
+    | ((
+        ctx: StandardServiceBuildContext<TContext>,
+        controller: CameraController,
+        action: StandardCameraActionBinding | undefined,
+        state: CameraState2D
+      ) => void)
+    | undefined;
+  buildContext: StandardServiceBuildContext<TContext>;
+};
+
+export function createStandardCameraModule<TContext>(
+  options: CreateStandardCameraModuleOptions<TContext>
+) {
+  const smoothing = normalizeSmoothing(options.smoothing);
+  let displayState = options.controller.getState();
+
+  return defineGameModule<GameInstallContext>({
+    id: options.id ?? "gamekit.camera",
+    install(ctx) {
+      syncCamera(options, undefined, displayState);
+
+      if (smoothing.enabled) {
+        ctx.systems.register({
+          id: `${options.id ?? "gamekit.camera"}.smoothing`,
+          update({ delta }) {
+            const targetState = options.controller.getState();
+            displayState = smoothCameraState(displayState, targetState, delta, smoothing);
+            syncCamera(options, undefined, displayState);
+          }
+        });
+      }
+
+      const unsubscribe = ctx.eventBus.on(options.inputEventType ?? "input.action", (event) => {
+        for (const action of options.actions) {
+          if (applyCameraAction(options.controller, action, event)) {
+            if (!smoothing.enabled) {
+              displayState = options.controller.getState();
+              syncCamera(options, action, displayState);
+            }
+            ctx.eventBus.emit(
+              "camera.updated",
+              {
+                actionId: action.actionId,
+                state: options.controller.getState()
+              },
+              "gamekit.camera"
+            );
+          }
+        }
+      });
+
+      return unsubscribe;
+    }
+  });
+}
+
+function syncCamera<TContext>(
+  options: CreateStandardCameraModuleOptions<TContext>,
+  action: StandardCameraActionBinding | undefined,
+  state: CameraState2D
+): void {
+  options.sync?.(options.buildContext, options.controller, action, state);
+}
+
+function applyCameraAction(
+  controller: CameraController,
+  action: StandardCameraActionBinding,
+  event: CameraInputEvent
+): boolean {
+  const payload = isRecord(event.payload) ? event.payload : {};
+  if (payload.actionId !== action.actionId) {
+    return false;
+  }
+
+  const phase = typeof payload.phase === "string" ? payload.phase : undefined;
+  if (action.phases && (!phase || !action.phases.includes(phase))) {
+    return false;
+  }
+
+  if (action.pan) {
+    controller.pan(action.pan.x ?? 0, action.pan.y ?? 0);
+  }
+
+  if (action.zoom) {
+    controller.zoom(
+      resolveZoomDelta(action.zoom, payload),
+      resolveZoomAnchor(action.zoom, payload)
+    );
+  }
+
+  return action.pan !== undefined || action.zoom !== undefined;
+}
+
+function resolveZoomDelta(
+  zoom: NonNullable<StandardCameraActionBinding["zoom"]>,
+  payload: Record<string, unknown>
+): number {
+  if (!zoom.wheel) {
+    return zoom.delta ?? 0;
+  }
+
+  const input = isRecord(payload.input) ? payload.input : payload;
+  const wheelDelta = typeof input.wheelDelta === "number" ? input.wheelDelta : undefined;
+  if (wheelDelta === undefined || wheelDelta === 0) {
+    return zoom.delta ?? 0;
+  }
+
+  return wheelDelta < 0 ? Math.abs(zoom.delta ?? 1) : -Math.abs(zoom.delta ?? 1);
+}
+
+function resolveZoomAnchor(
+  zoom: NonNullable<StandardCameraActionBinding["zoom"]>,
+  payload: Record<string, unknown>
+): PointLike | undefined {
+  if (!zoom.anchorFromInput) {
+    return undefined;
+  }
+
+  const input = isRecord(payload.input) ? payload.input : payload;
+  return typeof input.x === "number" && typeof input.y === "number"
+    ? { x: input.x, y: input.y }
+    : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+type NormalizedCameraSmoothing = {
+  enabled: boolean;
+  stiffness: number;
+  positionEpsilon: number;
+  zoomEpsilon: number;
+  rotationEpsilon: number;
+};
+
+function normalizeSmoothing(
+  smoothing: StandardCameraSmoothingOptions | undefined
+): NormalizedCameraSmoothing {
+  return {
+    enabled: smoothing?.enabled ?? false,
+    stiffness: smoothing?.stiffness ?? 14,
+    positionEpsilon: smoothing?.positionEpsilon ?? 0.05,
+    zoomEpsilon: smoothing?.zoomEpsilon ?? 0.001,
+    rotationEpsilon: smoothing?.rotationEpsilon ?? 0.001
+  };
+}
+
+function smoothCameraState(
+  current: CameraState2D,
+  target: CameraState2D,
+  delta: number,
+  smoothing: NormalizedCameraSmoothing
+): CameraState2D {
+  const alpha = 1 - Math.exp(-smoothing.stiffness * Math.max(0, delta) * 0.001);
+  return {
+    ...target,
+    x: smoothNumber(current.x, target.x, alpha, smoothing.positionEpsilon),
+    y: smoothNumber(current.y, target.y, alpha, smoothing.positionEpsilon),
+    zoom: smoothNumber(current.zoom, target.zoom, alpha, smoothing.zoomEpsilon),
+    rotation: smoothNumber(current.rotation, target.rotation, alpha, smoothing.rotationEpsilon)
+  };
+}
+
+function smoothNumber(current: number, target: number, alpha: number, epsilon: number): number {
+  const next = current + (target - current) * alpha;
+  return Math.abs(next - target) <= epsilon ? target : next;
+}

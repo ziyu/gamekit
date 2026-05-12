@@ -13,6 +13,7 @@
     { "path": "../game-runtime" },
     { "path": "../input-core" },
     { "path": "../platform-core" },
-    { "path": "../renderer-core" }
+    { "path": "../renderer-core" },
+    { "path": "../tca" }
   ]
 }

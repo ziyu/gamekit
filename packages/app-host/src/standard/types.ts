@@ -1,10 +1,12 @@
 import type { AssetManager } from "@gamekit/asset";
-import type { CameraController } from "@gamekit/camera-core";
+import type { CameraController, CameraState2D } from "@gamekit/camera-core";
+import type { GameModule } from "@gamekit/core";
 import type { DataKindDefinition, DataPack, DataRegistry } from "@gamekit/data";
-import type { GameRuntime } from "@gamekit/game-runtime";
+import type { GameInstallContext, GameRuntime } from "@gamekit/game-runtime";
 import type { InputRouter, InputSourceAdapter } from "@gamekit/input-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
 import type { RendererAdapter, RendererBootContext } from "@gamekit/renderer-core";
+import type { TcaDefinitionSet, TcaTraceStore, TcaRuntime } from "@gamekit/tca";
 import type {
   AppAdapterRegistry,
   AppServiceFactory,
@@ -18,7 +20,6 @@ export type StandardAppServiceState = {
   assets?: AssetManager;
   renderer?: RendererAdapter;
   input?: InputRouter;
-  camera?: CameraController;
   game?: GameRuntime;
 };
 
@@ -45,7 +46,6 @@ export type StandardAppProfileOptions<TContext> = {
   data?: StandardDataOptions<TContext> | undefined;
   renderer?: StandardRendererOptions<TContext> | undefined;
   assets?: StandardAssetOptions<TContext> | undefined;
-  camera?: StandardCameraOptions<TContext> | undefined;
   input?: StandardInputOptions<TContext> | undefined;
   game?: StandardGameOptions<TContext> | undefined;
 };
@@ -77,11 +77,6 @@ export type StandardAssetOptions<TContext> = {
   preloadGroups?(ctx: StandardServiceBuildContext<TContext>): string[] | undefined;
 };
 
-export type StandardCameraOptions<TContext> = {
-  controller: StandardValue<CameraController, TContext>;
-  apply?(ctx: StandardServiceBuildContext<TContext>, controller: CameraController): void;
-};
-
 export type StandardInputOptions<TContext> = {
   router: StandardValue<InputRouter, TContext>;
   configure?(ctx: StandardServiceBuildContext<TContext>, router: InputRouter): void;
@@ -90,5 +85,59 @@ export type StandardInputOptions<TContext> = {
 
 export type StandardGameOptions<TContext> = {
   runtime?: StandardValue<GameRuntime, TContext> | undefined;
-  createRuntime?(ctx: StandardServiceBuildContext<TContext>): GameRuntime;
+  createRuntime?(
+    ctx: StandardServiceBuildContext<TContext>,
+    modules: Array<GameModule<GameInstallContext>>
+  ): GameRuntime;
+  modules?: StandardValue<Array<GameModule<GameInstallContext>>, TContext> | undefined;
+  standardModules?: StandardGameModuleOptions<TContext> | undefined;
+};
+
+export type StandardGameModuleOptions<TContext> = {
+  camera?: StandardCameraGameModuleOptions<TContext> | undefined;
+  tca?: StandardTcaGameModuleOptions<TContext> | undefined;
+};
+
+export type StandardCameraGameModuleOptions<TContext> = {
+  id?: string | undefined;
+  controller: StandardValue<CameraController, TContext>;
+  inputEventType?: string | undefined;
+  actions?: StandardValue<StandardCameraActionBinding[], TContext> | undefined;
+  smoothing?: StandardValue<StandardCameraSmoothingOptions, TContext> | undefined;
+  sync?(
+    ctx: StandardServiceBuildContext<TContext>,
+    controller: CameraController,
+    action: StandardCameraActionBinding | undefined,
+    state: CameraState2D
+  ): void;
+};
+
+export type StandardCameraActionBinding = {
+  actionId: string;
+  phases?: string[] | undefined;
+  pan?: { x?: number | undefined; y?: number | undefined } | undefined;
+  zoom?:
+    | {
+        delta?: number | undefined;
+        wheel?: boolean | undefined;
+        anchorFromInput?: boolean | undefined;
+      }
+    | undefined;
+};
+
+export type StandardCameraSmoothingOptions = {
+  enabled?: boolean | undefined;
+  stiffness?: number | undefined;
+  positionEpsilon?: number | undefined;
+  zoomEpsilon?: number | undefined;
+  rotationEpsilon?: number | undefined;
+};
+
+export type StandardTcaGameModuleOptions<TContext> = {
+  id?: string | undefined;
+  dataRegistry?: ((ctx: StandardServiceBuildContext<TContext>) => DataRegistry) | undefined;
+  ruleKind?: string | undefined;
+  definitions?: StandardValue<TcaDefinitionSet, TContext> | undefined;
+  traceStore?: StandardValue<TcaTraceStore, TContext> | undefined;
+  onRuntime?(ctx: StandardServiceBuildContext<TContext>, runtime: TcaRuntime): void;
 };

@@ -24,6 +24,7 @@ export type GameRuntime = {
   start(): void;
   stop(): void;
   tick(delta: number): void;
+  dispose(): void;
   isRunning(): boolean;
 };
 

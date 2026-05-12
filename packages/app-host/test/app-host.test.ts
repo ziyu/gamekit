@@ -8,7 +8,12 @@ import {
   type AppProfile,
   type AppServiceBinding
 } from "@gamekit/app-host";
+import { createCameraController } from "@gamekit/camera-core";
 import { createDataRegistry } from "@gamekit/data";
+import { createEventBus } from "@gamekit/event-bus";
+import { createGame } from "@gamekit/game-runtime";
+import { type GameWorld } from "@gamekit/world";
+import { createTcaRuleDataKind } from "@gamekit/tca";
 
 describe("app host service registry", () => {
   it("registers and exposes services through the registry", () => {
@@ -197,6 +202,129 @@ describe("configured app host", () => {
     expect(configured.host.services.data).toBeDefined();
     expect(configured.host.snapshot().services.map((service) => service.id)).toEqual(["data"]);
   });
+
+  it("injects standard camera and TCA game modules into the runtime factory", async () => {
+    const registry = createDataRegistry();
+    registry.registerKind(createTcaRuleDataKind());
+    registry.registerPack({
+      id: "rules",
+      version: "1.0.0",
+      data: {
+        tcaRule: [
+          {
+            id: "rule.standard.tca",
+            trigger: { type: "event.type", args: { eventType: "test.trigger" } },
+            actions: [{ type: "event.emit", args: { eventType: "test.derived" } }]
+          }
+        ]
+      }
+    });
+    const camera = createCameraController({ viewport: { width: 320, height: 180 } });
+    const initialCameraX = camera.getState().x;
+    const eventBus = createEventBus({ clock: () => 1 });
+    const derived: string[] = [];
+    eventBus.on("test.derived", (event) => {
+      derived.push(event.type);
+    });
+
+    const app = defineGameApp({
+      id: "standard-game-modules",
+      services: [{ id: "data" }, { id: "game", dependencies: ["data"] }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        data: { registry },
+        game: {
+          standardModules: {
+            tca: {},
+            camera: {
+              controller: camera,
+              actions: [{ actionId: "camera.pan_right", phases: ["pressed"], pan: { x: 12 } }]
+            }
+          },
+          createRuntime(_ctx, modules) {
+            expect(modules.map((module) => module.id)).toEqual(["gamekit.tca", "gamekit.camera"]);
+            return createGame({
+              modules,
+              world: createMemoryWorld(),
+              eventBus,
+              seed: "standard"
+            });
+          }
+        }
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+
+    eventBus.emit("test.trigger", {}, "test");
+    eventBus.emit("input.action", { actionId: "camera.pan_right", phase: "pressed" }, "test");
+
+    expect(derived).toEqual(["test.derived"]);
+    expect(camera.getState().x).toBe(initialCameraX + 12);
+    expect(configured.host.services.game?.modules.map((module) => module.id)).toEqual([
+      "gamekit.tca",
+      "gamekit.camera"
+    ]);
+  });
+
+  it("smooths standard camera module renderer sync over runtime ticks", async () => {
+    const camera = createCameraController({ viewport: { width: 320, height: 180 } });
+    const initialCameraX = camera.getState().x;
+    const eventBus = createEventBus({ clock: () => 1 });
+    const syncedX: number[] = [];
+    const app = defineGameApp({
+      id: "smooth-camera",
+      services: [{ id: "game" }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        game: {
+          standardModules: {
+            camera: {
+              controller: camera,
+              actions: [{ actionId: "camera.pan_right", phases: ["pressed"], pan: { x: 48 } }],
+              smoothing: { enabled: true, stiffness: 8 },
+              sync(_ctx, _camera, _action, state) {
+                syncedX.push(state.x);
+              }
+            }
+          },
+          createRuntime(_ctx, modules) {
+            return createGame({
+              modules,
+              world: createMemoryWorld(),
+              eventBus,
+              seed: "standard"
+            });
+          }
+        }
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+    const runtime = configured.host.services.game;
+    if (!runtime) {
+      throw new Error("Missing game runtime");
+    }
+
+    runtime.start();
+    eventBus.emit("input.action", { actionId: "camera.pan_right", phase: "pressed" }, "test");
+    runtime.tick(16);
+
+    const targetX = initialCameraX + 48;
+    expect(camera.getState().x).toBe(targetX);
+    expect(syncedX.at(-1)).toBeGreaterThan(initialCameraX);
+    expect(syncedX.at(-1)).toBeLessThan(targetX);
+
+    for (let i = 0; i < 60; i += 1) {
+      runtime.tick(16);
+    }
+
+    expect(syncedX.at(-1)).toBeCloseTo(targetX, 1);
+  });
 });
 
 function createLifecycleBinding(
@@ -222,6 +350,38 @@ function createLifecycleBinding(
       dispose() {
         calls.push(`${id}.dispose`);
       }
+    }
+  };
+}
+
+function createMemoryWorld(): GameWorld {
+  return {
+    spawn() {
+      return "entity";
+    },
+    despawn() {
+      return undefined;
+    },
+    has() {
+      return false;
+    },
+    add() {
+      return undefined;
+    },
+    get() {
+      return undefined;
+    },
+    set() {
+      return undefined;
+    },
+    remove() {
+      return undefined;
+    },
+    query() {
+      return [];
+    },
+    count() {
+      return 0;
     }
   };
 }

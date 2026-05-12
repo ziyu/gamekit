@@ -204,13 +204,20 @@
 
 ## Phase 8：App Host
 
-目标：建立统一应用组合层，让 Platform、Data、Asset、Renderer、Input、Camera、GameRuntime、UI 和 DevTools 能通过 service registry、统一 lifecycle、配置和 diagnostics 协同启动，而不是散落在 app 入口文件中。
+目标：建立统一应用组合层，让 Platform、Data、Asset、Renderer、Input、GameRuntime、UI 和 DevTools 能通过 service registry、统一 lifecycle、配置和 diagnostics 协同启动，并让 Camera/TCA 这类游戏会话能力通过标准 GameModule helper 注入 GameRuntime，而不是散落在 app 入口文件中。
 
 模块设计：`docs/modules/app-host.md`
 
 决策记录：`docs/adr/0004-app-host-composition-layer.md`
 
+边界决策：`docs/adr/0005-app-service-vs-game-module-boundary.md`
+
 当前状态：已实现。
+
+边界备注：
+
+- Camera 不作为 App Host 标准服务；camera controller / action bridge 通过标准 GameModule helper 注入 GameRuntime。
+- App Host 可以提供 renderer/input/data 等依赖和标准模块装配入口，但不把 gameplay runtime 暴露成 `services.camera` 这类 app service。
 
 已实现：
 
@@ -225,14 +232,14 @@
 - `createStandardAppProfile` 标准 profile 参数 helper，避免 app profile 手写内置 service lifecycle
 - Host diagnostics / snapshot
 - Headless host fixture
-- Sandbox 通过 App Host 管理 Platform、Data、Asset、Renderer、Input、Camera、GameRuntime 生命周期
+- Sandbox 通过 App Host 管理 Platform、Data、Asset、Renderer、Input、GameRuntime 生命周期，并通过标准游戏模块注入 Camera/TCA
 - Sandbox 迁移到 App Host definition + web profile，入口只保留 UI mount、boot/start 和状态刷新
 
 完成定义：
 
 - GameRuntime 不直接拥有 renderer、input、camera、platform、asset、data。
 - Host 可以按依赖顺序 `boot/start/stop/dispose` services，并按反向顺序释放。
-- Platform、Data、Asset、Renderer、Input、Camera、GameRuntime 等内置服务也通过统一 binding 进入 lifecycle，不在 Host 内部特殊分支处理。
+- Platform、Data、Asset、Renderer、Input、GameRuntime 等内置服务也通过统一 binding 进入 lifecycle，不在 Host 内部特殊分支处理；Camera/TCA 通过 GameModule lifecycle 清理。
 - Host services 支持 `services.data`、`services.assets`、`services.renderer` 等标准入口，也支持扩展 service key。
 - Host config 能合并 framework default、app config、platform profile、user settings 和 test override，并能解释最终值来源。
 - Host diagnostics 能展示 service phase、失败 service、错误 code、配置来源和 adapter 状态。
@@ -245,18 +252,36 @@
 
 模块设计：`docs/modules/tca.md`
 
-预期新增：
+边界决策：`docs/adr/0005-app-service-vs-game-module-boundary.md`
+
+当前状态：已实现。
+
+已实现：
 
 - `@gamekit/tca`
-- Rule conformance tests
-- Trace fixtures
+- GameModule install cleanup / GameRuntime dispose
+- `createTcaModule(...)` 标准模块入口
+- App Host `game.standardModules.tca` / `game.standardModules.camera`
+- App Host `game.createRuntime(ctx, modules)` 标准模块注入
+- TCA rule DataKind
+- event.type trigger indexing
+- trigger/condition/action definition registry
+- event.emit built-in action
+- TCA trace store
+- Sandbox 自定义 TCA trigger/condition/action definitions
+- Sandbox 复杂 tcaRule DataPack 示例
+- Sandbox TCA trace panel
+- Rule/runtime/module tests
 
 完成定义：
 
+- GameModule 可以返回 cleanup/disposable，GameRuntime dispose 按反序清理模块订阅。
 - EventBus event 能触发 TCA rule。
-- condition/action handler 可由 GameModule 注册。
+- trigger/condition/action definition 可由外部模块注册。
 - trace 能回答“哪个事件触发了哪些规则、哪些 condition 失败、执行了哪些 action”。
 - TCA 不用于每帧高频逻辑；规则按 event type 索引并预编译。
+- TCA 不作为 App Host 标准服务；普通游戏通过 `createTcaModule` 或 App Host 标准游戏模块无痛安装。
+- Camera runtime 行为通过 App Host 标准游戏模块注入 GameRuntime，不继续扩大 App Host 的 gameplay service 范围。
 
 ## Phase 10：GAS
 

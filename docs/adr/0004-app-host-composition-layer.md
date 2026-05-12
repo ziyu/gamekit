@@ -49,7 +49,7 @@ App Host 负责：
 - GameModule
 - start / stop / tick
 
-GameRuntime 不直接拥有 renderer、input、camera、platform、asset、data、UI 或 DevTools。
+GameRuntime 不直接拥有 renderer、input、platform、asset、data、UI 或 DevTools。Camera/TCA/GAS 等 gameplay 会话能力不进入 GameRuntime 顶层，后续通过 GameModule helper 安装。
 
 内置服务和扩展服务都必须通过同一套 Service Binding 进入 Host lifecycle。底层模块不为了 Host 改造自身协议；`@gamekit/app-host` 内部维护标准服务定义，将 profile 参数转换成 Service Binding。应用侧不需要直接调用一组 `createXxxService` factory。
 
@@ -60,7 +60,8 @@ Renderer lifecycle 仍不是 GameRuntime-owned。ADR 0002 的结论保留，但�
 收益：
 
 - app 入口更薄，上层更关注具体游戏逻辑。
-- Platform、Data、Asset、Renderer、Input、Camera 等能力有统一 lifecycle。
+- Platform、Data、Asset、Renderer、Input 等应用服务有统一 lifecycle。
+- Camera、TCA、GAS 等游戏会话能力可以通过 GameModule helper 无痛启动，同时不膨胀 App Host 标准服务。
 - DevTools 可以从 Host snapshot 统一观察服务状态、配置来源和生命周期错误。
 - 测试可以使用 headless Host 组合 fake platform、memory renderer、fake asset loader 和 deterministic input。
 - 平台差异可以通过 profile、adapter 参数和标准 service builder 统一处理。

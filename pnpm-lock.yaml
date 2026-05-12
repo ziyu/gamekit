@@ -84,6 +84,9 @@ importers:
       '@gamekit/renderer-phaser':
         specifier: workspace:*
         version: link:../../packages/renderer-phaser
+      '@gamekit/tca':
+        specifier: workspace:*
+        version: link:../../packages/tca
       '@gamekit/world':
         specifier: workspace:*
         version: link:../../packages/world
@@ -127,6 +130,9 @@ importers:
       '@gamekit/renderer-core':
         specifier: workspace:*
         version: link:../renderer-core
+      '@gamekit/tca':
+        specifier: workspace:*
+        version: link:../tca
 
   packages/asset:
     dependencies:
@@ -272,6 +278,21 @@ importers:
       '@gamekit/test-utils':
         specifier: workspace:*
         version: link:../test-utils
+
+  packages/tca:
+    dependencies:
+      '@gamekit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@gamekit/data':
+        specifier: workspace:*
+        version: link:../data
+      '@gamekit/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@gamekit/game-runtime':
+        specifier: workspace:*
+        version: link:../game-runtime
 
   packages/test-utils:
     dependencies:

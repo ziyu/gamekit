@@ -1,6 +1,8 @@
 import { createEventBus, type GameEvent } from "@gamekit/event-bus";
-import { createGame } from "@gamekit/game-runtime";
+import { createGame, type GameInstallContext } from "@gamekit/game-runtime";
+import type { GameModule } from "@gamekit/core";
 import type { RendererAdapter } from "@gamekit/renderer-core";
+import { createTcaModule, createTcaTraceStore, type TcaTraceStore } from "@gamekit/tca";
 import { createKootaWorld } from "@gamekit/world-koota";
 import type { DataRegistry } from "@gamekit/data";
 import { Position, Velocity } from "./components";
@@ -12,6 +14,7 @@ import {
 } from "./sandbox-data";
 import { createSandboxRenderSyncModule } from "./modules/sandbox-render-sync-module";
 import { createSandboxMotionModule } from "./modules/sandbox-motion-module";
+import { createSandboxTcaDefinitions } from "./modules/sandbox-tca-definitions";
 import type { SandboxRuntime } from "./types";
 
 export const SANDBOX_RENDER_SIZE = {
@@ -23,6 +26,8 @@ export type CreateSandboxRuntimeOptions = {
   seed?: string;
   renderer?: RendererAdapter;
   dataRegistry?: DataRegistry;
+  modules?: Array<GameModule<GameInstallContext>>;
+  tcaTraceStore?: TcaTraceStore;
   renderSize?: {
     width: number;
     height: number;
@@ -37,7 +42,16 @@ export function createSandboxRuntime(
   const eventBus = createEventBus({ clock: () => Math.round(performance.now()) });
   const events: GameEvent[] = [];
   const dataRegistry = options.dataRegistry ?? createSandboxDataRegistry();
+  const tcaTraceStore = options.tcaTraceStore ?? createTcaTraceStore({ limit: 20 });
   const modules = [
+    ...(options.modules ?? [
+      createTcaModule({
+        id: "sandbox.tca",
+        dataRegistry,
+        traceStore: tcaTraceStore,
+        definitions: createSandboxTcaDefinitions()
+      })
+    ]),
     createSandboxMotionModule({
       actorDefinition: getSandboxActorDefinition(dataRegistry),
       renderObjectDefinition: getSandboxEntityRenderObject(dataRegistry),
@@ -71,6 +85,7 @@ export function createSandboxRuntime(
   return {
     runtime,
     events,
+    tcaTraceStore,
     snapshot() {
       const entities = world.query([Position, Velocity]).map((entity) => {
         const position = world.get(entity, Position);
@@ -90,7 +105,9 @@ export function createSandboxRuntime(
         clock: runtime.clock.snapshot(),
         entityCount: world.count(),
         entities,
-        events: [...events]
+        events: [...events],
+        tcaRuleCount: dataRegistry.list("tcaRule").length,
+        tcaTraces: tcaTraceStore.list()
       };
     }
   };

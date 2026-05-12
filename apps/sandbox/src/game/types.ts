@@ -1,5 +1,6 @@
 import type { GameEvent } from "@gamekit/event-bus";
 import type { GameRuntime } from "@gamekit/game-runtime";
+import type { TcaTraceEntry, TcaTraceStore } from "@gamekit/tca";
 import type { EntityId } from "@gamekit/world";
 
 export type SandboxEntitySnapshot = {
@@ -16,10 +17,13 @@ export type SandboxSnapshot = {
   entityCount: number;
   entities: SandboxEntitySnapshot[];
   events: GameEvent[];
+  tcaRuleCount: number;
+  tcaTraces: TcaTraceEntry[];
 };
 
 export type SandboxRuntime = {
   runtime: GameRuntime;
   events: GameEvent[];
+  tcaTraceStore: TcaTraceStore;
   snapshot(): SandboxSnapshot;
 };

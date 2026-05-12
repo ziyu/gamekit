@@ -39,11 +39,13 @@
 - 成熟库负责底层能力，GameKit 负责稳定协议和组合边界。
 - 核心包保持薄内核，不直接绑定具体 ECS、renderer、animation、UI primitive。
 - App Host 是应用组合层，负责统一 service registry、生命周期、配置、平台 profile 和 diagnostics；GameRuntime 不能直接拥有 renderer/input/camera/platform/asset/data。
+- 必须先判断能力属于 App Service 还是 Game Module：平台、资源、渲染、输入来源、配置、诊断属于应用服务；需要 world/tick/EventBus/gameplay data/context 的能力属于游戏模块。
+- Camera/TCA/GAS 是游戏会话能力，应优先通过标准 GameModule helper 启动，不应默认膨胀为 App Host 标准服务。
 - 第三方库必须通过 adapter 或 app 层接入，不能泄漏进业务公共 API。
 - Renderer 以 RenderObject / RenderNode / RenderCommand 为核心抽象，不以 Sprite 作为公共协议中心。
 - Input 是独立大模块，不属于 Renderer；Renderer 只能通过预留桥接点接收已经归一化后的语义指令。
 - Gameplay/Camera 输入必须能通过 Input Scope 约束到 game viewport 等交互域，避免在 UI、DevTools、文本输入或其他窗口中误触发。
-- Camera 是独立模块，负责镜头状态、控制器和 adapter 同步，不应该被散落在 renderer 或 gameplay 内。
+- Camera 是独立模块，负责镜头状态、控制器、rig 和 adapter 同步；长期归属是 GameModule toolkit + renderer camera adapter，不是 App Host 默认标准服务。
 - Platform 是运行环境抽象；Tauri 是当前重要目标 adapter，不是核心架构本身。
 - Effect/Fx 不是首层独立业务包；Effect 是 Asset、Renderer、GAS、UI 等基础设施内部可选实现手段。
 - Renderer/Input 边界以 `docs/architecture.md` 和 `docs/adr/0003-general-render-objects-and-input-decoupling.md` 为准；不要继续扩展 Phase 2 prototype 的 sprite/input API。

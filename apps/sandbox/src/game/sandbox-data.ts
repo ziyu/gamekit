@@ -5,6 +5,7 @@ import {
   type DataPack,
   type DataRegistry
 } from "@gamekit/data";
+import { createTcaRuleDataKind, type TcaRule } from "@gamekit/tca";
 import type {
   RenderNodeDefinition,
   RenderObjectDefinition,
@@ -279,6 +280,115 @@ export const sandboxDataPack: DataPack = {
         ],
         tags: ["sandbox", "spawn"]
       } satisfies SandboxSpawnProfileDefinition
+    ],
+    tcaRule: [
+      {
+        id: "rule.sandbox.confirm_signal",
+        trigger: {
+          type: "sandbox.input_action",
+          args: { actionId: "game.confirm", phase: "pressed" }
+        },
+        conditions: [
+          {
+            type: "sandbox.entity_count",
+            args: { min: 5, max: 8 }
+          }
+        ],
+        actions: [
+          {
+            type: "sandbox.log",
+            args: { message: "Confirm input routed through TCA" }
+          },
+          {
+            type: "event.emit",
+            args: {
+              eventType: "sandbox.tca_confirmed",
+              payload: { ruleId: "rule.sandbox.confirm_signal" }
+            }
+          }
+        ],
+        priority: 10,
+        tags: ["sandbox", "tca", "input"]
+      } satisfies TcaRule,
+      {
+        id: "rule.sandbox.motion_heartbeat",
+        trigger: { type: "sandbox.motion_interval", args: { everyTicks: 120 } },
+        conditions: [
+          {
+            type: "sandbox.data_tag_exists",
+            args: { kind: "ability", tag: "diagnostic" }
+          }
+        ],
+        actions: [
+          {
+            type: "sandbox.log",
+            args: { message: "Motion heartbeat observed by TCA" }
+          },
+          {
+            type: "sandbox.data_summary",
+            args: { kind: "ability" }
+          }
+        ],
+        priority: 3,
+        tags: ["sandbox", "tca", "runtime"]
+      } satisfies TcaRule,
+      {
+        id: "rule.sandbox.camera_input_trace",
+        trigger: {
+          type: "sandbox.input_action",
+          args: {
+            actionIds: [
+              "camera.pan_up",
+              "camera.pan_down",
+              "camera.pan_left",
+              "camera.pan_right",
+              "camera.zoom_in",
+              "camera.zoom_out"
+            ]
+          }
+        },
+        actions: [
+          {
+            type: "sandbox.log",
+            args: { message: "Camera input was routed through the scoped game viewport" }
+          },
+          {
+            type: "event.emit",
+            args: {
+              eventType: "sandbox.tca_camera_input",
+              payload: { group: "camera" }
+            }
+          }
+        ],
+        priority: 5,
+        tags: ["sandbox", "tca", "camera"]
+      } satisfies TcaRule,
+      {
+        id: "rule.sandbox.spawn_catalog_once",
+        trigger: { type: "event.type", args: { eventType: "sandbox.entity_spawned" } },
+        conditions: [
+          {
+            type: "sandbox.entity_count",
+            args: { min: 1 }
+          }
+        ],
+        actions: [
+          {
+            type: "sandbox.data_summary",
+            args: { kind: "spawnProfile" }
+          },
+          {
+            type: "event.emit",
+            args: {
+              eventType: "sandbox.tca_spawn_catalog_ready",
+              payload: { sourceRule: "rule.sandbox.spawn_catalog_once" }
+            }
+          }
+        ],
+        once: true,
+        priority: 20,
+        tags: ["sandbox", "tca", "data", "once"]
+      } satisfies TcaRule
     ]
   }
 };
@@ -292,6 +402,7 @@ export function createSandboxDataRegistry(): DataRegistry {
   registry.registerKind(createAbilityDataKind());
   registry.registerKind(createBiomeDataKind());
   registry.registerKind(createSpawnProfileDataKind());
+  registry.registerKind(createTcaRuleDataKind());
   registry.registerPack(sandboxDataPack);
   return registry;
 }

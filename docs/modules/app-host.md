@@ -2,7 +2,7 @@
 
 ## 定位
 
-App Host 是 GameKit 的应用组合层。它负责把 Platform、Data、Asset、Renderer、Input、Camera、GameRuntime、UI、DevTools 等能力装配成一个可启动、可停止、可观察、可扩展的游戏应用实例。
+App Host 是 GameKit 的应用组合层。它负责把 Platform、Data、Asset、Renderer、Input、GameRuntime、UI、DevTools 等应用服务装配成一个可启动、可停止、可观察、可扩展的游戏应用实例。
 
 App Host 不是 gameplay runtime，也不是具体平台 adapter。它解决的是“上层如何无痛启动游戏应用，只关心具体游戏逻辑”的问题。
 
@@ -50,11 +50,12 @@ App Host 管理应用级 lifecycle：
 - AssetManager 创建和 preload
 - Renderer boot / resize / destroy
 - Input adapter start / stop
-- Camera controller / renderer adapter sync
 - UI / DevTools mount
 - GameRuntime 创建和挂载
 
-GameRuntime 不直接拥有 renderer、input、camera、platform、asset、data。App Host 可以把这些能力作为 services 组合给 app、GameModule factory 或 bridge module 使用。
+GameRuntime 不直接拥有 renderer、input、platform、asset、data。App Host 可以把这些能力作为 services 组合给 app、GameModule factory 或 bridge module 使用。
+
+Camera、TCA、GAS、gameplay save capture 等能力更接近游戏会话模块：它们通常需要读写 world、监听 EventBus、注册 system、理解 actor/rule/rig 等玩法上下文。App Host 可以提供 renderer/input/data 等依赖，但不应该把这些 gameplay runtime 直接做成默认标准服务。
 
 ## Host Runtime
 
@@ -99,7 +100,6 @@ export type AppServiceRegistry = {
   assets?: AssetManager;
   renderer?: RendererAdapter;
   input?: InputRouter;
-  camera?: CameraController;
   game?: GameRuntime;
 
   has<TService>(key: AppServiceKey<TService>): boolean;
@@ -118,8 +118,6 @@ export type AppServiceRegistry = {
 - `devtools.traceStore`
 - `ui.windowRegistry`
 - `save.manager`
-- `tca.ruleRuntime`
-- `gas.abilityRuntime`
 - `editor.workspace`
 - `mod.mountRegistry`
 - `telemetry.client`
@@ -183,7 +181,6 @@ platform
 → renderer
 → assets
 → input
-→ camera
 → game
 → ui
 → devtools
@@ -319,7 +316,6 @@ export type StandardAppProfileOptions<TContext> = {
   data?: { registry: DataRegistry | ((ctx) => DataRegistry) };
   renderer?: { adapter: RendererAdapter | string; boot?: (ctx) => RendererBootContext };
   assets?: { manager: AssetManager | ((ctx) => AssetManager) };
-  camera?: { controller: CameraController | ((ctx) => CameraController) };
   input?: {
     router: InputRouter | ((ctx) => InputRouter);
     adapters?: (ctx, router) => InputSourceAdapter[];
@@ -361,7 +357,6 @@ const profile = createStandardAppProfile({
     data: { registry },
     renderer: { adapter: "renderer", boot },
     assets: { manager },
-    camera: { controller, apply },
     input: { router, configure, adapters },
     game: { createRuntime }
   }
@@ -380,9 +375,42 @@ Profile 仍负责：
 
 - 选择具体 adapter，例如 Web Platform、Phaser Renderer、DOM Input。
 - 提供 DOM/Tauri/headless 等运行时上下文。
-- 连接少量 app-specific hook，例如 renderer diagnostics 桥接、camera adapter sync、game runtime factory。
+- 连接少量 app-specific hook，例如 renderer diagnostics 桥接、game runtime factory。
 
 这条边界保证 profile 是“环境配置、adapter 选择和参数包”，不是另一套手写 Host。
+
+## 与 Game Module 的边界
+
+App Host 不应该把所有高层能力都变成 standard service。能力归属按以下规则判断：
+
+- 需要平台、窗口、DOM、资源句柄、adapter boot/dispose 的能力，属于 App Service。
+- 需要 world、tick、actor、rule、camera rig、ability、save snapshot 等玩法上下文的能力，属于 Game Module。
+- 只做协议和 controller 的包是 facade/toolkit，可以被 App Service 或 Game Module 使用，但不能因此自动成为 App Host standard service。
+
+典型 App Service：
+
+- Platform
+- DataRegistry
+- AssetManager
+- RendererAdapter
+- Input source adapters / InputRouter
+- UI shell / DevTools shell
+
+典型 Game Module：
+
+- Camera controller / camera rig / camera input action
+- TCA runtime
+- GAS runtime
+- gameplay save capture / restore
+- gameplay-specific UI bindings
+
+App Host 可以帮助 Game Module 无痛启动：`profile.standard.game.standardModules` 描述要启用的标准游戏模块，App Host 在创建 `game` service 时把这些模块解析成 `GameModule[]`，再传给 `game.createRuntime(ctx, modules)`。这些模块不是 App Service，不进入 Host service registry；它们的订阅、system 和 cleanup 仍跟随 GameRuntime lifecycle。
+
+标准游戏模块用于减少重复装配代码，但不能模糊边界：
+
+- `camera` 标准游戏模块负责把已经归一化的 input action fact 转成 CameraController 目标状态，可选平滑插值显示状态，并通过 app/profile 提供的 sync hook 同步 renderer camera adapter 或 UI。
+- `tca` 标准游戏模块负责从 DataRegistry 读取 `tcaRule`、编译规则、桥接 EventBus、写入 trace，并在 GameRuntime dispose 时清理订阅。
+- 标准游戏模块只能依赖稳定 facade、App Host services 和 profile 注入的定义，不能直接依赖 Phaser、DOM、Tauri 或具体 app 入口。
 
 ## Sandbox / Test Host
 

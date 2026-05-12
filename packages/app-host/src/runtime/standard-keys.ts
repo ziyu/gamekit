@@ -1,5 +1,4 @@
 import type { AssetManager } from "@gamekit/asset";
-import type { CameraController } from "@gamekit/camera-core";
 import type { DataRegistry } from "@gamekit/data";
 import type { GameRuntime } from "@gamekit/game-runtime";
 import type { InputRouter } from "@gamekit/input-core";
@@ -30,11 +29,6 @@ export const RENDERER_SERVICE: AppServiceKey<RendererAdapter> = {
 export const INPUT_SERVICE: AppServiceKey<InputRouter> = {
   id: "input",
   description: "Input router"
-};
-
-export const CAMERA_SERVICE: AppServiceKey<CameraController> = {
-  id: "camera",
-  description: "Camera controller"
 };
 
 export const GAME_SERVICE: AppServiceKey<GameRuntime> = {
