@@ -11,6 +11,7 @@
     { "path": "../../packages/camera-phaser" },
     { "path": "../../packages/asset" },
     { "path": "../../packages/asset-phaser" },
+    { "path": "../../packages/app-host" },
     { "path": "../../packages/core" },
     { "path": "../../packages/data" },
     { "path": "../../packages/event-bus" },

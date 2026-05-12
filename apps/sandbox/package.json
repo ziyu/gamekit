@@ -14,6 +14,7 @@
     "@gamekit/camera-phaser": "workspace:*",
     "@gamekit/asset": "workspace:*",
     "@gamekit/asset-phaser": "workspace:*",
+    "@gamekit/app-host": "workspace:*",
     "@gamekit/core": "workspace:*",
     "@gamekit/data": "workspace:*",
     "@gamekit/event-bus": "workspace:*",

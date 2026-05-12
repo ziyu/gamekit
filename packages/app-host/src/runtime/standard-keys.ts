@@ -1,0 +1,43 @@
+import type { AssetManager } from "@gamekit/asset";
+import type { CameraController } from "@gamekit/camera-core";
+import type { DataRegistry } from "@gamekit/data";
+import type { GameRuntime } from "@gamekit/game-runtime";
+import type { InputRouter } from "@gamekit/input-core";
+import type { PlatformRuntime } from "@gamekit/platform-core";
+import type { RendererAdapter } from "@gamekit/renderer-core";
+import type { AppServiceKey } from "./types";
+
+export const PLATFORM_SERVICE: AppServiceKey<PlatformRuntime> = {
+  id: "platform",
+  description: "Platform runtime"
+};
+
+export const DATA_SERVICE: AppServiceKey<DataRegistry> = {
+  id: "data",
+  description: "Data registry"
+};
+
+export const ASSET_SERVICE: AppServiceKey<AssetManager> = {
+  id: "assets",
+  description: "Asset manager"
+};
+
+export const RENDERER_SERVICE: AppServiceKey<RendererAdapter> = {
+  id: "renderer",
+  description: "Renderer adapter"
+};
+
+export const INPUT_SERVICE: AppServiceKey<InputRouter> = {
+  id: "input",
+  description: "Input router"
+};
+
+export const CAMERA_SERVICE: AppServiceKey<CameraController> = {
+  id: "camera",
+  description: "Camera controller"
+};
+
+export const GAME_SERVICE: AppServiceKey<GameRuntime> = {
+  id: "game",
+  description: "Game runtime"
+};

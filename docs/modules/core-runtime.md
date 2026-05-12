@@ -86,7 +86,7 @@ export type GameRuntime = {
 };
 ```
 
-可组合 runtime extension：
+应用级能力：
 
 - `input`
 - `camera`
@@ -98,7 +98,7 @@ export type GameRuntime = {
 - `ui`
 - `devtools`
 
-这些能力应通过模块安装或 runtime extension 进入，不让 `game-runtime` 直接绑定具体实现。
+这些能力不进入 `game-runtime` 顶层，也不让 `game-runtime` 直接绑定具体实现。它们由 App Host 通过 service registry、lifecycle 和 bridge module 组合到应用中。长期设计见 `docs/modules/app-host.md`。
 
 ## GameModule
 

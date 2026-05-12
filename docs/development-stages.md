@@ -202,7 +202,44 @@
 - Sandbox UI 能展示 asset registered/loaded/failed 状态，资源加载事件进入 EventBus。
 - Sandbox 通过多个 tintable image asset 驱动复合 RenderObject，验证 asset definition、Phaser 加载和 render props 的端到端链路。
 
-## Phase 8：TCA 规则系统
+## Phase 8：App Host
+
+目标：建立统一应用组合层，让 Platform、Data、Asset、Renderer、Input、Camera、GameRuntime、UI 和 DevTools 能通过 service registry、统一 lifecycle、配置和 diagnostics 协同启动，而不是散落在 app 入口文件中。
+
+模块设计：`docs/modules/app-host.md`
+
+决策记录：`docs/adr/0004-app-host-composition-layer.md`
+
+当前状态：已实现。
+
+已实现：
+
+- `@gamekit/app-host` 首版
+- AppServiceRegistry
+- AppServiceBinding
+- 内置标准服务定义表，负责把 profile 参数转换成统一 Service Binding
+- App service lifecycle coordinator
+- App config runtime
+- GameAppDefinition / AppProfile adapter params
+- `createConfiguredAppHost` 声明式装配入口
+- `createStandardAppProfile` 标准 profile 参数 helper，避免 app profile 手写内置 service lifecycle
+- Host diagnostics / snapshot
+- Headless host fixture
+- Sandbox 通过 App Host 管理 Platform、Data、Asset、Renderer、Input、Camera、GameRuntime 生命周期
+- Sandbox 迁移到 App Host definition + web profile，入口只保留 UI mount、boot/start 和状态刷新
+
+完成定义：
+
+- GameRuntime 不直接拥有 renderer、input、camera、platform、asset、data。
+- Host 可以按依赖顺序 `boot/start/stop/dispose` services，并按反向顺序释放。
+- Platform、Data、Asset、Renderer、Input、Camera、GameRuntime 等内置服务也通过统一 binding 进入 lifecycle，不在 Host 内部特殊分支处理。
+- Host services 支持 `services.data`、`services.assets`、`services.renderer` 等标准入口，也支持扩展 service key。
+- Host config 能合并 framework default、app config、platform profile、user settings 和 test override，并能解释最终值来源。
+- Host diagnostics 能展示 service phase、失败 service、错误 code、配置来源和 adapter 状态。
+- Sandbox 入口不再手写主要初始化流水线，而是声明 app definition / profile / modules / datapacks。
+- Headless Host 可以在测试中组合 memory renderer、fake asset loader、memory platform 和 deterministic clock。
+
+## Phase 9：TCA 规则系统
 
 目标：Trigger / Condition / Action 数据驱动规则系统跑通，并从第一版开始可追踪。
 
@@ -221,7 +258,7 @@
 - trace 能回答“哪个事件触发了哪些规则、哪些 condition 失败、执行了哪些 action”。
 - TCA 不用于每帧高频逻辑；规则按 event type 索引并预编译。
 
-## Phase 9：GAS
+## Phase 10：GAS
 
 目标：Actor、Attribute、Tag、Ability、Effect、Cue、Clue 基于 TCA 跑通。
 
@@ -240,7 +277,7 @@
 - GAS trace 能关联 ability/effect 与 TCA rule trace。
 - 示例 actor 数据通过 DataPack 注册和校验。
 
-## Phase 10：UI Core + React UI
+## Phase 11：UI Core + React UI
 
 目标：通用 UI 状态模型和 React 实现跑通，React 只处理 HUD/window/modal/devtools，不进入主循环。
 
@@ -261,7 +298,7 @@
 - UI focus 能和 Input Context 协作。
 - 游戏业务不直接依赖原始 shadcn/base primitive。
 
-## Phase 11：Save / Load / Migration
+## Phase 12：Save / Load / Migration
 
 目标：长期状态可以序列化、恢复和迁移，为真实 demo 提供基础。
 
@@ -280,7 +317,7 @@
 - 缺失/未知版本能给出明确错误。
 - migration 至少有一个测试样例。
 
-## Phase 12：DevTools
+## Phase 13：DevTools
 
 目标：游戏可调试，尤其是数据驱动逻辑可解释。
 
@@ -300,7 +337,7 @@
 - system profiler 至少记录 system id、调用次数、最近耗时。
 - renderer escaped/native/direct path 可被标记。
 
-## Phase 13：Hero Road Demo
+## Phase 14：Hero Road Demo
 
 目标：用一个真实小 demo 验证整套架构，而不是只靠 sandbox。
 
@@ -322,7 +359,7 @@
 - Event Log / Actor Detail / TCA Trace 可查看。
 - Save/Load 能恢复 demo 基础状态。
 
-## Phase 14：Editor / Tooling
+## Phase 15：Editor / Tooling
 
 目标：为 DataPack、地图、规则、资源提供编辑和验证入口。
 
@@ -339,7 +376,7 @@
 - 能验证并展示 assets、actors、rules、renderObjects。
 - 不把 editor-only 状态泄漏到 runtime core。
 
-## Phase 15：Three.js / 3D Renderer Backlog
+## Phase 16：Three.js / 3D Renderer Backlog
 
 目标：验证 RendererAdapter 能支持未来 3D 后端。
 

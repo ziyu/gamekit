@@ -33,6 +33,7 @@ GameKit 的长期目标是支撑多个独立游戏快速开发，同时保持架
 - 支持数据驱动：Actor、Ability、Effect、TCA Rule、AssetManifest、UI Window Definition 等由数据定义。
 - 保持可解释性：事件、规则、能力、效果、资源、系统执行都应能被 trace/debug。
 - 支撑长期复用：具体游戏通过 GameModule、DataPack、Renderer Adapter、UI Window 扩展。
+- 降低应用启动成本：通过 App Host 统一组合平台、资源、输入、镜头、渲染、数据和运行时服务，让游戏上层主要关注玩法逻辑。
 - 保持性能分层：高频逻辑在 ECS system，低频规则在 TCA/GAS/EventBus，表现层在 Renderer/Cue/Camera，UI 在 React/Zustand。
 - 保持平台独立：文件、窗口、权限、输入、镜头、资源来源都通过 GameKit 协议或 adapter 接入。
 

@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../asset" },
+    { "path": "../camera-core" },
+    { "path": "../core" },
+    { "path": "../data" },
+    { "path": "../game-runtime" },
+    { "path": "../input-core" },
+    { "path": "../platform-core" },
+    { "path": "../renderer-core" }
+  ]
+}

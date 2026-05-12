@@ -23,6 +23,7 @@
 ## 模块索引
 
 - `core-runtime.md`：Core、EventBus、GameRuntime、GameModule。
+- `app-host.md`：应用组合层、Service Registry、统一生命周期、配置和诊断。
 - `world.md`：World facade、ECS adapter、系统边界。
 - `renderer.md`：RenderObject、RenderNode、RenderCommand、Renderer Adapter。
 - `input.md`：Input Core、DOM/Phaser/Tauri input adapter、Action Mapping。

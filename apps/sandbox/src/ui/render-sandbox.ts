@@ -1,4 +1,5 @@
 import type { AssetManager } from "@gamekit/asset";
+import type { AppHost } from "@gamekit/app-host";
 import type { DataRegistry } from "@gamekit/data";
 import type { SandboxRuntime } from "../game";
 
@@ -19,6 +20,10 @@ export type SandboxUiHandles = {
   delta: HTMLElement;
   systems: HTMLElement;
   modules: HTMLElement;
+  hostPhase: HTMLElement;
+  hostServices: HTMLElement;
+  hostDiagnostics: HTMLElement;
+  hostServiceList: HTMLElement;
   entityList: HTMLElement;
   dataPacks: HTMLElement;
   dataKinds: HTMLElement;
@@ -76,6 +81,18 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
             <strong>entities</strong>
           </div>
           <ol class="compact-list" data-ui="entity-list"></ol>
+        </article>
+
+        <article class="panel">
+          <div class="panel__title">
+            <span>Host</span>
+            <strong data-ui="host-phase">registered</strong>
+          </div>
+          <dl class="metrics metrics--compact">
+            <div><dt>Services</dt><dd data-ui="host-services">0</dd></div>
+            <div><dt>Diagnostics</dt><dd data-ui="host-diagnostics">0</dd></div>
+          </dl>
+          <ol class="compact-list" data-ui="host-service-list"></ol>
         </article>
 
         <article class="panel">
@@ -164,6 +181,10 @@ export function renderSandboxShell(appElement: HTMLElement): SandboxUiHandles {
     delta: readElement(appElement, "delta", HTMLElement),
     systems: readElement(appElement, "systems", HTMLElement),
     modules: readElement(appElement, "modules", HTMLElement),
+    hostPhase: readElement(appElement, "host-phase", HTMLElement),
+    hostServices: readElement(appElement, "host-services", HTMLElement),
+    hostDiagnostics: readElement(appElement, "host-diagnostics", HTMLElement),
+    hostServiceList: readElement(appElement, "host-service-list", HTMLElement),
     entityList: readElement(appElement, "entity-list", HTMLElement),
     dataPacks: readElement(appElement, "data-packs", HTMLElement),
     dataKinds: readElement(appElement, "data-kinds", HTMLElement),
@@ -246,6 +267,23 @@ export function updateSandboxHud(handles: SandboxUiHandles, sandbox: SandboxRunt
       <li>
         <code>${escapeHtml(event.type)}</code>
         <span>${escapeHtml(event.source ?? "unknown")} · ${event.timestamp}</span>
+      </li>
+    `
+    )
+    .join("");
+}
+
+export function updateHostStatus(handles: SandboxUiHandles, host: AppHost): void {
+  const snapshot = host.snapshot();
+  handles.hostPhase.textContent = snapshot.phase;
+  handles.hostServices.textContent = String(snapshot.services.length);
+  handles.hostDiagnostics.textContent = String(snapshot.diagnostics.length);
+  handles.hostServiceList.innerHTML = snapshot.services
+    .map(
+      (service) => `
+      <li>
+        <code>${escapeHtml(service.id)}</code>
+        <span>${escapeHtml(service.phase)} · deps ${service.dependencies.length}</span>
       </li>
     `
     )

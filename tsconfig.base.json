@@ -38,6 +38,7 @@
       "@gamekit/data": ["packages/data/src/index.ts"],
       "@gamekit/asset": ["packages/asset/src/index.ts"],
       "@gamekit/asset-phaser": ["packages/asset-phaser/src/index.ts"],
+      "@gamekit/app-host": ["packages/app-host/src/index.ts"],
       "@gamekit/test-utils": ["packages/test-utils/src/index.ts"]
     }
   }
