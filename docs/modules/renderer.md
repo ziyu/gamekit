@@ -146,11 +146,11 @@ export type RenderObjectHandle<TNative = unknown, TApi = unknown> = {
 
 ## 与 DataPack 的关系
 
-DataPack 应支持 `renderObjects`，Actor/Ability/Cue 引用 render object id，而不是直接写 sprite。
+RenderObjectDefinition 通过 `render.object` DataType 注册。Actor、Ability、Cue 或游戏自定义 presentation 数据应通过 `DataRef<"render.object">` 引用 render object，而不是直接写 sprite 或底层 renderer 对象。
 
 ```ts
-export type DataPack = {
-  renderObjects?: RenderObjectDefinition[];
+export type ActorPresentation = {
+  renderObject: DataRef<"render.object">;
 };
 ```
 

@@ -1,15 +1,15 @@
-import type { DataKindDefinition } from "@gamekit/data";
+import type { DataTypeDefinition } from "@gamekit/data";
 import type { TcaRule } from "./types";
 
-export const TCA_RULE_KIND = "tcaRule";
+export const TCA_RULE_TYPE = "tca.rule";
 
-export function createTcaRuleDataKind(kind = TCA_RULE_KIND): DataKindDefinition<TcaRule> {
+export function createTcaRuleDataType(type = TCA_RULE_TYPE): DataTypeDefinition<TcaRule> {
   return {
-    kind,
+    type,
     getTags: (rule) => rule.tags ?? [],
     validate(document) {
       const diagnostics = [];
-      const rule = document.value;
+      const rule = document.data;
 
       if (!rule.id || typeof rule.id !== "string") {
         diagnostics.push({

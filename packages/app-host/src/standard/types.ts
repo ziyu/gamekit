@@ -1,7 +1,7 @@
 import type { AssetManager } from "@gamekit/asset";
 import type { CameraController, CameraState2D, PointLike } from "@gamekit/camera-core";
 import type { GameModule } from "@gamekit/core";
-import type { DataKindDefinition, DataPack, DataRegistry } from "@gamekit/data";
+import type { DataPack, DataRegistry, DataTypeDefinition } from "@gamekit/data";
 import type { GasRuntime, GasTraceStore } from "@gamekit/gas";
 import type { GameInstallContext, GameRuntime } from "@gamekit/game-runtime";
 import type { InputRouter, InputSourceAdapter } from "@gamekit/input-core";
@@ -63,7 +63,7 @@ export type StandardPlatformOptions<_TContext> = {
 
 export type StandardDataOptions<TContext> = {
   registry: StandardValue<DataRegistry, TContext>;
-  kinds?(ctx: StandardServiceBuildContext<TContext>): DataKindDefinition[];
+  types?(ctx: StandardServiceBuildContext<TContext>): DataTypeDefinition[];
   dataPacks?(ctx: StandardServiceBuildContext<TContext>): DataPack[];
 };
 

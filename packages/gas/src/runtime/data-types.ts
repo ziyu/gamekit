@@ -1,4 +1,4 @@
-import type { DataDiagnostic, DataKindDefinition } from "@gamekit/data";
+import type { DataDiagnostic, DataTypeDefinition } from "@gamekit/data";
 import type {
   GasAbilityDefinition,
   GasActorDefinition,
@@ -8,56 +8,56 @@ import type {
   GasTagDefinition
 } from "./types";
 
-export const GAS_ACTOR_KIND = "gas.actor";
-export const GAS_ATTRIBUTE_KIND = "gas.attribute";
-export const GAS_ABILITY_KIND = "gas.ability";
-export const GAS_EFFECT_KIND = "gas.effect";
-export const GAS_TAG_KIND = "gas.tag";
-export const GAS_CUE_KIND = "gas.cue";
+export const GAS_ACTOR_TYPE = "gas.actor";
+export const GAS_ATTRIBUTE_TYPE = "gas.attribute";
+export const GAS_ABILITY_TYPE = "gas.ability";
+export const GAS_EFFECT_TYPE = "gas.effect";
+export const GAS_TAG_TYPE = "gas.tag";
+export const GAS_CUE_TYPE = "gas.cue";
 
-export function createGasDataKinds(): Array<DataKindDefinition<any>> {
+export function createGasDataTypes(): Array<DataTypeDefinition<any>> {
   return [
-    createGasActorDataKind(),
-    createGasAttributeDataKind(),
-    createGasAbilityDataKind(),
-    createGasEffectDataKind(),
-    createGasTagDataKind(),
-    createGasCueDataKind()
+    createGasActorDataType(),
+    createGasAttributeDataType(),
+    createGasAbilityDataType(),
+    createGasEffectDataType(),
+    createGasTagDataType(),
+    createGasCueDataType()
   ];
 }
 
-export function createGasActorDataKind(): DataKindDefinition<GasActorDefinition> {
+export function createGasActorDataType(): DataTypeDefinition<GasActorDefinition> {
   return {
-    kind: GAS_ACTOR_KIND,
+    type: GAS_ACTOR_TYPE,
     getTags: (definition) => definition.tags ?? [],
     references(document) {
-      return (document.value.abilities ?? []).map((id, index) => ({
-        kind: GAS_ABILITY_KIND,
+      return (document.data.abilities ?? []).map((id, index) => ({
+        type: GAS_ABILITY_TYPE,
         id,
         path: `abilities[${index}]`
       }));
     },
     validate(document) {
-      return validateStringId(document.value.id, "gas.actor_missing_id", "Gas actor requires id");
+      return validateStringId(document.data.id, "gas.actor_missing_id", "Gas actor requires id");
     }
   };
 }
 
-export function createGasAttributeDataKind(): DataKindDefinition<GasAttributeDefinition> {
+export function createGasAttributeDataType(): DataTypeDefinition<GasAttributeDefinition> {
   return {
-    kind: GAS_ATTRIBUTE_KIND,
+    type: GAS_ATTRIBUTE_TYPE,
     getTags: (definition) => definition.tags ?? [],
     validate(document) {
       const diagnostics = validateStringId(
-        document.value.id,
+        document.data.id,
         "gas.attribute_missing_id",
         "Gas attribute requires id"
       );
 
       if (
-        document.value.min !== undefined &&
-        document.value.max !== undefined &&
-        document.value.min > document.value.max
+        document.data.min !== undefined &&
+        document.data.max !== undefined &&
+        document.data.min > document.data.max
       ) {
         diagnostics.push({
           code: "gas.attribute_invalid_range",
@@ -72,19 +72,19 @@ export function createGasAttributeDataKind(): DataKindDefinition<GasAttributeDef
   };
 }
 
-export function createGasAbilityDataKind(): DataKindDefinition<GasAbilityDefinition> {
+export function createGasAbilityDataType(): DataTypeDefinition<GasAbilityDefinition> {
   return {
-    kind: GAS_ABILITY_KIND,
+    type: GAS_ABILITY_TYPE,
     getTags: (definition) => definition.tags ?? [],
     references(document) {
       return [
-        ...(document.value.effects ?? []).map((effect, index) => ({
-          kind: GAS_EFFECT_KIND,
+        ...(document.data.effects ?? []).map((effect, index) => ({
+          type: GAS_EFFECT_TYPE,
           id: effect.effectId,
           path: `effects[${index}].effectId`
         })),
-        ...(document.value.cues ?? []).map((id, index) => ({
-          kind: GAS_CUE_KIND,
+        ...(document.data.cues ?? []).map((id, index) => ({
+          type: GAS_CUE_TYPE,
           id,
           path: `cues[${index}]`,
           optional: true
@@ -93,12 +93,12 @@ export function createGasAbilityDataKind(): DataKindDefinition<GasAbilityDefinit
     },
     validate(document) {
       const diagnostics = validateStringId(
-        document.value.id,
+        document.data.id,
         "gas.ability_missing_id",
         "Gas ability requires id"
       );
 
-      if ((document.value.cooldownMs ?? 0) < 0) {
+      if ((document.data.cooldownMs ?? 0) < 0) {
         diagnostics.push({
           code: "gas.ability_invalid_cooldown",
           message: "Gas ability cooldown cannot be negative",
@@ -107,7 +107,7 @@ export function createGasAbilityDataKind(): DataKindDefinition<GasAbilityDefinit
         });
       }
 
-      for (const [index, cost] of (document.value.costs ?? []).entries()) {
+      for (const [index, cost] of (document.data.costs ?? []).entries()) {
         if (cost.amount < 0) {
           diagnostics.push({
             code: "gas.ability_invalid_cost",
@@ -124,13 +124,13 @@ export function createGasAbilityDataKind(): DataKindDefinition<GasAbilityDefinit
   };
 }
 
-export function createGasEffectDataKind(): DataKindDefinition<GasEffectDefinition> {
+export function createGasEffectDataType(): DataTypeDefinition<GasEffectDefinition> {
   return {
-    kind: GAS_EFFECT_KIND,
+    type: GAS_EFFECT_TYPE,
     getTags: (definition) => definition.tags ?? [],
     references(document) {
-      return (document.value.cues ?? []).map((id, index) => ({
-        kind: GAS_CUE_KIND,
+      return (document.data.cues ?? []).map((id, index) => ({
+        type: GAS_CUE_TYPE,
         id,
         path: `cues[${index}]`,
         optional: true
@@ -138,12 +138,12 @@ export function createGasEffectDataKind(): DataKindDefinition<GasEffectDefinitio
     },
     validate(document) {
       const diagnostics = validateStringId(
-        document.value.id,
+        document.data.id,
         "gas.effect_missing_id",
         "Gas effect requires id"
       );
 
-      if ((document.value.durationMs ?? 0) < 0) {
+      if ((document.data.durationMs ?? 0) < 0) {
         diagnostics.push({
           code: "gas.effect_invalid_duration",
           message: "Gas effect duration cannot be negative",
@@ -151,7 +151,7 @@ export function createGasEffectDataKind(): DataKindDefinition<GasEffectDefinitio
           key: document
         });
       }
-      if ((document.value.periodMs ?? 0) < 0) {
+      if ((document.data.periodMs ?? 0) < 0) {
         diagnostics.push({
           code: "gas.effect_invalid_period",
           message: "Gas effect period cannot be negative",
@@ -165,28 +165,28 @@ export function createGasEffectDataKind(): DataKindDefinition<GasEffectDefinitio
   };
 }
 
-export function createGasTagDataKind(): DataKindDefinition<GasTagDefinition> {
+export function createGasTagDataType(): DataTypeDefinition<GasTagDefinition> {
   return {
-    kind: GAS_TAG_KIND,
+    type: GAS_TAG_TYPE,
     getTags: (definition) => definition.tags ?? [],
     validate(document) {
-      return validateStringId(document.value.id, "gas.tag_missing_id", "Gas tag requires id");
+      return validateStringId(document.data.id, "gas.tag_missing_id", "Gas tag requires id");
     }
   };
 }
 
-export function createGasCueDataKind(): DataKindDefinition<GasCueDefinition> {
+export function createGasCueDataType(): DataTypeDefinition<GasCueDefinition> {
   return {
-    kind: GAS_CUE_KIND,
+    type: GAS_CUE_TYPE,
     getTags: (definition) => definition.tags ?? [],
     validate(document) {
       const diagnostics = validateStringId(
-        document.value.id,
+        document.data.id,
         "gas.cue_missing_id",
         "Gas cue requires id"
       );
 
-      if (!document.value.type) {
+      if (!document.data.type) {
         diagnostics.push({
           code: "gas.cue_missing_type",
           message: "Gas cue requires type",

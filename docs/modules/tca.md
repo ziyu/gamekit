@@ -73,7 +73,7 @@ export type ActionConfig = {
 当前公共入口：
 
 ```ts
-createTcaRuleDataKind();
+createTcaRuleDataType();
 createTcaRuntime({ rules, eventBus, definitions, traceStore, dataRegistry, game });
 createTcaModule({ dataRegistry, definitions, traceStore });
 createTcaTraceStore({ limit });
@@ -100,7 +100,7 @@ TCA runtime 负责：
 
 TCA GameModule 负责：
 
-- 从 DataRegistry 读取 `tcaRule` DataKind。
+- 从 DataRegistry 读取 `tca.rule` DataType。
 - 创建并持有 TcaRuntime。
 - 订阅 EventBus。
 - 在 GameRuntime dispose 时取消订阅并释放 TcaRuntime。

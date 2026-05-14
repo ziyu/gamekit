@@ -21,17 +21,17 @@ export function createDataRegistryError(
   return new DataRegistryError(code, `${message}.${detail}`, diagnostics);
 }
 
-export function createDataDuplicateKindError(kind: string): GameError {
-  return new GameError("data.duplicate_kind", `Duplicate data kind: ${kind}`, { kind });
+export function createDataDuplicateTypeError(type: string): GameError {
+  return new GameError("data.duplicate_type", `Duplicate data type: ${type}`, { type });
 }
 
-export function createDataMissingKindError(kind: string): GameError {
-  return new GameError("data.missing_kind", `Missing data kind: ${kind}`, { kind });
+export function createDataMissingTypeError(type: string): GameError {
+  return new GameError("data.missing_type", `Missing data type: ${type}`, { type });
 }
 
-export function createDataMissingDocumentError(kind: string, id: string): GameError {
-  return new GameError("data.missing_document", `Missing data document: ${kind}:${id}`, {
-    kind,
+export function createDataMissingDocumentError(type: string, id: string): GameError {
+  return new GameError("data.missing_document", `Missing data document: ${type}:${id}`, {
+    type,
     id
   });
 }

@@ -2,7 +2,7 @@ import { createDataRegistry, type DataPack } from "@gamekit/data";
 import { createEventBus } from "@gamekit/event-bus";
 import { describe, expect, it } from "vitest";
 import {
-  createGasDataKinds,
+  createGasDataTypes,
   createGasRuntime,
   createGasTcaDefinitions,
   createGasTraceStore,
@@ -112,8 +112,8 @@ describe("GAS runtime", () => {
 
 function createTestGasRuntime(world: GameWorld, eventBus = createEventBus()): GasRuntime {
   const registry = createDataRegistry();
-  for (const kind of createGasDataKinds()) {
-    registry.registerKind(kind);
+  for (const type of createGasDataTypes()) {
+    registry.registerType(type);
   }
   registry.registerPack(testPack);
 
@@ -128,50 +128,75 @@ function createTestGasRuntime(world: GameWorld, eventBus = createEventBus()): Ga
 const testPack: DataPack = {
   id: "gas.test",
   version: "1.0.0",
-  data: {
-    "gas.attribute": [
-      { id: "health", min: 0, max: 100, defaultValue: 100 },
-      { id: "energy", min: 0, max: 50, defaultValue: 40 }
-    ],
-    "gas.tag": [{ id: "state.marked" }, { id: "state.overcharged" }],
-    "gas.cue": [{ id: "cue.hit", type: "ui.floating_text", payload: { text: "hit" } }],
-    "gas.effect": [
-      {
+  entries: [
+    {
+      type: "gas.attribute",
+      id: "health",
+      data: { id: "health", min: 0, max: 100, defaultValue: 100 }
+    },
+    {
+      type: "gas.attribute",
+      id: "energy",
+      data: { id: "energy", min: 0, max: 50, defaultValue: 40 }
+    },
+    { type: "gas.tag", id: "state.marked", data: { id: "state.marked" } },
+    { type: "gas.tag", id: "state.overcharged", data: { id: "state.overcharged" } },
+    {
+      type: "gas.cue",
+      id: "cue.hit",
+      data: { id: "cue.hit", type: "ui.floating_text", payload: { text: "hit" } }
+    },
+    {
+      type: "gas.effect",
+      id: "effect.damage",
+      data: {
         id: "effect.damage",
         attributeModifiers: [{ attribute: "health", operation: "add", value: -12 }],
         grantedTags: ["state.marked"],
         durationMs: 500,
         cues: ["cue.hit"]
-      },
-      {
+      }
+    },
+    {
+      type: "gas.effect",
+      id: "effect.regen",
+      data: {
         id: "effect.regen",
         durationMs: 1000,
         periodMs: 250,
         periodicModifiers: [{ attribute: "energy", operation: "add", value: 2 }],
         grantedTags: ["state.overcharged"]
       }
-    ],
-    "gas.ability": [
-      {
+    },
+    {
+      type: "gas.ability",
+      id: "ability.strike",
+      data: {
         id: "ability.strike",
         costs: [{ attribute: "energy", amount: 5 }],
         cooldownMs: 100,
         effects: [{ effectId: "effect.damage", target: "target" }]
-      },
-      {
+      }
+    },
+    {
+      type: "gas.ability",
+      id: "ability.regen",
+      data: {
         id: "ability.regen",
         effects: [{ effectId: "effect.regen", target: "self" }]
       }
-    ],
-    "gas.actor": [
-      {
+    },
+    {
+      type: "gas.actor",
+      id: "actor.scout",
+      data: {
         id: "actor.scout",
         attributes: { health: 100, energy: 40 },
         tags: [],
         abilities: ["ability.strike", "ability.regen"]
       }
-    ]
-  }
+    }
+  ]
 };
 
 function createTcaContext(runtime: GasRuntime) {

@@ -1,10 +1,10 @@
 import {
-  GAS_ABILITY_KIND,
-  GAS_ACTOR_KIND,
-  GAS_ATTRIBUTE_KIND,
-  GAS_CUE_KIND,
-  GAS_EFFECT_KIND
-} from "./data-kinds";
+  GAS_ABILITY_TYPE,
+  GAS_ACTOR_TYPE,
+  GAS_ATTRIBUTE_TYPE,
+  GAS_CUE_TYPE,
+  GAS_EFFECT_TYPE
+} from "./data-types";
 import { createGasError } from "./errors";
 import { createGasTraceStore } from "./trace-store";
 import { GasAbilities, GasActor, GasAttributes, GasEffects, GasTags } from "./components";
@@ -36,7 +36,7 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
     createActor(input) {
       assertActive();
       const definition = config.dataRegistry.getValue<GasActorDefinition>(
-        GAS_ACTOR_KIND,
+        GAS_ACTOR_TYPE,
         input.definitionId
       );
       const actorId = input.actorId ?? String(input.entityId ?? input.definitionId);
@@ -163,7 +163,7 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
   function activateAbility(input: GasAbilityActivation): void {
     const state = requireMutableActor(input.actorId);
     const ability = config.dataRegistry.getValue<GasAbilityDefinition>(
-      GAS_ABILITY_KIND,
+      GAS_ABILITY_TYPE,
       input.abilityId
     );
 
@@ -254,7 +254,7 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
   function applyEffect(input: GasEffectApplication): void {
     const state = requireMutableActor(input.targetActorId);
     const effect = config.dataRegistry.getValue<GasEffectDefinition>(
-      GAS_EFFECT_KIND,
+      GAS_EFFECT_TYPE,
       input.effectId
     );
 
@@ -301,7 +301,7 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
 
     for (const active of state.effects.active) {
       const definition = config.dataRegistry.getValue<GasEffectDefinition>(
-        GAS_EFFECT_KIND,
+        GAS_EFFECT_TYPE,
         active.effectId
       );
       let nextTickAt = active.nextTickAt;
@@ -434,7 +434,7 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
 
   function emitCues(cueIds: string[], sourceActorId?: string, targetActorId?: string): void {
     for (const cueId of cueIds) {
-      const cue = config.dataRegistry.getValue<GasCueDefinition>(GAS_CUE_KIND, cueId);
+      const cue = config.dataRegistry.getValue<GasCueDefinition>(GAS_CUE_TYPE, cueId);
       const event = {
         cueId,
         type: cue.type,
@@ -452,12 +452,12 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
   }
 
   function clampAttribute(attribute: string, value: number): number {
-    if (!config.dataRegistry.has(GAS_ATTRIBUTE_KIND, attribute)) {
+    if (!config.dataRegistry.has(GAS_ATTRIBUTE_TYPE, attribute)) {
       return value;
     }
 
     const definition = config.dataRegistry.getValue<GasAttributeDefinition>(
-      GAS_ATTRIBUTE_KIND,
+      GAS_ATTRIBUTE_TYPE,
       attribute
     );
     const min = definition.min ?? Number.NEGATIVE_INFINITY;

@@ -2,7 +2,7 @@ export * from "./built-in-definitions";
 export * from "./compiler";
 export * from "./create-tca-module";
 export * from "./create-tca-runtime";
-export * from "./data-kind";
+export * from "./data-type";
 export * from "./definition-set";
 export * from "./errors";
 export * from "./event-bridge";

@@ -147,16 +147,16 @@
 
 ## Phase 6：Data Core
 
-目标：先建立全局可扩展数据模块，让游戏中的所有可数据化定义都能通过统一 DataKind / DataPack / DataRegistry 管理、校验、查询和追踪来源。
+目标：先建立全局可扩展数据模块，让游戏中的所有可数据化定义都能通过统一 DataType / DataPack / DataRegistry 管理、校验、查询和追踪来源。
 
-模块设计：`docs/modules/asset-data.md`
+模块设计：`docs/modules/data.md`
 
 当前状态：已实现。
 
 预期新增：
 
 - `@gamekit/data`
-- DataKind registration
+- DataType registration
 - DataRegistry
 - DataPack registration
 - Data reference graph
@@ -166,19 +166,19 @@
 完成定义：
 
 - `@gamekit/data` 不依赖 renderer、asset、TCA、GAS、UI 或具体游戏业务。
-- 模块可以注册自定义 DataKind，并提供 validate / normalize / references / index 扩展点。
-- DataPack 可以注册多种 kind 的数据，并保留 source pack、namespace、priority 等来源信息。
+- 模块可以注册自定义 DataType，并提供 validate / normalize / references / index 扩展点。
+- DataPack 可以注册多种 type 的数据，并保留 source pack、namespace、priority 等来源信息。
 - DataRegistry 支持 get/list/query/snapshot 和 duplicate id 校验。
 - Reference graph 能报告缺失引用，并能反查某个 definition 被谁引用。
-- Sandbox 或测试夹具能注册至少 `asset`、`renderObject`、`actor` 风格的示例 kind，证明 Data 不是 renderObject 专用注册表。
-- Sandbox UI 能展示 DataPack、DataKind、document 和 reference 的基本状态。
-- Sandbox DataPack 包含 actor、ability、biome、spawnProfile、renderRig 等较复杂示例数据，用于验证多 kind、嵌套结构、索引、引用图和运行时消费路径。
+- Sandbox 或测试夹具能注册至少 `asset.definition`、`render.object`、`gas.actor` 和用户自定义 type，证明 Data 不限制游戏内容模型。
+- Sandbox UI 能展示 DataPack、DataType、document 和 reference 的基本状态。
+- Sandbox DataPack 包含 actor、ability、biome、spawnProfile、renderRig 和用户自定义内容类型等较复杂示例数据，用于验证多 type、嵌套结构、索引、引用图和运行时消费路径。
 
 ## Phase 7：Asset System
 
 目标：在 Data Core 之上实现资源声明和运行时加载。AssetDefinition 作为数据被 DataRegistry 管理，AssetManager 负责运行时加载状态，adapter 负责接入 Phaser 等后端。
 
-模块设计：`docs/modules/asset-data.md`
+模块设计：`docs/modules/assets.md`
 
 当前状态：已实现。
 
@@ -186,7 +186,7 @@
 
 - `@gamekit/asset`
 - `@gamekit/asset-phaser`
-- Asset data kind registration
+- Asset DataType registration
 - AssetManager
 - Phaser asset adapter fake-driver contract
 - Sandbox DataPack asset preload
@@ -263,13 +263,13 @@
 - `createTcaModule(...)` 标准模块入口
 - App Host `game.standardModules.tca` / `game.standardModules.camera`
 - App Host `game.createRuntime(ctx, modules)` 标准模块注入
-- TCA rule DataKind
+- TCA rule DataType
 - event.type trigger indexing
 - trigger/condition/action definition registry
 - event.emit built-in action
 - TCA trace store
 - Sandbox 自定义 TCA trigger/condition/action definitions
-- Sandbox 复杂 tcaRule DataPack 示例
+- Sandbox 复杂 `tca.rule` DataPack 示例
 - Sandbox TCA trace panel
 - Rule/runtime/module tests
 
@@ -294,7 +294,7 @@
 已实现：
 
 - `@gamekit/gas`
-- GAS DataKind registration
+- GAS DataType registration
 - GasActor/GasAttributes/GasTags/GasAbilities/GasEffects ECS components
 - entity-backed actor runtime
 - detached actor runtime
@@ -459,6 +459,72 @@
 - Sandbox game module 不直接依赖 Phaser、Koota、DOM 或 App Host 内部实现。
 - `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 通过。
 
+## Phase 10.6：真实内容组织与 DataType 重构
+
+目标：把 Data / Asset 从“按资源类型或模块类型堆表”调整为“用户按真实业务内容组织，框架按 `type + id` 注册和索引”的长期模型。GameKit 不引入 ContentDomain 这类额外分类层，而是让游戏项目自由定义自己的数据类型和目录结构。
+
+模块设计：
+
+- `docs/modules/data.md`
+- `docs/modules/assets.md`
+
+当前状态：已实现。
+
+设计原则：
+
+- DataPack 是内容交付单元，不是内容分类模型。
+- 每条数据通过 `type + id` 声明自己的 DataType。
+- DataType 可以是 GameKit 内置类型，也可以是用户自定义类型。
+- Loader 只需要知道每条 entry 注册成什么类型，不理解 hero、monster、building 等业务分类。
+- AssetRef 是数据字段中的显式资源引用，资源定义不要求和引用它的数据位于同一个 DataPack。
+
+任务拆分：
+
+1. Data 公共模型调整
+   - 新增长期 `DataTypeDefinition`、`DataPackEntry`、`DataRef` 类型；Assets 模块提供 `AssetRef`。
+   - 使用 DataType 作为唯一公共数据类型模型，不保留旧 kind 公共入口。
+   - DataRegistry 查询 API 明确以 `type + id` 为主键。
+
+   当前状态：已实现。`@gamekit/data` 已支持 `registerType()`、`entries[]`、`type + id` 查询和 `types` snapshot，旧 kind / 旧注册入口 / data map 兼容层已移除。
+
+2. DataPack loader 调整
+   - 支持 `entries: Array<{ type; id; data }>` 的真实内容交付结构。
+   - 默认 unknown type 报错；unknown type 暂存仅作为未来编辑器/导入器扩展点保留。
+   - 错误报告包含 pack id、entry type、entry id、字段路径和 source。
+
+   当前状态：已实现。旧 `data: Record<kind, unknown[]>` 输入仍会 normalize 成 entries；unknown type 默认报错。
+
+3. 引用系统调整
+   - DataTypeDefinition 通过 `references` 提取 DataRef / AssetRef。
+   - Reference graph 支持按 entry、type、pack、target 反查。
+   - AssetRef 缺失目标由 Data/Asset 协同报告，但不强制资源定义同包。
+
+   当前状态：已实现核心 `type + id` reference graph；AssetRef 作为 Assets 公共类型导出，缺失资源仍通过 `asset.definition` 引用链报告。
+
+4. Asset 对齐
+   - `asset.definition` 作为 DataType 注册。
+   - AssetManager 从 DataRegistry 读取 AssetDefinition，也允许从编辑器/importer/远程 manifest 注册同形定义。
+   - Asset snapshot 能显示资源被哪些 DataRef/AssetRef 间接引用。
+
+   当前状态：已实现。`createAssetDataType()` 和默认 `asset.definition` 已实现；AssetManager 默认读取 `asset.definition`。旧 `asset` data kind 入口已移除，Asset snapshot 反查引用由 DataRegistry reference graph 提供。
+
+5. Sandbox 内容重组
+   - 拆分当前巨大的 sandbox data 文件，按 Signal Outpost 业务概念组织，例如 core、stations、scouts、threats、objectives。
+   - 每个业务文件允许混合 station、GAS、TCA、render、asset 等不同 DataType。
+   - Inspector Content tab 从“按类型统计”升级为“选中对象关联的 data entries、refs、assets 和 source pack”。
+
+   当前状态：已实现第一步。Sandbox DataPack 已改为 `entries[]`，内容入口拆到 `content/core`、`content/stations`、`content/scouts`、`content/threats`、`content/objectives`、`content/visuals`；Inspector 文案已切到 Types。更细的“选中对象关联 content graph”留给后续 Workbench 打磨。
+
+完成定义：
+
+- 用户自定义 DataType 能注册、校验、索引和被查询。
+- 一个 DataPack 可以混合内置类型和用户自定义类型。
+- 同一个业务文件可以定义 hero/building/scout 所需的多种类型数据，不需要按类型拆表。
+- DataRef / AssetRef 缺失时错误能定位到 pack、entry 和字段路径。
+- 资源定义可以在独立 pack 中，引用它的数据仍能通过 AssetRef 校验和加载。
+- Sandbox 内容重组后，DataRegistry snapshot 和 Inspector 能说明选中对象来自哪些 entry 和引用了哪些资源。
+- `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 通过。
+
 ## Phase 11：UI Core + React UI
 
 目标：通用 UI 状态模型和 React 实现跑通，React 只处理 HUD/window/modal/devtools，不进入主循环。
@@ -555,7 +621,7 @@
 完成定义：
 
 - 能加载 demo DataPack。
-- 能验证并展示 assets、actors、rules、renderObjects。
+- 能验证并展示 assets、actors、rules、renderObjects 等 data entries。
 - 不把 editor-only 状态泄漏到 runtime core。
 
 ## Phase 16：Three.js / 3D Renderer Backlog

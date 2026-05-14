@@ -142,7 +142,9 @@ App Host 负责启动 Platform、Data、Asset、Renderer、Input 和 GameRuntime
 
 Data Node 在舞台中可视化数据驱动能力：当规则或能力引用某个 definition 时，相关节点可以短暂高亮，帮助观察数据如何影响运行时。
 
-Sandbox DataPack 至少覆盖这些类型的复杂数据：
+Sandbox 内容文件应按 Signal Outpost 的真实业务概念组织，而不是按全局数据类型拆成 actors、rules、assets、renderObjects 等大表。每个业务文件可以混合多种 DataType，只要进入 DataRegistry 的条目有明确 `type` 和 `id`。
+
+Sandbox DataPack 至少覆盖这些复杂数据：
 
 - station definition：role、capacity、base production、supported task、render rig、asset references。
 - scout definition：actor definition、cargo、battery、available work kinds、ability loadout。
@@ -300,7 +302,7 @@ Sandbox snapshot 应能支持 headless 测试和 UI 渲染。
 - objective progress 和 status。
 - scene entities、roles、position、task、storage、link。
 - GAS actor state、attributes、tags、effects。
-- DataPack、DataKind、document、reference summary。
+- DataPack、DataType、document、reference summary。
 - Asset registered / loaded / failed summary。
 - module summary 和 host service summary。
 - timeline entries。

@@ -5,7 +5,7 @@ import { type GameWorld } from "@gamekit/world";
 import { describe, expect, it } from "vitest";
 import {
   createTcaModule,
-  createTcaRuleDataKind,
+  createTcaRuleDataType,
   createTcaRuntime,
   createTcaTraceStore,
   type TcaActionHandler,
@@ -13,17 +13,21 @@ import {
   type TcaRule
 } from "../src";
 
-describe("TCA data kind", () => {
+describe("TCA data type", () => {
   it("validates rules registered through DataRegistry", () => {
     const registry = createDataRegistry();
-    registry.registerKind(createTcaRuleDataKind());
+    registry.registerType(createTcaRuleDataType());
 
     const validation = registry.validatePack({
       id: "broken",
       version: "1.0.0",
-      data: {
-        tcaRule: [{ id: "rule.missing-actions", trigger: { type: "event.type" }, actions: [] }]
-      }
+      entries: [
+        {
+          type: "tca.rule",
+          id: "rule.missing-actions",
+          data: { id: "rule.missing-actions", trigger: { type: "event.type" }, actions: [] }
+        }
+      ]
     });
 
     expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
@@ -235,7 +239,7 @@ describe("TCA runtime", () => {
 describe("TCA module", () => {
   it("reads rules from DataRegistry and unsubscribes on runtime dispose", () => {
     const registry = createDataRegistry();
-    registry.registerKind(createTcaRuleDataKind());
+    registry.registerType(createTcaRuleDataType());
     registry.registerPack(tcaPack([rule("input", "input.action", "ran")]));
     const eventBus = createEventBus({ clock: () => 1 });
     const traceStore = createTcaTraceStore();
@@ -303,7 +307,7 @@ function tcaPack(rules: TcaRule[]): DataPack {
   return {
     id: "tca",
     version: "1.0.0",
-    data: { tcaRule: rules }
+    entries: rules.map((rule) => ({ type: "tca.rule", id: rule.id, data: rule }))
   };
 }
 

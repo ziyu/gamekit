@@ -1,8 +1,8 @@
 import { hasErrorDiagnostics } from "./diagnostics";
 import {
-  createDataDuplicateKindError,
+  createDataDuplicateTypeError,
   createDataMissingDocumentError,
-  createDataMissingKindError,
+  createDataMissingTypeError,
   createDataRegistryError
 } from "./errors";
 import { DataReferenceGraph, dataKeyString } from "./reference-graph";
@@ -11,31 +11,32 @@ import type {
   DataDocument,
   DataId,
   DataKey,
-  DataKind,
-  DataKindContext,
-  DataKindDefinition,
   DataPack,
+  DataPackEntry,
   DataPackValidation,
   DataQuery,
   DataReference,
   DataRegistry,
-  DataSnapshot
+  DataSnapshot,
+  DataTypeContext,
+  DataTypeDefinition,
+  DataTypeId
 } from "./types";
 
 export function createDataRegistry(): DataRegistry {
-  const kinds = new Map<DataKind, DataKindDefinition>();
+  const types = new Map<DataTypeId, DataTypeDefinition>();
   const documents = new Map<string, DataDocument>();
   const packs = new Map<string, DataPack>();
   const graph = new DataReferenceGraph();
   const indexes = new Map<string, Set<string>>();
 
-  const requireKind = <T = unknown>(kind: DataKind): DataKindDefinition<T> => {
-    const definition = kinds.get(kind);
+  const requireType = <T = unknown>(type: DataTypeId): DataTypeDefinition<T> => {
+    const definition = types.get(type);
     if (!definition) {
-      throw createDataMissingKindError(kind);
+      throw createDataMissingTypeError(type);
     }
 
-    return definition as DataKindDefinition<T>;
+    return definition as DataTypeDefinition<T>;
   };
 
   const rebuildIndexes = (): void => {
@@ -47,7 +48,7 @@ export function createDataRegistry(): DataRegistry {
   };
 
   const addDocumentToIndexes = (document: DataDocument): void => {
-    addIndexValue(indexKey("kind", document.kind), dataKeyString(document));
+    addIndexValue(indexKey("type", document.type), dataKeyString(document));
     addIndexValue(indexKey("sourcePackId", document.sourcePackId ?? ""), dataKeyString(document));
     addIndexValue(indexKey("namespace", document.namespace ?? ""), dataKeyString(document));
 
@@ -55,7 +56,7 @@ export function createDataRegistry(): DataRegistry {
       addIndexValue(indexKey("tag", tag), dataKeyString(document));
     }
 
-    const definition = kinds.get(document.kind);
+    const definition = types.get(document.type);
     for (const customIndex of definition?.indexes ?? []) {
       for (const value of customIndex.values(document)) {
         addIndexValue(indexKey(customIndex.id, value), dataKeyString(document));
@@ -68,6 +69,7 @@ export function createDataRegistry(): DataRegistry {
     const nextDocuments: DataDocument[] = [];
     const nextReferences: DataReference[] = [];
     const seenInPack = new Set<string>();
+    const entries = normalizePackEntries(pack);
 
     if (packs.has(pack.id)) {
       diagnostics.push({
@@ -78,74 +80,90 @@ export function createDataRegistry(): DataRegistry {
       });
     }
 
-    for (const [kind, values] of Object.entries(pack.data)) {
-      const definition = kinds.get(kind);
+    entries.forEach((entry, index) => {
+      const path = entryPath(index);
+      const type = entry.type;
+      const definition = types.get(type);
       if (!definition) {
         diagnostics.push({
-          code: "data.unknown_kind",
-          message: `Unknown data kind: ${kind}`,
+          code: "data.unknown_type",
+          message: `Unknown data type: ${type}`,
           severity: "error",
-          path: `data.${kind}`,
-          sourcePackId: pack.id
+          path,
+          sourcePackId: pack.id,
+          details: {
+            entryType: type,
+            entryId: entry.id
+          }
         });
-        continue;
+        const lastDiagnostic = diagnostics[diagnostics.length - 1];
+        if (entry.id && lastDiagnostic) {
+          lastDiagnostic.key = { type, id: entry.id };
+        }
+        return;
       }
 
-      values.forEach((rawValue, index) => {
-        const path = `data.${kind}[${index}]`;
-        const context: DataKindContext = { kind, pack, path };
-        const normalized = normalizeValue(definition, rawValue, context);
-        const id = readDocumentId(definition, normalized, context);
+      const context: DataTypeContext = { type, pack, path, entry };
+      const normalized = normalizeValue(definition, entry.data, context);
+      const id = entry.id;
 
-        if (!id) {
-          diagnostics.push({
-            code: "data.missing_id",
-            message: `Missing id for data document: ${kind}`,
-            severity: "error",
-            path,
-            sourcePackId: pack.id
-          });
-          return;
-        }
-
-        const key: DataKey = { kind, id };
-        const keyString = dataKeyString(key);
-        if (documents.has(keyString) || seenInPack.has(keyString)) {
-          diagnostics.push({
-            code: "data.duplicate_document",
-            message: `Duplicate data document: ${keyString}`,
-            severity: "error",
-            key,
-            path,
-            sourcePackId: pack.id
-          });
-          return;
-        }
-
-        seenInPack.add(keyString);
-        const document = createDocument(definition, {
-          value: normalized,
-          pack,
-          kind,
-          path
+      if (!id) {
+        diagnostics.push({
+          code: "data.missing_id",
+          message: `Missing id for data document: ${type}`,
+          severity: "error",
+          path,
+          sourcePackId: pack.id,
+          details: {
+            entryType: type
+          }
         });
-        nextDocuments.push(document);
-        diagnostics.push(...(definition.validate?.(document, context) ?? []));
+        return;
+      }
 
-        for (const reference of definition.references?.(document, context) ?? []) {
-          nextReferences.push({
-            from: key,
-            to: {
-              kind: reference.kind,
-              id: reference.id
-            },
-            path: reference.path,
-            sourcePackId: pack.id,
-            optional: reference.optional === true
-          });
-        }
+      const key: DataKey = { type, id };
+      const keyString = dataKeyString(key);
+      if (documents.has(keyString) || seenInPack.has(keyString)) {
+        diagnostics.push({
+          code: "data.duplicate_document",
+          message: `Duplicate data document: ${keyString}`,
+          severity: "error",
+          key,
+          path,
+          sourcePackId: pack.id,
+          details: {
+            entryType: type,
+            entryId: id
+          }
+        });
+        return;
+      }
+
+      seenInPack.add(keyString);
+      const document = createDocument(definition, {
+        data: normalized,
+        pack,
+        type,
+        id,
+        path,
+        entry
       });
-    }
+      nextDocuments.push(document);
+      diagnostics.push(...(definition.validate?.(document, context) ?? []));
+
+      for (const reference of definition.references?.(document, context) ?? []) {
+        nextReferences.push({
+          from: key,
+          to: {
+            type: reference.type,
+            id: reference.id
+          },
+          path: reference.path,
+          sourcePackId: pack.id,
+          optional: reference.optional === true
+        });
+      }
+    });
 
     const availableKeys = new Set([...documents.keys(), ...nextDocuments.map(dataKeyString)]);
     for (const reference of nextReferences) {
@@ -157,7 +175,9 @@ export function createDataRegistry(): DataRegistry {
           key: reference.from,
           path: reference.path,
           details: {
-            targetKind: reference.to.kind,
+            entryType: reference.from.type,
+            entryId: reference.from.id,
+            targetType: reference.to.type,
             targetId: reference.to.id
           }
         };
@@ -175,31 +195,32 @@ export function createDataRegistry(): DataRegistry {
     };
   };
 
-  const getDocument = <T = unknown>(kind: DataKind, id: DataId): DataDocument<T> => {
-    const document = documents.get(dataKeyString({ kind, id }));
+  const getDocument = <T = unknown>(type: DataTypeId, id: DataId): DataDocument<T> => {
+    const document = documents.get(dataKeyString({ type, id }));
     if (!document) {
-      throw createDataMissingDocumentError(kind, id);
+      throw createDataMissingDocumentError(type, id);
     }
 
     return document as DataDocument<T>;
   };
 
   return {
-    registerKind(definition) {
-      if (kinds.has(definition.kind)) {
-        throw createDataDuplicateKindError(definition.kind);
+    registerType(definition) {
+      const normalized = normalizeDefinition(definition);
+      if (types.has(normalized.type)) {
+        throw createDataDuplicateTypeError(normalized.type);
       }
 
-      kinds.set(definition.kind, definition as DataKindDefinition);
+      types.set(normalized.type, normalized as DataTypeDefinition);
     },
-    hasKind(kind) {
-      return kinds.has(kind);
+    hasType(type) {
+      return types.has(type);
     },
-    kind(kind) {
-      return requireKind(kind);
+    type(type) {
+      return requireType(type);
     },
-    kinds() {
-      return [...kinds.values()];
+    types() {
+      return [...types.values()];
     },
     validatePack(pack) {
       return materializePack(pack);
@@ -222,18 +243,18 @@ export function createDataRegistry(): DataRegistry {
       rebuildIndexes();
       return validation;
     },
-    has(kind, id) {
-      return documents.has(dataKeyString({ kind, id }));
+    has(type, id) {
+      return documents.has(dataKeyString({ type, id }));
     },
-    get<T = unknown>(kind: DataKind, id: DataId) {
-      return getDocument<T>(kind, id);
+    get<T = unknown>(type: DataTypeId, id: DataId) {
+      return getDocument<T>(type, id);
     },
-    getValue<T = unknown>(kind: DataKind, id: DataId) {
-      return getDocument<T>(kind, id).value;
+    getValue<T = unknown>(type: DataTypeId, id: DataId) {
+      return getDocument<T>(type, id).data;
     },
-    list<T = unknown>(kind: DataKind) {
-      requireKind(kind);
-      return [...documents.values()].filter((document) => document.kind === kind) as Array<
+    list<T = unknown>(type: DataTypeId) {
+      requireType(type);
+      return [...documents.values()].filter((document) => document.type === type) as Array<
         DataDocument<T>
       >;
     },
@@ -251,8 +272,9 @@ export function createDataRegistry(): DataRegistry {
       return graph.referencesTo(key);
     },
     snapshot(): DataSnapshot {
+      const typeIds = [...types.keys()];
       return {
-        kinds: [...kinds.keys()],
+        types: typeIds,
         packs: [...packs.keys()],
         documents: [...documents.values()],
         references: graph.references()
@@ -274,61 +296,75 @@ export function createDataRegistry(): DataRegistry {
   }
 }
 
+function normalizeDefinition<T>(definition: DataTypeDefinition<T>): DataTypeDefinition<T> {
+  if (!definition.type) {
+    throw createDataMissingTypeError("<unknown>");
+  }
+
+  return definition;
+}
+
+function normalizePackEntries(pack: DataPack): DataPackEntry[] {
+  return pack.entries;
+}
+
+function entryPath(index: number): string {
+  return `entries[${index}]`;
+}
+
 function normalizeValue<T>(
-  definition: DataKindDefinition<T>,
+  definition: DataTypeDefinition<T>,
   value: unknown,
-  context: DataKindContext
+  context: DataTypeContext
 ): T {
   const typed = value as T;
   return definition.normalize?.(typed, context) ?? typed;
 }
 
-function readDocumentId<T>(
-  definition: DataKindDefinition<T>,
-  value: T,
-  context: DataKindContext
-): DataId | undefined {
-  const explicit = definition.getId?.(value, context);
-  if (explicit) {
-    return explicit;
-  }
-
-  return typeof value === "object" && value !== null && "id" in value
-    ? String((value as { id?: unknown }).id ?? "")
-    : undefined;
-}
-
 function createDocument<T>(
-  definition: DataKindDefinition<T>,
+  definition: DataTypeDefinition<T>,
   input: {
-    value: T;
+    data: T;
     pack: DataPack;
-    kind: DataKind;
+    type: DataTypeId;
+    id: DataId;
     path: string;
+    entry?: DataPackEntry<T>;
   }
 ): DataDocument<T> {
-  const context: DataKindContext = {
-    kind: input.kind,
+  const context: DataTypeContext = {
+    type: input.type,
     pack: input.pack,
     path: input.path
   };
-  const id = readDocumentId(definition, input.value, context)!;
+  if (input.entry) {
+    context.entry = input.entry;
+  }
+  const entry = input.entry;
+  const tags = unique([
+    ...(definition.getTags?.(input.data, context) ?? readTags(input.data)),
+    ...(entry?.tags ?? [])
+  ]);
   const document: DataDocument<T> = {
-    kind: input.kind,
-    id,
-    value: input.value,
-    priority: input.pack.priority ?? 0,
-    tags: definition.getTags?.(input.value, context) ?? readTags(input.value)
+    type: input.type,
+    id: input.id,
+    data: input.data,
+    priority: entry?.priority ?? input.pack.priority ?? 0,
+    tags
   };
 
   if (input.pack.id) {
     document.sourcePackId = input.pack.id;
   }
-  if (input.pack.namespace) {
-    document.namespace = input.pack.namespace;
+  const namespace = entry?.namespace ?? input.pack.namespace;
+  if (namespace) {
+    document.namespace = namespace;
   }
 
-  const metadata = definition.getMetadata?.(input.value, context) ?? readMetadata(input.value);
+  const metadata = mergeMetadata(
+    definition.getMetadata?.(input.data, context) ?? readMetadata(input.data),
+    entry?.metadata
+  );
   if (metadata) {
     document.metadata = metadata;
   }
@@ -356,6 +392,23 @@ function readMetadata(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+function mergeMetadata(
+  base?: Record<string, unknown>,
+  override?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (!base && !override) {
+    return undefined;
+  }
+  return {
+    ...base,
+    ...override
+  };
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
 function queryDocuments(
   query: DataQuery,
   documents: Map<string, DataDocument>,
@@ -363,8 +416,8 @@ function queryDocuments(
 ): DataDocument[] {
   let keys: Set<string> | undefined;
 
-  if (query.kind) {
-    keys = intersectKeys(keys, indexes.get(indexKey("kind", query.kind)));
+  if (query.type) {
+    keys = intersectKeys(keys, indexes.get(indexKey("type", query.type)));
   }
   if (query.sourcePackId) {
     keys = intersectKeys(keys, indexes.get(indexKey("sourcePackId", query.sourcePackId)));

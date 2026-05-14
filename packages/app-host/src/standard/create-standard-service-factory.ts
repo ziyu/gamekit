@@ -80,9 +80,9 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
             id: DATA_SERVICE.id,
             dependencies: ctx.service.dependencies,
             boot() {
-              for (const kind of options.kinds?.(ctx) ?? []) {
-                if (!registry.hasKind(kind.kind)) {
-                  registry.registerKind(kind);
+              for (const type of options.types?.(ctx) ?? []) {
+                if (!registry.hasType(type.type)) {
+                  registry.registerType(type);
                 }
               }
               for (const pack of options.dataPacks?.(ctx) ?? []) {
@@ -157,7 +157,7 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
               ((options.dataRegistry?.(ctx) ?? ctx.state.data) ? ["data"] : []),
             async boot() {
               const dataRegistry = options.dataRegistry?.(ctx) ?? ctx.state.data;
-              if (dataRegistry?.hasKind("asset")) {
+              if (dataRegistry?.hasType("asset.definition")) {
                 manager.registerFromDataRegistry(dataRegistry);
               }
               const preloadGroups =

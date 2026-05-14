@@ -4,7 +4,7 @@ import {
   createMissingAssetError,
   createUnsupportedAssetError
 } from "./errors";
-import { DEFAULT_ASSET_DATA_KIND } from "./asset-data-kind";
+import { DEFAULT_ASSET_DATA_TYPE } from "./asset-data-type";
 import type {
   AssetDefinition,
   AssetLoadState,
@@ -63,8 +63,8 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
       registry: DataRegistry,
       registerOptions: RegisterAssetsFromDataOptions = {}
     ) {
-      const kind = registerOptions.kind ?? DEFAULT_ASSET_DATA_KIND;
-      const definitions = registry.list<AssetDefinition>(kind).map((document) => document.value);
+      const type = registerOptions.type ?? DEFAULT_ASSET_DATA_TYPE;
+      const definitions = registry.list<AssetDefinition>(type).map((document) => document.data);
       this.registerMany(definitions);
       return definitions;
     },

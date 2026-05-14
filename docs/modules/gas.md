@@ -152,4 +152,6 @@ Trace 是 GAS 的核心能力之一，因为数据驱动玩法如果不可解释
 
 ## 与 DataPack 的关系
 
-Actor、Attribute、Tag、Ability、Effect、Cue、Clue 都由 DataPack 注册和校验。引用关系必须在 DataPack load 阶段检查。
+Actor、Attribute、Tag、Ability、Effect、Cue、Clue 都通过明确的 DataType 注册和校验，例如 `gas.actor`、`gas.ability`、`gas.effect`。DataPack 可以混合这些内置类型和游戏自定义类型，例如 `game.hero` 或 `game.monster`。
+
+GAS 不要求游戏必须按 GAS 类型组织内容文件。真实项目可以把某个 hero 的 `game.hero`、`gas.actor`、`gas.ability`、`render.object` 和 asset references 放在同一个业务文件里，也可以拆到不同 DataPack。引用关系必须在 DataPack load 阶段通过 DataRef / AssetRef 检查。

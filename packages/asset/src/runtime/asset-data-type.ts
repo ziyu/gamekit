@@ -1,18 +1,18 @@
-import type { DataKindDefinition } from "@gamekit/data";
+import type { DataTypeDefinition } from "@gamekit/data";
 import type { AssetDefinition, AssetSource, AssetType } from "./types";
 
-export type AssetDataKindOptions = {
-  kind?: string;
+export type AssetDataTypeOptions = {
+  type?: string;
   supportedTypes?: AssetType[];
   supportedSources?: AssetSource["type"][];
 };
 
-export const DEFAULT_ASSET_DATA_KIND = "asset";
+export const DEFAULT_ASSET_DATA_TYPE = "asset.definition";
 
-export function createAssetDataKind(
-  options: AssetDataKindOptions = {}
-): DataKindDefinition<AssetDefinition> {
-  const kind = options.kind ?? DEFAULT_ASSET_DATA_KIND;
+export function createAssetDataType(
+  options: AssetDataTypeOptions = {}
+): DataTypeDefinition<AssetDefinition> {
+  const type = options.type ?? DEFAULT_ASSET_DATA_TYPE;
   const supportedTypes = new Set(
     options.supportedTypes ?? [
       "image",
@@ -33,12 +33,12 @@ export function createAssetDataKind(
   );
 
   return {
-    kind,
+    type,
     getTags: (asset) => asset.tags ?? [],
     getMetadata: (asset) => asset.metadata,
     validate(document) {
       const diagnostics = [];
-      const asset = document.value;
+      const asset = document.data;
 
       if (!supportedTypes.has(asset.type)) {
         diagnostics.push({

@@ -11,10 +11,10 @@ import {
 import { createCameraController } from "@gamekit/camera-core";
 import { createDataRegistry } from "@gamekit/data";
 import { createEventBus } from "@gamekit/event-bus";
-import { createGasDataKinds, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
+import { createGasDataTypes, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
 import { createGame } from "@gamekit/game-runtime";
 import { type GameWorld } from "@gamekit/world";
-import { createTcaRuleDataKind } from "@gamekit/tca";
+import { createTcaRuleDataType } from "@gamekit/tca";
 
 describe("app host service registry", () => {
   it("registers and exposes services through the registry", () => {
@@ -206,22 +206,24 @@ describe("configured app host", () => {
 
   it("injects standard camera, TCA, and GAS game modules into the runtime factory", async () => {
     const registry = createDataRegistry();
-    registry.registerKind(createTcaRuleDataKind());
-    for (const kind of createGasDataKinds()) {
-      registry.registerKind(kind);
+    registry.registerType(createTcaRuleDataType());
+    for (const type of createGasDataTypes()) {
+      registry.registerType(type);
     }
     registry.registerPack({
       id: "rules",
       version: "1.0.0",
-      data: {
-        tcaRule: [
-          {
+      entries: [
+        {
+          type: "tca.rule",
+          id: "rule.standard.tca",
+          data: {
             id: "rule.standard.tca",
             trigger: { type: "event.type", args: { eventType: "test.trigger" } },
             actions: [{ type: "event.emit", args: { eventType: "test.derived" } }]
           }
-        ]
-      }
+        }
+      ]
     });
     const camera = createCameraController({ viewport: { width: 320, height: 180 } });
     const initialCameraX = camera.getState().x;

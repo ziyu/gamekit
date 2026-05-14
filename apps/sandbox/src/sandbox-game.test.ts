@@ -221,75 +221,102 @@ describe("sandbox runtime", () => {
     const registry = createSandboxDataRegistry();
     const snapshot = registry.snapshot();
     const asset = registry.getValue<{ source: { url?: string } }>(
-      "asset",
+      "asset.definition",
       "asset.sandbox.entity_square"
     );
 
-    expect(snapshot.kinds).toContain("asset");
-    expect(snapshot.kinds).toContain("renderObject");
-    expect(snapshot.kinds).toContain("renderRig");
-    expect(snapshot.kinds).toContain("actor");
-    expect(snapshot.kinds).toContain("ability");
-    expect(snapshot.kinds).toContain("gas.actor");
-    expect(snapshot.kinds).toContain("gas.ability");
-    expect(snapshot.kinds).toContain("gas.effect");
-    expect(snapshot.kinds).toContain("biome");
-    expect(snapshot.kinds).toContain("spawnProfile");
-    expect(snapshot.kinds).toContain("sceneObject");
-    expect(snapshot.kinds).toContain("station");
-    expect(snapshot.kinds).toContain("productionRecipe");
-    expect(snapshot.kinds).toContain("objectivePhase");
-    expect(snapshot.kinds).toContain("threatProfile");
-    expect(snapshot.kinds).toContain("outpostRoute");
-    expect(snapshot.kinds).toContain("sceneLayout");
-    expect(snapshot.kinds).toContain("tcaRule");
+    expect(snapshot.types).toContain("asset.definition");
+    expect(snapshot.types).toContain("render.object");
+    expect(snapshot.types).toContain("sandbox.renderRig");
+    expect(snapshot.types).toContain("sandbox.actor");
+    expect(snapshot.types).toContain("sandbox.ability");
+    expect(snapshot.types).toContain("gas.actor");
+    expect(snapshot.types).toContain("gas.ability");
+    expect(snapshot.types).toContain("gas.effect");
+    expect(snapshot.types).toContain("sandbox.biome");
+    expect(snapshot.types).toContain("sandbox.spawnProfile");
+    expect(snapshot.types).toContain("sandbox.sceneObject");
+    expect(snapshot.types).toContain("sandbox.station");
+    expect(snapshot.types).toContain("sandbox.productionRecipe");
+    expect(snapshot.types).toContain("sandbox.objectivePhase");
+    expect(snapshot.types).toContain("sandbox.threatProfile");
+    expect(snapshot.types).toContain("sandbox.outpostRoute");
+    expect(snapshot.types).toContain("sandbox.sceneLayout");
+    expect(snapshot.types).toContain("tca.rule");
     expect(snapshot.documents.length).toBeGreaterThanOrEqual(78);
     expect(snapshot.references).toContainEqual(
       expect.objectContaining({
-        from: { kind: "renderObject", id: "render.sandbox.entity" },
-        to: { kind: "asset", id: "asset.sandbox.entity_square" },
+        from: expect.objectContaining({ type: "render.object", id: "render.sandbox.entity" }),
+        to: expect.objectContaining({
+          type: "asset.definition",
+          id: "asset.sandbox.entity_square"
+        }),
         path: "children.body"
       })
     );
     expect(snapshot.references).toContainEqual(
       expect.objectContaining({
-        from: { kind: "actor", id: "actor.sandbox.scout_swarm" },
-        to: { kind: "renderRig", id: "renderRig.sandbox.scout_swarm" },
+        from: expect.objectContaining({ type: "sandbox.actor", id: "actor.sandbox.scout_swarm" }),
+        to: expect.objectContaining({
+          type: "sandbox.renderRig",
+          id: "renderRig.sandbox.scout_swarm"
+        }),
         path: "renderRigId"
       })
     );
     expect(snapshot.references).toContainEqual(
       expect.objectContaining({
-        from: { kind: "spawnProfile", id: "spawn.sandbox.scout_patrol" },
-        to: { kind: "biome", id: "biome.sandbox.neon_ruins" },
+        from: expect.objectContaining({
+          type: "sandbox.spawnProfile",
+          id: "spawn.sandbox.scout_patrol"
+        }),
+        to: expect.objectContaining({ type: "sandbox.biome", id: "biome.sandbox.neon_ruins" }),
         path: "biomeId"
       })
     );
     expect(snapshot.references).toContainEqual(
       expect.objectContaining({
-        from: { kind: "sceneObject", id: "scene.sandbox.command_core" },
-        to: { kind: "renderObject", id: "render.sandbox.command_core" },
+        from: expect.objectContaining({
+          type: "sandbox.sceneObject",
+          id: "scene.sandbox.command_core"
+        }),
+        to: expect.objectContaining({ type: "render.object", id: "render.sandbox.command_core" }),
         path: "renderObjectId"
       })
     );
     expect(snapshot.references).toContainEqual(
       expect.objectContaining({
-        from: { kind: "sceneLayout", id: "sceneLayout.sandbox.signal_outpost" },
-        to: { kind: "sceneObject", id: "scene.sandbox.relay_north" },
+        from: expect.objectContaining({
+          type: "sandbox.sceneLayout",
+          id: "sceneLayout.sandbox.signal_outpost"
+        }),
+        to: expect.objectContaining({
+          type: "sandbox.sceneObject",
+          id: "scene.sandbox.relay_north"
+        }),
         path: "objectIds[2]"
       })
     );
     expect(snapshot.references).toContainEqual(
       expect.objectContaining({
-        from: { kind: "sceneObject", id: "scene.sandbox.command_core" },
-        to: { kind: "station", id: "station.sandbox.command_core" },
+        from: expect.objectContaining({
+          type: "sandbox.sceneObject",
+          id: "scene.sandbox.command_core"
+        }),
+        to: expect.objectContaining({
+          type: "sandbox.station",
+          id: "station.sandbox.command_core"
+        }),
         path: "stationDefinitionId"
       })
     );
     expect(snapshot.references).toContainEqual(
       expect.objectContaining({
-        from: { kind: "sceneLayout", id: "sceneLayout.sandbox.signal_outpost" },
-        to: { kind: "outpostRoute", id: "route.relay_north.core" },
+        from: expect.objectContaining({
+          type: "sandbox.sceneLayout",
+          id: "sceneLayout.sandbox.signal_outpost"
+        }),
+        to: expect.objectContaining({ type: "sandbox.outpostRoute", id: "route.relay_north.core" }),
         path: "links[1].routeId"
       })
     );
@@ -311,7 +338,7 @@ describe("sandbox runtime", () => {
 
     expect(snapshot.contentSummary).toEqual({
       packs: registrySnapshot.packs.length,
-      kinds: registrySnapshot.kinds.length,
+      types: registrySnapshot.types.length,
       documents: registrySnapshot.documents.length,
       references: registrySnapshot.references.length,
       assetsLoaded: 2,

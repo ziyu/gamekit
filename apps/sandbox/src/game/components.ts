@@ -32,7 +32,8 @@ export const SceneObject = defineComponent({
     objectId: data?.objectId ?? "sandbox.object",
     label: data?.label ?? data?.objectId ?? "Sandbox Object",
     role: data?.role ?? "scout",
-    dataKind: data?.dataKind,
+    dataType: data?.dataType ?? data?.dataKind,
+    dataKind: data?.dataKind ?? data?.dataType,
     dataId: data?.dataId,
     actorId: data?.actorId
   })
@@ -156,6 +157,8 @@ export type SandboxSceneObject = {
   objectId: string;
   label: string;
   role: SandboxSceneRole;
+  dataType?: string | undefined;
+  /** @deprecated Use dataType. */
   dataKind?: string | undefined;
   dataId?: string | undefined;
   actorId?: string | undefined;

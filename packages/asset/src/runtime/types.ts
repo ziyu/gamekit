@@ -38,6 +38,12 @@ export type AssetDefinition = {
   frame?: SpritesheetFrameConfig;
 };
 
+export type AssetRef<TAssetType extends AssetType = AssetType> = {
+  assetId: string;
+  type?: TAssetType;
+  variant?: string;
+};
+
 export type AssetLoadStatus = "registered" | "loading" | "loaded" | "failed";
 
 export type AssetLoadState = {
@@ -67,7 +73,7 @@ export type CreateAssetManagerOptions = {
 };
 
 export type RegisterAssetsFromDataOptions = {
-  kind?: string;
+  type?: string;
 };
 
 export type AssetManager = {

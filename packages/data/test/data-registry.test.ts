@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   DataRegistryError,
   createDataRegistry,
-  type DataKindDefinition,
-  type DataPack
+  type DataPack,
+  type DataTypeDefinition
 } from "../src";
 
 type AssetDefinition = {
@@ -26,141 +26,190 @@ type ActorDefinition = {
   tags?: string[];
 };
 
+type HeroDefinition = {
+  id: string;
+  actorId: string;
+  role: string;
+  tags?: string[];
+};
+
 describe("createDataRegistry", () => {
-  it("registers custom data kinds and data packs", () => {
+  it("registers custom data types and entry-based data packs", () => {
     const registry = createDataRegistry();
-    registry.registerKind(assetKind());
-    registry.registerKind(renderObjectKind(["sprite"]));
+    registry.registerType(assetType());
+    registry.registerType(renderObjectType(["sprite"]));
+    registry.registerType(heroType());
 
     registry.registerPack({
       id: "sandbox",
       version: "1.0.0",
       namespace: "demo",
       priority: 10,
-      data: {
-        asset: [{ id: "asset.hero", type: "image", tags: ["preload"] }],
-        renderObject: [{ id: "render.hero", type: "sprite", assetId: "asset.hero" }]
-      }
+      entries: [
+        {
+          type: "asset.definition",
+          id: "asset.hero",
+          data: { id: "asset.hero", type: "image", tags: ["preload"] }
+        },
+        {
+          type: "render.object",
+          id: "render.hero",
+          data: { id: "render.hero", type: "sprite", assetId: "asset.hero" }
+        },
+        {
+          type: "game.hero",
+          id: "hero.guardian",
+          data: { id: "hero.guardian", actorId: "actor.guardian", role: "tank" }
+        }
+      ]
     });
 
-    expect(registry.getValue<AssetDefinition>("asset", "asset.hero")).toMatchObject({
+    expect(registry.getValue<AssetDefinition>("asset.definition", "asset.hero")).toMatchObject({
       id: "asset.hero"
     });
-    expect(registry.list("renderObject")).toHaveLength(1);
-    expect(registry.query({ kind: "asset", tags: ["preload"] })).toHaveLength(1);
-    expect(registry.query({ sourcePackId: "sandbox" })).toHaveLength(2);
+    expect(registry.list("render.object")).toHaveLength(1);
+    expect(registry.query({ type: "asset.definition", tags: ["preload"] })).toHaveLength(1);
+    expect(registry.query({ sourcePackId: "sandbox" })).toHaveLength(3);
     expect(registry.snapshot()).toMatchObject({
-      kinds: ["asset", "renderObject"],
+      types: ["asset.definition", "render.object", "game.hero"],
       packs: ["sandbox"]
     });
   });
 
   it("supports custom indexes for global gameplay data", () => {
     const registry = createDataRegistry();
-    registry.registerKind(renderObjectKind(["sprite"]));
-    registry.registerKind(actorKind());
+    registry.registerType(renderObjectType(["sprite"]));
+    registry.registerType(actorType());
     registry.registerPack(packWithActor());
 
     const guardians = registry.query<ActorDefinition>({
-      kind: "actor",
+      type: "game.actor",
       index: { id: "faction", value: "guardian" }
     });
 
     expect(guardians.map((document) => document.id)).toEqual(["actor.guardian"]);
   });
 
-  it("tracks outgoing and incoming references", () => {
+  it("tracks outgoing and incoming references by type and id", () => {
     const registry = createDataRegistry();
-    registry.registerKind(assetKind());
-    registry.registerKind(renderObjectKind(["sprite"]));
-    registry.registerKind(actorKind());
+    registry.registerType(assetType());
+    registry.registerType(renderObjectType(["sprite"]));
+    registry.registerType(actorType());
     registry.registerPack({
       id: "sandbox",
       version: "1.0.0",
-      data: {
-        asset: [{ id: "asset.hero", type: "image" }],
-        renderObject: [{ id: "render.hero", type: "sprite", assetId: "asset.hero" }],
-        actor: [{ id: "actor.guardian", renderObjectId: "render.hero", faction: "guardian" }]
-      }
+      entries: [
+        { type: "asset.definition", id: "asset.hero", data: { id: "asset.hero", type: "image" } },
+        {
+          type: "render.object",
+          id: "render.hero",
+          data: { id: "render.hero", type: "sprite", assetId: "asset.hero" }
+        },
+        {
+          type: "game.actor",
+          id: "actor.guardian",
+          data: { id: "actor.guardian", renderObjectId: "render.hero", faction: "guardian" }
+        }
+      ]
     });
 
-    expect(registry.referencesFrom({ kind: "actor", id: "actor.guardian" })).toMatchObject([
+    expect(registry.referencesFrom({ type: "game.actor", id: "actor.guardian" })).toMatchObject([
       {
-        from: { kind: "actor", id: "actor.guardian" },
-        to: { kind: "renderObject", id: "render.hero" }
+        from: { type: "game.actor", id: "actor.guardian" },
+        to: { type: "render.object", id: "render.hero" }
       }
     ]);
-    expect(registry.referencesTo({ kind: "asset", id: "asset.hero" })).toMatchObject([
+    expect(registry.referencesTo({ type: "asset.definition", id: "asset.hero" })).toMatchObject([
       {
-        from: { kind: "renderObject", id: "render.hero" },
-        to: { kind: "asset", id: "asset.hero" }
+        from: { type: "render.object", id: "render.hero" },
+        to: { type: "asset.definition", id: "asset.hero" }
       }
     ]);
   });
 
   it("reports duplicate documents", () => {
     const registry = createDataRegistry();
-    registry.registerKind(assetKind());
+    registry.registerType(assetType());
 
     expect(() =>
       registry.registerPack({
         id: "broken",
         version: "1.0.0",
-        data: {
-          asset: [
-            { id: "asset.hero", type: "image" },
-            { id: "asset.hero", type: "image" }
-          ]
-        }
+        entries: [
+          { type: "asset.definition", id: "asset.hero", data: { id: "asset.hero", type: "image" } },
+          { type: "asset.definition", id: "asset.hero", data: { id: "asset.hero", type: "image" } }
+        ]
       })
     ).toThrow(DataRegistryError);
   });
 
   it("reports duplicate data packs", () => {
     const registry = createDataRegistry();
-    registry.registerKind(assetKind());
+    registry.registerType(assetType());
     registry.registerPack({
       id: "sandbox",
       version: "1.0.0",
-      data: { asset: [{ id: "asset.hero", type: "image" }] }
+      entries: [
+        { type: "asset.definition", id: "asset.hero", data: { id: "asset.hero", type: "image" } }
+      ]
     });
 
     expect(() =>
       registry.registerPack({
         id: "sandbox",
         version: "1.0.0",
-        data: { asset: [{ id: "asset.villain", type: "image" }] }
+        entries: [
+          {
+            type: "asset.definition",
+            id: "asset.villain",
+            data: { id: "asset.villain", type: "image" }
+          }
+        ]
       })
     ).toThrow(DataRegistryError);
   });
 
-  it("reports unknown kinds, validation failures, and missing references", () => {
+  it("reports unknown types, validation failures, and missing references with source detail", () => {
     const registry = createDataRegistry();
-    registry.registerKind(assetKind());
-    registry.registerKind(renderObjectKind(["sprite"]));
+    registry.registerType(assetType());
+    registry.registerType(renderObjectType(["sprite"]));
 
     const validation = registry.validatePack({
       id: "broken",
       version: "1.0.0",
-      data: {
-        asset: [{ id: "asset.bad", type: "video" }],
-        renderObject: [{ id: "render.hero", type: "mesh", assetId: "asset.missing" }],
-        ability: [{ id: "ability.unregistered" }]
-      }
+      entries: [
+        { type: "asset.definition", id: "asset.bad", data: { id: "asset.bad", type: "video" } },
+        {
+          type: "render.object",
+          id: "render.hero",
+          data: { id: "render.hero", type: "mesh", assetId: "asset.missing" }
+        },
+        { type: "game.ability", id: "ability.unregistered", data: { id: "ability.unregistered" } }
+      ]
     });
 
     expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
       "data.validation.unknown_asset_type",
       "data.validation.unknown_render_type",
-      "data.unknown_kind",
+      "data.unknown_type",
       "data.missing_reference"
     ]);
+    expect(validation.diagnostics.at(-1)).toMatchObject({
+      sourcePackId: "broken",
+      path: "assetId",
+      details: {
+        entryType: "render.object",
+        entryId: "render.hero",
+        targetType: "asset.definition",
+        targetId: "asset.missing"
+      }
+    });
   });
 
   it("normalizes documents before registration", () => {
     const registry = createDataRegistry();
-    registry.registerKind<AssetDefinition>({
-      kind: "asset",
+    registry.registerType<AssetDefinition>({
+      type: "asset.definition",
       normalize: (value) => ({
         ...value,
         id: value.id.trim()
@@ -170,48 +219,58 @@ describe("createDataRegistry", () => {
     registry.registerPack({
       id: "sandbox",
       version: "1.0.0",
-      data: {
-        asset: [{ id: " asset.hero ", type: "image" }]
-      }
+      entries: [
+        {
+          type: "asset.definition",
+          id: "asset.hero",
+          data: { id: " asset.hero ", type: "image" }
+        }
+      ]
     });
 
-    expect(registry.has("asset", "asset.hero")).toBe(true);
+    expect(registry.has("asset.definition", "asset.hero")).toBe(true);
+    expect(registry.getValue<AssetDefinition>("asset.definition", "asset.hero").id).toBe(
+      "asset.hero"
+    );
   });
 });
 
-function assetKind(): DataKindDefinition<AssetDefinition> {
+function assetType(
+  patch: Partial<DataTypeDefinition<AssetDefinition>> = {}
+): DataTypeDefinition<AssetDefinition> {
   return {
-    kind: "asset",
+    type: "asset.definition",
     validate(document) {
-      return document.value.type === "image" || document.value.type === "spritesheet"
+      return document.data.type === "image" || document.data.type === "spritesheet"
         ? []
         : [
             {
               code: "data.validation.unknown_asset_type",
-              message: `Unknown asset type: ${document.value.type}`,
+              message: `Unknown asset type: ${document.data.type}`,
               severity: "error",
               key: document
             }
           ];
-    }
+    },
+    ...patch
   };
 }
 
-function renderObjectKind(supportedTypes: string[]): DataKindDefinition<RenderObjectDefinition> {
+function renderObjectType(supportedTypes: string[]): DataTypeDefinition<RenderObjectDefinition> {
   return {
-    kind: "renderObject",
+    type: "render.object",
     references(document) {
-      return document.value.assetId
-        ? [{ kind: "asset", id: document.value.assetId, path: "assetId" }]
+      return document.data.assetId
+        ? [{ type: "asset.definition", id: document.data.assetId, path: "assetId" }]
         : [];
     },
     validate(document) {
-      return supportedTypes.includes(document.value.type)
+      return supportedTypes.includes(document.data.type)
         ? []
         : [
             {
               code: "data.validation.unknown_render_type",
-              message: `Unknown render type: ${document.value.type}`,
+              message: `Unknown render type: ${document.data.type}`,
               severity: "error",
               key: document
             }
@@ -220,17 +279,31 @@ function renderObjectKind(supportedTypes: string[]): DataKindDefinition<RenderOb
   };
 }
 
-function actorKind(): DataKindDefinition<ActorDefinition> {
+function actorType(): DataTypeDefinition<ActorDefinition> {
   return {
-    kind: "actor",
+    type: "game.actor",
     references(document) {
-      return [{ kind: "renderObject", id: document.value.renderObjectId, path: "renderObjectId" }];
+      return [{ type: "render.object", id: document.data.renderObjectId, path: "renderObjectId" }];
     },
     indexes: [
       {
         id: "faction",
         values(document) {
-          return [document.value.faction];
+          return [document.data.faction];
+        }
+      }
+    ]
+  };
+}
+
+function heroType(): DataTypeDefinition<HeroDefinition> {
+  return {
+    type: "game.hero",
+    indexes: [
+      {
+        id: "role",
+        values(document) {
+          return [document.data.role];
         }
       }
     ]
@@ -241,15 +314,17 @@ function packWithActor(): DataPack {
   return {
     id: "sandbox",
     version: "1.0.0",
-    data: {
-      renderObject: [{ id: "render.hero", type: "sprite" }],
-      actor: [
-        {
+    entries: [
+      { type: "render.object", id: "render.hero", data: { id: "render.hero", type: "sprite" } },
+      {
+        type: "game.actor",
+        id: "actor.guardian",
+        data: {
           id: "actor.guardian",
           renderObjectId: "render.hero",
           faction: "guardian"
         }
-      ]
-    }
+      }
+    ]
   };
 }

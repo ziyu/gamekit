@@ -1,8 +1,8 @@
-export type DataKind = string;
+export type DataTypeId = string;
 export type DataId = string;
 
 export type DataKey = {
-  kind: DataKind;
+  type: DataTypeId;
   id: DataId;
 };
 
@@ -23,15 +23,26 @@ export type DataPack = {
   version: string;
   namespace?: string;
   priority?: number;
-  data: Record<DataKind, unknown[]>;
+  entries: DataPackEntry[];
+  dependencies?: unknown[];
   patches?: unknown[];
   metadata?: Record<string, unknown>;
 };
 
-export type DataDocument<T = unknown> = {
-  kind: DataKind;
+export type DataPackEntry<T = unknown> = {
+  type: DataTypeId;
   id: DataId;
-  value: T;
+  data: T;
+  namespace?: string;
+  priority?: number;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+};
+
+export type DataDocument<T = unknown> = {
+  type: DataTypeId;
+  id: DataId;
+  data: T;
   sourcePackId?: string;
   namespace?: string;
   priority: number;
@@ -40,27 +51,29 @@ export type DataDocument<T = unknown> = {
 };
 
 export type DataDocumentInput<T> = {
-  value: T;
+  data: T;
   pack: DataPack;
-  kind: DataKind;
+  type: DataTypeId;
   path: string;
+  entry?: DataPackEntry<T>;
 };
 
-export type DataKindContext = {
-  kind: DataKind;
+export type DataTypeContext = {
+  type: DataTypeId;
   pack: DataPack;
   path: string;
+  entry?: DataPackEntry;
 };
 
 export type DataValidator<T> = (
   document: DataDocument<T>,
-  context: DataKindContext
+  context: DataTypeContext
 ) => DataDiagnostic[];
 
-export type DataNormalizer<T> = (value: T, context: DataKindContext) => T;
+export type DataNormalizer<T> = (value: T, context: DataTypeContext) => T;
 
 export type DataReferenceTarget = {
-  kind: DataKind;
+  type: DataTypeId;
   id: DataId;
   path: string;
   optional?: boolean;
@@ -76,7 +89,7 @@ export type DataReference = {
 
 export type DataReferenceExtractor<T> = (
   document: DataDocument<T>,
-  context: DataKindContext
+  context: DataTypeContext
 ) => DataReferenceTarget[];
 
 export type DataIndexDefinition<T> = {
@@ -84,19 +97,19 @@ export type DataIndexDefinition<T> = {
   values(document: DataDocument<T>): string[];
 };
 
-export type DataKindDefinition<T = unknown> = {
-  kind: DataKind;
-  getId?: (value: T, context: DataKindContext) => DataId | undefined;
-  getTags?: (value: T, context: DataKindContext) => string[];
-  getMetadata?: (value: T, context: DataKindContext) => Record<string, unknown> | undefined;
+export type DataTypeDefinition<T = unknown> = {
+  type: DataTypeId;
+  getTags?: (value: T, context: DataTypeContext) => string[];
+  getMetadata?: (value: T, context: DataTypeContext) => Record<string, unknown> | undefined;
   normalize?: DataNormalizer<T>;
   validate?: DataValidator<T>;
   references?: DataReferenceExtractor<T>;
   indexes?: Array<DataIndexDefinition<T>>;
+  metadata?: Record<string, unknown>;
 };
 
 export type DataQuery = {
-  kind?: DataKind;
+  type?: DataTypeId;
   tags?: string[];
   sourcePackId?: string;
   namespace?: string;
@@ -107,7 +120,7 @@ export type DataQuery = {
 };
 
 export type DataSnapshot = {
-  kinds: DataKind[];
+  types: DataTypeId[];
   packs: string[];
   documents: Array<DataDocument>;
   references: DataReference[];
@@ -120,20 +133,32 @@ export type DataPackValidation = {
 };
 
 export type DataRegistry = {
-  registerKind<T>(definition: DataKindDefinition<T>): void;
-  hasKind(kind: DataKind): boolean;
-  kind<T = unknown>(kind: DataKind): DataKindDefinition<T>;
-  kinds(): Array<DataKindDefinition>;
+  registerType<T>(definition: DataTypeDefinition<T>): void;
+  hasType(type: DataTypeId): boolean;
+  type<T = unknown>(type: DataTypeId): DataTypeDefinition<T>;
+  types(): Array<DataTypeDefinition>;
   registerPack(pack: DataPack): DataPackValidation;
   validatePack(pack: DataPack): DataPackValidation;
-  has(kind: DataKind, id: DataId): boolean;
-  get<T = unknown>(kind: DataKind, id: DataId): DataDocument<T>;
-  getValue<T = unknown>(kind: DataKind, id: DataId): T;
-  list<T = unknown>(kind: DataKind): Array<DataDocument<T>>;
+  has(type: DataTypeId, id: DataId): boolean;
+  get<T = unknown>(type: DataTypeId, id: DataId): DataDocument<T>;
+  getValue<T = unknown>(type: DataTypeId, id: DataId): T;
+  list<T = unknown>(type: DataTypeId): Array<DataDocument<T>>;
   query<T = unknown>(query: DataQuery): Array<DataDocument<T>>;
   references(): DataReference[];
   referencesFrom(key: DataKey): DataReference[];
   referencesTo(key: DataKey): DataReference[];
   snapshot(): DataSnapshot;
   clear(): void;
+};
+
+export type DataRef<TType extends DataTypeId = DataTypeId> = {
+  type: TType;
+  id: DataId;
+};
+
+export type ExternalDataReference = {
+  category: "data" | "asset" | "custom";
+  target: string;
+  path?: string;
+  metadata?: Record<string, unknown>;
 };

@@ -191,7 +191,7 @@ function renderContentTab(snapshot: SandboxSnapshot, registry: DataRegistry | un
       <h2>Content Graph</h2>
       <dl class="kv">
         <div><dt>Packs</dt><dd>${snapshot.contentSummary.packs}</dd></div>
-        <div><dt>Kinds</dt><dd>${snapshot.contentSummary.kinds}</dd></div>
+        <div><dt>Types</dt><dd>${snapshot.contentSummary.types}</dd></div>
         <div><dt>Documents</dt><dd>${snapshot.contentSummary.documents}</dd></div>
         <div><dt>References</dt><dd>${snapshot.contentSummary.references}</dd></div>
         <div><dt>Assets loaded</dt><dd>${snapshot.contentSummary.assetsLoaded}</dd></div>
@@ -205,7 +205,7 @@ function renderContentTab(snapshot: SandboxSnapshot, registry: DataRegistry | un
           .map(
             (document) => `
           <li>
-            <code>${escapeHtml(document.kind)}:${escapeHtml(document.id)}</code>
+            <code>${escapeHtml(document.type)}:${escapeHtml(document.id)}</code>
             <span>${document.tags.map(escapeHtml).join(" · ") || "untagged"}</span>
           </li>
         `

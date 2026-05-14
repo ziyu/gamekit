@@ -1,5 +1,5 @@
 import { createAssetManager, type AssetDefinition, type AssetLoaderAdapter } from "@gamekit/asset";
-import { createDataRegistry, type DataKindDefinition, type DataPack } from "@gamekit/data";
+import { createDataRegistry, type DataPack, type DataTypeDefinition } from "@gamekit/data";
 import type {
   RenderNodePath,
   RenderNodePatch,
@@ -17,7 +17,7 @@ import { createStandardAppProfile } from "../standard/create-standard-app-profil
 
 export type CreateHeadlessHostOptions = {
   id?: string;
-  kinds?: Array<DataKindDefinition> | undefined;
+  types?: Array<DataTypeDefinition> | undefined;
   dataPacks?: DataPack[] | undefined;
   preloadGroups?: string[] | undefined;
   services?: Array<AppServiceBinding> | undefined;
@@ -50,7 +50,7 @@ export function createHeadlessHost(options: CreateHeadlessHostOptions = {}): App
     services: {
       data: {
         registry: data,
-        kinds: () => options.kinds ?? [],
+        types: () => options.types ?? [],
         dataPacks: () => options.dataPacks ?? []
       },
       renderer: {

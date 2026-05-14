@@ -124,7 +124,7 @@ GameKit 必须区分 App Service 和 Game Module，避免 App Host 变成玩法�
 判断一个能力更像 Game Module：
 
 - 生命周期跟一次游戏会话或 GameRuntime 绑定。
-- 需要注册 system、监听 EventBus、读写 world、读取 gameplay DataKind 或参与 tick。
+- 需要注册 system、监听 EventBus、读写 world、读取 gameplay DataType 或参与 tick。
 - 需要知道具体游戏上下文、规则、actor、camera rig、ability、save slot 等。
 - 应通过 `GameModule` 安装，并在 GameRuntime dispose 时清理订阅和 runtime 状态。
 
@@ -175,7 +175,8 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 - Input：`docs/modules/input.md`
 - Camera：`docs/modules/camera.md`
 - Platform：`docs/modules/platform.md`
-- Asset / Data：`docs/modules/asset-data.md`
+- Data：`docs/modules/data.md`
+- Assets：`docs/modules/assets.md`
 - TCA：`docs/modules/tca.md`
 - GAS：`docs/modules/gas.md`
 - UI：`docs/modules/ui.md`
@@ -219,11 +220,19 @@ Platform 隔离 Web/Tauri/未来平台差异。文件、窗口、权限、路径
 
 详细设计见 `docs/modules/platform.md`。
 
-### Data / Asset
+### Data
 
-Data 是全局内容数据层，Asset 是资源加载运行时。AssetDefinition 作为 DataKind 进入 DataRegistry，AssetManager 从 DataRegistry 读取资源声明并委托 adapter 加载。Asset adapter 不管理 gameplay definitions，DataRegistry 不管理加载状态。
+Data 是全局内容数据层。DataPack 是真实内容交付单元，不是内容分类模型；每条数据通过 `type + id` 声明自己的 DataType，DataRegistry 负责按类型注册、校验、索引和追踪引用。DataType 可以由 GameKit 内置，也可以由游戏项目、插件、mod 或编辑器自定义。
 
-详细设计见 `docs/modules/asset-data.md`。
+GameKit 只要求进入 DataRegistry 的数据有 `type + id` 这类弱约束，不强制开发者采用框架预设的 hero、monster、building、quest 模板。游戏可以自由定义 `game.hero`、`game.monster`、`game.building` 等类型，并选择性引用 GAS、TCA、Renderer、Asset 等内置类型。
+
+详细设计见 `docs/modules/data.md`。
+
+### Assets
+
+Assets 是资源加载运行时。AssetDefinition 作为 `asset.definition` DataType 进入 DataRegistry，也可以由编辑器、导入器或远程 manifest 提供。具体玩法数据通过 `AssetRef` 引用资源，资源定义不要求和引用它的数据位于同一个 DataPack。AssetManager 从 DataRegistry 或其他资源声明来源读取 AssetDefinition，并委托 adapter 加载。Asset adapter 不管理 gameplay definitions，DataRegistry 不管理加载状态。
+
+详细设计见 `docs/modules/assets.md`。
 
 ## 包内拆分约定
 

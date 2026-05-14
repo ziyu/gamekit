@@ -29,7 +29,8 @@
 - `input.md`：Input Core、DOM/Phaser/Tauri input adapter、Action Mapping。
 - `camera.md`：Camera Core、Camera Rig、Renderer Camera Adapter。
 - `platform.md`：Platform Core、Web/Tauri adapter、权限与文件系统。
-- `asset-data.md`：AssetManifest、AssetManager、DataPack、数据校验。
+- `data.md`：DataType、DataPack、DataRef、自由游戏数据模型、数据校验。
+- `assets.md`：AssetRef、AssetDefinition、AssetManager、资源来源和加载状态。
 - `tca.md`：Trigger / Condition / Action 规则系统。
 - `gas.md`：Actor、Ability、Effect、Cue、Clue。
 - `ui.md`：UI Core、React UI、窗口与交互层。

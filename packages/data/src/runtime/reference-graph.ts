@@ -1,7 +1,7 @@
 import type { DataKey, DataReference } from "./types";
 
 export function dataKeyString(key: DataKey): string {
-  return `${key.kind}:${key.id}`;
+  return `${key.type}:${key.id}`;
 }
 
 export class DataReferenceGraph {

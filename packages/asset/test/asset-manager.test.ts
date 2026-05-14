@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDataRegistry } from "@gamekit/data";
-import { createAssetDataKind, createAssetManager, type AssetDefinition } from "../src";
+import { createAssetDataType, createAssetManager, type AssetDefinition } from "../src";
 
 describe("createAssetManager", () => {
   it("registers assets and loads a single asset", async () => {
@@ -26,13 +26,11 @@ describe("createAssetManager", () => {
 
   it("registers asset definitions from DataRegistry", () => {
     const registry = createDataRegistry();
-    registry.registerKind(createAssetDataKind({ supportedTypes: ["image"] }));
+    registry.registerType(createAssetDataType({ supportedTypes: ["image"] }));
     registry.registerPack({
       id: "sandbox",
       version: "1.0.0",
-      data: {
-        asset: [asset("asset.hero")]
-      }
+      entries: [{ type: "asset.definition", id: "asset.hero", data: asset("asset.hero") }]
     });
     const manager = createAssetManager({
       adapter: {

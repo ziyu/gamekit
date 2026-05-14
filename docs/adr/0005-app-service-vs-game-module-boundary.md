@@ -10,7 +10,7 @@ Accepted
 
 Camera 暴露了这个问题。Camera 需要 input action、camera rig、renderer camera adapter sync，有时还需要跟随 entity、响应 TCA/Cue、参与 tick。它不像 Platform 或 Renderer 那样主要管理外部句柄和 adapter lifecycle，更像一次游戏会话中的 gameplay module。
 
-TCA 和 GAS 也有同类问题：它们需要监听 EventBus、读取 gameplay DataKind、执行规则、写 trace、在 GameRuntime dispose 时清理订阅。它们需要无痛启动，但不应该因此成为 App Host 标准服务。
+TCA 和 GAS 也有同类问题：它们需要监听 EventBus、读取 gameplay DataType、执行规则、写 trace、在 GameRuntime dispose 时清理订阅。它们需要无痛启动，但不应该因此成为 App Host 标准服务。
 
 ## Decision
 
@@ -26,7 +26,7 @@ App Service 的判断标准：
 Game Module 的判断标准：
 
 - 生命周期跟一次 GameRuntime 会话绑定。
-- 需要注册 system、监听 EventBus、读写 world、读取 gameplay DataKind 或参与 tick。
+- 需要注册 system、监听 EventBus、读写 world、读取 gameplay DataType 或参与 tick。
 - 需要知道具体游戏上下文、规则、actor、camera rig、ability、save slot 等。
 - 应通过 `GameModule` 安装，并在 GameRuntime dispose 时清理订阅和 runtime 状态。
 

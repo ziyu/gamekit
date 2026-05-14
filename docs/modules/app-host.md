@@ -411,7 +411,7 @@ App Host 可以帮助 Game Module 无痛启动：`profile.standard.game.standard
 标准游戏模块用于减少重复装配代码，但不能模糊边界：
 
 - `camera` 标准游戏模块负责把已经归一化的 input action fact 转成 CameraController 目标状态，可选平滑插值显示状态，并通过 app/profile 提供的 sync hook 同步 renderer camera adapter 或 UI。
-- `tca` 标准游戏模块负责从 DataRegistry 读取 `tcaRule`、编译规则、桥接 EventBus、写入 trace，并在 GameRuntime dispose 时清理订阅。
+- `tca` 标准游戏模块负责从 DataRegistry 读取 `tca.rule`、编译规则、桥接 EventBus、写入 trace，并在 GameRuntime dispose 时清理订阅。
 - `gas` 标准游戏模块负责从 DataRegistry 读取 GAS 定义、创建 ECS-backed GAS runtime、注册 effect tick system、写入 trace，并在 GameRuntime dispose 时释放。
 - 标准游戏模块只能依赖稳定 facade、App Host services 和 profile 注入的定义，不能直接依赖 Phaser、DOM、Tauri 或具体 app 入口。
 

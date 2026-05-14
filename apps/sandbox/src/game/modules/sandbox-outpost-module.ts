@@ -83,7 +83,7 @@ export function createSandboxOutpostModule(options: SandboxOutpostModuleOptions)
           objectId: link.id,
           label: link.id.replace("link.", "").replaceAll("_", " "),
           role: "signal-link",
-          dataKind: "sceneLayout",
+          dataType: "sandbox.sceneLayout",
           dataId: options.layout.id
         });
         ctx.world.add(entity, LinkState, {
@@ -562,7 +562,7 @@ function spawnSceneObject(
     objectId: object.id,
     label: object.label,
     role: object.role,
-    dataKind: "sceneObject",
+    dataType: "sandbox.sceneObject",
     dataId: object.id,
     actorId
   });
@@ -651,7 +651,7 @@ function spawnScout(
     objectId: `scene.sandbox.scout.${index}`,
     label: `Scout ${index + 1}`,
     role: "scout",
-    dataKind: "gas.actor",
+    dataType: "gas.actor",
     dataId: "gas.actor.sandbox.scout",
     actorId
   });

@@ -259,7 +259,7 @@ export function createSandboxRuntime(
         moduleSummary: createModuleSummary(runtime, world.count(), gasActors.length),
         contentSummary,
         events: [...events],
-        tcaRuleCount: dataRegistry.list("tcaRule").length,
+        tcaRuleCount: dataRegistry.list("tca.rule").length,
         tcaTraces: tcaTraceStore.list(),
         gasActors,
         gasTraces: gasTraceStore.list()
@@ -393,7 +393,7 @@ function createContentSummary(
   const snapshot = dataRegistry.snapshot();
   return {
     packs: snapshot.packs.length,
-    kinds: snapshot.kinds.length,
+    types: snapshot.types.length,
     documents: snapshot.documents.length,
     references: snapshot.references.length,
     assetsLoaded: assets?.assetsLoaded ?? 0,

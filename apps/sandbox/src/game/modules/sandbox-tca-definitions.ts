@@ -82,13 +82,13 @@ function createDataTagCondition(): TcaConditionDefinition {
     type: "sandbox.data_tag_exists",
     description: "Checks whether data registry contains at least one document with a tag.",
     evaluate(ctx, config) {
-      const kind = readString(config.args, "kind");
+      const type = readString(config.args, "type");
       const tag = readString(config.args, "tag");
-      if (!kind || !tag || !ctx.dataRegistry?.hasKind(kind)) {
+      if (!type || !tag || !ctx.dataRegistry?.hasType(type)) {
         return false;
       }
 
-      return ctx.dataRegistry.list(kind).some((document) => document.tags.includes(tag));
+      return ctx.dataRegistry.list(type).some((document) => document.tags.includes(tag));
     }
   };
 }
@@ -114,19 +114,19 @@ function createSandboxLogAction(): TcaActionDefinition {
 function createSandboxDataSummaryAction(): TcaActionDefinition {
   return {
     type: "sandbox.data_summary",
-    description: "Emits a compact summary of a data kind.",
+    description: "Emits a compact summary of a data type.",
     execute(ctx, config) {
-      const kind = readString(config.args, "kind");
-      if (!kind || !ctx.dataRegistry?.hasKind(kind)) {
+      const type = readString(config.args, "type");
+      if (!type || !ctx.dataRegistry?.hasType(type)) {
         return;
       }
 
-      const documents = ctx.dataRegistry.list(kind);
+      const documents = ctx.dataRegistry.list(type);
       ctx.eventBus.emit(
         "sandbox.tca_data_summary",
         {
           ruleId: ctx.rule.id,
-          kind,
+          type,
           count: documents.length,
           ids: documents.slice(0, 4).map((document) => document.id)
         },

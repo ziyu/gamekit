@@ -89,7 +89,7 @@ export type SandboxModuleSummary = {
 
 export type SandboxContentSummary = {
   packs: number;
-  kinds: number;
+  types: number;
   documents: number;
   references: number;
   assetsLoaded: number;
