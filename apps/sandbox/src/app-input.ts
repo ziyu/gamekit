@@ -1,5 +1,5 @@
-import type { InputBinding, InputRouter } from "@gamekit/input-core";
-import type { SandboxRuntime } from "./game";
+import type { InputBinding, InputRouter, NormalizedInputEvent } from "@gamekit/input-core";
+import { SANDBOX_RENDER_SIZE, type SandboxRuntime } from "./game";
 import type { SandboxUiHandles } from "./ui/render-sandbox";
 import { updateInputStatus } from "./ui/render-sandbox";
 
@@ -92,6 +92,7 @@ export function configureSandboxInputRouter(
     scopes: ["game"]
   });
   inputRouter.onAction((event) => {
+    const input = toRendererLocalInput(context, event.input);
     context.sandbox?.runtime.eventBus.emit(
       "input.action",
       {
@@ -100,15 +101,15 @@ export function configureSandboxInputRouter(
         phase: event.phase,
         value: event.value,
         input: {
-          device: event.input.device,
-          code: event.input.code,
-          button: event.input.button,
-          x: event.input.x,
-          y: event.input.y,
-          dx: event.input.dx,
-          dy: event.input.dy,
-          wheelDelta: event.input.wheelDelta,
-          scope: event.input.scope
+          device: input.device,
+          code: input.code,
+          button: input.button,
+          x: input.x,
+          y: input.y,
+          dx: input.dx,
+          dy: input.dy,
+          wheelDelta: input.wheelDelta,
+          scope: input.scope
         }
       },
       "sandbox.input"
@@ -118,6 +119,26 @@ export function configureSandboxInputRouter(
       context: event.contextId
     });
   });
+}
+
+export function toRendererLocalInput(
+  context: SandboxInputContext,
+  input: NormalizedInputEvent
+): NormalizedInputEvent {
+  if (input.x === undefined || input.y === undefined || input.scope !== "game") {
+    return input;
+  }
+
+  const bounds = context.ui.rendererRoot.getBoundingClientRect();
+  if (bounds.width <= 0 || bounds.height <= 0) {
+    return input;
+  }
+
+  return {
+    ...input,
+    x: ((input.x - bounds.left) / bounds.width) * SANDBOX_RENDER_SIZE.width,
+    y: ((input.y - bounds.top) / bounds.height) * SANDBOX_RENDER_SIZE.height
+  };
 }
 
 export function resolveSandboxInputScope(

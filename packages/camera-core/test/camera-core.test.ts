@@ -43,6 +43,24 @@ describe("createCameraController", () => {
     expect(camera.getState().zoom).toBe(0.5);
   });
 
+  it("keeps the anchored screen point stable while zooming", () => {
+    const camera = createCameraController({
+      viewport: { width: 200, height: 100 },
+      state: {
+        x: 100,
+        y: 50,
+        minZoom: 0.5,
+        maxZoom: 4
+      }
+    });
+    const anchor = { x: 160, y: 70 };
+    const before = camera.screenToWorld(anchor);
+
+    camera.zoom(1, anchor);
+
+    expect(camera.screenToWorld(anchor)).toEqual(before);
+  });
+
   it("converts between world and screen coordinates", () => {
     const camera = createCameraController({
       viewport: { width: 200, height: 100 },

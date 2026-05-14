@@ -10,6 +10,7 @@
     { "path": "../camera-core" },
     { "path": "../core" },
     { "path": "../data" },
+    { "path": "../gas" },
     { "path": "../game-runtime" },
     { "path": "../input-core" },
     { "path": "../platform-core" },

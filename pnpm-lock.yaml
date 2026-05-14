@@ -69,6 +69,9 @@ importers:
       '@gamekit/game-runtime':
         specifier: workspace:*
         version: link:../../packages/game-runtime
+      '@gamekit/gas':
+        specifier: workspace:*
+        version: link:../../packages/gas
       '@gamekit/input-core':
         specifier: workspace:*
         version: link:../../packages/input-core
@@ -121,6 +124,9 @@ importers:
       '@gamekit/game-runtime':
         specifier: workspace:*
         version: link:../game-runtime
+      '@gamekit/gas':
+        specifier: workspace:*
+        version: link:../gas
       '@gamekit/input-core':
         specifier: workspace:*
         version: link:../input-core
@@ -191,6 +197,27 @@ importers:
       '@gamekit/event-bus':
         specifier: workspace:*
         version: link:../event-bus
+      '@gamekit/world':
+        specifier: workspace:*
+        version: link:../world
+
+  packages/gas:
+    dependencies:
+      '@gamekit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@gamekit/data':
+        specifier: workspace:*
+        version: link:../data
+      '@gamekit/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@gamekit/game-runtime':
+        specifier: workspace:*
+        version: link:../game-runtime
+      '@gamekit/tca':
+        specifier: workspace:*
+        version: link:../tca
       '@gamekit/world':
         specifier: workspace:*
         version: link:../world

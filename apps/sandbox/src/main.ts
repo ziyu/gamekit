@@ -2,7 +2,10 @@ import "./styles.css";
 import { createConfiguredAppHost } from "@gamekit/app-host";
 import { sandboxAppDefinition } from "./app-definition";
 import { createSandboxWebProfile, type SandboxAppContext } from "./app-profile";
+import { SANDBOX_RENDER_SIZE, type SandboxSnapshot } from "./game";
 import {
+  bindSandboxWorkbenchControls,
+  createSandboxWorkbenchState,
   renderSandboxShell,
   updateAssetStatus,
   updateDataStatus,
@@ -22,10 +25,34 @@ void bootSandbox(appElement);
 
 async function bootSandbox(root: HTMLElement): Promise<void> {
   const ui = renderSandboxShell(root);
+  const workbench = createSandboxWorkbenchState();
   const context: SandboxAppContext = {
     ui,
     activeInputScope: "ui"
   };
+  const refreshWorkbench = () => {
+    if (context.sandbox) {
+      updateSandboxHud(ui, context.sandbox, workbench);
+    }
+  };
+
+  bindSandboxWorkbenchControls(ui, workbench, {
+    onChange: refreshWorkbench,
+    onScenePick(event) {
+      return pickSandboxEntity(context, event);
+    },
+    onFollowEntity(entityId) {
+      context.sandbox?.runtime.eventBus.emit(
+        "camera.follow_entity",
+        { entityId },
+        "sandbox.inspector"
+      );
+    },
+    onStopFollow() {
+      context.sandbox?.runtime.eventBus.emit("camera.stop_follow", {}, "sandbox.inspector");
+    }
+  });
+
   const configured = createConfiguredAppHost({
     app: sandboxAppDefinition,
     profile: createSandboxWebProfile(),
@@ -60,13 +87,13 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
     const delta = lastTime === undefined ? 0 : Math.max(0, Math.min(now - lastTime, 64));
     lastTime = now;
     sandbox.runtime.tick(delta);
-    updateSandboxHud(ui, sandbox);
+    updateSandboxHud(ui, sandbox, workbench);
     updateAssetStatus(ui, assetManager);
     updateHostStatus(ui, host);
     requestAnimationFrame(frame);
   }
 
-  updateSandboxHud(ui, requireSandboxContext(context.sandbox, "sandbox"));
+  updateSandboxHud(ui, requireSandboxContext(context.sandbox, "sandbox"), workbench);
   requestAnimationFrame(frame);
 }
 
@@ -76,4 +103,58 @@ function requireSandboxContext<TValue>(value: TValue | undefined, name: string):
   }
 
   return value;
+}
+
+function pickSandboxEntity(
+  context: SandboxAppContext,
+  event: PointerEvent
+): { entityId: string | number; actorId?: string } | undefined {
+  const sandbox = context.sandbox;
+  const camera = context.cameraController;
+  if (!sandbox || !camera) {
+    return undefined;
+  }
+
+  const bounds = context.ui.rendererRoot.getBoundingClientRect();
+  if (bounds.width <= 0 || bounds.height <= 0) {
+    return undefined;
+  }
+
+  const screen = {
+    x: ((event.clientX - bounds.left) / bounds.width) * SANDBOX_RENDER_SIZE.width,
+    y: ((event.clientY - bounds.top) / bounds.height) * SANDBOX_RENDER_SIZE.height
+  };
+  const world = camera.screenToWorld(screen);
+  const picked = findNearestPickableEntity(sandbox.snapshot(), world);
+  if (!picked) {
+    return undefined;
+  }
+
+  return picked.actorId
+    ? {
+        entityId: picked.id,
+        actorId: picked.actorId
+      }
+    : { entityId: picked.id };
+}
+
+function findNearestPickableEntity(
+  snapshot: SandboxSnapshot,
+  point: { x: number; y: number }
+): SandboxSnapshot["entities"][number] | undefined {
+  let best: { entity: SandboxSnapshot["entities"][number]; distance: number } | undefined;
+  for (const entity of snapshot.entities) {
+    if (entity.role === "signal-link") {
+      continue;
+    }
+
+    const x = (entity.x / 100) * SANDBOX_RENDER_SIZE.width;
+    const y = (entity.y / 100) * SANDBOX_RENDER_SIZE.height;
+    const distance = Math.hypot(point.x - x, point.y - y);
+    const radius = entity.role === "command-core" ? 42 : entity.role === "scout" ? 24 : 34;
+    if (distance <= radius && (!best || distance < best.distance)) {
+      best = { entity, distance };
+    }
+  }
+  return best?.entity;
 }

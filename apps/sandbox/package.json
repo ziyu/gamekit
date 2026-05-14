@@ -18,6 +18,7 @@
     "@gamekit/core": "workspace:*",
     "@gamekit/data": "workspace:*",
     "@gamekit/event-bus": "workspace:*",
+    "@gamekit/gas": "workspace:*",
     "@gamekit/game-runtime": "workspace:*",
     "@gamekit/input-core": "workspace:*",
     "@gamekit/input-dom": "workspace:*",

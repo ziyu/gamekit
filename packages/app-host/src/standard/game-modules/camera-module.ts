@@ -3,6 +3,7 @@ import type { CameraController, CameraState2D, PointLike } from "@gamekit/camera
 import type { GameInstallContext } from "@gamekit/game-runtime";
 import type {
   StandardCameraActionBinding,
+  StandardCameraFollowOptions,
   StandardCameraSmoothingOptions,
   StandardServiceBuildContext
 } from "../types";
@@ -17,6 +18,7 @@ export type CreateStandardCameraModuleOptions<TContext> = {
   inputEventType?: string | undefined;
   actions: StandardCameraActionBinding[];
   smoothing?: StandardCameraSmoothingOptions | undefined;
+  follow?: StandardCameraFollowOptions<TContext> | undefined;
   sync?:
     | ((
         ctx: StandardServiceBuildContext<TContext>,
@@ -38,6 +40,48 @@ export function createStandardCameraModule<TContext>(
     id: options.id ?? "gamekit.camera",
     install(ctx) {
       syncCamera(options, undefined, displayState);
+      const cleanups: Array<() => void> = [];
+
+      if (options.follow) {
+        const follow = options.follow;
+        cleanups.push(
+          ctx.eventBus.on(follow.eventType ?? "camera.follow_entity", (event) => {
+            const targetEntity = resolveFollowTarget(follow, event);
+            if (targetEntity === undefined) {
+              return;
+            }
+            options.controller.follow(targetEntity);
+            ctx.eventBus.emit(
+              "camera.follow_started",
+              { targetEntity, state: options.controller.getState() },
+              "gamekit.camera"
+            );
+          })
+        );
+        cleanups.push(
+          ctx.eventBus.on(follow.stopEventType ?? "camera.stop_follow", () => {
+            options.controller.stopFollow();
+            displayState = options.controller.getState();
+            syncCamera(options, undefined, displayState);
+            ctx.eventBus.emit(
+              "camera.follow_stopped",
+              { state: options.controller.getState() },
+              "gamekit.camera"
+            );
+          })
+        );
+        ctx.systems.register({
+          id: `${options.id ?? "gamekit.camera"}.follow`,
+          update() {
+            if (applyCameraFollow(options)) {
+              if (!smoothing.enabled) {
+                displayState = options.controller.getState();
+                syncCamera(options, undefined, displayState);
+              }
+            }
+          }
+        });
+      }
 
       if (smoothing.enabled) {
         ctx.systems.register({
@@ -68,8 +112,13 @@ export function createStandardCameraModule<TContext>(
           }
         }
       });
+      cleanups.push(unsubscribe);
 
-      return unsubscribe;
+      return () => {
+        for (const cleanup of cleanups.reverse()) {
+          cleanup();
+        }
+      };
     }
   });
 }
@@ -109,6 +158,48 @@ function applyCameraAction(
   }
 
   return action.pan !== undefined || action.zoom !== undefined;
+}
+
+function applyCameraFollow<TContext>(
+  options: CreateStandardCameraModuleOptions<TContext>
+): boolean {
+  const follow = options.follow;
+  if (!follow) {
+    return false;
+  }
+
+  const state = options.controller.getState();
+  if (state.mode !== "follow" || state.targetEntity === undefined) {
+    return false;
+  }
+
+  const target = follow.resolveTarget(options.buildContext, state.targetEntity);
+  if (!target) {
+    return false;
+  }
+
+  options.controller.setState({
+    mode: "follow",
+    targetEntity: state.targetEntity,
+    x: target.x,
+    y: target.y
+  });
+  return true;
+}
+
+function resolveFollowTarget<TContext>(
+  follow: StandardCameraFollowOptions<TContext>,
+  event: CameraInputEvent
+): string | number | undefined {
+  if (follow.targetFromEvent) {
+    return follow.targetFromEvent(event);
+  }
+
+  const payload = isRecord(event.payload) ? event.payload : {};
+  const targetEntity = payload.targetEntity ?? payload.entityId;
+  return typeof targetEntity === "string" || typeof targetEntity === "number"
+    ? targetEntity
+    : undefined;
 }
 
 function resolveZoomDelta(

@@ -82,6 +82,8 @@ export type CameraController = {
 };
 ```
 
+`zoom(delta, anchor)` 的 `anchor` 表示 camera viewport 内的 screen coordinate，不是浏览器窗口、DOM page 或底层 renderer 原始事件坐标。Input adapter / app bridge 必须先把 pointer 位置归一化到 renderer viewport 坐标，再交给 CameraController。这样滚轮缩放才能以用户实际操作点作为缩放原点，并保持该 screen point 对应的 world point 稳定。
+
 ## CameraRig
 
 CameraRig 是可复用镜头行为。
@@ -104,6 +106,8 @@ Hero Road 默认适合 `GridMapRig`：
 - 可被事件临时 shake。
 
 CameraRig 可能注册 system 或监听 EventBus，因此 rig 生命周期跟随 GameRuntime dispose，而不是 App Host dispose。
+
+Follow rig 可以把 `targetEntity` 存在 CameraState 中，但 Camera Core 不解析 entity 位置，也不直接依赖 World。具体 target resolver 由标准 camera module、game module 或 app profile 注入，在 tick 中把 entity / actor / scene object 解析成 world coordinate，再更新 CameraController。这样 camera 能复用 ECS 性能和玩法上下文，同时保持核心模块不绑定任何具体 World adapter 或业务组件。
 
 ## 与 Input 的关系
 

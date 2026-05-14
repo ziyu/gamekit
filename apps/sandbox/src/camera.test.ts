@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createCameraController } from "@gamekit/camera-core";
+import { toRendererLocalInput, type SandboxInputContext } from "./app-input";
 import { applySandboxCameraAction, createSandboxCameraController } from "./camera";
 
 describe("applySandboxCameraAction", () => {
@@ -35,6 +36,36 @@ describe("applySandboxCameraAction", () => {
     });
 
     expect(camera.getState().zoom).toBeGreaterThan(1);
+  });
+
+  it("converts viewport pointer coordinates to renderer-local input coordinates", () => {
+    const input = toRendererLocalInput(
+      {
+        activeInputScope: "game",
+        ui: {
+          rendererRoot: {
+            getBoundingClientRect: () => ({
+              left: 100,
+              top: 50,
+              width: 360,
+              height: 262
+            })
+          }
+        }
+      } as SandboxInputContext,
+      {
+        id: "wheel",
+        device: "mouse",
+        phase: "scrolled",
+        timestamp: 0,
+        scope: "game",
+        x: 280,
+        y: 181
+      }
+    );
+
+    expect(input.x).toBe(360);
+    expect(input.y).toBe(262);
   });
 
   it("allows initial sandbox camera movement in every pan direction", () => {

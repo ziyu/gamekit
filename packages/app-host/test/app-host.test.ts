@@ -11,6 +11,7 @@ import {
 import { createCameraController } from "@gamekit/camera-core";
 import { createDataRegistry } from "@gamekit/data";
 import { createEventBus } from "@gamekit/event-bus";
+import { createGasDataKinds, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
 import { createGame } from "@gamekit/game-runtime";
 import { type GameWorld } from "@gamekit/world";
 import { createTcaRuleDataKind } from "@gamekit/tca";
@@ -203,9 +204,12 @@ describe("configured app host", () => {
     expect(configured.host.snapshot().services.map((service) => service.id)).toEqual(["data"]);
   });
 
-  it("injects standard camera and TCA game modules into the runtime factory", async () => {
+  it("injects standard camera, TCA, and GAS game modules into the runtime factory", async () => {
     const registry = createDataRegistry();
     registry.registerKind(createTcaRuleDataKind());
+    for (const kind of createGasDataKinds()) {
+      registry.registerKind(kind);
+    }
     registry.registerPack({
       id: "rules",
       version: "1.0.0",
@@ -223,6 +227,7 @@ describe("configured app host", () => {
     const initialCameraX = camera.getState().x;
     const eventBus = createEventBus({ clock: () => 1 });
     const derived: string[] = [];
+    let gasRuntime: GasRuntime | undefined;
     eventBus.on("test.derived", (event) => {
       derived.push(event.type);
     });
@@ -238,13 +243,23 @@ describe("configured app host", () => {
         game: {
           standardModules: {
             tca: {},
+            gas: {
+              traceStore: createGasTraceStore(),
+              onRuntime(_ctx, runtime) {
+                gasRuntime = runtime;
+              }
+            },
             camera: {
               controller: camera,
               actions: [{ actionId: "camera.pan_right", phases: ["pressed"], pan: { x: 12 } }]
             }
           },
           createRuntime(_ctx, modules) {
-            expect(modules.map((module) => module.id)).toEqual(["gamekit.tca", "gamekit.camera"]);
+            expect(modules.map((module) => module.id)).toEqual([
+              "gamekit.tca",
+              "gamekit.gas",
+              "gamekit.camera"
+            ]);
             return createGame({
               modules,
               world: createMemoryWorld(),
@@ -263,8 +278,10 @@ describe("configured app host", () => {
 
     expect(derived).toEqual(["test.derived"]);
     expect(camera.getState().x).toBe(initialCameraX + 12);
+    expect(gasRuntime).toBeDefined();
     expect(configured.host.services.game?.modules.map((module) => module.id)).toEqual([
       "gamekit.tca",
+      "gamekit.gas",
       "gamekit.camera"
     ]);
   });
@@ -324,6 +341,68 @@ describe("configured app host", () => {
     }
 
     expect(syncedX.at(-1)).toBeCloseTo(targetX, 1);
+  });
+
+  it("tracks standard camera follow targets through a resolver", async () => {
+    const camera = createCameraController({ viewport: { width: 320, height: 180 } });
+    const eventBus = createEventBus({ clock: () => 1 });
+    const synced: Array<{ x: number; y: number; mode: string }> = [];
+    const targets = new Map<string | number, { x: number; y: number }>([
+      ["hero", { x: 80, y: 48 }]
+    ]);
+    const app = defineGameApp({
+      id: "follow-camera",
+      services: [{ id: "game" }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        game: {
+          standardModules: {
+            camera: {
+              controller: camera,
+              actions: [],
+              follow: {
+                resolveTarget(_ctx, targetEntity) {
+                  return targets.get(targetEntity);
+                }
+              },
+              sync(_ctx, _camera, _action, state) {
+                synced.push({ x: state.x, y: state.y, mode: state.mode });
+              }
+            }
+          },
+          createRuntime(_ctx, modules) {
+            return createGame({
+              modules,
+              world: createMemoryWorld(),
+              eventBus,
+              seed: "standard"
+            });
+          }
+        }
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+    const runtime = configured.host.services.game;
+    if (!runtime) {
+      throw new Error("Missing game runtime");
+    }
+
+    runtime.start();
+    eventBus.emit("camera.follow_entity", { entityId: "hero" }, "test");
+    runtime.tick(16);
+
+    expect(camera.getState()).toMatchObject({ mode: "follow", targetEntity: "hero", x: 80, y: 48 });
+    expect(synced.at(-1)).toMatchObject({ mode: "follow", x: 80, y: 48 });
+
+    targets.set("hero", { x: 96, y: 64 });
+    runtime.tick(16);
+    expect(camera.getState()).toMatchObject({ x: 96, y: 64 });
+
+    eventBus.emit("camera.stop_follow", {}, "test");
+    expect(camera.getState().mode).toBe("free");
   });
 });
 

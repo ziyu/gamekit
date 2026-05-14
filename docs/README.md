@@ -8,6 +8,7 @@
 - `architecture.md`：稳定架构边界、包职责、依赖方向。
 - `implementation-principles.md`：写代码时必须遵守的工程原则。
 - `best-practices.md`：模块拆分、测试、数据驱动、adapter、UI 等实践规则。
+- `apps/`：`apps/*` 下应用、demo、editor 和验证面的长期设计。
 - `development-stages.md`：阶段目标、完成定义、下一阶段入口。
 - `modules/`：各模块最终长期设计，按模块独立维护。
 - `adr/`：Architecture Decision Record，记录重要技术决策和取舍。
@@ -22,6 +23,7 @@
 | `architecture.md`              | 包边界、依赖方向、分层关系、公共架构约束             | 为什么做这个项目、阶段完成情况、模块详细协议 |
 | `implementation-principles.md` | 写代码时必须遵守的原则、代码质量、可测试性、可解释性 | 具体阶段计划、某次技术决策的历史原因         |
 | `best-practices.md`            | 已验证的实践做法、性能经验、测试策略、反模式         | 不可变的项目目标、临时 TODO、阶段进度        |
+| `apps/`                        | 应用、demo、editor、验证面的长期设计                 | 阶段状态、模块协议、包边界                   |
 | `development-stages.md`        | 阶段目标、当前状态、完成定义、下一阶段入口           | 长期设计信条、详细包职责、一次性决策背景     |
 | `modules/`                     | 单个模块的最终长期职责、协议、adapter、扩展点        | 阶段状态、临时计划、TODO、完成定义、决策历史 |
 | `adr/`                         | 高影响决策的背景、取舍、后果                         | 持续更新的状态列表、通用最佳实践             |
@@ -31,6 +33,7 @@
 - “为什么存在、长期追求什么”放 `project-design.md`。
 - “系统如何分层、包如何依赖”放 `architecture.md`。
 - “某个模块长期怎么设计”放 `modules/`。
+- “某个 app/demo/editor 如何长期表达模块协作”放 `apps/`。
 - “某个模块现在做到哪、下一步怎么做”不要放 `modules/`，放 `development-stages.md`。
 - “代码应该怎么写”放 `implementation-principles.md`。
 - “做过后证明有效的方式”放 `best-practices.md`。

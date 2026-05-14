@@ -71,6 +71,12 @@ packages/
 - `@gamekit/animation` 不作为早期独立包规划；动画主要归入 RenderObject、Renderer Adapter、Cue/Presentation、UI、Camera。
 - 模块长期设计见 `docs/modules/`。
 
+## 应用与验证面
+
+`apps/sandbox` 是框架验证面，不是长期玩法仓库，也不是模块协议的来源。它可以实现一个有真实运行循环的小 demo，但 demo 专用的 entity role、production recipe、threat、objective 和 presentation 组件必须留在 Sandbox 内部。
+
+Sandbox 的长期演示设计见 `docs/apps/sandbox.md`。阶段任务和当前实现状态仍放在 `docs/development-stages.md`。
+
 ## 依赖方向
 
 依赖只能从具体层指向抽象层：
@@ -89,6 +95,7 @@ platform-web/platform-tauri → platform-core
 asset → data / core
 asset-phaser → asset / renderer-phaser
 tca → core / data / event-bus / game-runtime
+gas → core / data / event-bus / game-runtime / tca / world
 react-ui → ui-core
 ```
 
@@ -150,7 +157,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 | `@gamekit/camera-core`                                                  | Game Module toolkit                          | CameraController、CameraRig、camera system/action helper；不作为 App Host 标准服务。 |
 | `@gamekit/camera-phaser` / `@gamekit/camera-three`                      | Adapter / bridge                             | 把 CameraState 同步到底层 renderer camera。                                          |
 | `@gamekit/tca`                                                          | Game Module                                  | 数据驱动规则 runtime，通过标准 GameModule 无痛安装。                                 |
-| `@gamekit/gas`                                                          | Game Module                                  | Actor/Ability/Effect gameplay runtime，复用 TCA。                                    |
+| `@gamekit/gas`                                                          | Game Module                                  | 通用 Actor/Ability/Effect runtime；热状态落在 World component，复用 TCA。            |
 | `@gamekit/ui-core`                                                      | App/UI toolkit                               | UI 状态、window、focus 协议；gameplay 不直接依赖 React。                             |
 | `@gamekit/react-ui`                                                     | App/UI adapter                               | React UI 实现。                                                                      |
 | `@gamekit/save`                                                         | 混合：App Service + Game Module bridge       | 存储 adapter 和 profile 是应用服务；snapshot capture/restore 是游戏模块桥接。        |

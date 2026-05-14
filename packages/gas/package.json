@@ -1,5 +1,5 @@
 {
-  "name": "@gamekit/app-host",
+  "name": "@gamekit/gas",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,19 +13,15 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run --root ../.. --config vitest.config.ts packages/app-host/test --passWithNoTests",
+    "test": "vitest run --root ../.. --config vitest.config.ts packages/gas/test --passWithNoTests",
     "lint": "oxlint ."
   },
   "dependencies": {
-    "@gamekit/asset": "workspace:*",
-    "@gamekit/camera-core": "workspace:*",
     "@gamekit/core": "workspace:*",
     "@gamekit/data": "workspace:*",
-    "@gamekit/gas": "workspace:*",
+    "@gamekit/event-bus": "workspace:*",
     "@gamekit/game-runtime": "workspace:*",
-    "@gamekit/input-core": "workspace:*",
-    "@gamekit/platform-core": "workspace:*",
-    "@gamekit/renderer-core": "workspace:*",
-    "@gamekit/tca": "workspace:*"
+    "@gamekit/tca": "workspace:*",
+    "@gamekit/world": "workspace:*"
   }
 }

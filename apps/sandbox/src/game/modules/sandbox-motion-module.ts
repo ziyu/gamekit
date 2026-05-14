@@ -1,4 +1,5 @@
 import { defineGameModule } from "@gamekit/core";
+import type { GasRuntime } from "@gamekit/gas";
 import type { GameInstallContext } from "@gamekit/game-runtime";
 import type { RenderNodeDefinition, RenderObjectDefinition } from "@gamekit/renderer-core";
 import type { SandboxActorDefinition, SandboxRenderRigDefinition } from "../sandbox-data";
@@ -10,6 +11,7 @@ export type SandboxMotionModuleOptions = {
   actorDefinition: SandboxActorDefinition;
   renderObjectDefinition: RenderObjectDefinition;
   renderRigDefinition: SandboxRenderRigDefinition;
+  gasRuntime?: (() => GasRuntime | undefined) | undefined;
 };
 
 export function createSandboxMotionModule(options: SandboxMotionModuleOptions) {
@@ -31,6 +33,11 @@ export function createSandboxMotionModule(options: SandboxMotionModuleOptions) {
         ctx.world.add(entity, RenderObjectPresentation, {
           definition: createEntityRenderObjectDefinition(renderObjectDefinition, i),
           nodeAnimations: options.renderRigDefinition.nodeAnimations
+        });
+        options.gasRuntime?.()?.createActor({
+          actorId: `gas.actor.sandbox.scout.${i}`,
+          definitionId: "gas.actor.sandbox.scout",
+          entityId: entity
         });
         ctx.eventBus.emit("sandbox.entity_spawned", { entity }, "sandbox.motion");
       }

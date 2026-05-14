@@ -57,6 +57,8 @@ GameRuntime 不直接拥有 renderer、input、platform、asset、data。App Hos
 
 Camera、TCA、GAS、gameplay save capture 等能力更接近游戏会话模块：它们通常需要读写 world、监听 EventBus、注册 system、理解 actor/rule/rig 等玩法上下文。App Host 可以提供 renderer/input/data 等依赖，但不应该把这些 gameplay runtime 直接做成默认标准服务。
 
+App Host 可以提供标准 GameModule helper 来减少装配代码，例如 camera、TCA、GAS 的标准启动方式。这些 helper 属于应用组合便利层：它们可以读取 profile 参数、接入 services、注册 GameRuntime module，并把 renderer/input/data bridge 注入进去；但它们不把 gameplay 能力提升为 Host service。以 camera 为例，标准 helper 可以提供输入映射、平滑、renderer sync 和 follow target resolver，resolver 仍由 app/game context 提供，Host 不直接理解业务 entity 位置。
+
 ## Host Runtime
 
 ```ts
@@ -410,6 +412,7 @@ App Host 可以帮助 Game Module 无痛启动：`profile.standard.game.standard
 
 - `camera` 标准游戏模块负责把已经归一化的 input action fact 转成 CameraController 目标状态，可选平滑插值显示状态，并通过 app/profile 提供的 sync hook 同步 renderer camera adapter 或 UI。
 - `tca` 标准游戏模块负责从 DataRegistry 读取 `tcaRule`、编译规则、桥接 EventBus、写入 trace，并在 GameRuntime dispose 时清理订阅。
+- `gas` 标准游戏模块负责从 DataRegistry 读取 GAS 定义、创建 ECS-backed GAS runtime、注册 effect tick system、写入 trace，并在 GameRuntime dispose 时释放。
 - 标准游戏模块只能依赖稳定 facade、App Host services 和 profile 注入的定义，不能直接依赖 Phaser、DOM、Tauri 或具体 app 入口。
 
 ## Sandbox / Test Host

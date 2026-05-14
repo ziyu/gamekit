@@ -285,22 +285,179 @@
 
 ## Phase 10：GAS
 
-目标：Actor、Attribute、Tag、Ability、Effect、Cue、Clue 基于 TCA 跑通。
+目标：实现通用 GAS Core + ECS-backed Actor Runtime。Actor、Attribute、Tag、Ability、Effect、Cue、Clue 基于 Data/TCA 跑通，同时让常见 actor 运行时热状态落在 World component 上，充分利用 ECS 性能。
 
 模块设计：`docs/modules/gas.md`
 
-预期新增：
+当前状态：已实现。
+
+已实现：
 
 - `@gamekit/gas`
+- GAS DataKind registration
+- GasActor/GasAttributes/GasTags/GasAbilities/GasEffects ECS components
+- entity-backed actor runtime
+- detached actor runtime
+- GAS TCA definitions
+- App Host `game.standardModules.gas`
 - Actor/Ability/Effect definition tests
-- Ability → TCA Rule compile tests
+- Ability / Effect lifecycle tests
+- Sandbox GAS panel
+- Sandbox scene workbench：主舞台、选中 actor inspector、跨模块 timeline
+- Sandbox DataPack actor/ability/effect/cue 示例
+- Sandbox TCA → GAS ability → effect 链路
 
 完成定义：
 
-- Basic Attack Ability 能通过 event 激活并修改目标状态。
-- Active effect 可以按 runtime tick 更新 duration/periodic action。
+- `@gamekit/gas` 是 GameModule，不是 App Host service。
+- GAS 只依赖 `@gamekit/world` facade，不依赖 Koota。
+- 常见 actor runtime state 存在 World components 上。
+- Basic Attack Ability 能通过 event/TCA 激活并修改目标状态。
+- Active effect 可以按 runtime tick 更新 duration/periodic action，并能到期清理 tag。
 - GAS trace 能关联 ability/effect 与 TCA rule trace。
 - 示例 actor 数据通过 DataPack 注册和校验。
+- Sandbox 展示 input/event → TCA → GAS ability → effect → state/cue/trace 链路。
+
+## Phase 10.5：Sandbox Signal Outpost
+
+目标：把 Sandbox 主场景升级为 `Signal Outpost` 自动放置 demo，让模块协作主要发生并表现于主舞台，而不是只堆在 Inspector 和 Timeline 中。Sandbox 要像一个可运行的小型系统 demo，而不是一张由实体点和面板组成的架构示意图。
+
+设计文档：`docs/apps/sandbox.md`
+
+当前状态：Phase 10.5A 已实现；Phase 10.5B / 10.5C 待实现。已有 outpost 系统舞台和调度循环，但压力层、玩家策略操作、成长层和表现打磨仍未完成，不能视为整个 Phase 10.5 完成。
+
+已有原型基线：
+
+- Signal Outpost 主舞台对象：Command Core、Relay Tower、Scout、Data Node、Asset Fabricator、Interference Node、Signal Link。
+- Sandbox DataPack 扩展 sceneObject / sceneLayout，并通过引用图关联 renderObject、renderRig 和 GAS actor definition。
+- Sandbox-local world components：SceneObject、Selectable、SignalStorage、ProductionState、WorkAssignment、ThreatState、LinkState。
+- 自动放置循环：signal production、scout transport、interference strike、objective progress。
+- 主舞台复合 RenderObject：不同角色独立视觉结构，link beam、charge bar、cargo/task/threat field 由 runtime state 驱动。
+- Snapshot / Inspector / Timeline 展示 Outpost 对象、signal storage、GAS state 和跨模块链路。
+
+下一步拆分为三个连续版本，避免继续在单个原型上堆功能。
+
+### Phase 10.5A：系统舞台与调度循环
+
+目标：让主舞台从“对象陈列”变成可读的 outpost 运行系统。
+
+当前状态：已实现。
+
+已实现：
+
+- Sandbox DataPack 新增 station、productionRecipe、objectivePhase、threatProfile、outpostRoute。
+- sceneObject 引用 station definition 和 production recipe，sceneLayout link 引用 route definition。
+- ECS 状态新增 StationState、ObjectiveState，并扩展 Scout WorkAssignment 的 battery、fatigue、source、route progress。
+- Scout dispatcher 按 repair、suppress、support、collect、deliver 需求生成任务。
+- Command Core objective state 消耗 delivered signal 推进 phase progress。
+- Station heat、stability、priority、throughput 和 Scout route/battery/fatigue 进入 snapshot 和 renderer node sync。
+- 主舞台点击对象可切换 Inspector 选中对象，Inspector 可请求标准 camera module 跟随或释放选中 entity。
+- Sandbox 将 game viewport pointer 输入归一化为 renderer-local 坐标，camera zoom 以操作点为 anchor。
+
+任务拆分：
+
+1. 场景数据重构
+   - 扩展 Sandbox DataPack：station、objective、production recipe、threat profile、render rig、scene layout。
+   - 定义 Command Core、Relay Tower、Scout、Data Node、Asset Fabricator、Interference Node、Signal Link。
+   - 确保新数据仍通过 DataRegistry 注册、校验、引用追踪，不绕过 DataPack。
+
+2. World 组件和场景模型
+   - 新增 sandbox-local components：SceneRole、Selectable、ProductionState、SignalStorage、WorkAssignment、ThreatState、LinkState。
+   - 让主场景对象都能关联 entity、data definition、render object 和可选 GAS actor。
+   - 保持这些组件只在 `apps/sandbox` 内部，不上推到核心包。
+
+3. 自动放置循环
+   - 实现 signal production system：Relay Tower 周期产出 signal。
+   - 实现 scout dispatcher：按 station priority 和当前需求自动生成 collect / deliver / repair / suppress / scan 任务。
+   - 实现 scout work system：Scout 拥有 cargo、battery、fatigue、route progress、current order，并在舞台上显示路线。
+   - 实现 objective system：Command Core 消耗 signal 推进 objective phase，并产生 milestone event。
+
+4. 主舞台结构
+   - 固定空间语义：中央 Command Core、左上 Signal Field、右上 Fabrication Bay、左下 Archive Wing、右下 Interference Rift。
+   - Signal Link 和 scout route 必须可见，能看出 signal、任务和资源流向。
+   - 第一屏不依赖 Inspector 也能看出 outpost 在生产、运输和推进 objective。
+
+完成定义：
+
+- 无输入时，场景能持续生产、运输、消耗 signal 并推进 objective。
+- Scout 有清晰任务状态、目标和路线，不只是随机移动实体。
+- DataPack 中 station、recipe、objective、route/link 能被 DataRegistry 查询并出现在 reference graph。
+- 主舞台空间结构、对象角色和资源流向清晰可见。
+
+### Phase 10.5B：压力、规则与能力链路
+
+目标：让 TCA/GAS 成为场景里的自动化和状态变化机制，而不是面板中的 trace 样例。
+
+任务拆分：
+
+1. 压力层
+   - 实现 Interference Node 的 pressure cycle：signal storm、data corruption、tower overload、scout jammed、core instability。
+   - pressure 影响 station stability、link flow、scout work efficiency 或 objective progress。
+   - 威胁范围、预警、污染、断连和修复状态必须在舞台上表现。
+
+2. TCA / GAS 链路增强
+   - 扩展 Sandbox TCA rules：confirm overcharge、low stability repair、interference response、objective milestone。
+   - 扩展 GAS 数据：station actor、signal_strike、overcharge_relay、field_repair、stabilize_core、interference mark、repair over time。
+   - Timeline 必须能看到 input → TCA → GAS → effect/cue → scene feedback。
+
+3. 玩家操作
+   - 支持选择 station、scout、threat 和 link。
+   - `confirm` 根据选中对象触发 overcharge、repair、suppress 或 scan。
+   - 支持 `stabilize`、`boost`、`suppress` outpost mode，影响 TCA 自动响应。
+   - 支持 station priority 调整，影响 scout dispatcher。
+
+完成定义：
+
+- pressure event 会改变 world/GAS state，并通过 Renderer 表现出来。
+- 玩家操作能触发 TCA rule 和 GAS ability，且能在舞台和 Timeline 中同时被观察。
+- 自动规则能根据 mode、priority 和当前状态做不同响应。
+- EventBus 仍只承载低频事实，不承载每帧移动或动画。
+
+### Phase 10.5C：成长、资源与表现打磨
+
+目标：让 Data/Asset/Renderer 的价值通过可见成长和表现变化体现出来。
+
+任务拆分：
+
+1. 成长层
+   - Data Node 解锁新的 TCA rule、GAS ability、production recipe 或 station mode。
+   - Asset Fabricator 解锁 render layer、状态灯、beam skin 或 cue effect。
+   - Objective 分 phase 推进，每个 phase 解锁新自动化或新 pressure type。
+
+2. Renderer 主舞台表现
+   - 为不同角色创建不同复合 RenderObject，不再使用同质移动球表达主场景。
+   - Command Core 显示进度光带和稳定度。
+   - Relay Tower 显示 signal charge、beam 和过载状态。
+   - Scout 显示任务状态、方向、携带 signal 和受击/修复反馈。
+   - Interference Node 显示预警范围、干扰脉冲和 debuff 状态。
+   - Signal Link 显示流动、断连、增强或污染状态。
+
+3. Workbench 解释层
+   - Inspector 从选中对象出发展示 world、render、data、asset、TCA/GAS 关联。
+   - Timeline 合并 EventBus、TCA trace、GAS trace、renderer diagnostic，并突出链路，不做普通日志堆积。
+   - Content summary 能展示 Data unlock、Asset loaded/failed 和被对象引用的 content。
+
+4. Snapshot 与测试
+   - 扩展 SandboxSnapshot：scene objects、links、production/threat/objective state、selected object detail。
+   - fixed seed 下自动循环、pressure 和成长结果确定。
+   - 测试 signal production、scout dispatch、threat damage、GAS effect、confirm overcharge、unlock、timeline 合并排序。
+   - Browser 验收第一屏可见主舞台、objective、选中对象、timeline，并且无 console error。
+
+完成定义：
+
+- Data unlock 和 Asset unlock 能改变舞台表现或自动化能力。
+- 复合 RenderObject 的结构和状态层足够区分不同对象职责。
+- Workbench 不再靠模块卡片堆叠解释全部能力，而是围绕选中对象和事件链路组织。
+- Browser 验收中，第一屏能看见 canvas、objective、选中对象、最近链路和主要资源/威胁流。
+
+本阶段总完成定义：
+
+- 主舞台能直接看出 Command Core、Relay Tower、Scout、Data Node、Asset Fabricator、Interference Node 和 Signal Link 的职责。
+- 自动循环在无输入时持续推进 signal production、transport、threat 和 objective。
+- 玩家输入可以选择对象并触发与 TCA/GAS 相关的能力。
+- Data、Asset、World、Renderer、Input、Camera、TCA、GAS、EventBus、App Host 都在场景或 Workbench 中有可观察表达。
+- Sandbox game module 不直接依赖 Phaser、Koota、DOM 或 App Host 内部实现。
+- `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 通过。
 
 ## Phase 11：UI Core + React UI
 

@@ -1,6 +1,15 @@
 import type { RenderNodePath, RenderObjectDefinition } from "@gamekit/renderer-core";
 import { defineComponent } from "@gamekit/world";
 
+export type SandboxSceneRole =
+  | "command-core"
+  | "relay-tower"
+  | "scout"
+  | "data-node"
+  | "asset-fabricator"
+  | "interference-node"
+  | "signal-link";
+
 export const Position = defineComponent({
   id: "sandbox.position",
   create: (data?: Partial<{ x: number; y: number }>) => ({
@@ -14,6 +23,102 @@ export const Velocity = defineComponent({
   create: (data?: Partial<{ x: number; y: number }>) => ({
     x: data?.x ?? 0,
     y: data?.y ?? 0
+  })
+});
+
+export const SceneObject = defineComponent({
+  id: "sandbox.scene_object",
+  create: (data?: Partial<SandboxSceneObject>): SandboxSceneObject => ({
+    objectId: data?.objectId ?? "sandbox.object",
+    label: data?.label ?? data?.objectId ?? "Sandbox Object",
+    role: data?.role ?? "scout",
+    dataKind: data?.dataKind,
+    dataId: data?.dataId,
+    actorId: data?.actorId
+  })
+});
+
+export const Selectable = defineComponent({
+  id: "sandbox.selectable",
+  create: (data?: Partial<SandboxSelectable>) => ({
+    order: data?.order ?? 0,
+    selected: data?.selected ?? false
+  })
+});
+
+export const SignalStorage = defineComponent({
+  id: "sandbox.signal_storage",
+  create: (data?: Partial<SandboxSignalStorage>) => ({
+    signal: data?.signal ?? 0,
+    fragments: data?.fragments ?? 0,
+    capacity: data?.capacity ?? 100
+  })
+});
+
+export const StationState = defineComponent({
+  id: "sandbox.station_state",
+  create: (data?: Partial<SandboxStationState>) => ({
+    stationId: data?.stationId ?? "station.sandbox.unknown",
+    zone: data?.zone ?? "core",
+    priority: data?.priority ?? 1,
+    stability: data?.stability ?? 100,
+    heat: data?.heat ?? 0,
+    throughput: data?.throughput ?? 1,
+    mode: data?.mode ?? "normal"
+  })
+});
+
+export const ProductionState = defineComponent({
+  id: "sandbox.production_state",
+  create: (data?: Partial<SandboxProductionState>) => ({
+    ratePerSecond: data?.ratePerSecond ?? 0,
+    recipeId: data?.recipeId,
+    status: data?.status ?? "idle"
+  })
+});
+
+export const WorkAssignment = defineComponent({
+  id: "sandbox.work_assignment",
+  create: (data?: Partial<SandboxWorkAssignment>) => ({
+    task: data?.task ?? "idle",
+    status: data?.status ?? "idle",
+    sourceObjectId: data?.sourceObjectId,
+    targetObjectId: data?.targetObjectId,
+    cargo: data?.cargo ?? 0,
+    battery: data?.battery ?? 100,
+    fatigue: data?.fatigue ?? 0,
+    progress: data?.progress ?? 0,
+    routeProgress: data?.routeProgress ?? 0
+  })
+});
+
+export const ObjectiveState = defineComponent({
+  id: "sandbox.objective_state",
+  create: (data?: Partial<SandboxObjectiveState>) => ({
+    objectiveId: data?.objectiveId ?? "objective.sandbox.signal_outpost",
+    phaseId: data?.phaseId ?? "phase.bootstrap",
+    progressSignal: data?.progressSignal ?? 0,
+    targetSignal: data?.targetSignal ?? 220,
+    unlocked: data?.unlocked ?? []
+  })
+});
+
+export const ThreatState = defineComponent({
+  id: "sandbox.threat_state",
+  create: (data?: Partial<SandboxThreatState>) => ({
+    intensity: data?.intensity ?? 0,
+    nextStrikeTick: data?.nextStrikeTick ?? 120,
+    status: data?.status ?? "charging"
+  })
+});
+
+export const LinkState = defineComponent({
+  id: "sandbox.link_state",
+  create: (data?: Partial<SandboxLinkState>) => ({
+    fromObjectId: data?.fromObjectId ?? "from",
+    toObjectId: data?.toObjectId ?? "to",
+    flow: data?.flow ?? 0,
+    status: data?.status ?? "idle"
   })
 });
 
@@ -45,6 +150,75 @@ export type SandboxRenderObjectPresentation = {
   renderObjectId?: string;
   definition: RenderObjectDefinition;
   nodeAnimations?: SandboxRenderNodeAnimation[];
+};
+
+export type SandboxSceneObject = {
+  objectId: string;
+  label: string;
+  role: SandboxSceneRole;
+  dataKind?: string | undefined;
+  dataId?: string | undefined;
+  actorId?: string | undefined;
+};
+
+export type SandboxSelectable = {
+  order: number;
+  selected: boolean;
+};
+
+export type SandboxSignalStorage = {
+  signal: number;
+  fragments: number;
+  capacity: number;
+};
+
+export type SandboxStationState = {
+  stationId: string;
+  zone: "core" | "signal-field" | "fabrication-bay" | "archive-wing" | "rift";
+  priority: number;
+  stability: number;
+  heat: number;
+  throughput: number;
+  mode: "normal" | "stabilize" | "boost" | "suppressed";
+};
+
+export type SandboxProductionState = {
+  ratePerSecond: number;
+  recipeId?: string | undefined;
+  status: "idle" | "producing" | "boosted" | "blocked";
+};
+
+export type SandboxWorkAssignment = {
+  task: "idle" | "collect" | "deliver" | "repair" | "suppress" | "scan";
+  status: "idle" | "routing" | "working" | "returning";
+  sourceObjectId?: string | undefined;
+  targetObjectId?: string | undefined;
+  cargo: number;
+  battery: number;
+  fatigue: number;
+  progress: number;
+  routeProgress: number;
+};
+
+export type SandboxObjectiveState = {
+  objectiveId: string;
+  phaseId: string;
+  progressSignal: number;
+  targetSignal: number;
+  unlocked: string[];
+};
+
+export type SandboxThreatState = {
+  intensity: number;
+  nextStrikeTick: number;
+  status: "charging" | "striking" | "cooldown";
+};
+
+export type SandboxLinkState = {
+  fromObjectId: string;
+  toObjectId: string;
+  flow: number;
+  status: "idle" | "flowing" | "overloaded" | "corrupted";
 };
 
 export type SandboxRenderNodeAnimation =

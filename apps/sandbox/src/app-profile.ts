@@ -5,8 +5,10 @@ import {
   type StandardCameraActionBinding
 } from "@gamekit/app-host";
 import { createPhaserAssetAdapter } from "@gamekit/asset-phaser";
+import type { CameraController } from "@gamekit/camera-core";
 import { createPhaserCameraAdapter, type PhaserCameraAdapter } from "@gamekit/camera-phaser";
 import type { DataRegistry } from "@gamekit/data";
+import { createGasTcaDefinitions, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
 import { createInputRouter, type InputRouter } from "@gamekit/input-core";
 import { createDomInputAdapter } from "@gamekit/input-dom";
 import type { PlatformRuntime } from "@gamekit/platform-core";
@@ -17,7 +19,7 @@ import {
   type PhaserRendererAssetRuntime,
   type PhaserRendererDriverRuntime
 } from "@gamekit/renderer-phaser";
-import { createTcaTraceStore } from "@gamekit/tca";
+import { createTcaTraceStore, mergeTcaDefinitionSets } from "@gamekit/tca";
 import { createSandboxCameraController, SANDBOX_CAMERA_PAN_STEP } from "./camera";
 import {
   createSandboxDataRegistry,
@@ -42,7 +44,9 @@ export type SandboxAppContext = {
   renderer?: RendererAdapter | undefined;
   assetManager?: AssetManager | undefined;
   inputRouter?: InputRouter | undefined;
+  cameraController?: CameraController | undefined;
   cameraAdapter?: PhaserCameraAdapter | undefined;
+  gasRuntime?: GasRuntime | undefined;
   sandbox?: SandboxRuntime | undefined;
   phaserRuntime?: PhaserRendererDriverRuntime | undefined;
 };
@@ -51,6 +55,7 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
   const refs: {
     phaserRuntime?: PhaserRendererDriverRuntime;
     sandbox?: SandboxRuntime;
+    gasRuntime?: GasRuntime;
   } = {};
   const platform = createWebPlatform({ appName: "GameKit Sandbox" });
   const dataRegistry = createSandboxDataRegistry();
@@ -70,6 +75,7 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
   const camera = createSandboxCameraController(SANDBOX_RENDER_SIZE);
   const inputRouter = createInputRouter();
   const tcaTraceStore = createTcaTraceStore({ limit: 20 });
+  const gasTraceStore = createGasTraceStore({ limit: 30 });
 
   return createStandardAppProfile({
     id: "web",
@@ -83,7 +89,9 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
       context.renderer = state.renderer;
       context.assetManager = state.assets;
       context.inputRouter = state.input;
+      context.cameraController = camera;
       context.phaserRuntime = refs.phaserRuntime;
+      context.gasRuntime = refs.gasRuntime;
       context.sandbox = refs.sandbox;
     },
     services: {
@@ -136,15 +144,39 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
       },
       game: {
         standardModules: {
+          gas: {
+            id: "sandbox.gas",
+            traceStore: gasTraceStore,
+            onRuntime({ context }, runtime) {
+              refs.gasRuntime = runtime;
+              context.gasRuntime = runtime;
+            }
+          },
           tca: {
             id: "sandbox.tca",
-            definitions: createSandboxTcaDefinitions(),
+            definitions: mergeTcaDefinitionSets(
+              createSandboxTcaDefinitions(),
+              createGasTcaDefinitions({ runtime: () => refs.gasRuntime })
+            ),
             traceStore: tcaTraceStore
           },
           camera: {
             id: "sandbox.camera",
             controller: camera,
             actions: sandboxCameraActions(),
+            follow: {
+              resolveTarget({ context }, targetEntity) {
+                const entity = context.sandbox
+                  ?.snapshot()
+                  .entities.find((entry) => entry.id === targetEntity);
+                return entity
+                  ? {
+                      x: (entity.x / 100) * SANDBOX_RENDER_SIZE.width,
+                      y: (entity.y / 100) * SANDBOX_RENDER_SIZE.height
+                    }
+                  : undefined;
+              }
+            },
             smoothing: {
               enabled: true,
               stiffness: 12,
@@ -164,8 +196,11 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
             renderer: requireStandardState(state.renderer, "renderer"),
             renderSize: SANDBOX_RENDER_SIZE,
             dataRegistry: requireStandardState(state.data, "data"),
+            assetSummary: () => summarizeAssets(requireStandardState(state.assets, "assets")),
             modules,
-            tcaTraceStore
+            tcaTraceStore,
+            gasTraceStore,
+            gasRuntime: () => refs.gasRuntime
           });
           refs.sandbox = sandbox;
           context.sandbox = sandbox;
@@ -263,6 +298,14 @@ function requireStandardState<TValue>(value: TValue | undefined, name: string): 
   }
 
   return value;
+}
+
+function summarizeAssets(manager: AssetManager) {
+  const states = manager.states();
+  return {
+    assetsLoaded: states.filter((state) => state.status === "loaded").length,
+    assetsFailed: states.filter((state) => state.status === "failed").length
+  };
 }
 
 type SandboxRendererConfig = {

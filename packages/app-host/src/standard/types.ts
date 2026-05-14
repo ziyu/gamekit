@@ -1,7 +1,8 @@
 import type { AssetManager } from "@gamekit/asset";
-import type { CameraController, CameraState2D } from "@gamekit/camera-core";
+import type { CameraController, CameraState2D, PointLike } from "@gamekit/camera-core";
 import type { GameModule } from "@gamekit/core";
 import type { DataKindDefinition, DataPack, DataRegistry } from "@gamekit/data";
+import type { GasRuntime, GasTraceStore } from "@gamekit/gas";
 import type { GameInstallContext, GameRuntime } from "@gamekit/game-runtime";
 import type { InputRouter, InputSourceAdapter } from "@gamekit/input-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
@@ -96,6 +97,7 @@ export type StandardGameOptions<TContext> = {
 export type StandardGameModuleOptions<TContext> = {
   camera?: StandardCameraGameModuleOptions<TContext> | undefined;
   tca?: StandardTcaGameModuleOptions<TContext> | undefined;
+  gas?: StandardGasGameModuleOptions<TContext> | undefined;
 };
 
 export type StandardCameraGameModuleOptions<TContext> = {
@@ -104,12 +106,23 @@ export type StandardCameraGameModuleOptions<TContext> = {
   inputEventType?: string | undefined;
   actions?: StandardValue<StandardCameraActionBinding[], TContext> | undefined;
   smoothing?: StandardValue<StandardCameraSmoothingOptions, TContext> | undefined;
+  follow?: StandardValue<StandardCameraFollowOptions<TContext>, TContext> | undefined;
   sync?(
     ctx: StandardServiceBuildContext<TContext>,
     controller: CameraController,
     action: StandardCameraActionBinding | undefined,
     state: CameraState2D
   ): void;
+};
+
+export type StandardCameraFollowOptions<TContext> = {
+  eventType?: string | undefined;
+  stopEventType?: string | undefined;
+  targetFromEvent?: ((event: { payload: unknown }) => string | number | undefined) | undefined;
+  resolveTarget(
+    ctx: StandardServiceBuildContext<TContext>,
+    targetEntity: string | number
+  ): PointLike | undefined;
 };
 
 export type StandardCameraActionBinding = {
@@ -140,4 +153,11 @@ export type StandardTcaGameModuleOptions<TContext> = {
   definitions?: StandardValue<TcaDefinitionSet, TContext> | undefined;
   traceStore?: StandardValue<TcaTraceStore, TContext> | undefined;
   onRuntime?(ctx: StandardServiceBuildContext<TContext>, runtime: TcaRuntime): void;
+};
+
+export type StandardGasGameModuleOptions<TContext> = {
+  id?: string | undefined;
+  dataRegistry?: ((ctx: StandardServiceBuildContext<TContext>) => DataRegistry) | undefined;
+  traceStore?: StandardValue<GasTraceStore, TContext> | undefined;
+  onRuntime?(ctx: StandardServiceBuildContext<TContext>, runtime: GasRuntime): void;
 };

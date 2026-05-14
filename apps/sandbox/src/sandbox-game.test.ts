@@ -44,7 +44,7 @@ describe("sandbox runtime", () => {
       .snapshot()
       .tcaTraces.find((entry) => entry.ruleId === "rule.sandbox.confirm_signal");
 
-    expect(sandbox.snapshot().tcaRuleCount).toBe(4);
+    expect(sandbox.snapshot().tcaRuleCount).toBe(8);
     expect(trace).toMatchObject({
       ruleId: "rule.sandbox.confirm_signal",
       status: "passed",
@@ -55,6 +55,124 @@ describe("sandbox runtime", () => {
     });
     expect(sandbox.snapshot().events.map((event) => event.type)).toContain("sandbox.tca_log");
     expect(sandbox.snapshot().events.map((event) => event.type)).toContain("sandbox.tca_confirmed");
+    expect(sandbox.snapshot().events.map((event) => event.type)).toContain("gas.ability_activated");
+    expect(
+      sandbox
+        .snapshot()
+        .gasActors.find((actor) => actor.actor.actorId === "gas.actor.sandbox.scout.0")?.tags.values
+    ).toContain("state.overcharged");
+    expect(sandbox.snapshot().timeline.map((entry) => entry.kind)).toEqual(
+      expect.arrayContaining(["input", "event", "tca", "gas"])
+    );
+  });
+
+  it("runs GAS ability and effect state through the sandbox TCA chain", () => {
+    const sandbox = createSandboxRuntime("gas-seed");
+
+    sandbox.runtime.start();
+    for (let i = 0; i < 60; i += 1) {
+      sandbox.runtime.tick(16);
+    }
+
+    const source = sandbox
+      .snapshot()
+      .gasActors.find((actor) => actor.actor.actorId === "gas.actor.sandbox.scout.0");
+    const target = sandbox
+      .snapshot()
+      .gasActors.find((actor) => actor.actor.actorId === "gas.actor.sandbox.scout.1");
+
+    expect(source?.attributes.current.energy).toBeLessThan(40);
+    expect(target?.attributes.current.health).toBeLessThan(100);
+    expect(sandbox.snapshot().gasTraces.map((trace) => trace.type)).toContain("ability.activated");
+    expect(sandbox.snapshot().events.map((event) => event.type)).toContain("gas.cue");
+  });
+
+  it("exposes selected actor world, render, and GAS state in snapshots", async () => {
+    const renderer = createMemoryRenderer();
+    const sandbox = createSandboxRuntime({
+      seed: "selected-seed",
+      renderer,
+      renderSize: { width: 100, height: 100 }
+    });
+
+    await renderer.boot({
+      container: { append() {} } as unknown as HTMLElement,
+      width: 100,
+      height: 100
+    });
+    sandbox.runtime.start();
+    sandbox.runtime.tick(16);
+
+    const snapshot = sandbox.snapshot({ selectedActorId: "gas.actor.sandbox.scout.2" });
+    const selectedEntity = snapshot.entities.find(
+      (entity) => entity.actorId === snapshot.selected?.actorId
+    );
+    const selectedGasActor = snapshot.gasActors.find(
+      (actor) => actor.actor.actorId === snapshot.selected?.actorId
+    );
+
+    expect(snapshot.selected).toMatchObject({
+      actorId: "gas.actor.sandbox.scout.2",
+      entityId: selectedEntity?.id
+    });
+    expect(selectedEntity?.renderObjectId).toBeDefined();
+    expect(selectedGasActor?.attributes.current.health).toBe(100);
+    expect(selectedGasActor?.tags.values).toContain("team.scout");
+  });
+
+  it("updates objective and timeline when confirm and motion rules drive GAS", () => {
+    const sandbox = createSandboxRuntime("objective-seed");
+
+    sandbox.runtime.start();
+    sandbox.runtime.eventBus.emit(
+      "input.action",
+      { actionId: "game.confirm", contextId: "gameplay", phase: "pressed", value: 1 },
+      "test"
+    );
+    for (let i = 0; i < 60; i += 1) {
+      sandbox.runtime.tick(16);
+    }
+
+    const snapshot = sandbox.snapshot({ selectedActorId: "gas.actor.sandbox.scout.0" });
+    const source = snapshot.gasActors.find(
+      (actor) => actor.actor.actorId === "gas.actor.sandbox.scout.0"
+    );
+    const target = snapshot.gasActors.find(
+      (actor) => actor.actor.actorId === "gas.actor.sandbox.scout.1"
+    );
+
+    expect(snapshot.objective.id).toBe("signal-outpost");
+    expect(snapshot.objective.progress).toBeGreaterThan(0);
+    expect(source?.tags.values).toContain("state.overcharged");
+    expect(target?.attributes.current.health).toBeLessThan(100);
+    expect(snapshot.timeline.map((entry) => entry.kind)).toEqual(
+      expect.arrayContaining(["input", "tca", "gas"])
+    );
+    expect(snapshot.timeline).toEqual(
+      [...snapshot.timeline].sort(
+        (left, right) => left.time - right.time || left.id.localeCompare(right.id)
+      )
+    );
+  });
+
+  it("runs dispatcher work with route, battery, station, and objective state", () => {
+    const sandbox = createSandboxRuntime("dispatcher-seed");
+
+    sandbox.runtime.start();
+    for (let i = 0; i < 24; i += 1) {
+      sandbox.runtime.tick(100);
+    }
+
+    const snapshot = sandbox.snapshot();
+    const scouts = snapshot.entities.filter((entity) => entity.role === "scout");
+    const core = snapshot.entities.find((entity) => entity.role === "command-core");
+
+    expect(scouts.some((scout) => scout.targetObjectId)).toBe(true);
+    expect(scouts.some((scout) => (scout.routeProgress ?? 0) > 0)).toBe(true);
+    expect(scouts.some((scout) => (scout.battery ?? 100) < 100)).toBe(true);
+    expect(core?.station?.zone).toBe("core");
+    expect(core?.objective?.phaseId).toBe("objective.sandbox.phase.bootstrap");
+    expect(snapshot.objective.progress).toBeGreaterThan(0);
   });
 
   it("syncs renderable entities to the renderer", async () => {
@@ -77,11 +195,23 @@ describe("sandbox runtime", () => {
     sandbox.runtime.tick(16);
     sandbox.runtime.tick(16);
 
-    expect(renderer.objects()).toHaveLength(5);
-    expect(new Set(renderer.objects().map((object) => object.id)).size).toBe(5);
-    expect(renderer.objects()[0]?.type).toBe("container");
-    expect(renderer.objects()[0]?.nodes.has("marker/ring")).toBe(true);
-    expect(renderer.objects()[0]?.nodes.get("aura")?.transform?.scale?.x).not.toBe(1);
+    expect(renderer.objects()).toHaveLength(18);
+    expect(new Set(renderer.objects().map((object) => object.id)).size).toBe(18);
+    expect(renderer.objects().filter((object) => object.type === "container").length).toBe(12);
+    expect(renderer.objects().filter((object) => object.type === "sprite").length).toBe(6);
+    expect(renderer.objects()[0]?.nodes.has("charge/fill")).toBe(true);
+    expect(renderer.objects()[0]?.nodes.get("outer")?.props?.tint).toBeDefined();
+    expect(sandbox.snapshot().entities.map((entity) => entity.role)).toEqual(
+      expect.arrayContaining([
+        "command-core",
+        "relay-tower",
+        "scout",
+        "data-node",
+        "asset-fabricator",
+        "interference-node",
+        "signal-link"
+      ])
+    );
     expect(sandbox.snapshot().events.map((event) => event.type)).toContain(
       "sandbox.render_object_linked"
     );
@@ -100,10 +230,20 @@ describe("sandbox runtime", () => {
     expect(snapshot.kinds).toContain("renderRig");
     expect(snapshot.kinds).toContain("actor");
     expect(snapshot.kinds).toContain("ability");
+    expect(snapshot.kinds).toContain("gas.actor");
+    expect(snapshot.kinds).toContain("gas.ability");
+    expect(snapshot.kinds).toContain("gas.effect");
     expect(snapshot.kinds).toContain("biome");
     expect(snapshot.kinds).toContain("spawnProfile");
+    expect(snapshot.kinds).toContain("sceneObject");
+    expect(snapshot.kinds).toContain("station");
+    expect(snapshot.kinds).toContain("productionRecipe");
+    expect(snapshot.kinds).toContain("objectivePhase");
+    expect(snapshot.kinds).toContain("threatProfile");
+    expect(snapshot.kinds).toContain("outpostRoute");
+    expect(snapshot.kinds).toContain("sceneLayout");
     expect(snapshot.kinds).toContain("tcaRule");
-    expect(snapshot.documents).toHaveLength(13);
+    expect(snapshot.documents.length).toBeGreaterThanOrEqual(78);
     expect(snapshot.references).toContainEqual(
       expect.objectContaining({
         from: { kind: "renderObject", id: "render.sandbox.entity" },
@@ -125,6 +265,63 @@ describe("sandbox runtime", () => {
         path: "biomeId"
       })
     );
+    expect(snapshot.references).toContainEqual(
+      expect.objectContaining({
+        from: { kind: "sceneObject", id: "scene.sandbox.command_core" },
+        to: { kind: "renderObject", id: "render.sandbox.command_core" },
+        path: "renderObjectId"
+      })
+    );
+    expect(snapshot.references).toContainEqual(
+      expect.objectContaining({
+        from: { kind: "sceneLayout", id: "sceneLayout.sandbox.signal_outpost" },
+        to: { kind: "sceneObject", id: "scene.sandbox.relay_north" },
+        path: "objectIds[2]"
+      })
+    );
+    expect(snapshot.references).toContainEqual(
+      expect.objectContaining({
+        from: { kind: "sceneObject", id: "scene.sandbox.command_core" },
+        to: { kind: "station", id: "station.sandbox.command_core" },
+        path: "stationDefinitionId"
+      })
+    );
+    expect(snapshot.references).toContainEqual(
+      expect.objectContaining({
+        from: { kind: "sceneLayout", id: "sceneLayout.sandbox.signal_outpost" },
+        to: { kind: "outpostRoute", id: "route.relay_north.core" },
+        path: "links[1].routeId"
+      })
+    );
     expect(asset.source.url).toContain("fill='white'");
+  });
+
+  it("summarizes content and assets through the sandbox snapshot", () => {
+    const registry = createSandboxDataRegistry();
+    const sandbox = createSandboxRuntime({
+      seed: "content-seed",
+      dataRegistry: registry,
+      assetSummary: () => ({
+        assetsLoaded: 2,
+        assetsFailed: 1
+      })
+    });
+    const registrySnapshot = registry.snapshot();
+    const snapshot = sandbox.snapshot();
+
+    expect(snapshot.contentSummary).toEqual({
+      packs: registrySnapshot.packs.length,
+      kinds: registrySnapshot.kinds.length,
+      documents: registrySnapshot.documents.length,
+      references: registrySnapshot.references.length,
+      assetsLoaded: 2,
+      assetsFailed: 1
+    });
+    expect(snapshot.moduleSummary.map((entry) => entry.id)).toEqual([
+      "runtime",
+      "world",
+      "renderer",
+      "rules"
+    ]);
   });
 });

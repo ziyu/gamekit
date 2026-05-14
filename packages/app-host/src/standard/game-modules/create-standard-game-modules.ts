@@ -3,6 +3,7 @@ import type { GameInstallContext } from "@gamekit/game-runtime";
 import { resolveStandardValue } from "../resolve";
 import type { StandardGameOptions, StandardServiceBuildContext } from "../types";
 import { createStandardCameraModule } from "./camera-module";
+import { createStandardGasModule } from "./gas-module";
 import { createStandardTcaModule } from "./tca-module";
 
 export function createStandardGameModules<TContext>(
@@ -14,6 +15,10 @@ export function createStandardGameModules<TContext>(
 
   if (standardModules?.tca) {
     modules.push(createStandardTcaModule(ctx, standardModules.tca));
+  }
+
+  if (standardModules?.gas) {
+    modules.push(createStandardGasModule(ctx, standardModules.gas));
   }
 
   if (standardModules?.camera) {
@@ -32,6 +37,10 @@ export function createStandardGameModules<TContext>(
           standardModules.camera.smoothing === undefined
             ? undefined
             : resolveStandardValue(ctx, standardModules.camera.smoothing),
+        follow:
+          standardModules.camera.follow === undefined
+            ? undefined
+            : resolveStandardValue(ctx, standardModules.camera.follow),
         sync: standardModules.camera.sync,
         buildContext: ctx
       })

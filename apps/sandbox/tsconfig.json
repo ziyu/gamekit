@@ -15,6 +15,7 @@
     { "path": "../../packages/core" },
     { "path": "../../packages/data" },
     { "path": "../../packages/event-bus" },
+    { "path": "../../packages/gas" },
     { "path": "../../packages/game-runtime" },
     { "path": "../../packages/input-core" },
     { "path": "../../packages/input-dom" },
