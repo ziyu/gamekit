@@ -220,9 +220,23 @@ Platform 隔离 Web/Tauri/未来平台差异。文件、窗口、权限、路径
 
 详细设计见 `docs/modules/platform.md`。
 
+### UI
+
+UI 分为 headless 的 `ui-core` 和具体 React 实现 `react-ui`。UI Core 只定义 panel、window、command、focus 和 snapshot 协议；React UI 负责 shell、host、组件、样式基础设施和 DOM focus bridge。
+
+React 不进入 GameRuntime 主循环，不订阅每帧 ECS position，也不直接驱动 Renderer patch。Gameplay 包、GameModule 和 Sandbox game modules 不应直接 import React、shadcn/ui、Base UI 或 DOM panel implementation。
+
+UI focus 必须能和 Input Scope / Context 协作，确保文本输入、Inspector、DevTools、modal 聚焦时不会误触发 gameplay/camera input。
+
+UI style/theme 属于 React UI / app 层，不进入 `ui-core`。游戏应能定义自己的主题、CSS variables、组件库和视觉语言；`react-ui` 提供默认工具型样式和组织方式，但不把某个具体游戏皮肤上推成框架协议。
+
+`@gamekit/react-ui` 的默认实现以 Tailwind CSS 作为样式基础、GSAP 作为低频 UI 动效基础，并推荐 shadcn/ui 作为组件 recipe 最佳实践。这些依赖不能泄漏到 `ui-core`、GameRuntime、gameplay module、DataType、TCA/GAS 协议或 renderer adapter。
+
+详细设计见 `docs/modules/ui.md`。
+
 ### Data
 
-Data 是全局内容数据层。DataPack 是真实内容交付单元，不是内容分类模型；每条数据通过 `type + id` 声明自己的 DataType，DataRegistry 负责按类型注册、校验、索引和追踪引用。DataType 可以由 GameKit 内置，也可以由游戏项目、插件、mod 或编辑器自定义。
+Data 是全局内容数据层。DataPack 是数据交付单元，不是完整 Content Package，也不是内容分类模型；每条数据通过 `type + id` 声明自己的 DataType，DataRegistry 负责按类型注册、校验、索引和追踪引用。DataType 可以由 GameKit 内置，也可以由游戏项目、插件、mod 或编辑器自定义。
 
 GameKit 只要求进入 DataRegistry 的数据有 `type + id` 这类弱约束，不强制开发者采用框架预设的 hero、monster、building、quest 模板。游戏可以自由定义 `game.hero`、`game.monster`、`game.building` 等类型，并选择性引用 GAS、TCA、Renderer、Asset 等内置类型。
 

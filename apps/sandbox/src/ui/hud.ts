@@ -4,6 +4,7 @@ import type { DataRegistry } from "@gamekit/data";
 import type { SandboxRuntime } from "../game";
 import { formatNumber, formatPercent } from "./format";
 import { renderInspector } from "./inspector";
+import { renderSceneOverlay } from "./scene-overlay";
 import { renderTimeline } from "./timeline";
 import type {
   SandboxCameraStatus,
@@ -36,6 +37,7 @@ export function updateSandboxHud(
   handles.tick.textContent = String(clock.ticks);
   handles.modules.textContent = String(sandbox.runtime.modules.length);
   handles.systems.textContent = String(sandbox.runtime.systems.values().length);
+  renderSceneOverlay(handles, snapshot, state);
 
   if (shouldRenderWorkbench(handles)) {
     renderInspector(handles, sandbox, state);
@@ -44,6 +46,7 @@ export function updateSandboxHud(
 }
 
 export function updateCameraStatus(handles: SandboxUiHandles, status: SandboxCameraStatus): void {
+  handles.latestCameraStatus = status;
   handles.cameraPosition.textContent = `${formatNumber(status.x)}, ${formatNumber(status.y)}`;
   handles.cameraZoom.textContent = status.zoom.toFixed(2);
   handles.cameraMode.textContent = status.mode;

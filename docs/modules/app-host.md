@@ -46,8 +46,8 @@ App Host 提供统一能力管理：
 App Host 管理应用级 lifecycle：
 
 - Platform boot
-- DataRegistry 创建和 DataPack 注册
-- AssetManager 创建和 preload
+- DataRegistry 创建、DataType 注册和已物化 DataPack 注册
+- AssetManager 创建和 preload pipeline
 - Renderer boot / resize / destroy
 - Input adapter start / stop
 - UI / DevTools mount
@@ -245,6 +245,43 @@ profile 决定：
 - 是否启用输入 scope gate。
 - 是否启用 crash/diagnostic reporter。
 
+## Data / Asset 启动边界
+
+App Host 负责把已经可用的 DataType、DataPack 和 AssetManager 按应用启动顺序组合起来，但不应该在当前阶段定义 DataPack source/loader/manifest 体系。内容从哪里来、如何解压、如何处理实际资源文件和脚本，属于未来 Content Package System、平台 adapter、编辑器导入器或 app/profile 层。
+
+标准启动顺序：
+
+```txt
+resolve profile/app config
+→ create DataRegistry
+→ register framework/app/plugin DataTypeDefinition
+→ receive materialized DataPack[] from app/profile/content package
+→ register DataPack into DataRegistry
+→ create AssetManager
+→ register assets from DataRegistry
+→ run asset preload plan
+→ create GameRuntime with services and standard modules
+```
+
+App Host 在这个边界上的职责：
+
+- 从 app definition / profile / test override 收集 DataTypeDefinition。
+- 接收已经物化的 DataPack，并把它们注册到 DataRegistry。
+- 记录 data pack、entry、reference 级 diagnostics。
+- 将 DataRegistry snapshot 和 Asset preload state 暴露给 Host snapshot。
+- 在 boot 失败时报告失败阶段和可定位错误。
+
+App Host 不应做的事：
+
+- 不解释 hero、monster、station、rule、ability 等业务数据结构。
+- 不在当前阶段定义 DataPackSource / DataPackLoader / DataPackManifest。
+- 不让 AssetManager 直接读取 DataPack。
+- 不把资源加载失败写成 DataRegistry 校验错误。
+
+这条边界让普通 app 可以通过配置启动已物化数据包和资源预加载，同时保留编辑器、测试、远程配置、mod 和平台 adapter 的扩展空间。
+
+完整 Content Package System 是更高层能力。未来内容包可以同时包含 DataPack、实际资源文件、脚本、localization、地图、patch、mod metadata 和权限声明。App Host 可以编排内容包挂载生命周期，但不应在当前 Data/App Host 层提前实现一套会被内容包替换的 DataPack 加载系统；内容包应通过独立协议把不同 section 分发给 Data、Asset、Script、Localization 等模块。
+
 ## Diagnostics / Debug Snapshot
 
 App Host 必须为统一 debug 提供低频诊断入口。
@@ -323,6 +360,10 @@ export type StandardAppProfileOptions<TContext> = {
     adapters?: (ctx, router) => InputSourceAdapter[];
   };
   game?: { runtime?: GameRuntime | ((ctx) => GameRuntime); createRuntime?: (ctx) => GameRuntime };
+  ui?: {
+    runtime?: UiRuntime | ((ctx) => UiRuntime);
+    style?: unknown;
+  };
 };
 ```
 
@@ -341,6 +382,7 @@ const configured = createConfiguredAppHost({
 - Definition 尽量可数据化、可序列化、可测试。
 - Profile 承载 adapter 选择、DOM/Tauri/headless 句柄、平台默认配置和 service 参数。
 - Adapter 可以无差别放入 `profile.adapters`，标准 service builder 按需读取自己关心的 adapter。
+- UI style/theme 属于 React UI / app 层；Host 可以把不透明的 `style` 参数交给 UI shell，但不定义主题协议、不解释 CSS 或组件实现。
 - 标准 service binding 由 App Host 创建，不由每个 app profile 手写。
 - App 入口只提供无法配置化的外部上下文，并调用 `boot/start`。
 - 缺失 standard service 参数或 adapter 必须抛稳定错误，不能静默跳过。

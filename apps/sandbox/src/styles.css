@@ -173,8 +173,24 @@ h2 {
 }
 
 .objective-state {
-  min-width: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: end;
+  gap: 10px;
+  min-width: 190px;
   text-align: right;
+}
+
+.objective-briefing {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(241, 238, 231, 0.14);
+  background: #181b19;
+  color: #d7d2c7;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .objective-meter {
@@ -276,6 +292,192 @@ h2 {
   font-size: 0.86rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.scene-object-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.scene-focus {
+  position: absolute;
+  width: var(--focus-size);
+  height: var(--focus-size);
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 12px rgba(140, 214, 163, 0.35));
+  pointer-events: none;
+}
+
+.scene-focus__corner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-color: #8cd6a3;
+}
+
+.scene-focus__corner--nw {
+  top: 0;
+  left: 0;
+  border-top: 2px solid;
+  border-left: 2px solid;
+}
+
+.scene-focus__corner--ne {
+  top: 0;
+  right: 0;
+  border-top: 2px solid;
+  border-right: 2px solid;
+}
+
+.scene-focus__corner--sw {
+  bottom: 0;
+  left: 0;
+  border-bottom: 2px solid;
+  border-left: 2px solid;
+}
+
+.scene-focus__corner--se {
+  right: 0;
+  bottom: 0;
+  border-right: 2px solid;
+  border-bottom: 2px solid;
+}
+
+.scene-focus--unit .scene-focus__corner {
+  border-color: #70a7d8;
+}
+
+.scene-object-card {
+  position: absolute;
+  display: grid;
+  gap: 8px;
+  width: min(280px, calc(100% - 28px));
+  padding: 10px;
+  border: 1px solid rgba(241, 238, 231, 0.14);
+  border-left: 4px solid #8cd6a3;
+  background: rgba(16, 20, 18, 0.9);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
+  transform: translate(22px, -50%);
+  pointer-events: auto;
+}
+
+.scene-object-card span,
+.scene-modal__hero span,
+.scene-modal__stats dt {
+  color: #a8afa7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.scene-object-card strong,
+.scene-modal__hero strong {
+  display: block;
+  margin-top: 3px;
+  color: #f1eee7;
+  font-size: 0.88rem;
+}
+
+.scene-object-card dl,
+.scene-modal__stats {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  background: rgba(241, 238, 231, 0.08);
+}
+
+.scene-object-card dl div,
+.scene-modal__stats div {
+  display: grid;
+  grid-template-columns: minmax(68px, 0.38fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px;
+  background: #151716;
+}
+
+.scene-object-card dd,
+.scene-modal__stats dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #f1eee7;
+  font-family: "SFMono-Regular", "Cascadia Mono", "Courier New", monospace;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-object-card__actions,
+.scene-modal__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.scene-object-card__actions button,
+.scene-ui-action {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid rgba(241, 238, 231, 0.14);
+  background: #181b19;
+  color: #d7d2c7;
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.scene-object-card__actions button.is-selected {
+  border-color: rgba(140, 214, 163, 0.56);
+  background: rgba(140, 214, 163, 0.13);
+  color: #f1eee7;
+}
+
+.scene-modal-host {
+  pointer-events: none;
+}
+
+.scene-modal-host:not(:empty) {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(7, 9, 8, 0.62);
+  pointer-events: auto;
+}
+
+.scene-modal-host .gamekit-ui-panel {
+  width: min(520px, 100%);
+  border-left: 4px solid #d9b35f;
+}
+
+.scene-modal {
+  display: grid;
+  gap: 14px;
+}
+
+.scene-modal__hero {
+  display: grid;
+  gap: 6px;
+}
+
+.scene-modal__hero p,
+.scene-modal-copy {
+  margin: 0;
+  color: #c6c2b7;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.scene-modal__actions {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .inspector {
@@ -564,4 +766,194 @@ h2 {
   .tabs {
     flex-wrap: wrap;
   }
+}
+
+[data-gamekit-theme="signal-outpost"] .workbench {
+  background:
+    linear-gradient(90deg, var(--so-bg-grid) 1px, transparent 1px) 0 0 / 64px 64px,
+    linear-gradient(var(--so-bg-grid) 1px, transparent 1px) 0 0 / 64px 64px,
+    var(--so-bg);
+}
+
+[data-gamekit-theme="signal-outpost"] .topbar,
+[data-gamekit-theme="signal-outpost"] .stage-panel,
+[data-gamekit-theme="signal-outpost"] .inspector,
+[data-gamekit-theme="signal-outpost"] .timeline-panel,
+[data-gamekit-theme="signal-outpost"] .signal-strip,
+[data-gamekit-theme="signal-outpost"] .scene-modal-host .gamekit-ui-panel {
+  border-color: var(--so-line);
+  border-radius: var(--gk-radius-panel);
+  background: var(--so-panel);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.22);
+}
+
+[data-gamekit-theme="signal-outpost"] .topbar {
+  border-left: 4px solid var(--so-signal);
+  background: linear-gradient(90deg, var(--so-panel-soft), transparent 38%), var(--so-panel);
+}
+
+[data-gamekit-theme="signal-outpost"] .stage-panel {
+  border-left: 4px solid var(--so-amber);
+}
+
+[data-gamekit-theme="signal-outpost"] .inspector {
+  border-left: 4px solid var(--so-blue);
+}
+
+[data-gamekit-theme="signal-outpost"] .timeline-panel {
+  border-left: 4px solid var(--so-violet);
+}
+
+[data-gamekit-theme="signal-outpost"] .scene-modal-host .gamekit-ui-panel {
+  border-left: 4px solid var(--so-amber);
+}
+
+[data-gamekit-theme="signal-outpost"] .eyebrow,
+[data-gamekit-theme="signal-outpost"] .label,
+[data-gamekit-theme="signal-outpost"] .signal-strip span,
+[data-gamekit-theme="signal-outpost"] .objective-state span,
+[data-gamekit-theme="signal-outpost"] .timeline-entry__meta,
+[data-gamekit-theme="signal-outpost"] .summary-list span,
+[data-gamekit-theme="signal-outpost"] .kv dt,
+[data-gamekit-theme="signal-outpost"] .scene-object-card span,
+[data-gamekit-theme="signal-outpost"] .scene-modal__hero span,
+[data-gamekit-theme="signal-outpost"] .scene-modal__stats dt {
+  color: var(--so-text-muted);
+}
+
+[data-gamekit-theme="signal-outpost"] h1,
+[data-gamekit-theme="signal-outpost"] h2,
+[data-gamekit-theme="signal-outpost"] .stage-panel__bar strong,
+[data-gamekit-theme="signal-outpost"] .inspector__header strong,
+[data-gamekit-theme="signal-outpost"] .timeline-panel__header strong,
+[data-gamekit-theme="signal-outpost"] .objective-state strong,
+[data-gamekit-theme="signal-outpost"] .signal-strip strong,
+[data-gamekit-theme="signal-outpost"] .kv dd,
+[data-gamekit-theme="signal-outpost"] .scene-object-card strong,
+[data-gamekit-theme="signal-outpost"] .scene-modal__hero strong,
+[data-gamekit-theme="signal-outpost"] .scene-modal__stats dd {
+  color: var(--so-text);
+}
+
+[data-gamekit-theme="signal-outpost"] code,
+[data-gamekit-theme="signal-outpost"] .signal-strip strong,
+[data-gamekit-theme="signal-outpost"] .kv dd,
+[data-gamekit-theme="signal-outpost"] .timeline-entry__status,
+[data-gamekit-theme="signal-outpost"] .actor-buttons strong,
+[data-gamekit-theme="signal-outpost"] .entity-row strong,
+[data-gamekit-theme="signal-outpost"] .scene-object-card dd,
+[data-gamekit-theme="signal-outpost"] .scene-modal__stats dd {
+  font-family: var(--so-code);
+}
+
+[data-gamekit-theme="signal-outpost"] .stage-panel__bar,
+[data-gamekit-theme="signal-outpost"] .timeline-panel__header,
+[data-gamekit-theme="signal-outpost"] .inspector__header,
+[data-gamekit-theme="signal-outpost"] .gamekit-ui-panel__header,
+[data-gamekit-theme="signal-outpost"] .tabs,
+[data-gamekit-theme="signal-outpost"] .objective-detail,
+[data-gamekit-theme="signal-outpost"] .inspector-section {
+  border-color: var(--so-line);
+}
+
+[data-gamekit-theme="signal-outpost"] .objective-meter {
+  background: rgba(243, 239, 231, 0.08);
+}
+
+[data-gamekit-theme="signal-outpost"] .objective-meter span {
+  background: linear-gradient(90deg, var(--so-amber), var(--so-signal));
+  box-shadow: 0 0 18px var(--so-amber-soft);
+}
+
+[data-gamekit-theme="signal-outpost"] .stage {
+  background:
+    linear-gradient(90deg, rgba(140, 214, 163, 0.04) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(rgba(217, 179, 95, 0.035) 1px, transparent 1px) 0 0 / 40px 40px,
+    #151917;
+}
+
+[data-gamekit-theme="signal-outpost"] .stage::before {
+  border-color: rgba(140, 214, 163, 0.24);
+}
+
+[data-gamekit-theme="signal-outpost"] .stage-hint span,
+[data-gamekit-theme="signal-outpost"] .signal-strip div,
+[data-gamekit-theme="signal-outpost"] .summary-list li,
+[data-gamekit-theme="signal-outpost"] .kv div,
+[data-gamekit-theme="signal-outpost"] .timeline li,
+[data-gamekit-theme="signal-outpost"] .scene-object-card dl div,
+[data-gamekit-theme="signal-outpost"] .scene-modal__stats div {
+  background: var(--so-panel-raised);
+}
+
+[data-gamekit-theme="signal-outpost"] .tabs button,
+[data-gamekit-theme="signal-outpost"] .timeline-filters button,
+[data-gamekit-theme="signal-outpost"] .actor-buttons button,
+[data-gamekit-theme="signal-outpost"] .entity-row,
+[data-gamekit-theme="signal-outpost"] .inspector-actions button,
+[data-gamekit-theme="signal-outpost"] .objective-briefing,
+[data-gamekit-theme="signal-outpost"] .scene-object-card__actions button,
+[data-gamekit-theme="signal-outpost"] .scene-ui-action {
+  border-color: var(--so-line);
+  border-radius: 5px;
+  background: var(--so-panel-raised);
+}
+
+[data-gamekit-theme="signal-outpost"] .tabs button:hover,
+[data-gamekit-theme="signal-outpost"] .timeline-filters button:hover,
+[data-gamekit-theme="signal-outpost"] .actor-buttons button:hover,
+[data-gamekit-theme="signal-outpost"] .entity-row:hover,
+[data-gamekit-theme="signal-outpost"] .inspector-actions button:hover,
+[data-gamekit-theme="signal-outpost"] .objective-briefing:hover,
+[data-gamekit-theme="signal-outpost"] .scene-object-card__actions button:hover,
+[data-gamekit-theme="signal-outpost"] .scene-ui-action:hover {
+  border-color: var(--so-line-strong);
+  background: rgba(140, 214, 163, 0.1);
+}
+
+[data-gamekit-theme="signal-outpost"] .scene-object-card__actions button.is-selected {
+  border-color: color-mix(in srgb, var(--so-signal) 58%, transparent);
+  background: var(--so-signal-soft);
+  color: var(--so-text);
+}
+
+[data-gamekit-theme="signal-outpost"] .tabs button.is-active,
+[data-gamekit-theme="signal-outpost"] .timeline-filters button.is-active,
+[data-gamekit-theme="signal-outpost"] .actor-buttons button.is-selected,
+[data-gamekit-theme="signal-outpost"] .entity-row.is-selected,
+[data-gamekit-theme="signal-outpost"] .inspector-actions button.is-selected {
+  border-color: color-mix(in srgb, var(--so-signal) 58%, transparent);
+  background: var(--so-signal-soft);
+  color: var(--so-text);
+}
+
+[data-gamekit-theme="signal-outpost"] .summary-list,
+[data-gamekit-theme="signal-outpost"] .timeline,
+[data-gamekit-theme="signal-outpost"] .kv,
+[data-gamekit-theme="signal-outpost"] .signal-strip {
+  background: var(--so-line);
+}
+
+[data-gamekit-theme="signal-outpost"] .timeline li {
+  border-top-color: var(--so-text-muted);
+}
+
+[data-gamekit-theme="signal-outpost"] .timeline-entry--input {
+  border-top-color: var(--so-blue);
+}
+
+[data-gamekit-theme="signal-outpost"] .timeline-entry--tca {
+  border-top-color: var(--so-amber);
+}
+
+[data-gamekit-theme="signal-outpost"] .timeline-entry--gas {
+  border-top-color: var(--so-threat);
+}
+
+[data-gamekit-theme="signal-outpost"] .timeline-entry--renderer {
+  border-top-color: var(--so-violet);
+}
+
+[data-gamekit-theme="signal-outpost"] .timeline-entry--runtime {
+  border-top-color: var(--so-signal);
 }

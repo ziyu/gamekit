@@ -15,9 +15,11 @@ export function configureSandboxInputRouter(
 ): void {
   context.ui.rendererRoot.addEventListener("focus", () => {
     context.activeInputScope = "game";
+    context.ui.uiRuntime.setFocus({ scope: "game", target: "viewport", reason: "sandbox.focus" });
   });
   context.ui.rendererRoot.addEventListener("blur", () => {
     context.activeInputScope = "ui";
+    context.ui.uiRuntime.setFocus({ scope: "ui", reason: "sandbox.blur" });
   });
   inputRouter.registerAction({
     id: "camera.pan_up",
@@ -148,7 +150,14 @@ export function resolveSandboxInputScope(
   if (isPointerLikeInput(event)) {
     context.activeInputScope = isEventInElement(event, context.ui.rendererRoot) ? "game" : "ui";
     if (context.activeInputScope === "game" && event.type === "pointerdown") {
+      context.ui.uiRuntime.setFocus({
+        scope: "game",
+        target: "viewport",
+        reason: "sandbox.pointer"
+      });
       context.ui.rendererRoot.focus({ preventScroll: true });
+    } else if (context.activeInputScope === "ui") {
+      context.ui.uiRuntime.setFocus({ scope: "ui", reason: "sandbox.pointer" });
     }
   }
 

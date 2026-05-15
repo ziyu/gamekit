@@ -1,6 +1,9 @@
+import { createGameKitUiAnimator } from "@gamekit/react-ui";
 import type { SandboxRuntime } from "../game";
 import { escapeHtml, upper } from "./format";
 import type { SandboxUiHandles, SandboxWorkbenchState } from "./types";
+
+const timelineAnimator = createGameKitUiAnimator({ duration: 0.24 });
 
 export function renderTimeline(
   handles: SandboxUiHandles,
@@ -17,13 +20,13 @@ export function renderTimeline(
     filter.classList.toggle("is-active", filter.dataset.timelineFilter === state.timelineFilter);
   }
 
-  handles.timelineList.innerHTML = entries
+  const visibleEntries = entries.slice().reverse().slice(0, 18);
+
+  handles.timelineList.innerHTML = visibleEntries
     .slice()
-    .reverse()
-    .slice(0, 18)
     .map(
       (entry) => `
-      <li class="timeline-entry timeline-entry--${escapeHtml(entry.kind)}">
+      <li class="timeline-entry timeline-entry--${escapeHtml(entry.kind)}" data-timeline-entry="${escapeHtml(entry.id)}">
         <span class="timeline-entry__meta">${escapeHtml(upper(entry.kind))} · ${formatTime(entry.time)}</span>
         <strong class="timeline-entry__label">${escapeHtml(entry.label)}</strong>
         <code>${escapeHtml(entry.source)}</code>
@@ -32,6 +35,19 @@ export function renderTimeline(
     `
     )
     .join("");
+
+  const latestEntry = visibleEntries[0];
+  if (!latestEntry || latestEntry.id === handles.lastAnimatedTimelineEntryId) {
+    return;
+  }
+
+  handles.lastAnimatedTimelineEntryId = latestEntry.id;
+  const latestElement = [
+    ...handles.timelineList.querySelectorAll<HTMLElement>("[data-timeline-entry]")
+  ].find((element) => element.dataset.timelineEntry === latestEntry.id);
+  if (latestElement) {
+    timelineAnimator.emphasize(latestElement);
+  }
 }
 
 function formatTime(time: number): string {

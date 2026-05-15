@@ -68,3 +68,12 @@ Sandbox 是架构验证场，不是最终 demo。
 
 - 在 sandbox 里沉淀长期玩法规则。
 - 直接绕过 GameKit 公共接口访问 adapter 内部。
+
+## React UI
+
+- `@gamekit/react-ui` 使用 Tailwind CSS 作为默认样式基础，样式应通过组件、recipe、CSS variables 和语义 props 组织，而不是把 class 字符串散落在业务页面中。
+- GSAP 只用于低频 UI 动效，例如 window/modal/toast/timeline/inspector 的进入、退出、强调和布局过渡；不要把 GSAP 用作 gameplay timing、renderer object patch 或 world tick 驱动。
+- shadcn/ui 是推荐的组件 recipe 最佳实践。采用时应复制并封装到 `@gamekit/react-ui` 或具体游戏 UI 包，保持代码可拥有、可改造、可测试。
+- 不要让业务 gameplay package、GameRuntime、World、TCA、GAS、DataType 或 renderer adapter 直接依赖 Tailwind、GSAP、shadcn/ui、Radix 或 Base UI。
+- 游戏应优先沉淀自己的 UI 组件库，例如 `AbilityButton`、`ResourceMeter`、`ActorPortrait`、`BuildSlot`，再由这些组件消费 Tailwind、CSS variables 或 shadcn recipe。
+- 所有 UI 动效必须尊重 reduced motion；动画失败不能阻塞 UI command 或 gameplay tick。

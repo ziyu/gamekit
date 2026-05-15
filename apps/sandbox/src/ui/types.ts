@@ -1,6 +1,8 @@
 import type { AssetManager } from "@gamekit/asset";
 import type { AppHost } from "@gamekit/app-host";
 import type { DataRegistry } from "@gamekit/data";
+import type { UiRuntime } from "@gamekit/ui-core";
+import type { Root as ReactRoot } from "react-dom/client";
 import type { SandboxRuntime } from "../game";
 
 export type SandboxInspectorTab = "actor" | "runtime" | "content" | "rules" | "host";
@@ -24,7 +26,10 @@ export type SandboxWorkbenchState = {
 
 export type SandboxUiHandles = {
   root: HTMLElement;
+  reactRoot: ReactRoot;
+  uiRuntime: UiRuntime;
   rendererRoot: HTMLDivElement;
+  sceneOverlay: HTMLElement;
   status: HTMLDivElement;
   objectiveLabel: HTMLElement;
   objectiveStatus: HTMLElement;
@@ -45,10 +50,12 @@ export type SandboxUiHandles = {
   inspectorBody: HTMLElement;
   timelineFilters: HTMLButtonElement[];
   timelineList: HTMLElement;
+  lastAnimatedTimelineEntryId?: string | undefined;
   latestHost?: AppHost | undefined;
   latestDataRegistry?: DataRegistry | undefined;
   latestAssetManager?: AssetManager | undefined;
   latestSandbox?: SandboxRuntime | undefined;
+  latestCameraStatus?: SandboxCameraStatus | undefined;
   lastWorkbenchRenderAt?: number | undefined;
 };
 

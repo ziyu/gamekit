@@ -4,6 +4,7 @@ import type { GameRuntime } from "@gamekit/game-runtime";
 import type { InputRouter } from "@gamekit/input-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
 import type { RendererAdapter } from "@gamekit/renderer-core";
+import type { UiRuntime } from "@gamekit/ui-core";
 
 export type AppLifecyclePhase =
   | "registered"
@@ -111,6 +112,7 @@ export type AppServiceRegistry = {
   renderer?: RendererAdapter;
   input?: InputRouter;
   game?: GameRuntime;
+  ui?: UiRuntime;
   has<TService>(key: AppServiceKey<TService>): boolean;
   get<TService>(key: AppServiceKey<TService>): TService | undefined;
   require<TService>(key: AppServiceKey<TService>): TService;
@@ -142,7 +144,14 @@ export type AppHost = {
   snapshot(): AppHostSnapshot;
 };
 
-export type AppStandardServiceId = "platform" | "data" | "assets" | "renderer" | "input" | "game";
+export type AppStandardServiceId =
+  | "platform"
+  | "data"
+  | "assets"
+  | "renderer"
+  | "input"
+  | "game"
+  | "ui";
 
 export type CreateAppHostOptions = {
   id: string;

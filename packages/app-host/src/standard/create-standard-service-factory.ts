@@ -6,7 +6,8 @@ import {
   GAME_SERVICE,
   INPUT_SERVICE,
   PLATFORM_SERVICE,
-  RENDERER_SERVICE
+  RENDERER_SERVICE,
+  UI_SERVICE
 } from "../runtime/standard-keys";
 import { createStandardContext, exposeStandardState } from "./context";
 import { createStandardGameModules } from "./game-modules";
@@ -217,6 +218,42 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
               return {
                 activeContexts: router.activeContexts()
               };
+            }
+          }
+        };
+      }
+    );
+  },
+  ui<TContext>(
+    profile: AppProfile<TContext>,
+    stateByContext: Map<TContext, StandardAppServiceState>
+  ) {
+    return createManagedStandardServiceFactory(
+      profile,
+      stateByContext,
+      profile.standard?.ui,
+      (ctx, options) => {
+        const ui = resolveStandardValue(ctx, options.runtime);
+        ctx.state.ui = ui;
+        return {
+          key: UI_SERVICE,
+          service: ui,
+          standard: "ui",
+          lifecycle: {
+            id: UI_SERVICE.id,
+            dependencies: ctx.service.dependencies,
+            boot() {
+              for (const panel of options.panels?.(ctx) ?? []) {
+                if (!ui.panel(panel.id)) {
+                  ui.registerPanel(panel);
+                }
+              }
+              for (const panelId of options.openPanels?.(ctx) ?? []) {
+                ui.open(panelId);
+              }
+            },
+            snapshot() {
+              return ui.snapshot();
             }
           }
         };

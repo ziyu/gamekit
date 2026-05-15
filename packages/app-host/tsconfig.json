@@ -15,6 +15,7 @@
     { "path": "../input-core" },
     { "path": "../platform-core" },
     { "path": "../renderer-core" },
-    { "path": "../tca" }
+    { "path": "../tca" },
+    { "path": "../ui-core" }
   ]
 }

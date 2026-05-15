@@ -33,7 +33,7 @@
 - `assets.md`：AssetRef、AssetDefinition、AssetManager、资源来源和加载状态。
 - `tca.md`：Trigger / Condition / Action 规则系统。
 - `gas.md`：Actor、Ability、Effect、Cue、Clue。
-- `ui.md`：UI Core、React UI、窗口与交互层。
+- `ui.md`：UI Core、React UI、游戏样式、组件库、窗口与交互层。
 - `save.md`：SaveGame、迁移、平台存储。
 - `devtools.md`：Trace、Inspector、Profiler。
 - `hero-road.md`：Hero Road 示例游戏验证目标。

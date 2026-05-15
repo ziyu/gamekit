@@ -1,5 +1,8 @@
+import "@gamekit/react-ui/styles.css";
+import "./ui/theme.css";
 import "./styles.css";
 import { createConfiguredAppHost } from "@gamekit/app-host";
+import { createUiRuntime } from "@gamekit/ui-core";
 import { sandboxAppDefinition } from "./app-definition";
 import { createSandboxWebProfile, type SandboxAppContext } from "./app-profile";
 import { SANDBOX_RENDER_SIZE, type SandboxSnapshot } from "./game";
@@ -24,12 +27,18 @@ const appElement = app;
 void bootSandbox(appElement);
 
 async function bootSandbox(root: HTMLElement): Promise<void> {
-  const ui = renderSandboxShell(root);
+  const uiRuntime = createUiRuntime();
+  const ui = renderSandboxShell(root, uiRuntime);
   const workbench = createSandboxWorkbenchState();
   const context: SandboxAppContext = {
     ui,
+    uiRuntime,
     activeInputScope: "ui"
   };
+  uiRuntime.subscribe(() => {
+    const scope = uiRuntime.focus().scope;
+    context.activeInputScope = scope === "game" ? "game" : "ui";
+  });
   const refreshWorkbench = () => {
     if (context.sandbox) {
       updateSandboxHud(ui, context.sandbox, workbench);

@@ -8,6 +8,7 @@ import type { InputRouter, InputSourceAdapter } from "@gamekit/input-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
 import type { RendererAdapter, RendererBootContext } from "@gamekit/renderer-core";
 import type { TcaDefinitionSet, TcaTraceStore, TcaRuntime } from "@gamekit/tca";
+import type { UiRuntime } from "@gamekit/ui-core";
 import type {
   AppAdapterRegistry,
   AppServiceFactory,
@@ -22,6 +23,7 @@ export type StandardAppServiceState = {
   renderer?: RendererAdapter;
   input?: InputRouter;
   game?: GameRuntime;
+  ui?: UiRuntime;
 };
 
 export type StandardServiceBuildContext<TContext> = Omit<
@@ -49,6 +51,7 @@ export type StandardAppProfileOptions<TContext> = {
   assets?: StandardAssetOptions<TContext> | undefined;
   input?: StandardInputOptions<TContext> | undefined;
   game?: StandardGameOptions<TContext> | undefined;
+  ui?: StandardUiOptions<TContext> | undefined;
 };
 
 export type StandardValue<TValue, TContext> =
@@ -82,6 +85,18 @@ export type StandardInputOptions<TContext> = {
   router: StandardValue<InputRouter, TContext>;
   configure?(ctx: StandardServiceBuildContext<TContext>, router: InputRouter): void;
   adapters?(ctx: StandardServiceBuildContext<TContext>, router: InputRouter): InputSourceAdapter[];
+};
+
+export type StandardUiOptions<TContext> = {
+  runtime: StandardValue<UiRuntime, TContext>;
+  style?: unknown;
+  panels?(ctx: StandardServiceBuildContext<TContext>): Array<{
+    id: string;
+    title: string;
+    kind: "panel" | "window" | "modal" | "overlay" | "hud" | "devtools";
+    tags?: string[];
+  }>;
+  openPanels?(ctx: StandardServiceBuildContext<TContext>): string[] | undefined;
 };
 
 export type StandardGameOptions<TContext> = {

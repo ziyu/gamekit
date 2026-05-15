@@ -3,7 +3,8 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "noEmit": true
+    "noEmit": true,
+    "jsx": "react-jsx"
   },
   "include": ["src"],
   "references": [
@@ -22,6 +23,8 @@
     { "path": "../../packages/platform-web" },
     { "path": "../../packages/renderer-core" },
     { "path": "../../packages/renderer-phaser" },
+    { "path": "../../packages/ui-core" },
+    { "path": "../../packages/react-ui" },
     { "path": "../../packages/tca" },
     { "path": "../../packages/test-utils" },
     { "path": "../../packages/world" },

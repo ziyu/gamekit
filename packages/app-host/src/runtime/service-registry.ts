@@ -4,7 +4,8 @@ import {
   GAME_SERVICE,
   INPUT_SERVICE,
   PLATFORM_SERVICE,
-  RENDERER_SERVICE
+  RENDERER_SERVICE,
+  UI_SERVICE
 } from "./standard-keys";
 import { createDuplicateServiceError, createMissingServiceError } from "./errors";
 import type {
@@ -122,6 +123,9 @@ function assignStandardService(
   if (standard === "game") {
     registry.game = binding.service as never;
   }
+  if (standard === "ui") {
+    registry.ui = binding.service as never;
+  }
 }
 
 function deleteStandardService(registry: AppServiceRegistry, standard: AppStandardServiceId): void {
@@ -146,6 +150,9 @@ function standardFromKey(key: AppServiceKey<unknown>): AppStandardServiceId | un
   }
   if (key.id === GAME_SERVICE.id) {
     return "game";
+  }
+  if (key.id === UI_SERVICE.id) {
+    return "ui";
   }
 
   return undefined;

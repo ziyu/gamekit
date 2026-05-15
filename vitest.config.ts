@@ -24,6 +24,8 @@ export default defineConfig({
       "@gamekit/app-host": new URL("./packages/app-host/src/index.ts", import.meta.url).pathname,
       "@gamekit/tca": new URL("./packages/tca/src/index.ts", import.meta.url).pathname,
       "@gamekit/gas": new URL("./packages/gas/src/index.ts", import.meta.url).pathname,
+      "@gamekit/ui-core": new URL("./packages/ui-core/src/index.ts", import.meta.url).pathname,
+      "@gamekit/react-ui": new URL("./packages/react-ui/src/index.ts", import.meta.url).pathname,
       "@gamekit/camera-core": new URL("./packages/camera-core/src/index.ts", import.meta.url)
         .pathname,
       "@gamekit/input-core": new URL("./packages/input-core/src/index.ts", import.meta.url)

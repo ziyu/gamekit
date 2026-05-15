@@ -103,6 +103,40 @@ AssetSource 只描述来源，不直接暴露平台私有 API。具体解析由 
 
 AssetManager 只保存运行时加载状态，例如 registered、loading、loaded、failed。它不替代 DataRegistry，也不保存 Actor、Ability、Rule 等 gameplay definition。
 
+AssetManager 也不是 Content Package manager。它读取资源定义、解析资源来源、委托 adapter 加载资源；实际资源文件可能来自 URL、platform resource、编辑器 workspace、远程 CDN 或未来 Content Package mount。Asset 模块只关心最终可解析的 AssetDefinition / AssetSource，不关心内容包如何被发现、启用或卸载。
+
+## Preload Plan
+
+AssetManager 应能从已注册的 `asset.definition` 生成 preload plan。preload plan 是资源运行时计划，不是 DataPack，也不改变游戏内容结构。
+
+preload plan 的输入可以来自：
+
+- `asset.definition.preload`
+- `asset.definition.group`
+- app/profile 指定的 preload groups
+- editor/devtools 发起的显式加载请求
+- gameplay runtime 发起的 lazy load 请求
+
+preload plan 的输出应包含：
+
+- 待加载 asset id。
+- asset type / source。
+- group / tags / priority。
+- source pack metadata where available。
+- content package metadata where available。
+- 预计使用的 adapter capability。
+
+AssetManager 可以按 group 加载资源，例如：
+
+```txt
+boot
+→ load preload group
+→ start game
+→ lazy load optional groups
+```
+
+资源加载失败不能伪装成 Data 校验失败。Data 缺失引用和 Asset adapter 加载失败是两类诊断，必须在 snapshot 中区分。
+
 ## Adapter
 
 实际加载由 adapter 执行：
@@ -127,6 +161,7 @@ Data 和 Asset 的关系是声明与运行时加载的关系：
 ```txt
 DataRegistry
 → asset.definition documents
+→ preload plan
 → AssetManager
 → Asset adapter
 → renderer/audio/platform backend
@@ -141,8 +176,11 @@ Data 负责：
 Asset 负责：
 
 - 根据 AssetDefinition 加载资源。
+- 根据 preload / group / lazy 策略生成加载计划。
 - 记录加载状态。
 - 报告加载失败、重试、卸载和 adapter capability。
+
+App Host 可以编排 Data pipeline 与 Asset preload 的顺序，但 Asset 模块本身仍不读取 DataPack、不解释 gameplay data。
 
 ## 与 Renderer 的关系
 

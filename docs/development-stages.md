@@ -472,7 +472,7 @@
 
 设计原则：
 
-- DataPack 是内容交付单元，不是内容分类模型。
+- DataPack 是数据交付单元，不是完整 Content Package，也不是内容分类模型。
 - 每条数据通过 `type + id` 声明自己的 DataType。
 - DataType 可以是 GameKit 内置类型，也可以是用户自定义类型。
 - Loader 只需要知道每条 entry 注册成什么类型，不理解 hero、monster、building 等业务分类。
@@ -492,7 +492,7 @@
    - 默认 unknown type 报错；unknown type 暂存仅作为未来编辑器/导入器扩展点保留。
    - 错误报告包含 pack id、entry type、entry id、字段路径和 source。
 
-   当前状态：已实现。旧 `data: Record<kind, unknown[]>` 输入仍会 normalize 成 entries；unknown type 默认报错。
+   当前状态：已实现。DataPack 只接受显式 `entries[]`；每条 entry 必须声明 `type + id + data`。unknown type 默认报错。
 
 3. 引用系统调整
    - DataTypeDefinition 通过 `references` 提取 DataRef / AssetRef。
@@ -525,26 +525,111 @@
 - Sandbox 内容重组后，DataRegistry snapshot 和 Inspector 能说明选中对象来自哪些 entry 和引用了哪些资源。
 - `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 通过。
 
+## 已暂缓：DataPack Loading / Bootstrap
+
+结论：暂不单独实现 DataPack loading pipeline 或 Data Registry Bootstrap。原因是未来 Content Package System 会负责内容发现、读取、解压、权限、实际资源文件、脚本、localization、mod metadata 和 section 分发；如果现在在 Data 或 App Host 中实现 DataPackSource / DataPackLoader / DataPackManifest，后续大概率会被内容包系统替换。
+
+当前长期边界：
+
+- Data 模块只消费已经物化的 DataPack，不定义 source / loader / manifest。
+- App Host 可以接收 app/profile/test fixture 提供的 DataTypeDefinition 和 DataPack，但不实现 DataPack 加载系统。
+- AssetManager 从 DataRegistry 或外部同形 manifest 读取 AssetDefinition，不读取 DataPack，不管理内容包。
+- 未来 Content Package System 将把 data section 解包为 DataPack，再交给 DataRegistry；把 asset section 分发给 Asset / Platform；把 script section 分发给脚本运行时或安全 adapter。
+
 ## Phase 11：UI Core + React UI
 
-目标：通用 UI 状态模型和 React 实现跑通，React 只处理 HUD/window/modal/devtools，不进入主循环。
+目标：建立 UI Core 协议和 React UI 实现，让 Sandbox Workbench、未来 DevTools、Editor 和 Hero Road 可以复用统一 panel/window/focus/command/snapshot 模型。React 只处理 HUD、Inspector、Timeline、window、modal、DevTools 等低频 UI，不进入 world tick、renderer patch 或 gameplay 主循环。
 
 模块设计：`docs/modules/ui.md`
 
-预期新增：
+当前状态：首轮垂直切片已实现。已建立 `ui-core` / `react-ui` 包、App Host 可选 UI service、Sandbox React shell、Input focus bridge、React UI 基础样式、GSAP 动效 helper 和 Signal Outpost theme 覆盖。Sandbox 现在通过场景对象自然验证 UI：选中实体会在 renderer stage 上显示 focus 框和对象浮层，场景点击只执行 focus/inspect，`UiModalHost` 改由 Objective Briefing 这类明确低频操作触发。完整 DevTools、Editor、复杂组件库和游戏 HUD 皮肤仍属于后续阶段。
+
+已实现：
 
 - `@gamekit/ui-core`
 - `@gamekit/react-ui`
-- Tailwind CSS
-- Zustand
-- shadcn/ui 基础组件封装
+- `UiRuntime`、panel/window、command、focus、snapshot 协议
+- React `GameKitUiShell`、runtime provider、panel/window/modal host、focus bridge
+- React `GameKitStyleProvider`、Tailwind 默认工具型样式、GSAP UI 动效 helper、轻量 `UiTip` primitive
+- App Host `services.ui` 标准服务入口和 lifecycle snapshot
+- Sandbox Workbench shell 迁移到 React 渲染
+- Sandbox Inspector / Timeline / HUD 作为已注册 UI panels 进入 UI runtime
+- Sandbox scene UI overlay 能跟随选中实体显示 focus 框、对象摘要和操作按钮，场景对象点击不弹窗，只切换选中和 inspector；Objective Briefing 通过 `UiModalHost` 打开 modal，并用 `UiTip` 展示上下文提示
+- UI focus 与 Sandbox Input scope 联动，game viewport 聚焦时 gameplay input 生效，UI 聚焦时回到 UI scope
+
+预期新增：
+
+- 更完整的工具型组件库
+- React panel 内容组件化
+- DevTools / Editor 复用 UI runtime
+
+设计原则：
+
+- `@gamekit/ui-core` 是 headless 协议层，不依赖 React、DOM、World、Renderer、TCA、GAS 或具体 app。
+- `@gamekit/react-ui` 是 UI adapter / implementation，不泄漏第三方组件类型给 gameplay。
+- UI style/theme 属于 React UI / app 层；`ui-core` 不定义 theme，也不暴露 CSS class、ReactNode、Tailwind class、shadcn/ui 或 Base UI 类型。
+- Tailwind CSS 和 GSAP 只属于 `@gamekit/react-ui` / app UI 实现层；shadcn/ui 是推荐组件 recipe 实践，不进入 gameplay 公共 API。
+- UI focus 必须能影响 Input Scope / Context，文本框、Inspector、DevTools 或 modal 聚焦时不误触发 gameplay input。
+- Sandbox gameplay module、Renderer sync、World system 不 import React。
+- UI 只消费低频 snapshot、selector、EventBus fact 和 command，不订阅每帧 ECS position。
+
+任务拆分：
+
+1. UI Core 协议
+   - 定义 `UiRuntime`、`UiPanelDefinition`、`UiWindowDefinition`、`UiCommand`、`UiFocusState`、`UiSnapshot`。
+   - 支持 register/unregister panel、open/close/toggle window、dispatch command、set focus、snapshot。
+   - 提供 memory runtime 和基础测试，便于 headless app / DevTools / Editor 复用。
+
+2. React UI 实现
+   - 实现 `RuntimeProvider`、`GameShell`、`PanelHost`、`WindowHost`、`ModalHost`、`OverlayHost`。
+   - 提供 FocusBridge，把 DOM/React focus 状态映射到 UI runtime 和 Input scope。
+   - 提供基础工具型组件：Button、IconButton、Tabs、Panel、Window、Timeline、InspectorTable、JsonView、StatBar、TagList。
+   - 可引入 Tailwind/Zustand；shadcn/ui 只作为封装实现选项，不让业务 app 直接依赖。
+
+3. UI Style / Theme
+   - `ui-core` 不增加 theme API，继续保持 headless panel/window/command/focus/snapshot 协议。
+   - React UI 提供 `GameKitStyleProvider` / React-only theme provider，用 Tailwind CSS 组织默认工具型样式，并把必要变量注入为 CSS variables 或 class。
+   - React UI 以 GSAP 作为低频 UI 动效基础，用于 window/modal/toast/timeline/inspector 的进入、退出、强调和布局过渡。
+   - shadcn/ui 作为推荐最佳实践，组件 recipe 应封装在 `@gamekit/react-ui` 或游戏 UI 包中，不能让业务代码到处直接依赖第三方 primitive。
+   - 定义 shell、panel、window、modal、toolbar、focus ring、density、reduced motion 的 React UI 默认样式。
+   - Sandbox 定义自己的 Signal Outpost theme 和组件层，逐步替代散落硬编码颜色。
+   - App Host/Profile 可以传递不透明的 React UI style 参数，但不解释 CSS 细节或主题协议。
+
+4. App Host 接入
+   - 增加可选 `services.ui` 标准入口。
+   - UI service 进入统一 lifecycle：boot/start/stop/dispose/snapshot。
+   - Host diagnostics 展示 UI shell phase、已注册 panels、打开窗口和 focus scope。
+   - Headless 测试可使用 memory UI runtime，不需要 DOM。
+
+5. Sandbox Workbench 迁移
+   - 将当前 vanilla DOM 的 HUD、Inspector、Timeline、Content/Asset/Data/Host summary 迁移为 React panels。
+   - Phaser canvas 仍由 renderer service 管理，React shell 只负责布局和 overlay。
+   - Signal Outpost game module 不依赖 React 或 UI package 的实现组件。
+   - 现有 fixed seed integration test 保持稳定。
+
+6. Input focus 协作
+   - game viewport focused 时，WASD / confirm 等 gameplay action 生效。
+   - UI panel、modal、text input、DevTools focused 时，gameplay/camera action 被 scope gate 阻断或降级。
+   - 增加测试覆盖 focus → Input scope 的协作边界。
 
 完成定义：
 
-- Sandbox 或示例 app 能打开/关闭窗口并显示 event log。
-- React UI 只消费低频 selector/snapshot。
-- UI focus 能和 Input Context 协作。
-- 游戏业务不直接依赖原始 shadcn/base primitive。
+- `@gamekit/ui-core` 不依赖 React、DOM、Renderer、World、TCA、GAS 或具体 app。
+- Sandbox 第一屏由 React shell 渲染 Workbench UI，Phaser canvas 正常运行。
+- Sandbox 能通过真实 UI runtime 从场景对象打开 modal，并在 renderer stage 上展示对象 focus/summary UI。
+- Inspector、Timeline、Host summary、Content/Asset/Data summary 已注册到 UI runtime；后续继续迁移为 React panel 内容组件。
+- React UI 基础组件有默认样式，Sandbox 能通过自己的 theme/component library 覆盖视觉语言。
+- UI focus 能和 Input Context / Scope 协作，避免 UI 聚焦时误触发 gameplay/camera input。
+- React UI 只消费低频 selector/snapshot/EventBus fact，不进入主循环。
+- gameplay packages 和 Sandbox game modules 不直接 import React、shadcn/ui、Base UI 或 DOM panel implementation。
+- `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 通过。
+
+暂不做：
+
+- 完整 DevTools。
+- Editor。
+- 复杂游戏 HUD 皮肤系统。
+- Content Package System。
 
 ## Phase 12：Save / Load / Migration
 
@@ -624,7 +709,40 @@
 - 能验证并展示 assets、actors、rules、renderObjects 等 data entries。
 - 不把 editor-only 状态泄漏到 runtime core。
 
-## Phase 16：Three.js / 3D Renderer Backlog
+## Phase 16：Content Package System
+
+目标：建立真正的内容包系统，让游戏、DLC、mod、编辑器导出包和远程活动包可以作为一个可挂载、可卸载、可诊断、可权限控制的分发单元进入应用。Content Package 不等同于 DataPack；DataPack 只是内容包中的一个 section。
+
+预期新增：
+
+- `@gamekit/content`
+- ContentPackageManifest
+- ContentPackageSource
+- ContentPackageLoader
+- ContentMountRuntime
+- ContentSectionLoader
+- package dependency / compatibility / permission diagnostics
+
+内容包可以包含：
+
+- DataPack section
+- asset payload / asset manifest / file map
+- script modules
+- localization bundles
+- maps / levels
+- patches
+- mod metadata
+- permissions / capability requirements
+
+完成定义：
+
+- Content package 可以声明多个 section，并把 data section 物化为 DataPack 后交给 DataRegistry，把 asset section 分发给 Asset / Platform，把 script section 分发给脚本运行时或安全 adapter。
+- 内容包依赖、版本兼容、权限需求和冲突能被诊断。
+- 内容包 mount / unmount 生命周期可被 App Host 或 Editor 编排。
+- Data、Asset、Script、Localization 等模块保持各自职责，不被 Content Package System 吞并。
+- Sandbox 或 Hero Road 至少能挂载一个额外内容包，新增数据和资源，并在 UI/diagnostics 中显示来源。
+
+## Phase 17：Three.js / 3D Renderer Backlog
 
 目标：验证 RendererAdapter 能支持未来 3D 后端。
 

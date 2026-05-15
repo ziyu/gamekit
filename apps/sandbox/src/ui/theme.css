@@ -1,0 +1,35 @@
+[data-gamekit-theme="signal-outpost"] {
+  --so-bg: #0e1110;
+  --so-bg-grid: rgba(225, 232, 220, 0.045);
+  --so-panel: rgba(16, 20, 18, 0.94);
+  --so-panel-raised: rgba(24, 30, 27, 0.96);
+  --so-panel-soft: rgba(140, 214, 163, 0.08);
+  --so-text: #f3efe7;
+  --so-text-soft: #c9c6bc;
+  --so-text-muted: #98a39a;
+  --so-line: rgba(243, 239, 231, 0.13);
+  --so-line-strong: rgba(243, 239, 231, 0.24);
+  --so-signal: #8cd6a3;
+  --so-signal-soft: rgba(140, 214, 163, 0.16);
+  --so-amber: #d9b35f;
+  --so-amber-soft: rgba(217, 179, 95, 0.15);
+  --so-threat: #d84b3e;
+  --so-blue: #70a7d8;
+  --so-violet: #9d89d8;
+  --so-code: "SFMono-Regular", "Cascadia Mono", "Courier New", monospace;
+
+  --gk-surface-app: var(--so-bg);
+  --gk-surface-panel: var(--so-panel);
+  --gk-surface-raised: var(--so-panel-raised);
+  --gk-text-primary: var(--so-text);
+  --gk-text-secondary: var(--so-text-soft);
+  --gk-text-muted: var(--so-text-muted);
+  --gk-border-subtle: var(--so-line);
+  --gk-border-strong: var(--so-line-strong);
+  --gk-accent-primary: var(--so-signal);
+  --gk-accent-secondary: var(--so-amber);
+  --gk-danger: var(--so-threat);
+  --gk-focus-ring: var(--so-signal);
+  --gk-radius-panel: 6px;
+  --gk-shadow-window: 0 18px 60px rgba(0, 0, 0, 0.32);
+}

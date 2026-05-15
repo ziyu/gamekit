@@ -13,7 +13,7 @@ Data 是游戏内容定义的统一注册、校验、索引、引用追踪和来
 - 游戏开发者拥有自己的数据模型。GameKit 不强制定义“英雄应该长什么样”“怪物应该有哪些字段”“建筑必须有哪些配置”。
 - Data 只提供弱约束：进入 DataRegistry 的数据必须能声明 `type` 和 `id`，并能被对应 DataTypeDefinition 理解。
 - DataType 可以由 GameKit 内置，也可以由游戏项目、插件、mod、编辑器工具自由定义。
-- DataPack 是内容交付单元，不是内容分类模型。用户可以按英雄、怪物、建筑、关卡、章节、DLC、mod 或任意业务方式组织文件。
+- DataPack 是数据交付单元，不是内容包模型，也不是内容分类模型。用户可以按英雄、怪物、建筑、关卡、章节、DLC、mod 或任意业务方式组织文件。
 - 内置类型是可引用的能力积木，不是必须继承的数据模板。游戏可以定义自己的 `game.hero`，再选择性引用 `gas.actor`、`gas.ability`、`render.object`、`tca.rule` 等内置类型。
 - 资源引用可以作为数据字段存在，但资源加载和状态管理属于 Asset 模块。
 
@@ -102,7 +102,7 @@ DataDocument 的 `data` 字段完全由对应 DataTypeDefinition 解释。GameKi
 
 ## DataPack
 
-DataPack 是内容交付单元。它负责把一批数据交给 DataRegistry，并保留来源、版本、优先级和依赖信息。它不表达“这是英雄域、怪物域、建筑域”这种业务分类；这类分类由用户自己的数据类型、文件目录、tag 或编辑器项目结构表达。
+DataPack 是数据交付单元。它负责把一批已物化的数据交给 DataRegistry，并保留来源、版本、优先级和依赖信息。它不表达“这是英雄域、怪物域、建筑域”这种业务分类，也不代表完整 Content Package；这类分类由用户自己的数据类型、文件目录、tag 或编辑器项目结构表达。
 
 ```ts
 export type DataPack = {
@@ -127,14 +127,39 @@ export type DataPackEntry<TData = unknown> = {
 };
 ```
 
-DataPack 的职责是运输和追踪来源，不是替用户设计内容分类。一个 DataPack 可以代表：
+DataPack 的职责是运输数据和追踪数据来源，不是替用户设计内容分类。一个 DataPack 可以代表：
 
-- 基础游戏内容。
-- 某个章节。
-- 某个英雄包。
-- 某个 mod。
-- 某个编辑器导入批次。
-- 某个远程活动配置。
+- 基础游戏数据。
+- 某个章节的数据 section。
+- 某个英雄包的数据 section。
+- 某个 mod 的数据 section。
+- 某个编辑器导入批次的数据 section。
+- 某个远程活动配置的数据 section。
+
+## DataPack 与 Content Package 边界
+
+Data 模块只处理已经物化的 DataPack 对象。它不负责发现内容来源、读取文件、解压内容包、解析远程 manifest、处理权限、执行脚本或挂载资源文件。
+
+长期边界：
+
+```txt
+Content Package / App Host profile / Editor / Test Fixture
+→ materialized DataPack[]
+→ DataRegistry.registerPack(...)
+```
+
+因此 `@gamekit/data` 不定义 `DataPackSource`、`DataPackLoader` 或 `DataPackManifest`。这些概念属于未来 Content Package System、平台 adapter、编辑器导入器或 app/profile 层。
+
+DataPack 可以携带轻量元数据，例如 source pack id、namespace、priority、metadata。若未来保留 DataPack 间顺序依赖，它只表达 DataRegistry 注册顺序约束，不表达文件加载、内容包依赖、资源挂载或 mod 权限。
+
+DataRegistry 职责保持稳定：
+
+- 校验 unknown type。
+- 校验 duplicate `type + id`。
+- normalize / validate / references / indexes。
+- 构建 reference graph。
+
+这个边界避免 Data 模块变成泛化内容包系统。未来 Content Package 可以把 data section 解包成 DataPack，再交给 DataRegistry；DataRegistry 不需要知道这些 DataPack 来自 DLC、mod、远程活动、编辑器工作区还是测试夹具。
 
 ## DataRef
 
@@ -214,6 +239,23 @@ register DataTypeDefinition
 ```
 
 加载器只需要识别 DataPack、DataPackEntry、DataTypeDefinition 和引用提取结果。用户自己的 hero、monster、building、level 文件结构不应该进入框架核心。
+
+## Diagnostics
+
+Data 诊断必须优先服务真实内容生产中的定位问题。错误不能只说“引用缺失”，而要能定位到内容来源和字段。
+
+Data loading / registry diagnostics 应尽量包含：
+
+- source id / source type
+- loader id
+- pack id / pack version
+- entry type
+- entry id
+- field path
+- target key
+- stable error code
+
+App Host、DevTools 和编辑器可以消费这些诊断并组织 UI，但诊断事实本身应由 Data loading pipeline 和 DataRegistry 产生。
 
 ## 与内置模块的关系
 

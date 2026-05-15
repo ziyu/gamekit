@@ -15,6 +15,7 @@ import { createGasDataTypes, createGasTraceStore, type GasRuntime } from "@gamek
 import { createGame } from "@gamekit/game-runtime";
 import { type GameWorld } from "@gamekit/world";
 import { createTcaRuleDataType } from "@gamekit/tca";
+import { createUiRuntime } from "@gamekit/ui-core";
 
 describe("app host service registry", () => {
   it("registers and exposes services through the registry", () => {
@@ -202,6 +203,34 @@ describe("configured app host", () => {
 
     expect(configured.host.services.data).toBeDefined();
     expect(configured.host.snapshot().services.map((service) => service.id)).toEqual(["data"]);
+  });
+
+  it("boots the standard UI service with panels and snapshot access", async () => {
+    const ui = createUiRuntime();
+    const app = defineGameApp({
+      id: "standard-ui",
+      services: [{ id: "ui" }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        ui: {
+          runtime: ui,
+          panels: () => [{ id: "inspector", title: "Inspector", kind: "panel" }],
+          openPanels: () => ["inspector"]
+        }
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+
+    await configured.host.boot();
+
+    expect(configured.host.services.ui).toBe(ui);
+    expect(ui.snapshot().openPanels).toMatchObject([{ id: "inspector" }]);
+    expect(configured.host.snapshot().services[0]?.snapshot).toMatchObject({
+      focus: { scope: "ui", target: "inspector" }
+    });
   });
 
   it("injects standard camera, TCA, and GAS game modules into the runtime factory", async () => {

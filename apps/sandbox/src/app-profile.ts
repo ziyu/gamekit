@@ -20,6 +20,7 @@ import {
   type PhaserRendererDriverRuntime
 } from "@gamekit/renderer-phaser";
 import { createTcaTraceStore, mergeTcaDefinitionSets } from "@gamekit/tca";
+import type { UiRuntime } from "@gamekit/ui-core";
 import { createSandboxCameraController, SANDBOX_CAMERA_PAN_STEP } from "./camera";
 import {
   createSandboxDataRegistry,
@@ -38,6 +39,7 @@ import { updateCameraStatus } from "./ui/render-sandbox";
 
 export type SandboxAppContext = {
   ui: SandboxUiHandles;
+  uiRuntime: UiRuntime;
   activeInputScope: SandboxInputScope;
   platform?: PlatformRuntime | undefined;
   dataRegistry?: DataRegistry | undefined;
@@ -89,6 +91,9 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
       context.renderer = state.renderer;
       context.assetManager = state.assets;
       context.inputRouter = state.input;
+      if (state.ui) {
+        context.uiRuntime = state.ui;
+      }
       context.cameraController = camera;
       context.phaserRuntime = refs.phaserRuntime;
       context.gasRuntime = refs.gasRuntime;
@@ -139,6 +144,25 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
                 inputRouter.handle(event);
               }
             })
+          ];
+        }
+      },
+      ui: {
+        runtime({ context }) {
+          return context.uiRuntime;
+        },
+        panels() {
+          return [
+            { id: "sandbox.stage", title: "Stage", kind: "hud", tags: ["sandbox"] },
+            { id: "sandbox.hud", title: "Runtime HUD", kind: "hud", tags: ["sandbox"] },
+            { id: "sandbox.inspector", title: "Inspector", kind: "panel", tags: ["sandbox"] },
+            { id: "sandbox.timeline", title: "Timeline", kind: "panel", tags: ["sandbox"] },
+            {
+              id: "sandbox.objective.briefing",
+              title: "Objective Briefing",
+              kind: "modal",
+              tags: ["sandbox", "objective", "scene-ui"]
+            }
           ];
         }
       },

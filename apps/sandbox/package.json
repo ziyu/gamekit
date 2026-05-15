@@ -25,12 +25,18 @@
     "@gamekit/platform-web": "workspace:*",
     "@gamekit/renderer-core": "workspace:*",
     "@gamekit/renderer-phaser": "workspace:*",
+    "@gamekit/ui-core": "workspace:*",
+    "@gamekit/react-ui": "workspace:*",
     "@gamekit/tca": "workspace:*",
     "@gamekit/world": "workspace:*",
-    "@gamekit/world-koota": "workspace:*"
+    "@gamekit/world-koota": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@gamekit/test-utils": "workspace:*",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
     "vite": "^6.3.5",
     "vitest": "^3.1.3"
   }
