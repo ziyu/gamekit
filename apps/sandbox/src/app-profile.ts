@@ -207,9 +207,9 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
               positionEpsilon: 0.1,
               zoomEpsilon: 0.002
             },
-            sync({ context }, camera, _action, state) {
+            sync({ context }, _camera, _action, state) {
               ensureCameraAdapter(context, refs.phaserRuntime)?.applyCameraState(state);
-              updateCameraStatus(context.ui, camera.getState());
+              updateCameraStatus(context.ui, state);
             }
           }
         },

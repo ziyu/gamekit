@@ -2,6 +2,7 @@ import "@gamekit/react-ui/styles.css";
 import "./ui/theme.css";
 import "./styles.css";
 import { createConfiguredAppHost } from "@gamekit/app-host";
+import { clientToViewportPoint } from "@gamekit/camera-core";
 import { createUiRuntime } from "@gamekit/ui-core";
 import { sandboxAppDefinition } from "./app-definition";
 import { createSandboxWebProfile, type SandboxAppContext } from "./app-profile";
@@ -129,11 +130,12 @@ function pickSandboxEntity(
     return undefined;
   }
 
-  const screen = {
-    x: ((event.clientX - bounds.left) / bounds.width) * SANDBOX_RENDER_SIZE.width,
-    y: ((event.clientY - bounds.top) / bounds.height) * SANDBOX_RENDER_SIZE.height
-  };
-  const world = camera.screenToWorld(screen);
+  const screen = clientToViewportPoint(
+    { x: event.clientX, y: event.clientY },
+    bounds,
+    SANDBOX_RENDER_SIZE
+  );
+  const world = context.cameraAdapter?.screenToWorld(screen) ?? camera.screenToWorld(screen);
   const picked = findNearestPickableEntity(sandbox.snapshot(), world);
   if (!picked) {
     return undefined;

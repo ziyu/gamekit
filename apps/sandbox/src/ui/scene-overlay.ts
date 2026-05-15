@@ -1,6 +1,7 @@
+import { worldToScreen } from "@gamekit/camera-core";
 import { SANDBOX_RENDER_SIZE, type SandboxSnapshot } from "../game";
 import { escapeHtml, formatNumber } from "./format";
-import type { SandboxCameraStatus, SandboxUiHandles, SandboxWorkbenchState } from "./types";
+import type { SandboxUiHandles, SandboxWorkbenchState } from "./types";
 
 export function renderSceneOverlay(
   handles: SandboxUiHandles,
@@ -14,12 +15,16 @@ export function renderSceneOverlay(
   }
 
   const camera = handles.latestCameraStatus ?? {
+    mode: "free",
     x: SANDBOX_RENDER_SIZE.width / 2,
     y: SANDBOX_RENDER_SIZE.height / 2,
     zoom: 1,
-    mode: "free"
+    rotation: 0,
+    viewport: SANDBOX_RENDER_SIZE,
+    minZoom: 0.5,
+    maxZoom: 3
   };
-  const screen = worldPercentToScreen(camera, selectedEntity.x, selectedEntity.y);
+  const screen = worldToScreen(camera, worldPercentToPoint(selectedEntity.x, selectedEntity.y));
   const left = `${(screen.x / SANDBOX_RENDER_SIZE.width) * 100}%`;
   const top = `${(screen.y / SANDBOX_RENDER_SIZE.height) * 100}%`;
   const size =
@@ -64,19 +69,10 @@ function readSelectedEntity(
   );
 }
 
-function worldPercentToScreen(
-  camera: SandboxCameraStatus,
-  percentX: number,
-  percentY: number
-): { x: number; y: number } {
-  const world = {
+function worldPercentToPoint(percentX: number, percentY: number): { x: number; y: number } {
+  return {
     x: (percentX / 100) * SANDBOX_RENDER_SIZE.width,
     y: (percentY / 100) * SANDBOX_RENDER_SIZE.height
-  };
-
-  return {
-    x: (world.x - camera.x) * camera.zoom + SANDBOX_RENDER_SIZE.width / 2,
-    y: (world.y - camera.y) * camera.zoom + SANDBOX_RENDER_SIZE.height / 2
   };
 }
 

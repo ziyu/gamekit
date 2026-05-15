@@ -35,6 +35,22 @@ describe("createPhaserCameraAdapter", () => {
     expect(adapter.worldToScreen({ x: 60, y: 60 })).toEqual({ x: 70, y: 70 });
     expect(adapter.screenToWorld({ x: 70, y: 70 })).toEqual({ x: 60, y: 60 });
   });
+
+  it("uses applied camera state for rotated coordinate conversion", () => {
+    const adapter = createPhaserCameraAdapter({ driver: new FakePhaserCameraDriver() });
+    const camera = createCameraController({
+      viewport: { width: 200, height: 100 },
+      state: { x: 100, y: 50, zoom: 2, rotation: Math.PI / 2 }
+    });
+
+    adapter.applyCameraState(camera.getState());
+
+    const screen = adapter.worldToScreen({ x: 110, y: 50 });
+    expect(screen.x).toBeCloseTo(100);
+    expect(screen.y).toBeCloseTo(30);
+    expect(adapter.screenToWorld(screen).x).toBeCloseTo(110);
+    expect(adapter.screenToWorld(screen).y).toBeCloseTo(50);
+  });
 });
 
 class FakePhaserCameraDriver implements PhaserCameraDriver {

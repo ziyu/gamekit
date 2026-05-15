@@ -1,3 +1,4 @@
+import { clientToViewportPoint } from "@gamekit/camera-core";
 import type { InputBinding, InputRouter, NormalizedInputEvent } from "@gamekit/input-core";
 import { SANDBOX_RENDER_SIZE, type SandboxRuntime } from "./game";
 import type { SandboxUiHandles } from "./ui/render-sandbox";
@@ -138,8 +139,7 @@ export function toRendererLocalInput(
 
   return {
     ...input,
-    x: ((input.x - bounds.left) / bounds.width) * SANDBOX_RENDER_SIZE.width,
-    y: ((input.y - bounds.top) / bounds.height) * SANDBOX_RENDER_SIZE.height
+    ...clientToViewportPoint({ x: input.x, y: input.y }, bounds, SANDBOX_RENDER_SIZE)
   };
 }
 

@@ -17,6 +17,11 @@ export type CameraViewport = {
   height: number;
 };
 
+export type CameraViewportRect = CameraViewport & {
+  left: number;
+  top: number;
+};
+
 export type CameraState2D = {
   mode: CameraMode;
   x: number;

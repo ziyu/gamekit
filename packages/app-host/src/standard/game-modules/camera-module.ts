@@ -1,5 +1,10 @@
 import { defineGameModule } from "@gamekit/core";
-import type { CameraController, CameraState2D, PointLike } from "@gamekit/camera-core";
+import {
+  screenToWorld,
+  type CameraController,
+  type CameraState2D,
+  type PointLike
+} from "@gamekit/camera-core";
 import type { GameInstallContext } from "@gamekit/game-runtime";
 import type {
   StandardCameraActionBinding,
@@ -35,6 +40,7 @@ export function createStandardCameraModule<TContext>(
 ) {
   const smoothing = normalizeSmoothing(options.smoothing);
   let displayState = options.controller.getState();
+  let zoomAnchor: CameraZoomAnchor | undefined;
 
   return defineGameModule<GameInstallContext>({
     id: options.id ?? "gamekit.camera",
@@ -74,6 +80,7 @@ export function createStandardCameraModule<TContext>(
           id: `${options.id ?? "gamekit.camera"}.follow`,
           update() {
             if (applyCameraFollow(options)) {
+              zoomAnchor = undefined;
               if (!smoothing.enabled) {
                 displayState = options.controller.getState();
                 syncCamera(options, undefined, displayState);
@@ -88,15 +95,41 @@ export function createStandardCameraModule<TContext>(
           id: `${options.id ?? "gamekit.camera"}.smoothing`,
           update({ delta }) {
             const targetState = options.controller.getState();
-            displayState = smoothCameraState(displayState, targetState, delta, smoothing);
+            displayState = smoothCameraState(
+              displayState,
+              targetState,
+              delta,
+              smoothing,
+              zoomAnchor
+            );
             syncCamera(options, undefined, displayState);
+            if (
+              zoomAnchor &&
+              Math.abs(displayState.zoom - targetState.zoom) <= smoothing.zoomEpsilon
+            ) {
+              zoomAnchor = undefined;
+            }
           }
         });
       }
 
       const unsubscribe = ctx.eventBus.on(options.inputEventType ?? "input.action", (event) => {
         for (const action of options.actions) {
-          if (applyCameraAction(options.controller, action, event)) {
+          const displayBeforeAction = displayState;
+          const result = applyCameraAction(
+            options.controller,
+            action,
+            event,
+            smoothing.enabled ? displayBeforeAction : undefined
+          );
+          if (result.changed) {
+            zoomAnchor =
+              smoothing.enabled && result.zoomAnchor
+                ? {
+                    screen: result.zoomAnchor,
+                    world: screenToWorld(displayBeforeAction, result.zoomAnchor)
+                  }
+                : undefined;
             if (!smoothing.enabled) {
               displayState = options.controller.getState();
               syncCamera(options, action, displayState);
@@ -134,30 +167,37 @@ function syncCamera<TContext>(
 function applyCameraAction(
   controller: CameraController,
   action: StandardCameraActionBinding,
-  event: CameraInputEvent
-): boolean {
+  event: CameraInputEvent,
+  baseState?: CameraState2D | undefined
+): CameraActionResult {
   const payload = isRecord(event.payload) ? event.payload : {};
   if (payload.actionId !== action.actionId) {
-    return false;
+    return { changed: false };
   }
 
   const phase = typeof payload.phase === "string" ? payload.phase : undefined;
   if (action.phases && (!phase || !action.phases.includes(phase))) {
-    return false;
+    return { changed: false };
+  }
+
+  if (baseState && action.zoom) {
+    controller.setState(baseState);
   }
 
   if (action.pan) {
     controller.pan(action.pan.x ?? 0, action.pan.y ?? 0);
   }
 
+  let zoomAnchor: PointLike | undefined;
   if (action.zoom) {
-    controller.zoom(
-      resolveZoomDelta(action.zoom, payload),
-      resolveZoomAnchor(action.zoom, payload)
-    );
+    zoomAnchor = resolveZoomAnchor(action.zoom, payload);
+    controller.zoom(resolveZoomDelta(action.zoom, payload), zoomAnchor);
   }
 
-  return action.pan !== undefined || action.zoom !== undefined;
+  return {
+    changed: action.pan !== undefined || action.zoom !== undefined,
+    zoomAnchor
+  };
 }
 
 function applyCameraFollow<TContext>(
@@ -245,6 +285,16 @@ type NormalizedCameraSmoothing = {
   rotationEpsilon: number;
 };
 
+type CameraActionResult = {
+  changed: boolean;
+  zoomAnchor?: PointLike | undefined;
+};
+
+type CameraZoomAnchor = {
+  screen: PointLike;
+  world: PointLike;
+};
+
 function normalizeSmoothing(
   smoothing: StandardCameraSmoothingOptions | undefined
 ): NormalizedCameraSmoothing {
@@ -261,15 +311,44 @@ function smoothCameraState(
   current: CameraState2D,
   target: CameraState2D,
   delta: number,
-  smoothing: NormalizedCameraSmoothing
+  smoothing: NormalizedCameraSmoothing,
+  zoomAnchor?: CameraZoomAnchor | undefined
 ): CameraState2D {
   const alpha = 1 - Math.exp(-smoothing.stiffness * Math.max(0, delta) * 0.001);
+  const zoom = smoothNumber(current.zoom, target.zoom, alpha, smoothing.zoomEpsilon);
+  const rotation = smoothNumber(
+    current.rotation,
+    target.rotation,
+    alpha,
+    smoothing.rotationEpsilon
+  );
+  const anchoredCenter = zoomAnchor
+    ? centerForAnchor({ ...target, rotation }, zoomAnchor.screen, zoomAnchor.world, zoom)
+    : undefined;
+
   return {
     ...target,
-    x: smoothNumber(current.x, target.x, alpha, smoothing.positionEpsilon),
-    y: smoothNumber(current.y, target.y, alpha, smoothing.positionEpsilon),
-    zoom: smoothNumber(current.zoom, target.zoom, alpha, smoothing.zoomEpsilon),
-    rotation: smoothNumber(current.rotation, target.rotation, alpha, smoothing.rotationEpsilon)
+    x: anchoredCenter?.x ?? smoothNumber(current.x, target.x, alpha, smoothing.positionEpsilon),
+    y: anchoredCenter?.y ?? smoothNumber(current.y, target.y, alpha, smoothing.positionEpsilon),
+    zoom,
+    rotation
+  };
+}
+
+function centerForAnchor(
+  state: CameraState2D,
+  screen: PointLike,
+  world: PointLike,
+  zoom: number
+): PointLike {
+  const dx = (screen.x - state.viewport.width / 2) / zoom;
+  const dy = (screen.y - state.viewport.height / 2) / zoom;
+  const cos = Math.cos(state.rotation);
+  const sin = Math.sin(state.rotation);
+
+  return {
+    x: world.x - (dx * cos - dy * sin),
+    y: world.y - (dx * sin + dy * cos)
   };
 }
 

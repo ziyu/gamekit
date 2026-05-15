@@ -40,6 +40,9 @@ export type CameraState2D = {
   y: number;
   zoom: number;
   rotation: number;
+  viewport: { width: number; height: number };
+  minZoom: number;
+  maxZoom: number;
   bounds?: { x: number; y: number; width: number; height: number };
   targetEntity?: string | number;
 };
@@ -84,6 +87,15 @@ export type CameraController = {
 
 `zoom(delta, anchor)` 的 `anchor` 表示 camera viewport 内的 screen coordinate，不是浏览器窗口、DOM page 或底层 renderer 原始事件坐标。Input adapter / app bridge 必须先把 pointer 位置归一化到 renderer viewport 坐标，再交给 CameraController。这样滚轮缩放才能以用户实际操作点作为缩放原点，并保持该 screen point 对应的 world point 稳定。
 
+Camera Core 的 2D 坐标转换以 CameraState 为唯一来源：
+
+- `worldToScreen(state, point)`：world coordinate → camera viewport coordinate。
+- `screenToWorld(state, point)`：camera viewport coordinate → world coordinate。
+- `clientToViewportPoint(point, rect, viewport)`：browser client coordinate → camera viewport coordinate。
+- `viewportToClientPoint(point, rect, viewport)`：camera viewport coordinate → browser client coordinate。
+
+这些方法必须考虑 `zoom`、`rotation` 和 viewport 尺寸。业务层、UI overlay、picking 和 renderer adapter 应复用同一套转换，避免 renderer 已应用的 display camera 与 UI/输入仍使用 target camera 造成错位。
+
 ## CameraRig
 
 CameraRig 是可复用镜头行为。
@@ -126,6 +138,8 @@ Camera action 应由 Input 系统做 scope/context 过滤。常规游戏镜头�
 标准 camera module 应接收已经归一化的 action source，例如 `input.action` EventBus fact。Input 模块先完成 scope/context 过滤，camera module 再把语义 action 映射成 `CameraController.pan/zoom/follow` 等操作。安装时注册订阅，dispose 时清理订阅；renderer camera adapter 同步通过 profile/app 注入的 sync hook 完成。
 
 CameraController 表示目标镜头状态；表现层镜头可以选择每 tick 向目标状态平滑插值。标准 camera module 应提供可配置 smoothing，让 renderer camera 不必随着每个 input event 离散跳动。Smoothing 仍属于 camera module / rig 行为，不属于 renderer adapter；renderer adapter 只负责应用传入的 camera state。
+
+滚轮缩放带 anchor 时，平滑插值也必须保持 anchor 对应的 world point 稳定。也就是说，display camera 在 zoom 从当前值过渡到目标值的每一帧，都应围绕同一个 viewport anchor 计算中心点，而不是简单分别插值 `x/y/zoom`，否则用户会看到缩放从角落或错误位置发生。
 
 ## 与 TCA/Cue 的关系
 

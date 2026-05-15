@@ -26,18 +26,18 @@ export function createPhaserCameraAdapter(
       const scrollX = nextState.x - nextState.viewport.width / (2 * nextState.zoom);
       const scrollY = nextState.y - nextState.viewport.height / (2 * nextState.zoom);
 
-      options.driver.setScroll(scrollX, scrollY);
       options.driver.setZoom(nextState.zoom);
+      options.driver.setScroll(scrollX, scrollY);
       options.driver.setRotation(nextState.rotation);
     },
     getState() {
       return state ? { ...state } : undefined;
     },
     worldToScreen(point: PointLike) {
-      return options.driver.worldToScreen?.(point) ?? fallbackWorldToScreen(requireState(), point);
+      return fallbackWorldToScreen(requireState(), point);
     },
     screenToWorld(point: PointLike) {
-      return options.driver.screenToWorld?.(point) ?? fallbackScreenToWorld(requireState(), point);
+      return fallbackScreenToWorld(requireState(), point);
     }
   };
 }

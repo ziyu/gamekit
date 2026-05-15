@@ -8,7 +8,7 @@ import {
   type AppProfile,
   type AppServiceBinding
 } from "@gamekit/app-host";
-import { createCameraController } from "@gamekit/camera-core";
+import { createCameraController, screenToWorld } from "@gamekit/camera-core";
 import { createDataRegistry } from "@gamekit/data";
 import { createEventBus } from "@gamekit/event-bus";
 import { createGasDataTypes, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
@@ -372,6 +372,77 @@ describe("configured app host", () => {
     }
 
     expect(syncedX.at(-1)).toBeCloseTo(targetX, 1);
+  });
+
+  it("keeps anchored zoom stable while smoothing standard camera sync", async () => {
+    const camera = createCameraController({
+      viewport: { width: 320, height: 180 },
+      state: { x: 160, y: 90, minZoom: 0.5, maxZoom: 4 }
+    });
+    const eventBus = createEventBus({ clock: () => 1 });
+    const anchor = { x: 240, y: 120 };
+    const synced: Array<{ x: number; y: number; zoom: number }> = [];
+    const app = defineGameApp({
+      id: "smooth-anchored-zoom",
+      services: [{ id: "game" }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        game: {
+          standardModules: {
+            camera: {
+              controller: camera,
+              actions: [
+                {
+                  actionId: "camera.zoom_in",
+                  phases: ["scrolled"],
+                  zoom: { delta: 1, wheel: true, anchorFromInput: true }
+                }
+              ],
+              smoothing: { enabled: true, stiffness: 8 },
+              sync(_ctx, _camera, _action, state) {
+                synced.push({ x: state.x, y: state.y, zoom: state.zoom });
+              }
+            }
+          },
+          createRuntime(_ctx, modules) {
+            return createGame({
+              modules,
+              world: createMemoryWorld(),
+              eventBus,
+              seed: "standard"
+            });
+          }
+        }
+      }
+    });
+    const runtime = createConfiguredAppHost({ app, profile, context: {} }).host.services.game;
+    if (!runtime) {
+      throw new Error("Missing game runtime");
+    }
+
+    runtime.start();
+    const beforeWorld = camera.screenToWorld(anchor);
+    eventBus.emit(
+      "input.action",
+      {
+        actionId: "camera.zoom_in",
+        phase: "scrolled",
+        input: { x: anchor.x, y: anchor.y, wheelDelta: -100 }
+      },
+      "test"
+    );
+    runtime.tick(16);
+
+    const displayState = {
+      ...camera.getState(),
+      ...synced.at(-1)!
+    };
+    expect(synced.at(-1)?.zoom).toBeGreaterThan(1);
+    expect(camera.screenToWorld(anchor)).toEqual(beforeWorld);
+    expect(screenToWorld(displayState, anchor).x).toBeCloseTo(beforeWorld.x);
+    expect(screenToWorld(displayState, anchor).y).toBeCloseTo(beforeWorld.y);
   });
 
   it("tracks standard camera follow targets through a resolver", async () => {

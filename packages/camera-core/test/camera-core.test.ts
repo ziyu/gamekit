@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createCameraController } from "../src";
+import {
+  clientToViewportPoint,
+  createCameraController,
+  viewportToClientPoint,
+  worldToScreen,
+  screenToWorld
+} from "../src";
 
 describe("createCameraController", () => {
   it("pans and clamps to bounds", () => {
@@ -75,6 +81,34 @@ describe("createCameraController", () => {
 
     expect(screen).toEqual({ x: 120, y: 70 });
     expect(camera.screenToWorld(screen)).toEqual({ x: 110, y: 60 });
+  });
+
+  it("converts rotated camera coordinates symmetrically", () => {
+    const state = createCameraController({
+      viewport: { width: 200, height: 100 },
+      state: {
+        x: 100,
+        y: 50,
+        zoom: 2,
+        rotation: Math.PI / 2
+      }
+    }).getState();
+    const world = { x: 110, y: 50 };
+    const screen = worldToScreen(state, world);
+
+    expect(screen.x).toBeCloseTo(100);
+    expect(screen.y).toBeCloseTo(30);
+    expect(screenToWorld(state, screen).x).toBeCloseTo(world.x);
+    expect(screenToWorld(state, screen).y).toBeCloseTo(world.y);
+  });
+
+  it("converts browser client points through a scaled viewport rect", () => {
+    const viewport = { width: 720, height: 524 };
+    const rect = { left: 10, top: 20, width: 360, height: 262 };
+    const viewportPoint = clientToViewportPoint({ x: 190, y: 151 }, rect, viewport);
+
+    expect(viewportPoint).toEqual({ x: 360, y: 262 });
+    expect(viewportToClientPoint(viewportPoint, rect, viewport)).toEqual({ x: 190, y: 151 });
   });
 
   it("tracks follow mode without requiring world access", () => {

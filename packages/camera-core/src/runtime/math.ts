@@ -1,4 +1,10 @@
-import type { CameraBounds, CameraState2D, CameraViewport, PointLike } from "./types";
+import type {
+  CameraBounds,
+  CameraState2D,
+  CameraViewport,
+  CameraViewportRect,
+  PointLike
+} from "./types";
 
 export function clampZoom(zoom: number, minZoom: number, maxZoom: number): number {
   return clamp(zoom, minZoom, maxZoom);
@@ -33,16 +39,48 @@ export function clampCenterToBounds(
 }
 
 export function worldToScreen(state: CameraState2D, point: PointLike): PointLike {
+  const dx = point.x - state.x;
+  const dy = point.y - state.y;
+  const cos = Math.cos(state.rotation);
+  const sin = Math.sin(state.rotation);
+
   return {
-    x: (point.x - state.x) * state.zoom + state.viewport.width / 2,
-    y: (point.y - state.y) * state.zoom + state.viewport.height / 2
+    x: (dx * cos + dy * sin) * state.zoom + state.viewport.width / 2,
+    y: (-dx * sin + dy * cos) * state.zoom + state.viewport.height / 2
   };
 }
 
 export function screenToWorld(state: CameraState2D, point: PointLike): PointLike {
+  const dx = (point.x - state.viewport.width / 2) / state.zoom;
+  const dy = (point.y - state.viewport.height / 2) / state.zoom;
+  const cos = Math.cos(state.rotation);
+  const sin = Math.sin(state.rotation);
+
   return {
-    x: (point.x - state.viewport.width / 2) / state.zoom + state.x,
-    y: (point.y - state.viewport.height / 2) / state.zoom + state.y
+    x: dx * cos - dy * sin + state.x,
+    y: dx * sin + dy * cos + state.y
+  };
+}
+
+export function clientToViewportPoint(
+  point: PointLike,
+  rect: CameraViewportRect,
+  viewport: CameraViewport
+): PointLike {
+  return {
+    x: ((point.x - rect.left) / rect.width) * viewport.width,
+    y: ((point.y - rect.top) / rect.height) * viewport.height
+  };
+}
+
+export function viewportToClientPoint(
+  point: PointLike,
+  rect: CameraViewportRect,
+  viewport: CameraViewport
+): PointLike {
+  return {
+    x: rect.left + (point.x / viewport.width) * rect.width,
+    y: rect.top + (point.y / viewport.height) * rect.height
   };
 }
 
