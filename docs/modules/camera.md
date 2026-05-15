@@ -169,4 +169,6 @@ export type RendererCameraAdapter = {
 
 Phaser 映射到 `Scene.cameras.main`，Three.js 映射到 `PerspectiveCamera` / `OrthographicCamera` 和 controls。
 
+Adapter 映射必须尊重底层渲染器自己的 camera 语义，但不能改变 GameKit 的公共坐标模型。以 Phaser 为例，GameKit 的 `CameraState2D.x/y` 表示 viewport 中心对应的 world point；Phaser 的 `scrollX/scrollY` 是未随 zoom 缩放的 camera scroll，因此应映射为 `center - viewport / 2`，再单独设置 zoom。不要把 viewport 尺寸除以 zoom 后再写入 Phaser scroll，否则 renderer、picking 和 overlay 会在 zoom 后一起向右下错位。
+
 Renderer camera adapter 本身是 bridge，不拥有 gameplay camera state。它可以由 camera module 调用，也可以由 editor/devtools module 调用。

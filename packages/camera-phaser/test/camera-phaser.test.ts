@@ -18,9 +18,32 @@ describe("createPhaserCameraAdapter", () => {
 
     adapter.applyCameraState(camera.getState());
 
-    expect(driver.scroll).toEqual({ x: 50, y: 25 });
+    expect(driver.scroll).toEqual({ x: 0, y: 0 });
     expect(driver.zoom).toBe(2);
     expect(driver.rotation).toBe(0.1);
+  });
+
+  it("keeps Phaser scroll centered independently of zoom", () => {
+    const driver = new FakePhaserCameraDriver();
+    const adapter = createPhaserCameraAdapter({ driver });
+    const camera = createCameraController({
+      viewport: { width: 200, height: 100 },
+      state: {
+        x: 120,
+        y: 80,
+        zoom: 1
+      }
+    });
+
+    adapter.applyCameraState(camera.getState());
+    expect(driver.scroll).toEqual({ x: 20, y: 30 });
+
+    camera.zoom(2, { x: 140, y: 60 });
+    adapter.applyCameraState(camera.getState());
+    expect(driver.scroll).toEqual({
+      x: camera.getState().x - 100,
+      y: camera.getState().y - 50
+    });
   });
 
   it("falls back to core coordinate conversion", () => {

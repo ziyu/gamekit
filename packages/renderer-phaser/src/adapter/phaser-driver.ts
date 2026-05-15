@@ -82,9 +82,11 @@ export function createDefaultPhaserDriver(): PhaserRendererDriver {
           },
           worldToScreen(point) {
             const camera = sceneRef.cameras.main;
+            const originX = camera.width * camera.originX;
+            const originY = camera.height * camera.originY;
             return {
-              x: (point.x - camera.scrollX) * camera.zoom,
-              y: (point.y - camera.scrollY) * camera.zoom
+              x: (point.x - camera.scrollX - originX) * camera.zoomX + originX,
+              y: (point.y - camera.scrollY - originY) * camera.zoomY + originY
             };
           }
         },
