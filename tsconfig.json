@@ -8,6 +8,8 @@
     { "path": "./packages/game-runtime" },
     { "path": "./packages/renderer-core" },
     { "path": "./packages/renderer-phaser" },
+    { "path": "./packages/driver-core" },
+    { "path": "./packages/driver-phaser" },
     { "path": "./packages/test-utils" },
     { "path": "./apps/sandbox" }
   ]

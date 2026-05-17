@@ -103,11 +103,10 @@
 
 - `@gamekit/input-core`
 - `@gamekit/input-dom`
-- `@gamekit/input-phaser`
 - InputAction / InputBinding / InputContext / InputRouter
 - Input scope 过滤，支持 action/context 按 `game`、`ui` 等输入域生效
 - DOM input adapter
-- Phaser input adapter fake-driver contract
+- Phaser input source 已收敛为 `@gamekit/driver-phaser` 的内部 capability
 - Sandbox Input 状态展示、game viewport scope gate 和低频 `input.action` 事件桥接
 
 完成定义：
@@ -129,10 +128,9 @@
 已实现：
 
 - `@gamekit/camera-core`
-- `@gamekit/camera-phaser`
 - CameraState2D
 - CameraController
-- Phaser camera adapter fake-driver contract
+- Phaser camera sync 已收敛为 `@gamekit/driver-phaser` 的内部 capability
 - Sandbox input action 驱动 camera pan/zoom
 - Sandbox camera action 受 game scope 保护，非 game viewport 不响应
 - Sandbox Camera 状态展示
@@ -185,10 +183,9 @@
 预期新增：
 
 - `@gamekit/asset`
-- `@gamekit/asset-phaser`
 - Asset DataType registration
 - AssetManager
-- Phaser asset adapter fake-driver contract
+- Phaser asset loader 已收敛为 `@gamekit/driver-phaser` 的内部 capability
 - Sandbox DataPack asset preload
 - Sandbox Assets panel
 
@@ -631,7 +628,45 @@
 - 复杂游戏 HUD 皮肤系统。
 - Content Package System。
 
-## Phase 12：Save / Load / Migration
+## Phase 12：Driver Core + Phaser Driver 收敛
+
+目标：把 Phaser 这类跨 renderer、asset、input、camera 的第三方运行时，从分散 adapter 模式收敛为统一 Driver 模式，为未来 Three.js / 3D 集成建立稳定边界。
+
+模块设计：`docs/modules/driver.md`
+
+决策记录：`docs/adr/0007-driver-integration-layer.md`
+
+当前状态：首轮已实现。
+
+已实现：
+
+- `@gamekit/driver-core`
+- `@gamekit/driver-phaser`
+- Driver lifecycle / capability / adapter map / snapshot
+- App Host driver service registry
+- Phaser Driver 暴露 renderer、asset loader、input source、camera sync adapter
+- Sandbox 通过 App Host profile 选择 Phaser Driver capability
+- Renderer Phaser runtime 向 Driver 暴露共享 input / asset / camera runtime port
+- Driver registry 和 App Host standard driver service 测试
+- Sandbox 不再直接组装独立 Phaser adapter
+
+迁移范围：
+
+- `asset-phaser`、`input-phaser`、`camera-phaser` 已收敛进 `driver-phaser` 内部实现，不再作为长期 package 保留。
+- App Host 标准 renderer/assets/input/camera 可以从 Driver capability 自动解析，Sandbox profile 只需要声明 Phaser driver 和少量业务配置。
+- Camera 继续作为标准 GameModule helper；Phaser Driver 只提供 renderer camera adapter。
+- Core protocol 包继续不依赖 Phaser。
+
+完成定义：
+
+- App Host 可以 boot/start/stop/dispose driver service，并在 snapshot 中展示 driver capability。
+- Sandbox 只配置一个 Phaser Driver，不再手动组装多个独立 Phaser adapter。
+- renderer、asset、input、camera sync 都来自同一个 Phaser runtime。
+- 业务代码、GameModule、core protocol package 不直接 import `phaser`。
+- 多 driver 场景下 profile 能显式选择标准服务使用哪个 driver capability。
+- `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 通过。
+
+## Phase 13：Save / Load / Migration
 
 目标：长期状态可以序列化、恢复和迁移，为真实 demo 提供基础。
 
@@ -650,7 +685,7 @@
 - 缺失/未知版本能给出明确错误。
 - migration 至少有一个测试样例。
 
-## Phase 13：DevTools
+## Phase 14：DevTools
 
 目标：游戏可调试，尤其是数据驱动逻辑可解释。
 
@@ -670,7 +705,7 @@
 - system profiler 至少记录 system id、调用次数、最近耗时。
 - renderer escaped/native/direct path 可被标记。
 
-## Phase 14：Hero Road Demo
+## Phase 15：Hero Road Demo
 
 目标：用一个真实小 demo 验证整套架构，而不是只靠 sandbox。
 
@@ -692,7 +727,7 @@
 - Event Log / Actor Detail / TCA Trace 可查看。
 - Save/Load 能恢复 demo 基础状态。
 
-## Phase 15：Editor / Tooling
+## Phase 16：Editor / Tooling
 
 目标：为 DataPack、地图、规则、资源提供编辑和验证入口。
 
@@ -709,7 +744,7 @@
 - 能验证并展示 assets、actors、rules、renderObjects 等 data entries。
 - 不把 editor-only 状态泄漏到 runtime core。
 
-## Phase 16：Content Package System
+## Phase 17：Content Package System
 
 目标：建立真正的内容包系统，让游戏、DLC、mod、编辑器导出包和远程活动包可以作为一个可挂载、可卸载、可诊断、可权限控制的分发单元进入应用。Content Package 不等同于 DataPack；DataPack 只是内容包中的一个 section。
 
@@ -742,20 +777,23 @@
 - Data、Asset、Script、Localization 等模块保持各自职责，不被 Content Package System 吞并。
 - Sandbox 或 Hero Road 至少能挂载一个额外内容包，新增数据和资源，并在 UI/diagnostics 中显示来源。
 
-## Phase 17：Three.js / 3D Renderer Backlog
+## Phase 18：Three.js / 3D Driver Backlog
 
-目标：验证 RendererAdapter 能支持未来 3D 后端。
+目标：验证 Driver + RendererAdapter + Camera protocol 能支持未来 3D 后端。
 
 预期新增：
 
-- `@gamekit/renderer-three`
-- 3D render object adapter
-- camera-three
+- `@gamekit/driver-three`
+- Three Driver 暴露 3D render object adapter
+- Three Driver 暴露 3D camera sync adapter
+- Three Driver 暴露 texture / model asset loader adapter
+- Three Driver 暴露 raycaster / pointer input source
 
 完成定义：
 
-- Three adapter 能 boot/destroy/create/update 基础对象。
-- RenderObject / Camera 协议不足时，通过 ADR 记录协议调整原因。
+- Three Driver 能 boot/dispose/create/update 基础 3D 对象。
+- renderer、asset、input、camera sync 来自同一个 Three runtime。
+- RenderObject / Camera / Driver 协议不足时，通过 ADR 记录协议调整原因。
 
 ## 横向要求
 

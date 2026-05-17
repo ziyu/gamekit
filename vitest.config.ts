@@ -18,9 +18,11 @@ export default defineConfig({
       "@gamekit/game-runtime": new URL("./packages/game-runtime/src/index.ts", import.meta.url)
         .pathname,
       "@gamekit/data": new URL("./packages/data/src/index.ts", import.meta.url).pathname,
-      "@gamekit/asset": new URL("./packages/asset/src/index.ts", import.meta.url).pathname,
-      "@gamekit/asset-phaser": new URL("./packages/asset-phaser/src/index.ts", import.meta.url)
+      "@gamekit/driver-core": new URL("./packages/driver-core/src/index.ts", import.meta.url)
         .pathname,
+      "@gamekit/driver-phaser": new URL("./packages/driver-phaser/src/index.ts", import.meta.url)
+        .pathname,
+      "@gamekit/asset": new URL("./packages/asset/src/index.ts", import.meta.url).pathname,
       "@gamekit/app-host": new URL("./packages/app-host/src/index.ts", import.meta.url).pathname,
       "@gamekit/tca": new URL("./packages/tca/src/index.ts", import.meta.url).pathname,
       "@gamekit/gas": new URL("./packages/gas/src/index.ts", import.meta.url).pathname,
@@ -30,6 +32,7 @@ export default defineConfig({
         .pathname,
       "@gamekit/input-core": new URL("./packages/input-core/src/index.ts", import.meta.url)
         .pathname,
+      "@gamekit/input-dom": new URL("./packages/input-dom/src/index.ts", import.meta.url).pathname,
       "@gamekit/platform-core": new URL("./packages/platform-core/src/index.ts", import.meta.url)
         .pathname,
       "@gamekit/renderer-core": new URL("./packages/renderer-core/src/index.ts", import.meta.url)

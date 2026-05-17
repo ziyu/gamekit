@@ -17,12 +17,14 @@ export function configureSandboxInputRouter(
   inputRouter: InputRouter
 ): void {
   context.ui.rendererRoot.addEventListener("focus", () => {
-    context.activeInputScope = "game";
-    context.ui.uiRuntime.setFocus({ scope: "game", target: "viewport", reason: "sandbox.focus" });
+    focusGameViewport(context, "sandbox.focus");
   });
   context.ui.rendererRoot.addEventListener("blur", () => {
     context.activeInputScope = "ui";
     context.ui.uiRuntime.setFocus({ scope: "ui", reason: "sandbox.blur" });
+  });
+  context.ui.stage.addEventListener("pointerdown", () => {
+    focusGameViewport(context, "sandbox.pointer");
   });
   inputRouter.registerAction({
     id: "camera.pan_up",
@@ -151,7 +153,12 @@ export function toRendererLocalInput(
   context: SandboxInputContext,
   input: NormalizedInputEvent
 ): NormalizedInputEvent {
-  if (input.x === undefined || input.y === undefined || input.scope !== "game") {
+  if (
+    input.x === undefined ||
+    input.y === undefined ||
+    input.scope !== "game" ||
+    isRendererLocalInput(input)
+  ) {
     return input;
   }
 
@@ -185,6 +192,16 @@ export function resolveSandboxInputScope(
   }
 
   return context.activeInputScope;
+}
+
+function focusGameViewport(context: SandboxInputContext, reason: string): void {
+  context.activeInputScope = "game";
+  context.ui.uiRuntime.setFocus({ scope: "game", target: "viewport", reason });
+  context.ui.rendererRoot.focus({ preventScroll: true });
+}
+
+function isRendererLocalInput(input: NormalizedInputEvent): boolean {
+  return input.source === "sandbox.phaser.input" || input.source === "input.phaser";
 }
 
 function keyboardPanBindings(code: string): InputBinding[] {

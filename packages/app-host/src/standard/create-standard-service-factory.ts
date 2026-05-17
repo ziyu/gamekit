@@ -1,8 +1,11 @@
 import type { AppProfile, AppServiceFactory } from "../definition/types";
+import { createAssetManager } from "@gamekit/asset";
+import { createDriverRegistry } from "@gamekit/driver-core";
 import type { AppServiceBinding } from "../runtime/types";
 import {
   ASSET_SERVICE,
   DATA_SERVICE,
+  DRIVER_SERVICE,
   GAME_SERVICE,
   INPUT_SERVICE,
   PLATFORM_SERVICE,
@@ -10,9 +13,19 @@ import {
   UI_SERVICE
 } from "../runtime/standard-keys";
 import { createStandardContext, exposeStandardState } from "./context";
+import {
+  resolveDriverAssetLoader,
+  resolveDriverInputSourceFactory,
+  resolveDriverRenderer
+} from "./driver-adapters";
 import { createStandardGameModules } from "./game-modules";
 import { resolveStandardAdapter, resolveStandardValue } from "./resolve";
-import type { StandardAppServiceState, StandardServiceBuildContext } from "./types";
+import type {
+  StandardAppServiceState,
+  StandardInputOptions,
+  StandardServiceBuildContext
+} from "./types";
+import type { InputRouter, InputSourceAdapter } from "@gamekit/input-core";
 
 export function createStandardServiceFactory<TContext>(
   profile: AppProfile<TContext>,
@@ -56,6 +69,63 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
                 services: platform.services.list(),
                 capabilities: platform.capabilities.list()
               };
+            }
+          }
+        };
+      }
+    );
+  },
+  drivers<TContext>(
+    profile: AppProfile<TContext>,
+    stateByContext: Map<TContext, StandardAppServiceState>
+  ) {
+    return createManagedStandardServiceFactory(
+      profile,
+      stateByContext,
+      profile.standard?.drivers,
+      (ctx, options) => {
+        const registry = options.registry
+          ? resolveStandardValue(ctx, options.registry)
+          : createDriverRegistry();
+        for (const driver of resolveStandardValue(ctx, options.drivers)) {
+          if (!registry.has(driver.id)) {
+            registry.register(driver);
+          }
+        }
+        ctx.state.drivers = registry;
+
+        return {
+          key: DRIVER_SERVICE,
+          service: registry,
+          standard: "drivers",
+          lifecycle: {
+            id: DRIVER_SERVICE.id,
+            dependencies: ctx.service.dependencies,
+            async boot() {
+              for (const driver of registry.list()) {
+                const boot = options.boot?.(ctx, driver);
+                if (boot) {
+                  await driver.boot(boot);
+                }
+              }
+            },
+            start() {
+              for (const driver of registry.list()) {
+                driver.start?.();
+              }
+            },
+            stop() {
+              for (const driver of [...registry.list()].reverse()) {
+                driver.stop?.();
+              }
+            },
+            dispose() {
+              for (const driver of [...registry.list()].reverse()) {
+                driver.dispose();
+              }
+            },
+            snapshot() {
+              return registry.snapshot();
             }
           }
         };
@@ -107,7 +177,11 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
       stateByContext,
       profile.standard?.renderer,
       (ctx, options) => {
-        const renderer = resolveStandardAdapter(ctx, options.adapter, "renderer");
+        const ownsRenderer = options.adapter !== undefined;
+        const renderer =
+          options.adapter === undefined
+            ? resolveDriverRenderer(ctx, options.driver)
+            : resolveStandardAdapter(ctx, options.adapter, "renderer");
         ctx.state.renderer = renderer;
         return {
           key: RENDERER_SERVICE,
@@ -118,12 +192,14 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
             dependencies: ctx.service.dependencies,
             async boot() {
               const boot = options.boot?.(ctx);
-              if (boot) {
+              if (boot && ownsRenderer) {
                 await renderer.boot(boot);
               }
             },
             dispose() {
-              renderer.destroy();
+              if (ownsRenderer) {
+                renderer.destroy();
+              }
             },
             snapshot() {
               return {
@@ -145,7 +221,19 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
       stateByContext,
       profile.standard?.assets,
       (ctx, options) => {
-        const manager = resolveStandardValue(ctx, options.manager);
+        const manager =
+          options.manager === undefined
+            ? createAssetManager({
+                adapter:
+                  (options.adapter === undefined
+                    ? undefined
+                    : resolveStandardValue(ctx, options.adapter)) ??
+                  resolveDriverAssetLoader(ctx, options.driver),
+                onDiagnostic: (event) => {
+                  options.onDiagnostic?.(event);
+                }
+              })
+            : resolveStandardValue(ctx, options.manager);
         ctx.state.assets = manager;
         return {
           key: ASSET_SERVICE,
@@ -191,7 +279,10 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
         const router = resolveStandardValue(ctx, options.router);
         ctx.state.input = router;
         options.configure?.(ctx, router);
-        const adapters = options.adapters?.(ctx, router) ?? [];
+        const adapters = [
+          ...(options.adapters?.(ctx, router) ?? []),
+          ...createDriverInputSources(ctx, options, router)
+        ];
         return {
           key: INPUT_SERVICE,
           service: router,
@@ -332,4 +423,25 @@ function createManagedStandardServiceFactory<TContext, TOptions>(
     exposeStandardState(profile, standardCtx);
     return binding;
   };
+}
+
+function createDriverInputSources<TContext>(
+  ctx: StandardServiceBuildContext<TContext>,
+  options: StandardInputOptions<TContext>,
+  router: InputRouter
+): InputSourceAdapter[] {
+  const sources = options.driverSources === undefined ? [] : options.driverSources;
+
+  return sources.map((source) => {
+    const factory = resolveDriverInputSourceFactory(ctx, source.driver);
+    return factory.createInputSource({
+      source: source.source,
+      onInput(event) {
+        if (source.devices && !source.devices.includes(event.device)) {
+          return;
+        }
+        router.handle(source.scope ? { ...event, scope: source.scope } : event);
+      }
+    });
+  });
 }

@@ -1,5 +1,6 @@
 import type { AssetManager } from "@gamekit/asset";
 import type { DataRegistry } from "@gamekit/data";
+import type { DriverRegistry } from "@gamekit/driver-core";
 import type { GameRuntime } from "@gamekit/game-runtime";
 import type { InputRouter } from "@gamekit/input-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
@@ -113,6 +114,7 @@ export type AppServiceBinding<TService = unknown> = {
 
 export type AppServiceRegistry = {
   platform?: PlatformRuntime;
+  drivers?: DriverRegistry;
   data?: DataRegistry;
   assets?: AssetManager;
   renderer?: RendererAdapter;
@@ -153,6 +155,7 @@ export type AppHost = {
 
 export type AppStandardServiceId =
   | "platform"
+  | "drivers"
   | "data"
   | "assets"
   | "renderer"

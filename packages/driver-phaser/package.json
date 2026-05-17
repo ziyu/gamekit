@@ -1,0 +1,29 @@
+{
+  "name": "@gamekit/driver-phaser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run --root ../.. --config vitest.config.ts packages/driver-phaser/test --passWithNoTests",
+    "lint": "oxlint ."
+  },
+  "dependencies": {
+    "@gamekit/asset": "workspace:*",
+    "@gamekit/camera-core": "workspace:*",
+    "@gamekit/core": "workspace:*",
+    "@gamekit/driver-core": "workspace:*",
+    "@gamekit/input-core": "workspace:*",
+    "@gamekit/renderer-core": "workspace:*",
+    "@gamekit/renderer-phaser": "workspace:*",
+    "phaser": "4.1.0"
+  }
+}

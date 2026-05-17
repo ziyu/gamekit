@@ -1,24 +1,19 @@
-import { createAssetManager, type AssetLoaderAdapter, type AssetManager } from "@gamekit/asset";
+import type { AssetManager } from "@gamekit/asset";
 import {
   createStandardAppProfile,
+  resolveDriverCamera,
   type AppProfile,
   type StandardCameraActionBinding
 } from "@gamekit/app-host";
-import { createPhaserAssetAdapter } from "@gamekit/asset-phaser";
 import type { CameraController } from "@gamekit/camera-core";
-import { createPhaserCameraAdapter, type PhaserCameraAdapter } from "@gamekit/camera-phaser";
 import type { DataRegistry } from "@gamekit/data";
+import { createPhaserDriver } from "@gamekit/driver-phaser";
 import { createGasTcaDefinitions, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
 import { createInputRouter, type InputRouter } from "@gamekit/input-core";
 import { createDomInputAdapter } from "@gamekit/input-dom";
 import type { PlatformRuntime } from "@gamekit/platform-core";
 import { createWebPlatform } from "@gamekit/platform-web";
 import type { RendererAdapter, RendererBootContext } from "@gamekit/renderer-core";
-import {
-  createPhaserRenderer,
-  type PhaserRendererAssetRuntime,
-  type PhaserRendererDriverRuntime
-} from "@gamekit/renderer-phaser";
 import { createTcaTraceStore, mergeTcaDefinitionSets } from "@gamekit/tca";
 import type { UiRuntime } from "@gamekit/ui-core";
 import { createSandboxCameraController } from "./camera";
@@ -49,33 +44,18 @@ export type SandboxAppContext = {
   assetManager?: AssetManager | undefined;
   inputRouter?: InputRouter | undefined;
   cameraController?: CameraController | undefined;
-  cameraAdapter?: PhaserCameraAdapter | undefined;
   gasRuntime?: GasRuntime | undefined;
   sandbox?: SandboxRuntime | undefined;
-  phaserRuntime?: PhaserRendererDriverRuntime | undefined;
 };
 
 export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
   const refs: {
-    phaserRuntime?: PhaserRendererDriverRuntime;
     sandbox?: SandboxRuntime;
     gasRuntime?: GasRuntime;
   } = {};
   const platform = createWebPlatform({ appName: "GameKit Sandbox" });
   const dataRegistry = createSandboxDataRegistry();
-  const renderer = createPhaserRenderer({
-    onRuntime: (runtime) => {
-      refs.phaserRuntime = runtime;
-    }
-  });
-  const assetManager = createAssetManager({
-    adapter: createLazyPhaserAssetAdapter({
-      runtime: () => requirePhaserAssetRuntime(refs.phaserRuntime)
-    }),
-    onDiagnostic: (event) => {
-      refs.sandbox?.runtime.eventBus.emit(event.type, event.payload, event.source);
-    }
-  });
+  const phaserDriver = createPhaserDriver({ id: "sandbox.phaser" });
   const camera = createSandboxCameraController(SANDBOX_RENDER_SIZE);
   const inputRouter = createInputRouter();
   const tcaTraceStore = createTcaTraceStore({ limit: 20 });
@@ -84,8 +64,7 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
   return createStandardAppProfile({
     id: "web",
     adapters: {
-      platform,
-      renderer
+      platform
     },
     expose({ context, state }) {
       context.platform = state.platform;
@@ -97,7 +76,6 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
         context.uiRuntime = state.ui;
       }
       context.cameraController = camera;
-      context.phaserRuntime = refs.phaserRuntime;
       context.gasRuntime = refs.gasRuntime;
       context.sandbox = refs.sandbox;
     },
@@ -105,32 +83,23 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
       platform: {
         adapter: "platform"
       },
+      drivers: {
+        drivers: [phaserDriver],
+        boot({ context, requireConfig }) {
+          return createPhaserBootContext(context, requireConfig<SandboxRendererConfig>());
+        }
+      },
       data: {
         registry: dataRegistry
       },
       renderer: {
-        adapter: "renderer",
-        boot({ context, requireConfig }) {
-          const rendererConfig = requireConfig<SandboxRendererConfig>();
-          const boot: RendererBootContext = {
-            container: context.ui.rendererRoot,
-            width: rendererConfig.width,
-            height: rendererConfig.height,
-            onDiagnostic: (event) => {
-              context.sandbox?.runtime.eventBus.emit(event.type, event.payload, event.source);
-            }
-          };
-
-          return rendererConfig.debug === undefined
-            ? boot
-            : {
-                ...boot,
-                debug: rendererConfig.debug
-              };
-        }
+        driver: "sandbox.phaser"
       },
       assets: {
-        manager: assetManager
+        driver: "sandbox.phaser",
+        onDiagnostic(event) {
+          refs.sandbox?.runtime.eventBus.emit(event.type, event.payload, event.source);
+        }
       },
       input: {
         router: inputRouter,
@@ -142,22 +111,34 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
             createDomInputAdapter({
               target: window,
               capture: true,
-              eventFilter: (event) => !isStagePointerInput(context, event),
+              eventFilter: (event) =>
+                !isStagePointerInput(context, event) &&
+                !isFocusedRendererKeyboardInput(context, event),
               scope: (event) => resolveSandboxInputScope(context, event),
               onInput: (event) => {
                 inputRouter.handle(event);
               }
             }),
             createDomInputAdapter({
-              target: context.ui.stage,
+              target: context.ui.rendererRoot,
               capture: true,
-              scope: (event) => resolveSandboxInputScope(context, event),
+              source: "sandbox.viewport.keyboard",
+              eventFilter: isKeyboardInput,
+              scope: "game",
               onInput: (event) => {
                 inputRouter.handle(event);
               }
             })
           ];
-        }
+        },
+        driverSources: [
+          {
+            driver: "sandbox.phaser",
+            source: "sandbox.phaser.input",
+            devices: ["mouse", "touch", "pen"],
+            scope: "game"
+          }
+        ]
       },
       ui: {
         runtime({ context }) {
@@ -219,14 +200,13 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
               positionEpsilon: 0.1,
               zoomEpsilon: 0.002
             },
-            sync({ context }, _camera, _action, state) {
-              ensureCameraAdapter(context, refs.phaserRuntime)?.applyCameraState(state);
-              updateCameraStatus(context.ui, state);
+            sync(ctx, _camera, _action, state) {
+              resolveDriverCamera(ctx, "sandbox.phaser").applyCameraState(state);
+              updateCameraStatus(ctx.context.ui, state);
             }
           }
         },
         createRuntime({ context, state }, modules) {
-          ensureCameraAdapter(context, refs.phaserRuntime)?.applyCameraState(camera.getState());
           updateCameraStatus(context.ui, camera.getState());
           const sandbox = createSandboxRuntime({
             renderer: requireStandardState(state.renderer, "renderer"),
@@ -282,52 +262,6 @@ function sandboxCameraActions(): StandardCameraActionBinding[] {
   ];
 }
 
-function ensureCameraAdapter(
-  context: SandboxAppContext,
-  runtime: PhaserRendererDriverRuntime | undefined
-): PhaserCameraAdapter | undefined {
-  context.cameraAdapter ??= createCameraAdapter(runtime);
-  return context.cameraAdapter;
-}
-
-function createLazyPhaserAssetAdapter(options: {
-  runtime: () => PhaserRendererAssetRuntime;
-}): AssetLoaderAdapter {
-  return {
-    id: "sandbox.phaser-assets",
-    supports(asset) {
-      return (
-        asset.source.type === "url" && (asset.type === "image" || asset.type === "spritesheet")
-      );
-    },
-    load(asset) {
-      return createPhaserAssetAdapter({ runtime: options.runtime() }).load(asset);
-    }
-  };
-}
-
-function createCameraAdapter(
-  runtime: PhaserRendererDriverRuntime | undefined
-): PhaserCameraAdapter | undefined {
-  if (!runtime?.camera) {
-    return undefined;
-  }
-
-  return createPhaserCameraAdapter({
-    driver: runtime.camera
-  });
-}
-
-function requirePhaserAssetRuntime(
-  runtime: PhaserRendererDriverRuntime | undefined
-): PhaserRendererAssetRuntime {
-  if (!runtime?.assets) {
-    throw new Error("Phaser renderer asset runtime is unavailable");
-  }
-
-  return runtime.assets;
-}
-
 function requireStandardState<TValue>(value: TValue | undefined, name: string): TValue {
   if (value === undefined) {
     throw new Error(`Missing standard app service state: ${name}`);
@@ -352,8 +286,44 @@ function isStagePointerInput(context: SandboxAppContext, event: Event): boolean 
   );
 }
 
+function isFocusedRendererKeyboardInput(context: SandboxAppContext, event: Event): boolean {
+  if (!isKeyboardInput(event) || typeof document === "undefined") {
+    return false;
+  }
+
+  return (
+    document.activeElement instanceof Node &&
+    context.ui.rendererRoot.contains(document.activeElement)
+  );
+}
+
+function isKeyboardInput(event: Event): boolean {
+  return event.type === "keydown" || event.type === "keyup";
+}
+
 type SandboxRendererConfig = {
   width: number;
   height: number;
   debug?: boolean;
 };
+
+function createPhaserBootContext(
+  context: SandboxAppContext,
+  rendererConfig: SandboxRendererConfig
+): RendererBootContext {
+  const boot: RendererBootContext = {
+    container: context.ui.rendererRoot,
+    width: rendererConfig.width,
+    height: rendererConfig.height,
+    onDiagnostic: (event) => {
+      context.sandbox?.runtime.eventBus.emit(event.type, event.payload, event.source);
+    }
+  };
+
+  return rendererConfig.debug === undefined
+    ? boot
+    : {
+        ...boot,
+        debug: rendererConfig.debug
+      };
+}

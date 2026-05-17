@@ -2,9 +2,11 @@
 
 ## 核心方向
 
-GameKit 采用“薄内核 + 成熟库 + 自定义协议 + Adapter”的架构。
+GameKit 采用“薄内核 + 成熟库 + 自定义协议 + Driver / Adapter”的架构。
 
 成熟库负责底层能力，GameKit 负责稳定协议、组合边界、数据驱动和可解释性。
+
+当第三方库只实现单个协议时，用 Adapter 接入；当第三方库本身拥有跨 renderer、asset、input、camera 等多个能力的完整运行时，用 Driver 统一持有并派生多个 Adapter。
 
 ## 总体分层
 
@@ -13,18 +15,20 @@ Game App
   ↓
 App Host / Service Lifecycle
   ↓
+Drivers / App Services
+  ↓
 Game Modules / DataPack
   ↓
 Gameplay Framework
   ↓
 Core Runtime
   ↓
-Adapters / Libraries
+Drivers / Adapters / Libraries
 ```
 
 ## 包结构
 
-当前和规划包拆分如下：
+长期包结构方向如下：
 
 ```txt
 packages/
@@ -37,25 +41,23 @@ packages/
   world-koota/
 
   renderer-core/
-  renderer-phaser/
-  renderer-three/
 
   input-core/
   input-dom/
-  input-phaser/
   input-tauri/
 
   camera-core/
-  camera-phaser/
-  camera-three/
 
   platform-core/
   platform-web/
   platform-tauri/
 
+  driver-core/
+  driver-phaser/
+  driver-three/
+
   data/
   asset/
-  asset-phaser/
   tca/
   gas/
   ui-core/
@@ -69,6 +71,7 @@ packages/
 
 - `@gamekit/fx` 不作为独立业务包规划；Effect 可作为 Asset/Data/Save/Platform/Editor 等基础设施包内部实现选择。
 - `@gamekit/animation` 不作为早期独立包规划；动画主要归入 RenderObject、Renderer Adapter、Cue/Presentation、UI、Camera。
+- `driver-phaser` 是 Phaser 的长期默认集成边界；Phaser 的 asset/input/camera 能力收敛为 driver 内部 capability，不再以独立单协议 package 暴露。
 - 模块长期设计见 `docs/modules/`。
 
 ## 应用与验证面
@@ -85,15 +88,14 @@ Sandbox 的长期演示设计见 `docs/apps/sandbox.md`。阶段任务和当前�
 apps/* → packages/*
 app-host → core / event-bus / game-runtime / platform-core / data / asset / renderer-core / input-core / camera-core
 adapter packages → facade packages
+driver packages → core protocol packages / external runtime
 game-runtime → core / world / event-bus
 world-koota → world / core / koota
-renderer-phaser → renderer-core / core / phaser
-renderer-three → renderer-core / core / three
-input-dom/input-phaser/input-tauri → input-core
-camera-phaser/camera-three → camera-core
+input-dom/input-tauri → input-core
+driver-phaser → driver-core / renderer-core / renderer-phaser / input-core / camera-core / asset / core / phaser
+driver-three → driver-core / renderer-core / input-core / camera-core / asset / core / three
 platform-web/platform-tauri → platform-core
 asset → data / core
-asset-phaser → asset / renderer-phaser
 tca → core / data / event-bus / game-runtime
 gas → core / data / event-bus / game-runtime / tca / world
 react-ui → ui-core
@@ -105,10 +107,12 @@ react-ui → ui-core
 - `@gamekit/renderer-core` 依赖 Phaser、Three.js、DOM-heavy 实现或 ECS。
 - `@gamekit/input-core` 依赖 DOM、Phaser、Tauri。
 - `@gamekit/camera-core` 依赖 Phaser、Three.js。
+- `@gamekit/driver-core` 依赖 Phaser、Three.js、DOM-heavy implementation 或具体 renderer/input/camera/asset adapter 实现。
+- Phaser/Three 等外部 runtime 由对应 driver package 创建和持有；renderer/input/camera/asset adapter package 不得各自创建同一 runtime。
 - `@gamekit/platform-core` 依赖 Tauri 或浏览器私有 API。
 - 业务模块直接导入 Koota、Phaser、Three.js、GSAP、Tauri、shadcn/ui 等第三方库。
 - Runtime 包直接依赖具体游戏 app。
-- GameRuntime 直接拥有 renderer、input、camera、platform、asset、data 等应用级服务。
+- GameRuntime 直接拥有 driver、renderer、input、camera、platform、asset、data 等应用级服务。
 
 ## 应用服务与游戏模块
 
@@ -135,6 +139,13 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 - 只把稳定 facade 映射到 Phaser、Three.js、DOM、Tauri、浏览器 API 等具体实现。
 - 不承载玩法规则，不拥有跨模块生命周期。
 
+判断一个包更像 Driver：
+
+- 统一持有外部 runtime，例如 Phaser Game / Scene 或 Three renderer / scene。
+- 同时为 renderer、asset、input、camera 等多个 core protocol 提供 adapter capability。
+- 负责外部 runtime boot/resize/stop/dispose、共享资源 cache、输入来源和低频 diagnostics。
+- 不承载 gameplay state，不读取 world，不注册 GameRuntime system。
+
 判断一个包更像 Facade / Toolkit：
 
 - 定义稳定协议、数据结构、controller、helper 或 conformance test。
@@ -142,34 +153,34 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 
 长期 package 归属：
 
-| Package                                                                 | 归属                                         | 说明                                                                                 |
-| ----------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `@gamekit/app-host`                                                     | App Service / composition                    | 应用组合、service lifecycle、config、diagnostics。                                   |
-| `@gamekit/platform-core`                                                | App Service facade                           | 平台能力协议。                                                                       |
-| `@gamekit/platform-web` / `@gamekit/platform-tauri`                     | App Service adapter                          | Web/Tauri 平台能力实现。                                                             |
-| `@gamekit/data`                                                         | App Service                                  | 全局内容数据注册、校验、来源追踪。                                                   |
-| `@gamekit/asset`                                                        | App Service                                  | 资源声明读取、加载状态、adapter 委托。                                               |
-| `@gamekit/asset-phaser`                                                 | Adapter                                      | Phaser asset loader bridge。                                                         |
-| `@gamekit/renderer-core`                                                | App Service facade                           | 渲染对象协议。                                                                       |
-| `@gamekit/renderer-phaser` / `@gamekit/renderer-three`                  | App Service adapter                          | 渲染后端实现。                                                                       |
-| `@gamekit/input-core`                                                   | App Service facade + gameplay bridge toolkit | raw input 归一化、action/context/scope；具体玩法绑定由 GameModule 使用。             |
-| `@gamekit/input-dom` / `@gamekit/input-phaser` / `@gamekit/input-tauri` | App Service adapter                          | 输入来源接入。                                                                       |
-| `@gamekit/camera-core`                                                  | Game Module toolkit                          | CameraController、CameraRig、camera system/action helper；不作为 App Host 标准服务。 |
-| `@gamekit/camera-phaser` / `@gamekit/camera-three`                      | Adapter / bridge                             | 把 CameraState 同步到底层 renderer camera。                                          |
-| `@gamekit/tca`                                                          | Game Module                                  | 数据驱动规则 runtime，通过标准 GameModule 无痛安装。                                 |
-| `@gamekit/gas`                                                          | Game Module                                  | 通用 Actor/Ability/Effect runtime；热状态落在 World component，复用 TCA。            |
-| `@gamekit/ui-core`                                                      | App/UI toolkit                               | UI 状态、window、focus 协议；gameplay 不直接依赖 React。                             |
-| `@gamekit/react-ui`                                                     | App/UI adapter                               | React UI 实现。                                                                      |
-| `@gamekit/save`                                                         | 混合：App Service + Game Module bridge       | 存储 adapter 和 profile 是应用服务；snapshot capture/restore 是游戏模块桥接。        |
-| `@gamekit/devtools`                                                     | App Service / tooling                        | 观察 Host、Data、TCA、GAS、profiler，不进入 gameplay loop。                          |
-| `@gamekit/world`                                                        | Runtime facade                               | ECS facade。                                                                         |
-| `@gamekit/world-koota`                                                  | Runtime adapter                              | Koota adapter。                                                                      |
-| `@gamekit/core` / `@gamekit/event-bus` / `@gamekit/game-runtime`        | Core Runtime                                 | 薄内核、事件、GameModule lifecycle。                                                 |
+| Package                                                          | 归属                                         | 说明                                                                                 |
+| ---------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `@gamekit/app-host`                                              | App Service / composition                    | 应用组合、service lifecycle、config、diagnostics。                                   |
+| `@gamekit/platform-core`                                         | App Service facade                           | 平台能力协议。                                                                       |
+| `@gamekit/platform-web` / `@gamekit/platform-tauri`              | App Service adapter                          | Web/Tauri 平台能力实现。                                                             |
+| `@gamekit/driver-core`                                           | App Service facade                           | 外部 runtime 统一集成协议、capability、adapter map、snapshot。                       |
+| `@gamekit/driver-phaser` / `@gamekit/driver-three`               | App Service driver                           | 统一持有 Phaser / Three runtime，并暴露 renderer、asset、input、camera adapter。     |
+| `@gamekit/data`                                                  | App Service                                  | 全局内容数据注册、校验、来源追踪。                                                   |
+| `@gamekit/asset`                                                 | App Service                                  | 资源声明读取、加载状态、adapter 委托。                                               |
+| `@gamekit/renderer-core`                                         | App Service facade                           | 渲染对象协议。                                                                       |
+| `@gamekit/input-core`                                            | App Service facade + gameplay bridge toolkit | raw input 归一化、action/context/scope；具体玩法绑定由 GameModule 使用。             |
+| `@gamekit/input-dom` / `@gamekit/input-tauri`                    | App Service adapter                          | DOM/Tauri 输入来源接入；Phaser input 来源由 Phaser Driver 暴露。                     |
+| `@gamekit/camera-core`                                           | Game Module toolkit                          | CameraController、CameraRig、camera system/action helper；不作为 App Host 标准服务。 |
+| `@gamekit/tca`                                                   | Game Module                                  | 数据驱动规则 runtime，通过标准 GameModule 无痛安装。                                 |
+| `@gamekit/gas`                                                   | Game Module                                  | 通用 Actor/Ability/Effect runtime；热状态落在 World component，复用 TCA。            |
+| `@gamekit/ui-core`                                               | App/UI toolkit                               | UI 状态、window、focus 协议；gameplay 不直接依赖 React。                             |
+| `@gamekit/react-ui`                                              | App/UI adapter                               | React UI 实现。                                                                      |
+| `@gamekit/save`                                                  | 混合：App Service + Game Module bridge       | 存储 adapter 和 profile 是应用服务；snapshot capture/restore 是游戏模块桥接。        |
+| `@gamekit/devtools`                                              | App Service / tooling                        | 观察 Host、Data、TCA、GAS、profiler，不进入 gameplay loop。                          |
+| `@gamekit/world`                                                 | Runtime facade                               | ECS facade。                                                                         |
+| `@gamekit/world-koota`                                           | Runtime adapter                              | Koota adapter。                                                                      |
+| `@gamekit/core` / `@gamekit/event-bus` / `@gamekit/game-runtime` | Core Runtime                                 | 薄内核、事件、GameModule lifecycle。                                                 |
 
 ## 模块设计索引
 
 - Core / Runtime：`docs/modules/core-runtime.md`
 - App Host：`docs/modules/app-host.md`
+- Driver：`docs/modules/driver.md`
 - World：`docs/modules/world.md`
 - Renderer：`docs/modules/renderer.md`
 - Input：`docs/modules/input.md`
@@ -188,7 +199,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 
 ### App Host
 
-App Host 是应用组合层，负责统一 service registry、lifecycle、config、platform profile 和 diagnostics。它可以组合 Platform、Data、Asset、Renderer、Input、GameRuntime、UI、DevTools 等应用服务，但不替代 gameplay module。
+App Host 是应用组合层，负责统一 service registry、lifecycle、config、platform profile 和 diagnostics。它可以组合 Platform、Driver、Data、Asset、Renderer、Input、GameRuntime、UI、DevTools 等应用服务，但不替代 gameplay module。
 
 普通 app 应优先通过 `GameAppDefinition + AppProfile` 启动 Host。Definition 描述 app 需要哪些标准服务，Profile 提供统一 adapter/对象参数包和少量 service 参数；标准 service binding 由 App Host 内部创建。底层 `createAppHost({ services })` 保留给测试、工具和少数需要手动装配的高级场景。
 
@@ -199,6 +210,14 @@ GameRuntime 继续保持薄内核，不直接拥有应用级 adapter 和服务�
 Renderer 公共协议以通用 render object 为中心，不以 Sprite API 为中心。Render type 由 adapter 声明和解释，复合对象是一等能力。
 
 详细设计见 `docs/modules/renderer.md`，决策背景见 `docs/adr/0003-general-render-objects-and-input-decoupling.md`。
+
+### Driver
+
+Driver 是外部运行时的统一集成层。Phaser、Three.js 这类同时拥有 scene、renderer、loader、input、camera 和资源 cache 的库，应通过 Driver 统一持有，并从中暴露 RendererAdapter、InputSource、AssetLoaderAdapter 和 RendererCameraAdapter。
+
+Adapter 是单协议实现；Driver 是跨协议外部 runtime owner。App Host 管理 Driver lifecycle，GameRuntime 不直接拥有 Driver。
+
+详细设计见 `docs/modules/driver.md`，决策背景见 `docs/adr/0007-driver-integration-layer.md`。
 
 ### Input
 

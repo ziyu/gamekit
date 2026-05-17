@@ -7,7 +7,8 @@ Assets 负责资源声明、来源解析、加载状态、adapter 委托和低�
 相关包：
 
 - `@gamekit/asset`
-- `@gamekit/asset-phaser`
+- `@gamekit/driver-phaser`
+- `@gamekit/driver-three`
 
 核心原则：
 
@@ -139,10 +140,10 @@ boot
 
 ## Adapter
 
-实际加载由 adapter 执行：
+实际加载由 adapter 执行。对于 Phaser、Three.js 这类拥有共享资源 cache / loader / scene 的外部运行时，asset loader adapter 应由对应 Driver 暴露，而不是单独持有底层 runtime。
 
-- `@gamekit/asset-phaser` 映射到 Phaser loader。
-- Three.js model/texture loader 放 adapter 中。
+- Phaser Driver 的 asset loader adapter 映射到 Phaser loader / texture manager。
+- Three Driver 的 asset loader adapter 映射到 texture、GLB/glTF、material 和 environment map loader。
 - 音频、字体、shader、bundle 等未来资源通过对应 adapter 接入。
 
 Asset adapter 边界：

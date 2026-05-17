@@ -8,7 +8,8 @@ Renderer 是表现层 facade。Gameplay、ECS、DataPack 不直接依赖 Phaser 
 
 - `@gamekit/renderer-core`
 - `@gamekit/renderer-phaser`
-- 可选 adapter：`@gamekit/renderer-three`
+- `@gamekit/driver-phaser`
+- `@gamekit/driver-three`
 
 ## 核心原则
 
@@ -112,16 +113,28 @@ export type RenderCommand = {
 - `shader.set_uniform`
 - `camera.shake`
 
-## Phaser Adapter
+## Driver 提供的 Renderer Adapter
 
-`@gamekit/renderer-phaser`：
+Phaser、Three.js 等后端应优先由 Driver 统一持有外部 runtime，再从 Driver 暴露 RendererAdapter。Renderer 模块只关心 RendererAdapter 协议，不关心该 adapter 来自独立测试夹具、Phaser Driver、Three Driver 还是其他 app service。
 
-- 依赖 Phaser。
+Renderer adapter 不负责创建整套外部 runtime。对 Phaser 来说，`Phaser.Game`、active Scene、texture manager、input plugin 和 camera manager 都属于 Phaser Driver；`renderer-phaser` 只能绑定到 Driver 提供的 Scene runtime，并把 RenderObject / RenderNode / RenderCommand 映射到 Phaser display objects。
+
+Phaser Driver 暴露的 RendererAdapter：
+
+- 面向 Phaser Scene / DisplayList API，但不创建或拥有 Phaser runtime。
 - 不导出 Phaser 类型作为公共 API。
 - 内部维护 render type registry。
 - 映射 `debug.square`、`sprite`、`container` 等类型到 Phaser object。
 - 可以提供 debug texture。
 - 不承担 gameplay input；input 归 `input-*` 模块。
+- 不创建 `Phaser.Game`，不读取 Phaser input，不同步 Phaser camera，不加载 gameplay asset；这些能力由同一个 Phaser Driver 的独立 capability 提供。
+
+Three Driver 暴露的 RendererAdapter：
+
+- 依赖 Three.js。
+- 不导出 Three 原生类型作为 gameplay 公共 API。
+- 映射 `mesh`、`model`、`group`、`light`、`particle-emitter` 等 render type。
+- 与同一个 Three Driver 内部的 asset loader、raycaster 和 camera adapter 共享 scene / renderer / resource cache。
 
 ## Escape Hatch
 

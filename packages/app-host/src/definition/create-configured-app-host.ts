@@ -12,7 +12,9 @@ import type {
 export function createConfiguredAppHost<TContext>(
   options: CreateConfiguredAppHostOptions<TContext>
 ): ConfiguredAppHost<TContext> {
-  const serviceDefinitions = options.app.services.filter((service) => service.enabled !== false);
+  const serviceDefinitions = orderServiceDefinitions(
+    options.app.services.filter((service) => service.enabled !== false)
+  );
   const bindings: AppServiceBinding[] = [];
   const standardStateByContext = new Map<TContext, StandardAppServiceState>();
 
@@ -60,6 +62,51 @@ export function createConfiguredAppHost<TContext>(
       clock: options.clock
     })
   };
+}
+
+function orderServiceDefinitions(
+  definitions: Array<GameAppServiceDefinition>
+): Array<GameAppServiceDefinition> {
+  const byId = new Map(definitions.map((definition) => [definition.id, definition]));
+  const ordered: GameAppServiceDefinition[] = [];
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  const visit = (definition: GameAppServiceDefinition): void => {
+    if (visited.has(definition.id)) {
+      return;
+    }
+    if (visiting.has(definition.id)) {
+      throw createAppHostError("app_host.service_cycle", "App service dependency cycle", {
+        serviceIds: [...visiting, definition.id]
+      });
+    }
+
+    visiting.add(definition.id);
+    for (const dependencyId of definition.dependencies ?? []) {
+      const dependency = byId.get(dependencyId);
+      if (!dependency) {
+        throw createAppHostError(
+          "app_host.missing_service_dependency",
+          "Missing service dependency",
+          {
+            serviceId: definition.id,
+            dependencyId
+          }
+        );
+      }
+      visit(dependency);
+    }
+    visiting.delete(definition.id);
+    visited.add(definition.id);
+    ordered.push(definition);
+  };
+
+  for (const definition of definitions) {
+    visit(definition);
+  }
+
+  return ordered;
 }
 
 function requireServiceConfig<TConfig>(service: GameAppServiceDefinition): TConfig {

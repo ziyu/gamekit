@@ -18,8 +18,7 @@
   },
   "dependencies": {
     "@gamekit/core": "workspace:*",
-    "@gamekit/renderer-core": "workspace:*",
-    "phaser": "4.1.0"
+    "@gamekit/renderer-core": "workspace:*"
   },
   "devDependencies": {
     "@gamekit/test-utils": "workspace:*"

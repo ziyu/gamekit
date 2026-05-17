@@ -34,7 +34,7 @@ Game Module 的判断标准：
 
 - Platform、Data、Asset、Renderer、Input source adapters、UI shell、DevTools shell 属于 App Service。
 - Camera controller / camera rig、TCA runtime、GAS runtime、gameplay save capture / restore 属于 Game Module。
-- `camera-phaser`、`camera-three` 这类包是 renderer camera adapter / bridge，不拥有 gameplay camera state。
+- Phaser Driver、Three Driver 暴露的 camera adapter 是 renderer camera bridge，不拥有 gameplay camera state。
 
 TCA 不作为 App Host 标准服务。它应提供 `createTcaModule(...)` 这样的标准 GameModule helper，让游戏无需手写 EventBus 订阅、rule compile、trace store 和 cleanup。
 

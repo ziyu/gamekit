@@ -68,6 +68,37 @@ describe("applySandboxCameraAction", () => {
     expect(input.y).toBe(262);
   });
 
+  it("keeps Phaser driver pointer coordinates in renderer-local space", () => {
+    const input = toRendererLocalInput(
+      {
+        activeInputScope: "game",
+        ui: {
+          stage: {
+            getBoundingClientRect: () => ({
+              left: 100,
+              top: 50,
+              width: 360,
+              height: 262
+            })
+          }
+        }
+      } as SandboxInputContext,
+      {
+        id: "pointer",
+        device: "mouse",
+        phase: "released",
+        timestamp: 0,
+        scope: "game",
+        source: "sandbox.phaser.input",
+        x: 240,
+        y: 120
+      }
+    );
+
+    expect(input.x).toBe(240);
+    expect(input.y).toBe(120);
+  });
+
   it("allows initial sandbox camera movement in every pan direction", () => {
     const camera = createSandboxCameraController({ width: 720, height: 524 });
     const initial = camera.getState();

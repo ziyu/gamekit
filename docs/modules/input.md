@@ -8,14 +8,15 @@ Input 是独立系统，不属于 Renderer。它负责把物理输入归一化�
 
 - `@gamekit/input-core`
 - `@gamekit/input-dom`
-- `@gamekit/input-phaser`
 - `@gamekit/input-tauri`
+- `@gamekit/driver-phaser`
+- `@gamekit/driver-three`
 
 ## 为什么独立
 
 Input 不能归 Phaser 独占，也不能散落在 React 组件中：
 
-- 输入来源包括 Phaser、Three.js、Web、Tauri、移动端。
+- 输入来源包括 Web、Tauri、Phaser Driver、Three Driver、移动端。
 - 输入来源包括键盘、鼠标、触摸、手柄、UI、编辑器工具、快捷键。
 - Gameplay 不应该知道 DOM event、Phaser input event 或 Tauri shortcut。
 - UI focus、modal、text input、devtools 都会改变输入上下文。
@@ -170,7 +171,7 @@ export type InputContext = {
 ## Input Router
 
 ```txt
-DOM / Phaser / Touch / Gamepad Event
+DOM / Driver / Touch / Gamepad Event
 → NormalizedInputEvent
 → InputManager
 → Scope Filter

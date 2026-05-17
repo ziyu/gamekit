@@ -20,7 +20,7 @@ GameKit 更接近“游戏应用框架”而不是“游戏引擎”。它关心
 - 示例 demo 和真实项目之间缺少可复用的中间层。
 - 高频逻辑、低频事件、表现动画、React UI 容易互相污染。
 
-GameKit 的存在意义是把这些易重复、易失控、又足够通用的部分沉淀为清晰协议和可替换 adapter。
+GameKit 的存在意义是把这些易重复、易失控、又足够通用的部分沉淀为清晰协议、可替换 adapter 和可组合 driver。
 
 ## 项目目标
 
@@ -29,10 +29,10 @@ GameKit 的长期目标是支撑多个独立游戏快速开发，同时保持架
 核心目标：
 
 - 建立薄内核：核心包只定义稳定协议、运行时边界和共享基础能力。
-- 隔离第三方库：Koota、Phaser、Three.js、GSAP、UI primitives 等都通过 adapter 接入。
+- 隔离第三方库：Koota 这类单协议库通过 adapter 接入；Phaser、Three.js 这类跨多个协议的外部运行时通过 driver 统一集成；GSAP、UI primitives 等限制在对应实现层。
 - 支持数据驱动：Actor、Ability、Effect、TCA Rule、AssetManifest、UI Window Definition 等由数据定义。
 - 保持可解释性：事件、规则、能力、效果、资源、系统执行都应能被 trace/debug。
-- 支撑长期复用：具体游戏通过 GameModule、DataPack、Renderer Adapter、UI Window 扩展。
+- 支撑长期复用：具体游戏通过 GameModule、DataPack、Driver/Adapter capability、UI Window 扩展。
 - 降低应用启动成本：通过 App Host 统一组合平台、资源、输入、镜头、渲染、数据和运行时服务，让游戏上层主要关注玩法逻辑。
 - 保持性能分层：高频逻辑在 ECS system，低频规则在 TCA/GAS/EventBus，表现层在 Renderer/Cue/Camera，UI 在 React/Zustand。
 - 保持平台独立：文件、窗口、权限、输入、镜头、资源来源都通过 GameKit 协议或 adapter 接入。
@@ -58,9 +58,9 @@ GameKit 不追求成为完整通用引擎。
 
 底层库提供能力，但不能决定 GameKit 的公共边界。公共协议必须表达游戏框架自己的领域模型。
 
-### Adapter 是替换边界
+### Driver / Adapter 是替换边界
 
-任何外部技术选型都必须被限制在 adapter 或 app 层。若未来替换 Koota、Phaser 或 UI primitive，业务模块不应大面积重写。
+任何外部技术选型都必须被限制在 driver、adapter 或 app 层。单协议实现用 adapter，跨 renderer/input/camera/asset 等多个协议的外部运行时用 driver。若未来替换 Koota、Phaser、Three.js 或 UI primitive，业务模块不应大面积重写。
 
 ### 数据驱动必须可追踪
 

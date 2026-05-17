@@ -1,7 +1,2 @@
-export * from "./create-phaser-renderer";
-export type {
-  PhaserRendererAssetRuntime,
-  PhaserRendererDriver,
-  PhaserRendererDriverRuntime,
-  PhaserRendererOptions
-} from "./types";
+export { createPhaserRenderer } from "./create-phaser-renderer";
+export type { PhaserRendererRuntime, PhaserRendererOptions } from "./types";

@@ -1,5 +1,6 @@
 import type { AssetManager } from "@gamekit/asset";
 import type { DataRegistry } from "@gamekit/data";
+import type { DriverRegistry } from "@gamekit/driver-core";
 import type { GameRuntime } from "@gamekit/game-runtime";
 import type { InputRouter } from "@gamekit/input-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
@@ -10,6 +11,11 @@ import type { AppServiceKey } from "./types";
 export const PLATFORM_SERVICE: AppServiceKey<PlatformRuntime> = {
   id: "platform",
   description: "Platform runtime"
+};
+
+export const DRIVER_SERVICE: AppServiceKey<DriverRegistry> = {
+  id: "drivers",
+  description: "Driver registry"
 };
 
 export const DATA_SERVICE: AppServiceKey<DataRegistry> = {

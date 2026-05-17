@@ -11,25 +11,38 @@ import type {
   RendererCapabilities,
   RenderObjectPatch
 } from "@gamekit/renderer-core";
-import { createDefaultPhaserDriver } from "./phaser-driver";
-import type { PhaserRendererDriverRuntime, PhaserRendererOptions } from "./types";
+import { applyRenderCommand } from "./command-handlers";
+import {
+  createPhaserRenderRecord,
+  ensureDebugTexture,
+  SUPPORTED_OBJECT_TYPES
+} from "./object-factory";
+import { requireRenderRecord, resolveNodePath, type PhaserRenderRecord } from "./object-registry";
+import { applyObjectPatch } from "./patch-handlers";
+import type { PhaserRendererOptions, PhaserRendererRuntime } from "./types";
 
-const DEFAULT_BACKGROUND_COLOR = "#171813";
 const DEFAULT_DEBUG_TEXTURE_ID = "gamekit.debug.square";
 
-export function createPhaserRenderer(options: PhaserRendererOptions = {}): RendererAdapter {
+export function createPhaserRenderer(options: PhaserRendererOptions): RendererAdapter {
   const rendererId = options.id ?? "renderer.phaser";
-  const driver = options.driver ?? createDefaultPhaserDriver();
-  const backgroundColor = options.backgroundColor ?? DEFAULT_BACKGROUND_COLOR;
   const debugTextureId = options.debugTextureId ?? DEFAULT_DEBUG_TEXTURE_ID;
   const liveObjects = new Set<RenderObjectId>();
+  const objects = new Map<string, PhaserRenderRecord>();
   let nextObjectId = 0;
-  let runtime: PhaserRendererDriverRuntime | undefined;
   let bootContext: RendererBootContext | undefined;
 
-  const requireRuntime = (): PhaserRendererDriverRuntime => {
+  const getRuntime = (): PhaserRendererRuntime | undefined => {
+    return typeof options.runtime === "function" ? options.runtime() : options.runtime;
+  };
+
+  const requireRuntime = (): PhaserRendererRuntime => {
+    const runtime = getRuntime();
     if (!runtime) {
-      throw new GameError("renderer.not_booted", "Renderer has not booted", { rendererId });
+      throw new GameError(
+        "renderer.phaser.runtime_unavailable",
+        "Phaser renderer runtime is unavailable",
+        { rendererId }
+      );
     }
 
     return runtime;
@@ -49,7 +62,7 @@ export function createPhaserRenderer(options: PhaserRendererOptions = {}): Rende
   };
 
   const ensureSupportedType = (definition: RenderObjectDefinition): void => {
-    const capabilities = driver.capabilities();
+    const capabilities = phaserRendererCapabilities();
     if (!capabilities.objectTypes.includes(definition.type)) {
       throw new GameError(
         "renderer.unsupported_object_type",
@@ -69,30 +82,31 @@ export function createPhaserRenderer(options: PhaserRendererOptions = {}): Rende
   return {
     id: rendererId,
     async boot(ctx) {
-      if (runtime) {
+      if (bootContext) {
         return;
       }
 
       bootContext = ctx;
-      runtime = await driver.boot(ctx, { backgroundColor, debugTextureId });
-      options.onRuntime?.(runtime);
+      ensureDebugTexture(requireRuntime().scene, debugTextureId);
       emitDiagnostic("renderer.booted", { rendererId, width: ctx.width, height: ctx.height });
     },
     destroy() {
-      runtime?.destroy();
-      runtime = undefined;
       emitDiagnostic("renderer.destroyed", { rendererId });
       bootContext = undefined;
+      for (const record of objects.values()) {
+        record.native.destroy();
+      }
+      objects.clear();
       liveObjects.clear();
     },
     getView() {
       return requireRuntime().view;
     },
     capabilities(): RendererCapabilities {
-      return driver.capabilities();
+      return phaserRendererCapabilities();
     },
     resize(width, height) {
-      requireRuntime().resize(width, height);
+      requireRuntime().resize?.(width, height);
       emitDiagnostic("renderer.resized", { rendererId, width, height });
     },
     createObject(definition: RenderObjectDefinition) {
@@ -106,32 +120,64 @@ export function createPhaserRenderer(options: PhaserRendererOptions = {}): Rende
         });
       }
 
-      requireRuntime().createObject(objectId, definition);
+      const runtime = requireRuntime();
+      objects.set(
+        objectId,
+        createPhaserRenderRecord(runtime.scene, objectId, definition, debugTextureId)
+      );
       liveObjects.add(objectId);
       emitDiagnostic("renderer.object_created", { rendererId, objectId, type: definition.type });
       return objectId;
     },
     updateObject(objectId, patch: RenderObjectPatch) {
       requireObject(objectId);
-      requireRuntime().updateObject(objectId, patch);
+      applyObjectPatch(requireRenderRecord(objects, objectId).native, patch);
     },
     updateNode(objectId, nodePath: RenderNodePath, patch: RenderNodePatch) {
       requireObject(objectId);
-      requireRuntime().updateNode(objectId, nodePath, patch);
+      const record = requireRenderRecord(objects, objectId);
+      const resolvedPath = resolveNodePath(nodePath);
+      const node = record.nodes.get(resolvedPath);
+      if (!node) {
+        throw new GameError("renderer.missing_node", `Missing render node: ${resolvedPath}`, {
+          objectId,
+          nodePath: resolvedPath
+        });
+      }
+
+      applyObjectPatch(node, patch);
     },
     destroyObject(objectId) {
       requireObject(objectId);
-      requireRuntime().destroyObject(objectId);
+      const record = requireRenderRecord(objects, objectId);
+      record.native.destroy();
+      objects.delete(objectId);
       liveObjects.delete(objectId);
       emitDiagnostic("renderer.object_destroyed", { rendererId, objectId });
     },
     command(objectId, command: RenderCommand) {
       requireObject(objectId);
-      requireRuntime().command(objectId, command);
+      applyRenderCommand(requireRenderRecord(objects, objectId), command);
     },
     getObjectHandle(objectId): RenderObjectHandle<unknown, unknown> {
       requireObject(objectId);
-      return requireRuntime().getObjectHandle(objectId);
+      const record = requireRenderRecord(objects, objectId);
+      return {
+        id: objectId,
+        type: record.type,
+        native: record.native,
+        escaped: true
+      };
     }
+  };
+}
+
+function phaserRendererCapabilities(): RendererCapabilities {
+  return {
+    objectTypes: [...SUPPORTED_OBJECT_TYPES],
+    supportsObjectTree: true,
+    supportsNodeUpdates: true,
+    commandTypes: ["animation.play"],
+    supportsNativeHandles: true
   };
 }

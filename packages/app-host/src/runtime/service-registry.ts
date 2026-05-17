@@ -1,6 +1,7 @@
 import {
   ASSET_SERVICE,
   DATA_SERVICE,
+  DRIVER_SERVICE,
   GAME_SERVICE,
   INPUT_SERVICE,
   PLATFORM_SERVICE,
@@ -108,6 +109,9 @@ function assignStandardService(
   if (standard === "platform") {
     registry.platform = binding.service as never;
   }
+  if (standard === "drivers") {
+    registry.drivers = binding.service as never;
+  }
   if (standard === "data") {
     registry.data = binding.service as never;
   }
@@ -135,6 +139,9 @@ function deleteStandardService(registry: AppServiceRegistry, standard: AppStanda
 function standardFromKey(key: AppServiceKey<unknown>): AppStandardServiceId | undefined {
   if (key.id === PLATFORM_SERVICE.id) {
     return "platform";
+  }
+  if (key.id === DRIVER_SERVICE.id) {
+    return "drivers";
   }
   if (key.id === DATA_SERVICE.id) {
     return "data";

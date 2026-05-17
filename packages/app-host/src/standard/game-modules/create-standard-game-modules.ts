@@ -1,7 +1,12 @@
 import type { GameModule } from "@gamekit/core";
 import type { GameInstallContext } from "@gamekit/game-runtime";
+import { resolveDriverCamera } from "../driver-adapters";
 import { resolveStandardValue } from "../resolve";
-import type { StandardGameOptions, StandardServiceBuildContext } from "../types";
+import type {
+  StandardCameraGameModuleOptions,
+  StandardGameOptions,
+  StandardServiceBuildContext
+} from "../types";
 import { createStandardCameraModule } from "./camera-module";
 import { createStandardGasModule } from "./gas-module";
 import { createStandardTcaModule } from "./tca-module";
@@ -41,7 +46,7 @@ export function createStandardGameModules<TContext>(
           standardModules.camera.follow === undefined
             ? undefined
             : resolveStandardValue(ctx, standardModules.camera.follow),
-        sync: standardModules.camera.sync,
+        sync: createCameraSync(standardModules.camera),
         buildContext: ctx
       })
     );
@@ -52,4 +57,18 @@ export function createStandardGameModules<TContext>(
   );
 
   return modules;
+}
+
+function createCameraSync<TContext>(
+  options: StandardCameraGameModuleOptions<TContext>
+): StandardCameraGameModuleOptions<TContext>["sync"] {
+  const shouldSyncToDriver = options.syncToDriver === true || options.driver !== undefined;
+
+  return (syncCtx, controller, action, state) => {
+    if (options.sync) {
+      options.sync(syncCtx, controller, action, state);
+    } else if (shouldSyncToDriver) {
+      resolveDriverCamera(syncCtx, options.driver).applyCameraState(state);
+    }
+  };
 }

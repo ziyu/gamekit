@@ -38,10 +38,12 @@
 - GameKit 是可复用游戏框架，不是单一游戏业务仓库，也不是完整自研引擎。
 - 成熟库负责底层能力，GameKit 负责稳定协议和组合边界。
 - 核心包保持薄内核，不直接绑定具体 ECS、renderer、animation、UI primitive。
-- App Host 是应用组合层，负责统一 service registry、生命周期、配置、平台 profile 和 diagnostics；GameRuntime 不能直接拥有 renderer/input/camera/platform/asset/data。
+- App Host 是应用组合层，负责统一 service registry、生命周期、配置、平台 profile 和 diagnostics；GameRuntime 不能直接拥有 driver/renderer/input/camera/platform/asset/data。
+- Phaser、Three.js 等跨 renderer/input/camera/asset 的外部运行时必须优先通过 Driver 统一集成；Adapter 只负责单协议映射，不能各自独立持有同一个外部 runtime。
+- Driver 负责创建和持有 Phaser.Game、Three renderer/scene 等外部 runtime；renderer/input/camera/asset adapter 只能绑定到 Driver 提供的 runtime slice，不能在 adapter 内部再次创建整套外部 runtime。
 - 必须先判断能力属于 App Service 还是 Game Module：平台、资源、渲染、输入来源、配置、诊断属于应用服务；需要 world/tick/EventBus/gameplay data/context 的能力属于游戏模块。
 - Camera/TCA/GAS 是游戏会话能力，应优先通过标准 GameModule helper 启动，不应默认膨胀为 App Host 标准服务。
-- 第三方库必须通过 adapter 或 app 层接入，不能泄漏进业务公共 API。
+- 第三方库必须通过 driver、adapter 或 app 层接入，不能泄漏进业务公共 API。
 - Renderer 以 RenderObject / RenderNode / RenderCommand 为核心抽象，不以 Sprite 作为公共协议中心。
 - Input 是独立大模块，不属于 Renderer；Renderer 只能通过预留桥接点接收已经归一化后的语义指令。
 - Gameplay/Camera 输入必须能通过 Input Scope 约束到 game viewport 等交互域，避免在 UI、DevTools、文本输入或其他窗口中误触发。

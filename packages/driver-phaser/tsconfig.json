@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../asset" },
+    { "path": "../camera-core" },
+    { "path": "../core" },
+    { "path": "../driver-core" },
+    { "path": "../input-core" },
+    { "path": "../renderer-core" },
+    { "path": "../renderer-phaser" }
+  ]
+}

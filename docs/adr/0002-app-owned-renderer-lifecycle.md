@@ -4,6 +4,8 @@
 
 Accepted
 
+Extended by ADR 0007 for Phaser / Three style external runtime integration.
+
 ## Context
 
 Renderer boot 需要 DOM container、尺寸和浏览器环境，而 `@gamekit/game-runtime` 当前保持同步 lifecycle：`start()`、`stop()`、`tick(delta)` 都不等待异步资源或 DOM 初始化。
@@ -19,7 +21,7 @@ Phase 2 采用 app-owned renderer lifecycle：
 - app 创建 runtime，并把 renderer adapter 注入 sandbox render sync module。
 - `GameRuntime.start()` 保持同步，不负责 renderer boot。
 
-Renderer lifecycle 公共协议放在 `@gamekit/renderer-core`，Phaser 实现放在 `@gamekit/renderer-phaser`。gameplay、ECS 和 runtime module 不直接依赖 Phaser。
+Renderer lifecycle 公共协议放在 `@gamekit/renderer-core`。gameplay、ECS 和 runtime module 不直接依赖 Phaser。后续 Phaser 这类跨多个协议的运行时由 Driver 统一持有，见 ADR 0007。
 
 本 ADR 只决定 renderer lifecycle 归属，不决定 render object 协议和 input 协议。Render object 与 input 的边界由 ADR 0003 修正。
 

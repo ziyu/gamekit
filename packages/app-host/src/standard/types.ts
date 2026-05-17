@@ -1,10 +1,11 @@
-import type { AssetManager } from "@gamekit/asset";
+import type { AssetDiagnosticEvent, AssetLoaderAdapter, AssetManager } from "@gamekit/asset";
 import type { CameraController, CameraState2D, PointLike } from "@gamekit/camera-core";
 import type { GameModule } from "@gamekit/core";
 import type { DataPack, DataRegistry, DataTypeDefinition } from "@gamekit/data";
+import type { DriverBootContext, DriverRegistry, GameDriver } from "@gamekit/driver-core";
 import type { GasRuntime, GasTraceStore } from "@gamekit/gas";
 import type { GameInstallContext, GameRuntime } from "@gamekit/game-runtime";
-import type { InputRouter, InputSourceAdapter } from "@gamekit/input-core";
+import type { InputDevice, InputRouter, InputSourceAdapter } from "@gamekit/input-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
 import type { RendererAdapter, RendererBootContext } from "@gamekit/renderer-core";
 import type { TcaDefinitionSet, TcaTraceStore, TcaRuntime } from "@gamekit/tca";
@@ -18,6 +19,7 @@ import type { AppConfigSource } from "../runtime/types";
 
 export type StandardAppServiceState = {
   platform?: PlatformRuntime;
+  drivers?: DriverRegistry;
   data?: DataRegistry;
   assets?: AssetManager;
   renderer?: RendererAdapter;
@@ -46,6 +48,7 @@ export type CreateStandardAppProfileOptions<TContext> = {
 
 export type StandardAppProfileOptions<TContext> = {
   platform?: StandardPlatformOptions<TContext> | undefined;
+  drivers?: StandardDriverOptions<TContext> | undefined;
   data?: StandardDataOptions<TContext> | undefined;
   renderer?: StandardRendererOptions<TContext> | undefined;
   assets?: StandardAssetOptions<TContext> | undefined;
@@ -64,6 +67,12 @@ export type StandardPlatformOptions<_TContext> = {
   adapter: StandardAdapterRef<PlatformRuntime>;
 };
 
+export type StandardDriverOptions<TContext> = {
+  registry?: StandardValue<DriverRegistry, TContext> | undefined;
+  drivers: StandardValue<GameDriver[], TContext>;
+  boot?(ctx: StandardServiceBuildContext<TContext>, driver: GameDriver): DriverBootContext;
+};
+
 export type StandardDataOptions<TContext> = {
   registry: StandardValue<DataRegistry, TContext>;
   types?(ctx: StandardServiceBuildContext<TContext>): DataTypeDefinition[];
@@ -71,12 +80,16 @@ export type StandardDataOptions<TContext> = {
 };
 
 export type StandardRendererOptions<TContext> = {
-  adapter: StandardAdapterRef<RendererAdapter>;
+  adapter?: StandardAdapterRef<RendererAdapter> | undefined;
+  driver?: string | undefined;
   boot?(ctx: StandardServiceBuildContext<TContext>): RendererBootContext | undefined;
 };
 
 export type StandardAssetOptions<TContext> = {
-  manager: StandardValue<AssetManager, TContext>;
+  manager?: StandardValue<AssetManager, TContext> | undefined;
+  adapter?: StandardValue<AssetLoaderAdapter, TContext> | undefined;
+  driver?: string | undefined;
+  onDiagnostic?(event: AssetDiagnosticEvent): void;
   dataRegistry?(ctx: StandardServiceBuildContext<TContext>): DataRegistry | undefined;
   preloadGroups?(ctx: StandardServiceBuildContext<TContext>): string[] | undefined;
 };
@@ -85,6 +98,14 @@ export type StandardInputOptions<TContext> = {
   router: StandardValue<InputRouter, TContext>;
   configure?(ctx: StandardServiceBuildContext<TContext>, router: InputRouter): void;
   adapters?(ctx: StandardServiceBuildContext<TContext>, router: InputRouter): InputSourceAdapter[];
+  driverSources?: StandardInputDriverSourceOptions[] | undefined;
+};
+
+export type StandardInputDriverSourceOptions = {
+  driver?: string | undefined;
+  source?: string | undefined;
+  scope?: string | undefined;
+  devices?: InputDevice[] | undefined;
 };
 
 export type StandardUiOptions<TContext> = {
@@ -128,6 +149,8 @@ export type StandardCameraGameModuleOptions<TContext> = {
     action: StandardCameraActionBinding | undefined,
     state: CameraState2D
   ): void;
+  driver?: string | undefined;
+  syncToDriver?: boolean | undefined;
 };
 
 export type StandardCameraFollowOptions<TContext> = {

@@ -27,6 +27,15 @@ export const sandboxAppDefinition = defineGameApp({
         debug: true,
         width: SANDBOX_RENDER_SIZE.width,
         height: SANDBOX_RENDER_SIZE.height
+      },
+      dependencies: ["drivers"]
+    },
+    {
+      id: "drivers",
+      config: {
+        debug: true,
+        width: SANDBOX_RENDER_SIZE.width,
+        height: SANDBOX_RENDER_SIZE.height
       }
     },
     {
@@ -34,7 +43,7 @@ export const sandboxAppDefinition = defineGameApp({
       config: {
         preloadGroups: [SANDBOX_ASSET_GROUP]
       },
-      dependencies: ["data", "renderer"]
+      dependencies: ["data", "drivers", "renderer"]
     },
     {
       id: "input",

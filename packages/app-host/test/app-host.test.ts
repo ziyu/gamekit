@@ -10,6 +10,7 @@ import {
 } from "@gamekit/app-host";
 import { createCameraController, screenToWorld } from "@gamekit/camera-core";
 import { createDataRegistry } from "@gamekit/data";
+import type { GameDriver } from "@gamekit/driver-core";
 import { createEventBus } from "@gamekit/event-bus";
 import { createGasDataTypes, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
 import { createGame } from "@gamekit/game-runtime";
@@ -328,6 +329,40 @@ describe("configured app host", () => {
     });
   });
 
+  it("resolves standard renderer service from a driver capability", async () => {
+    const calls: string[] = [];
+    const driver = createFakeDriver("phaser", calls);
+    const app = defineGameApp({
+      id: "standard-drivers",
+      services: [{ id: "renderer", dependencies: ["drivers"] }, { id: "drivers" }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        drivers: {
+          drivers: [driver],
+          boot() {
+            return { width: 320, height: 180 };
+          }
+        },
+        renderer: {
+          driver: "phaser"
+        }
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+
+    await configured.host.boot();
+    await configured.host.start();
+    await configured.host.stop();
+    await configured.host.dispose();
+
+    expect(calls).toEqual(["phaser.boot:320x180", "phaser.start", "phaser.stop", "phaser.dispose"]);
+    expect(configured.host.services.drivers?.require("phaser")).toBe(driver);
+    expect(configured.host.services.renderer?.id).toBe("phaser.renderer");
+  });
+
   it("injects standard camera, TCA, and GAS game modules into the runtime factory", async () => {
     const registry = createDataRegistry();
     registry.registerType(createTcaRuleDataType());
@@ -629,6 +664,64 @@ function createLifecycleBinding(
       dispose() {
         calls.push(`${id}.dispose`);
       }
+    }
+  };
+}
+
+function createFakeDriver(id: string, calls: string[]): GameDriver {
+  let phase: ReturnType<GameDriver["snapshot"]>["phase"] = "registered";
+
+  return {
+    id,
+    kind: "fake",
+    boot(ctx) {
+      calls.push(`${id}.boot:${ctx.width}x${ctx.height}`);
+      phase = "booted";
+    },
+    start() {
+      calls.push(`${id}.start`);
+      phase = "started";
+    },
+    stop() {
+      calls.push(`${id}.stop`);
+      phase = "stopped";
+    },
+    dispose() {
+      calls.push(`${id}.dispose`);
+      phase = "disposed";
+    },
+    capabilities() {
+      return { renderer: true, assets: true, input: true, camera: true };
+    },
+    adapters() {
+      return {
+        renderer: {
+          id: `${id}.renderer`,
+          async boot() {},
+          destroy() {},
+          getView() {
+            return {} as HTMLElement;
+          },
+          resize() {},
+          capabilities() {
+            return { objectTypes: [] };
+          },
+          createObject() {
+            return "object";
+          },
+          updateObject() {},
+          destroyObject() {}
+        }
+      };
+    },
+    snapshot() {
+      return {
+        id,
+        kind: "fake",
+        phase,
+        capabilities: this.capabilities(),
+        adapters: ["renderer"]
+      };
     }
   };
 }

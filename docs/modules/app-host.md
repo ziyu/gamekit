@@ -2,7 +2,7 @@
 
 ## 定位
 
-App Host 是 GameKit 的应用组合层。它负责把 Platform、Data、Asset、Renderer、Input、GameRuntime、UI、DevTools 等应用服务装配成一个可启动、可停止、可观察、可扩展的游戏应用实例。
+App Host 是 GameKit 的应用组合层。它负责把 Platform、Driver、Data、Asset、Renderer、Input、GameRuntime、UI、DevTools 等应用服务装配成一个可启动、可停止、可观察、可扩展的游戏应用实例。
 
 App Host 不是 gameplay runtime，也不是具体平台 adapter。它解决的是“上层如何无痛启动游戏应用，只关心具体游戏逻辑”的问题。
 
@@ -46,6 +46,7 @@ App Host 提供统一能力管理：
 App Host 管理应用级 lifecycle：
 
 - Platform boot
+- Driver boot / resize / dispose
 - DataRegistry 创建、DataType 注册和已物化 DataPack 注册
 - AssetManager 创建和 preload pipeline
 - Renderer boot / resize / destroy
@@ -53,7 +54,7 @@ App Host 管理应用级 lifecycle：
 - UI / DevTools mount
 - GameRuntime 创建和挂载
 
-GameRuntime 不直接拥有 renderer、input、platform、asset、data。App Host 可以把这些能力作为 services 组合给 app、GameModule factory 或 bridge module 使用。
+GameRuntime 不直接拥有 driver、renderer、input、platform、asset、data。App Host 可以把这些能力作为 services 组合给 app、GameModule factory 或 bridge module 使用。
 
 Camera、TCA、GAS、gameplay save capture 等能力更接近游戏会话模块：它们通常需要读写 world、监听 EventBus、注册 system、理解 actor/rule/rig 等玩法上下文。App Host 可以提供 renderer/input/data 等依赖，但不应该把这些 gameplay runtime 直接做成默认标准服务。
 
@@ -100,6 +101,7 @@ export type AppServiceKey<TService> = {
 
 export type AppServiceRegistry = {
   platform?: PlatformRuntime;
+  drivers?: DriverRegistry;
   data?: DataRegistry;
   assets?: AssetManager;
   renderer?: RendererAdapter;
@@ -125,6 +127,8 @@ export type AppServiceRegistry = {
 - `editor.workspace`
 - `mod.mountRegistry`
 - `telemetry.client`
+- `driver.phaser`
+- `driver.three`
 
 缺失 required service 必须抛稳定错误。optional service 必须让调用方显式降级。
 
@@ -181,6 +185,7 @@ export type AppServiceLifecycle = {
 
 ```txt
 platform
+→ drivers
 → data
 → renderer
 → assets
@@ -191,6 +196,27 @@ platform
 ```
 
 依赖顺序不是硬编码固定链条。Host 应允许 app profile 或 service descriptor 声明依赖。
+
+## Driver 启动边界
+
+Driver 是 App Host 管理的应用级服务，用于统一持有 Phaser、Three.js 等外部运行时。Driver 可以从同一个外部 runtime 暴露 renderer、asset loader、input source、camera sync 等 adapter capability。
+
+App Host profile 负责选择标准服务使用哪个 driver capability：
+
+```txt
+driver.phaser
+→ renderer service uses driver.phaser.adapters.renderer
+→ assets service uses driver.phaser.adapters.assetLoader
+→ input service uses driver.phaser.adapters.inputSource
+→ camera module uses driver.phaser.adapters.camera
+```
+
+约束：
+
+- App Host 管理 Driver lifecycle，但不理解 Phaser / Three 原生类型。
+- Renderer、Input、Asset、Camera 仍通过各自 core protocol 交互。
+- Camera/TCA/GAS 等 gameplay 会话能力仍通过标准 GameModule helper 安装，不因为 Driver 暴露 camera adapter 就变成 Host service。
+- 多 Driver 同时存在时，profile 必须显式选择每个标准服务使用的 driver capability。
 
 ## 配置系统
 
@@ -401,8 +427,9 @@ const profile = createStandardAppProfile({
   services: {
     platform: { adapter: "platform" },
     data: { registry },
-    renderer: { adapter: "renderer", boot },
-    assets: { manager },
+    drivers: { drivers: [phaserDriver], boot },
+    renderer: { driver: "phaser" },
+    assets: { driver: "phaser" },
     input: { router, configure, adapters },
     game: { createRuntime }
   }
