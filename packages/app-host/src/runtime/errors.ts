@@ -40,7 +40,7 @@ export function createServiceCycleError(serviceIds: AppServiceId[]): GameError {
 
 export function createServiceLifecycleError(
   serviceId: AppServiceId,
-  stage: AppLifecycleStage,
+  stage: AppLifecycleStage | "tick",
   cause: unknown
 ): GameError {
   const message = cause instanceof Error ? cause.message : String(cause);

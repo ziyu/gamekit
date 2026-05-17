@@ -70,6 +70,7 @@ export type AppHost = {
 
   boot(): Promise<void>;
   start(): Promise<void>;
+  tick(delta: number, timestamp?: number): void;
   stop(): Promise<void>;
   dispose(): Promise<void>;
   snapshot(): AppHostSnapshot;
@@ -79,7 +80,8 @@ export type AppHost = {
 生命周期语义：
 
 - `boot()`：创建和启动外部依赖、adapter、资源预加载、UI mount 等异步准备。
-- `start()`：启动 gameplay runtime、input routing、frame loop 或平台主循环。
+- `start()`：启动 gameplay runtime、input routing 或平台主循环。
+- `tick(delta, timestamp?)`：推进一帧已启动的 service。标准 Input service 在这里产出稳定帧节奏的 `held` action，标准 Game service 在这里推进 `GameRuntime.tick(delta)`。上层应用只调用 Host tick，不直接调用 InputRouter 或 GameRuntime 的内部推进细节。
 - `stop()`：暂停 gameplay runtime、input action、frame loop，但保留已 boot 的资源。
 - `dispose()`：按反向依赖顺序释放 adapter、事件订阅、DOM、资源句柄和平台监听。
 

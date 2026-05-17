@@ -43,7 +43,7 @@ describe("applySandboxCameraAction", () => {
       {
         activeInputScope: "game",
         ui: {
-          rendererRoot: {
+          stage: {
             getBoundingClientRect: () => ({
               left: 100,
               top: 50,

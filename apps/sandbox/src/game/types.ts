@@ -99,6 +99,7 @@ export type SandboxContentSummary = {
 export type SandboxSnapshotOptions = {
   selectedActorId?: string | undefined;
   selectedEntityId?: EntityId | undefined;
+  defaultSelection?: boolean | undefined;
 };
 
 export type SandboxSnapshot = {

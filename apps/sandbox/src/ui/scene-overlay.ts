@@ -62,6 +62,10 @@ function readSelectedEntity(
   snapshot: SandboxSnapshot,
   state: SandboxWorkbenchState
 ): SandboxSnapshot["entities"][number] | undefined {
+  if (state.selectionCleared === true) {
+    return undefined;
+  }
+
   return (
     snapshot.entities.find((entity) => entity.id === snapshot.selected?.entityId) ??
     snapshot.entities.find((entity) => entity.id === state.selectedEntityId) ??

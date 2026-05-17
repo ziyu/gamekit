@@ -4,6 +4,8 @@ import { SANDBOX_RENDER_SIZE, type SandboxRuntime } from "./game";
 import type { SandboxUiHandles } from "./ui/render-sandbox";
 import { updateInputStatus } from "./ui/render-sandbox";
 
+export const SANDBOX_SCENE_CLICK_ACTION_ID = "scene.click";
+
 export type SandboxInputContext = {
   ui: SandboxUiHandles;
   activeInputScope: SandboxInputScope;
@@ -74,6 +76,17 @@ export function configureSandboxInputRouter(
     scopes: ["game"],
     defaultBindings: [{ device: "keyboard", code: "Enter", phase: "pressed" }]
   });
+  inputRouter.registerAction({
+    id: SANDBOX_SCENE_CLICK_ACTION_ID,
+    name: "Scene Click",
+    category: "scene",
+    scopes: ["game"],
+    defaultBindings: [
+      { device: "mouse", button: "primary", phase: "released" },
+      { device: "touch", phase: "released" },
+      { device: "pen", phase: "released" }
+    ]
+  });
   inputRouter.addContext({
     id: "camera",
     priority: 10,
@@ -93,6 +106,13 @@ export function configureSandboxInputRouter(
     priority: 5,
     actionIds: ["game.confirm"],
     scopes: ["game"]
+  });
+  inputRouter.addContext({
+    id: "scene",
+    priority: 15,
+    actionIds: [SANDBOX_SCENE_CLICK_ACTION_ID],
+    scopes: ["game"],
+    capture: false
   });
   inputRouter.onAction((event) => {
     const input = toRendererLocalInput(context, event.input);
@@ -118,7 +138,10 @@ export function configureSandboxInputRouter(
       "sandbox.input"
     );
     updateInputStatus(context.ui, {
-      action: event.actionId,
+      action:
+        input.x === undefined || input.y === undefined
+          ? event.actionId
+          : `${event.actionId} ${Math.round(input.x)},${Math.round(input.y)}`,
       context: event.contextId
     });
   });
@@ -132,7 +155,7 @@ export function toRendererLocalInput(
     return input;
   }
 
-  const bounds = context.ui.rendererRoot.getBoundingClientRect();
+  const bounds = context.ui.stage.getBoundingClientRect();
   if (bounds.width <= 0 || bounds.height <= 0) {
     return input;
   }
@@ -148,7 +171,7 @@ export function resolveSandboxInputScope(
   event: Event
 ): SandboxInputScope {
   if (isPointerLikeInput(event)) {
-    context.activeInputScope = isEventInElement(event, context.ui.rendererRoot) ? "game" : "ui";
+    context.activeInputScope = isEventInElement(event, context.ui.stage) ? "game" : "ui";
     if (context.activeInputScope === "game" && event.type === "pointerdown") {
       context.ui.uiRuntime.setFocus({
         scope: "game",
@@ -167,7 +190,9 @@ export function resolveSandboxInputScope(
 function keyboardPanBindings(code: string): InputBinding[] {
   return [
     { device: "keyboard", code, phase: "pressed" },
-    { device: "keyboard", code, phase: "held" }
+    { device: "keyboard", code, phase: "held" },
+    { device: "keyboard", code, phase: "released" },
+    { device: "keyboard", code, phase: "cancelled" }
   ];
 }
 

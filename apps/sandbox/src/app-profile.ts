@@ -21,7 +21,7 @@ import {
 } from "@gamekit/renderer-phaser";
 import { createTcaTraceStore, mergeTcaDefinitionSets } from "@gamekit/tca";
 import type { UiRuntime } from "@gamekit/ui-core";
-import { createSandboxCameraController, SANDBOX_CAMERA_PAN_STEP } from "./camera";
+import { createSandboxCameraController } from "./camera";
 import {
   createSandboxDataRegistry,
   createSandboxRuntime,
@@ -36,6 +36,8 @@ import {
 } from "./app-input";
 import type { SandboxUiHandles } from "./ui/render-sandbox";
 import { updateCameraStatus } from "./ui/render-sandbox";
+
+const SANDBOX_CAMERA_HELD_PAN_STEP = 8;
 
 export type SandboxAppContext = {
   ui: SandboxUiHandles;
@@ -139,6 +141,16 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
           return [
             createDomInputAdapter({
               target: window,
+              capture: true,
+              eventFilter: (event) => !isStagePointerInput(context, event),
+              scope: (event) => resolveSandboxInputScope(context, event),
+              onInput: (event) => {
+                inputRouter.handle(event);
+              }
+            }),
+            createDomInputAdapter({
+              target: context.ui.stage,
+              capture: true,
               scope: (event) => resolveSandboxInputScope(context, event),
               onInput: (event) => {
                 inputRouter.handle(event);
@@ -240,22 +252,22 @@ function sandboxCameraActions(): StandardCameraActionBinding[] {
     {
       actionId: "camera.pan_up",
       phases: ["pressed", "held"],
-      pan: { y: -SANDBOX_CAMERA_PAN_STEP }
+      pan: { y: -SANDBOX_CAMERA_HELD_PAN_STEP }
     },
     {
       actionId: "camera.pan_down",
       phases: ["pressed", "held"],
-      pan: { y: SANDBOX_CAMERA_PAN_STEP }
+      pan: { y: SANDBOX_CAMERA_HELD_PAN_STEP }
     },
     {
       actionId: "camera.pan_left",
       phases: ["pressed", "held"],
-      pan: { x: -SANDBOX_CAMERA_PAN_STEP }
+      pan: { x: -SANDBOX_CAMERA_HELD_PAN_STEP }
     },
     {
       actionId: "camera.pan_right",
       phases: ["pressed", "held"],
-      pan: { x: SANDBOX_CAMERA_PAN_STEP }
+      pan: { x: SANDBOX_CAMERA_HELD_PAN_STEP }
     },
     {
       actionId: "camera.zoom_in",
@@ -330,6 +342,14 @@ function summarizeAssets(manager: AssetManager) {
     assetsLoaded: states.filter((state) => state.status === "loaded").length,
     assetsFailed: states.filter((state) => state.status === "failed").length
   };
+}
+
+function isStagePointerInput(context: SandboxAppContext, event: Event): boolean {
+  return (
+    (event.type.startsWith("pointer") || event.type === "wheel") &&
+    event.target instanceof Node &&
+    context.ui.stage.contains(event.target)
+  );
 }
 
 type SandboxRendererConfig = {

@@ -5,6 +5,7 @@ import {
 } from "./errors";
 import type {
   AppHostContext,
+  AppFrame,
   AppLifecyclePhase,
   AppLifecycleStage,
   AppServiceBinding,
@@ -22,6 +23,31 @@ export async function runLifecycleStage(
 
   for (const binding of ordered) {
     await runBindingStage(registry, ctx, binding, stage);
+  }
+}
+
+export function runLifecycleTick(
+  registry: AppServiceRegistry,
+  ctx: AppHostContext,
+  frame: AppFrame
+): void {
+  for (const binding of orderBindings(registry.bindings())) {
+    try {
+      binding.lifecycle.tick?.(ctx, frame);
+    } catch (cause) {
+      registry.setPhase(binding.lifecycle.id, "failed");
+      ctx.diagnostics.emit({
+        type: "app_host.service_failed",
+        severity: "error",
+        source: "app-host",
+        payload: {
+          serviceId: binding.lifecycle.id,
+          stage: "tick",
+          error: cause instanceof Error ? cause.message : String(cause)
+        }
+      });
+      throw createServiceLifecycleError(binding.lifecycle.id, "tick", cause);
+    }
   }
 }
 

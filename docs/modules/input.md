@@ -76,7 +76,7 @@ Input scope 描述一个输入事件当前属于哪个交互区域或焦点域�
 - `text-input`：文本输入焦点。
 - `devtools`：调试工具区域。
 
-scope 可以由 adapter 或 app shell 根据底层事件、焦点、active window、pointer capture、platform shortcut 状态解析。
+scope 可以由 adapter 或 app shell 根据底层事件、焦点、active window、pointer capture、platform shortcut 状态解析。真实应用可以同时安装多个 source adapter，例如 window keyboard adapter 和 viewport pointer adapter；adapter 应允许在归一化前过滤底层事件，避免同一个 pointer / wheel event 被 window 与 viewport 两条输入源重复派发。
 
 示例：
 
@@ -116,6 +116,7 @@ export type InputBinding = {
 
 - `camera.pan_up`
 - `camera.zoom_in`
+- `scene.click`
 - `game.confirm`
 - `tool.place_road`
 - `ui.close_window`
@@ -179,6 +180,8 @@ DOM / Phaser / Touch / Gamepad Event
 ```
 
 输入最终不直接改 world，而是生成 command 或 action。
+
+`held` 不应依赖浏览器或操作系统的 key repeat 节奏。Source adapter 只负责发出 `pressed` / `released` / `cancelled` 等物理边沿事件；Input Router 维护 active action state，并在 Input service 的 frame tick 中以稳定帧节奏产出 `held` action。应用入口不应直接调用 InputRouter 的 held 刷新细节；如果使用 App Host，应由 `AppHost.tick()` 统一推进 Input service 和 GameRuntime。这样 camera pan、拖拽工具、蓄力技能等持续输入不会因为系统 repeat delay 或不同平台 repeat rate 变成一卡一卡的离散移动。
 
 ## 与 TCA 的关系
 

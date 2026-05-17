@@ -88,11 +88,17 @@ export type AppHostContext = {
   diagnostics: AppDiagnostics;
 };
 
+export type AppFrame = {
+  delta: number;
+  timestamp: number;
+};
+
 export type AppServiceLifecycle = {
   id: AppServiceId;
   dependencies?: AppServiceId[] | undefined;
   boot?(ctx: AppHostContext): Promise<void> | void;
   start?(ctx: AppHostContext): Promise<void> | void;
+  tick?(ctx: AppHostContext, frame: AppFrame): void;
   stop?(ctx: AppHostContext): Promise<void> | void;
   dispose?(ctx: AppHostContext): Promise<void> | void;
   snapshot?(): unknown;
@@ -139,6 +145,7 @@ export type AppHost = {
   diagnostics: AppDiagnostics;
   boot(): Promise<void>;
   start(): Promise<void>;
+  tick(delta: number, timestamp?: number): void;
   stop(): Promise<void>;
   dispose(): Promise<void>;
   snapshot(): AppHostSnapshot;

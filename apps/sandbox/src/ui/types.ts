@@ -20,6 +20,7 @@ export type SandboxTimelineFilter =
 export type SandboxWorkbenchState = {
   selectedActorId?: string | undefined;
   selectedEntityId?: string | number | undefined;
+  selectionCleared?: boolean | undefined;
   followedEntityId?: string | number | undefined;
   activeInspectorTab: SandboxInspectorTab;
   timelineFilter: SandboxTimelineFilter;
@@ -29,6 +30,7 @@ export type SandboxUiHandles = {
   root: HTMLElement;
   reactRoot: ReactRoot;
   uiRuntime: UiRuntime;
+  stage: HTMLElement;
   rendererRoot: HTMLDivElement;
   sceneOverlay: HTMLElement;
   status: HTMLDivElement;
@@ -57,6 +59,7 @@ export type SandboxUiHandles = {
   latestAssetManager?: AssetManager | undefined;
   latestSandbox?: SandboxRuntime | undefined;
   latestCameraStatus?: SandboxCameraStatus | undefined;
+  latestWorkbenchState?: SandboxWorkbenchState | undefined;
   lastWorkbenchRenderAt?: number | undefined;
 };
 

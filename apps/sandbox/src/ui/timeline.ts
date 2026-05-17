@@ -10,7 +10,12 @@ export function renderTimeline(
   sandbox: SandboxRuntime,
   state: SandboxWorkbenchState
 ): void {
-  const snapshot = sandbox.snapshot({ selectedActorId: state.selectedActorId });
+  const selectionCleared = state.selectionCleared === true;
+  const snapshot = sandbox.snapshot({
+    selectedActorId: selectionCleared ? undefined : state.selectedActorId,
+    selectedEntityId: selectionCleared ? undefined : state.selectedEntityId,
+    defaultSelection: !selectionCleared
+  });
   const entries =
     state.timelineFilter === "all"
       ? snapshot.timeline

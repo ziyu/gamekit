@@ -209,6 +209,9 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
                 adapter.stop();
               }
             },
+            tick(_ctx, frame) {
+              router.tick({ delta: frame.delta, timestamp: frame.timestamp });
+            },
             dispose() {
               for (const adapter of adapters) {
                 adapter.destroy();
@@ -288,6 +291,9 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
             dependencies: ctx.service.dependencies,
             start() {
               runtime.start();
+            },
+            tick(_ctx, frame) {
+              runtime.tick(frame.delta);
             },
             stop() {
               runtime.stop();

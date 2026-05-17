@@ -2,12 +2,14 @@ import "@gamekit/react-ui/styles.css";
 import "./ui/theme.css";
 import "./styles.css";
 import { createConfiguredAppHost } from "@gamekit/app-host";
-import { clientToViewportPoint } from "@gamekit/camera-core";
+import type { NormalizedInputEvent } from "@gamekit/input-core";
 import { createUiRuntime } from "@gamekit/ui-core";
+import { SANDBOX_SCENE_CLICK_ACTION_ID, toRendererLocalInput } from "./app-input";
 import { sandboxAppDefinition } from "./app-definition";
 import { createSandboxWebProfile, type SandboxAppContext } from "./app-profile";
-import { SANDBOX_RENDER_SIZE, type SandboxSnapshot } from "./game";
+import { resolveSandboxSceneClickTarget } from "./scene-hit-test";
 import {
+  applySandboxSceneClickSelection,
   bindSandboxWorkbenchControls,
   createSandboxWorkbenchState,
   renderSandboxShell,
@@ -48,9 +50,6 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
 
   bindSandboxWorkbenchControls(ui, workbench, {
     onChange: refreshWorkbench,
-    onScenePick(event) {
-      return pickSandboxEntity(context, event);
-    },
     onFollowEntity(entityId) {
       context.sandbox?.runtime.eventBus.emit(
         "camera.follow_entity",
@@ -69,6 +68,16 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
     context
   });
   const { host } = configured;
+  const unsubscribeScenePick = requireSandboxContext(context.inputRouter, "inputRouter").onAction(
+    (event) => {
+      if (event.actionId !== SANDBOX_SCENE_CLICK_ACTION_ID || event.phase !== "released") {
+        return;
+      }
+      const input = toRendererLocalInput(context, event.input);
+      applySandboxSceneClickSelection(ui, workbench, resolveSceneClickSelection(context, input));
+      refreshWorkbench();
+    }
+  );
 
   updateHostStatus(ui, host);
   await host.boot();
@@ -96,7 +105,7 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
     const assetManager = requireSandboxContext(context.assetManager, "assetManager");
     const delta = lastTime === undefined ? 0 : Math.max(0, Math.min(now - lastTime, 64));
     lastTime = now;
-    sandbox.runtime.tick(delta);
+    host.tick(delta, now);
     updateSandboxHud(ui, sandbox, workbench);
     updateAssetStatus(ui, assetManager);
     updateHostStatus(ui, host);
@@ -105,6 +114,7 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
 
   updateSandboxHud(ui, requireSandboxContext(context.sandbox, "sandbox"), workbench);
   requestAnimationFrame(frame);
+  window.addEventListener("beforeunload", unsubscribeScenePick, { once: true });
 }
 
 function requireSandboxContext<TValue>(value: TValue | undefined, name: string): TValue {
@@ -115,57 +125,23 @@ function requireSandboxContext<TValue>(value: TValue | undefined, name: string):
   return value;
 }
 
-function pickSandboxEntity(
+function resolveSceneClickSelection(
   context: SandboxAppContext,
-  event: PointerEvent
+  input: NormalizedInputEvent
 ): { entityId: string | number; actorId?: string } | undefined {
   const sandbox = context.sandbox;
   const camera = context.cameraController;
-  if (!sandbox || !camera) {
+  if (!sandbox || !camera || input.x === undefined || input.y === undefined) {
     return undefined;
   }
 
-  const bounds = context.ui.rendererRoot.getBoundingClientRect();
-  if (bounds.width <= 0 || bounds.height <= 0) {
+  const cameraState = context.ui.latestCameraStatus ?? context.cameraController?.getState();
+  if (!cameraState) {
     return undefined;
   }
-
-  const screen = clientToViewportPoint(
-    { x: event.clientX, y: event.clientY },
-    bounds,
-    SANDBOX_RENDER_SIZE
+  return resolveSandboxSceneClickTarget(
+    sandbox.snapshot(),
+    { x: input.x, y: input.y },
+    cameraState
   );
-  const world = context.cameraAdapter?.screenToWorld(screen) ?? camera.screenToWorld(screen);
-  const picked = findNearestPickableEntity(sandbox.snapshot(), world);
-  if (!picked) {
-    return undefined;
-  }
-
-  return picked.actorId
-    ? {
-        entityId: picked.id,
-        actorId: picked.actorId
-      }
-    : { entityId: picked.id };
-}
-
-function findNearestPickableEntity(
-  snapshot: SandboxSnapshot,
-  point: { x: number; y: number }
-): SandboxSnapshot["entities"][number] | undefined {
-  let best: { entity: SandboxSnapshot["entities"][number]; distance: number } | undefined;
-  for (const entity of snapshot.entities) {
-    if (entity.role === "signal-link") {
-      continue;
-    }
-
-    const x = (entity.x / 100) * SANDBOX_RENDER_SIZE.width;
-    const y = (entity.y / 100) * SANDBOX_RENDER_SIZE.height;
-    const distance = Math.hypot(point.x - x, point.y - y);
-    const radius = entity.role === "command-core" ? 42 : entity.role === "scout" ? 24 : 34;
-    if (distance <= radius && (!best || distance < best.distance)) {
-      best = { entity, distance };
-    }
-  }
-  return best?.entity;
 }

@@ -230,9 +230,10 @@ export function createSandboxRuntime(
       const selectedEntity = snapshotOptions?.selectedEntityId
         ? entities.find((entity) => entity.id === snapshotOptions.selectedEntityId)
         : undefined;
+      const useDefaultSelection = snapshotOptions?.defaultSelection !== false;
       const selectedActorId =
         snapshotOptions?.selectedActorId ??
-        (snapshotOptions?.selectedEntityId === undefined
+        (useDefaultSelection && snapshotOptions?.selectedEntityId === undefined
           ? (selectedEntity?.actorId ?? gasActors[0]?.actor.actorId)
           : selectedEntity?.actorId);
       const selectedActor = gasActors.find((actor) => actor.actor.actorId === selectedActorId);

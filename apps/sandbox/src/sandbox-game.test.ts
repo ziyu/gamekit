@@ -120,6 +120,16 @@ describe("sandbox runtime", () => {
     expect(selectedGasActor?.tags.values).toContain("team.scout");
   });
 
+  it("can create a snapshot without a default selected actor", () => {
+    const sandbox = createSandboxRuntime("cleared-selection-seed");
+
+    sandbox.runtime.start();
+    sandbox.runtime.tick(16);
+
+    expect(sandbox.snapshot().selected?.actorId).toBeDefined();
+    expect(sandbox.snapshot({ defaultSelection: false }).selected).toBeUndefined();
+  });
+
   it("updates objective and timeline when confirm and motion rules drive GAS", () => {
     const sandbox = createSandboxRuntime("objective-seed");
 

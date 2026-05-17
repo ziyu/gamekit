@@ -74,7 +74,7 @@ export function renderSandboxShell(
                 <p className="objective-detail" data-ui="objective-detail">
                   Waiting for runtime.
                 </p>
-                <div className="stage">
+                <div className="stage" data-ui="stage">
                   <div
                     className="renderer-root"
                     data-ui="renderer-root"
@@ -198,6 +198,7 @@ export function renderSandboxShell(
     root: appElement,
     reactRoot: root,
     uiRuntime,
+    stage: readElement(appElement, "stage", HTMLElement),
     rendererRoot: readElement(appElement, "renderer-root", HTMLDivElement),
     sceneOverlay: readElement(appElement, "scene-object-overlay", HTMLElement),
     status: readElement(appElement, "status", HTMLDivElement),
@@ -278,7 +279,6 @@ export function bindSandboxWorkbenchControls(
   state: SandboxWorkbenchState,
   actions: {
     onChange: () => void;
-    onScenePick?(event: PointerEvent): { entityId: string | number; actorId?: string } | undefined;
     onFollowEntity?(entityId: string | number): void;
     onStopFollow?(): void;
   }
@@ -318,18 +318,6 @@ export function bindSandboxWorkbenchControls(
     openObjectiveBriefingModal(handles);
   });
 
-  handles.rendererRoot.addEventListener("pointerdown", (event) => {
-    const selected = actions.onScenePick?.(event);
-    if (!selected) {
-      return;
-    }
-    state.selectedEntityId = selected.entityId;
-    state.selectedActorId = selected.actorId;
-    state.activeInspectorTab = "actor";
-    handles.lastWorkbenchRenderAt = undefined;
-    actions.onChange();
-  });
-
   handles.sceneOverlay.addEventListener("click", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) {
@@ -345,6 +333,7 @@ export function bindSandboxWorkbenchControls(
           .entities.find((entry) => entry.id === entityId);
         state.selectedEntityId = entityId;
         state.selectedActorId = entity?.actorId;
+        state.selectionCleared = false;
         state.activeInspectorTab = "actor";
         handles.lastWorkbenchRenderAt = undefined;
         actions.onChange();
@@ -373,6 +362,7 @@ export function bindSandboxWorkbenchControls(
     if (actorButton) {
       state.selectedActorId = actorButton.dataset.selectActor;
       state.selectedEntityId = readEntityDataset(actorButton.dataset.selectEntity);
+      state.selectionCleared = false;
       state.activeInspectorTab = "actor";
       handles.lastWorkbenchRenderAt = undefined;
       actions.onChange();
@@ -383,6 +373,7 @@ export function bindSandboxWorkbenchControls(
     if (entityButton) {
       state.selectedEntityId = readEntityDataset(entityButton.dataset.selectEntity);
       state.selectedActorId = entityButton.dataset.selectActor;
+      state.selectionCleared = false;
       state.activeInspectorTab = "actor";
       handles.lastWorkbenchRenderAt = undefined;
       actions.onChange();
@@ -409,6 +400,24 @@ export function bindSandboxWorkbenchControls(
       actions.onChange();
     }
   });
+}
+
+export function applySandboxSceneClickSelection(
+  handles: SandboxUiHandles,
+  state: SandboxWorkbenchState,
+  selected: { entityId: string | number; actorId?: string } | undefined
+): void {
+  if (!selected) {
+    state.selectedEntityId = undefined;
+    state.selectedActorId = undefined;
+    state.selectionCleared = true;
+  } else {
+    state.selectedEntityId = selected.entityId;
+    state.selectedActorId = selected.actorId;
+    state.selectionCleared = false;
+  }
+  state.activeInspectorTab = "actor";
+  handles.lastWorkbenchRenderAt = undefined;
 }
 
 function openObjectiveBriefingModal(handles: SandboxUiHandles): void {

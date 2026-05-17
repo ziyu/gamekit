@@ -12,8 +12,16 @@ export function createDomInputAdapter(options: DomInputAdapterOptions): InputSou
 
   const clock = options.clock ?? (() => performance.now());
   const source = options.source ?? "input.dom";
+  const listenerOptions = options.capture ? { capture: true } : undefined;
 
   const keydown = (event: Event) => {
+    if (!shouldHandleEvent(options, event)) {
+      return;
+    }
+    if ((event as KeyboardEvent).repeat) {
+      return;
+    }
+
     const scope = resolveScope(options.scope, event);
     options.onInput(
       normalizeDomKeyboardEvent({
@@ -28,6 +36,9 @@ export function createDomInputAdapter(options: DomInputAdapterOptions): InputSou
     );
   };
   const keyup = (event: Event) => {
+    if (!shouldHandleEvent(options, event)) {
+      return;
+    }
     const scope = resolveScope(options.scope, event);
     options.onInput(
       normalizeDomKeyboardEvent({
@@ -43,6 +54,9 @@ export function createDomInputAdapter(options: DomInputAdapterOptions): InputSou
   };
   const pointer = (type: "pointerdown" | "pointerup" | "pointermove" | "pointercancel") => {
     return (event: Event) => {
+      if (!shouldHandleEvent(options, event)) {
+        return;
+      }
       const scope = resolveScope(options.scope, event);
       options.onInput(
         normalizeDomPointerEvent({
@@ -58,6 +72,9 @@ export function createDomInputAdapter(options: DomInputAdapterOptions): InputSou
     };
   };
   const wheel = (event: Event) => {
+    if (!shouldHandleEvent(options, event)) {
+      return;
+    }
     const scope = resolveScope(options.scope, event);
     options.onInput(
       normalizeDomWheelEvent({
@@ -82,13 +99,13 @@ export function createDomInputAdapter(options: DomInputAdapterOptions): InputSou
       }
 
       started = true;
-      options.target.addEventListener("keydown", keydown);
-      options.target.addEventListener("keyup", keyup);
-      options.target.addEventListener("pointerdown", pointerdown);
-      options.target.addEventListener("pointerup", pointerup);
-      options.target.addEventListener("pointermove", pointermove);
-      options.target.addEventListener("pointercancel", pointercancel);
-      options.target.addEventListener("wheel", wheel);
+      options.target.addEventListener("keydown", keydown, listenerOptions);
+      options.target.addEventListener("keyup", keyup, listenerOptions);
+      options.target.addEventListener("pointerdown", pointerdown, listenerOptions);
+      options.target.addEventListener("pointerup", pointerup, listenerOptions);
+      options.target.addEventListener("pointermove", pointermove, listenerOptions);
+      options.target.addEventListener("pointercancel", pointercancel, listenerOptions);
+      options.target.addEventListener("wheel", wheel, listenerOptions);
     },
     stop() {
       if (!started) {
@@ -96,18 +113,22 @@ export function createDomInputAdapter(options: DomInputAdapterOptions): InputSou
       }
 
       started = false;
-      options.target.removeEventListener("keydown", keydown);
-      options.target.removeEventListener("keyup", keyup);
-      options.target.removeEventListener("pointerdown", pointerdown);
-      options.target.removeEventListener("pointerup", pointerup);
-      options.target.removeEventListener("pointermove", pointermove);
-      options.target.removeEventListener("pointercancel", pointercancel);
-      options.target.removeEventListener("wheel", wheel);
+      options.target.removeEventListener("keydown", keydown, listenerOptions);
+      options.target.removeEventListener("keyup", keyup, listenerOptions);
+      options.target.removeEventListener("pointerdown", pointerdown, listenerOptions);
+      options.target.removeEventListener("pointerup", pointerup, listenerOptions);
+      options.target.removeEventListener("pointermove", pointermove, listenerOptions);
+      options.target.removeEventListener("pointercancel", pointercancel, listenerOptions);
+      options.target.removeEventListener("wheel", wheel, listenerOptions);
     },
     destroy() {
       this.stop();
     }
   };
+}
+
+function shouldHandleEvent(options: DomInputAdapterOptions, event: Event): boolean {
+  return options.eventFilter?.(event) ?? true;
 }
 
 function nextId(source: string, sequence: number): string {

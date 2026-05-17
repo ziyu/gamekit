@@ -9,20 +9,24 @@ export function renderInspector(
   sandbox: SandboxRuntime,
   state: SandboxWorkbenchState
 ): void {
+  const selectionCleared = state.selectionCleared === true;
   const snapshot = sandbox.snapshot({
-    selectedActorId: state.selectedActorId,
-    selectedEntityId: state.selectedEntityId
+    selectedActorId: selectionCleared ? undefined : state.selectedActorId,
+    selectedEntityId: selectionCleared ? undefined : state.selectedEntityId,
+    defaultSelection: !selectionCleared
   });
-  const selectedActorId = snapshot.selected?.actorId ?? snapshot.gasActors[0]?.actor.actorId;
-  if (!state.selectedActorId && !state.selectedEntityId && selectedActorId) {
+  const selectedActorId = selectionCleared
+    ? undefined
+    : (snapshot.selected?.actorId ?? snapshot.gasActors[0]?.actor.actorId);
+  if (!selectionCleared && !state.selectedActorId && !state.selectedEntityId && selectedActorId) {
     state.selectedActorId = selectedActorId;
   }
 
-  const selectedEntity = snapshot.entities.find(
-    (entity) => entity.id === snapshot.selected?.entityId
-  );
+  const selectedEntity = selectionCleared
+    ? undefined
+    : snapshot.entities.find((entity) => entity.id === snapshot.selected?.entityId);
   handles.selectedActor.textContent =
-    selectedEntity?.label ?? selectedActorId ?? snapshot.selected?.entityId?.toString() ?? "none";
+    selectedActorId === undefined ? "none" : (selectedEntity?.label ?? selectedActorId);
   setActiveTabs(handles, state);
 
   if (state.activeInspectorTab === "runtime") {
@@ -51,9 +55,10 @@ function renderActorTab(
   selectedActorId: string | undefined
 ): string {
   const selectedActor = snapshot.gasActors.find((actor) => actor.actor.actorId === selectedActorId);
-  const selectedEntity =
-    snapshot.entities.find((entity) => entity.id === snapshot.selected?.entityId) ??
-    snapshot.entities.find((entity) => entity.actorId === selectedActorId);
+  const selectedEntity = state.selectionCleared
+    ? undefined
+    : (snapshot.entities.find((entity) => entity.id === snapshot.selected?.entityId) ??
+      snapshot.entities.find((entity) => entity.actorId === selectedActorId));
   const sceneObjects = snapshot.entities.filter(
     (entity) => entity.role && entity.role !== "signal-link"
   );

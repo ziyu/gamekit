@@ -71,6 +71,11 @@ export type InputActionListener = (event: InputActionEvent) => void;
 
 export type InputUnsubscribe = () => void;
 
+export type InputFrame = {
+  delta?: number | undefined;
+  timestamp: number;
+};
+
 export type InputRouter = {
   registerAction(definition: InputActionDefinition): void;
   unregisterAction(actionId: InputActionId): void;
@@ -81,6 +86,7 @@ export type InputRouter = {
   disableContext(contextId: InputContextId): void;
   activeContexts(): InputContext[];
   handle(input: NormalizedInputEvent): InputActionEvent[];
+  tick(frame: InputFrame): InputActionEvent[];
   onAction(listener: InputActionListener): InputUnsubscribe;
 };
 

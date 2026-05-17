@@ -121,14 +121,15 @@ Sandbox 的操作应服务于验证模块协作，而不是追求复杂操作量
 
 长期输入语义：
 
-- 点击主舞台对象或用键盘切换选中 station / scout / threat，Inspector 应立即围绕该对象刷新。
+- `scene.click` 由主舞台点击产生：命中对象时选中 station / scout / threat 并刷新 Inspector，命中空白时取消选中。该语义应通过 game viewport scope 的 Input adapter 产生，并在 click/release 语义上结算，避免 pointerdown 阶段的焦点切换或覆盖层状态造成误选。
+- 用键盘切换选中 station / scout / threat 时，Inspector 应立即围绕该对象刷新。
 - `confirm` 对选中对象执行主操作，例如 overcharge、repair、suppress 或 scan。
 - `mode.1` / `mode.2` / `mode.3` 切换 outpost 策略：`stabilize`、`boost`、`suppress`。
 - `priority.next` / `priority.previous` 调整选中 station 的工作优先级。
 - Camera pan / zoom / focus / follow 只在 game viewport scope 下生效。缩放操作必须以归一化后的 renderer viewport 坐标作为 anchor，保证用户指向的位置在缩放前后保持稳定。
 - 暂停或单步 tick 用于观察 timeline，但不改变模块边界。
 
-输入必须先归一化为 action，再由 Sandbox game module 或标准模块消费。Renderer 不接收 raw input。
+输入必须先归一化为 action，再由 Sandbox game module、标准模块或 app UI bridge 消费。Renderer 不接收 raw input，主舞台点选也不直接绕过 Input 模块监听 canvas。
 
 ## 模块映射
 
@@ -194,7 +195,7 @@ Sandbox 输入必须受 scope 管理。Gameplay 和 Camera 输入只在 game vie
 
 首轮交互语义：
 
-- 选择对象。
+- 通过 `scene.click` 选择对象或点击空白取消选中。
 - 切换选中对象。
 - 对选中对象触发 confirm ability。
 - Camera pan / zoom。

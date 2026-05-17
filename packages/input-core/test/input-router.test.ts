@@ -134,6 +134,41 @@ describe("createInputRouter", () => {
       router.handle(input({ code: "KeyA", scope: "game" })).map((event) => event.actionId)
     ).toEqual(["camera.pan_left"]);
   });
+
+  it("flushes active pressed actions as held actions until release", () => {
+    const router = createInputRouter();
+    const observed: Array<{ actionId: string; phase: string; timestamp: number }> = [];
+
+    router.registerAction({
+      id: "camera.pan_left",
+      name: "Pan Left",
+      defaultBindings: [
+        { device: "keyboard", code: "KeyA", phase: "pressed" },
+        { device: "keyboard", code: "KeyA", phase: "held" },
+        { device: "keyboard", code: "KeyA", phase: "released" }
+      ]
+    });
+    router.onAction((event) =>
+      observed.push({
+        actionId: event.actionId,
+        phase: event.phase,
+        timestamp: event.timestamp
+      })
+    );
+
+    router.handle(input({ id: "down", code: "KeyA", timestamp: 10 }));
+    const held = router.tick({ timestamp: 26, delta: 16 });
+    router.handle(input({ id: "up", code: "KeyA", phase: "released", timestamp: 30 }));
+    const afterRelease = router.tick({ timestamp: 46, delta: 16 });
+
+    expect(held).toHaveLength(1);
+    expect(afterRelease).toHaveLength(0);
+    expect(observed).toEqual([
+      { actionId: "camera.pan_left", phase: "pressed", timestamp: 10 },
+      { actionId: "camera.pan_left", phase: "held", timestamp: 26 },
+      { actionId: "camera.pan_left", phase: "released", timestamp: 30 }
+    ]);
+  });
 });
 
 function input(patch: Partial<NormalizedInputEvent> = {}): NormalizedInputEvent {

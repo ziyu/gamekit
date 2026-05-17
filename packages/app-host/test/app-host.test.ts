@@ -13,6 +13,7 @@ import { createDataRegistry } from "@gamekit/data";
 import { createEventBus } from "@gamekit/event-bus";
 import { createGasDataTypes, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
 import { createGame } from "@gamekit/game-runtime";
+import { createInputRouter } from "@gamekit/input-core";
 import { type GameWorld } from "@gamekit/world";
 import { createTcaRuleDataType } from "@gamekit/tca";
 import { createUiRuntime } from "@gamekit/ui-core";
@@ -61,6 +62,33 @@ describe("app host service registry", () => {
       "c.dispose",
       "b.dispose",
       "a.dispose"
+    ]);
+  });
+
+  it("ticks started services in dependency order and ignores ticks while stopped", async () => {
+    const calls: string[] = [];
+    const host = createAppHost({
+      id: "tick-host",
+      clock: () => 100,
+      services: [
+        createLifecycleBinding("input", calls),
+        createLifecycleBinding("game", calls, ["input"])
+      ]
+    });
+
+    host.tick(16, 100);
+    await host.start();
+    host.tick(16, 116);
+    await host.stop();
+    host.tick(16, 132);
+
+    expect(calls).toEqual([
+      "input.start",
+      "game.start",
+      "input.tick:16:116",
+      "game.tick:16:116",
+      "game.stop",
+      "input.stop"
     ]);
   });
 
@@ -203,6 +231,73 @@ describe("configured app host", () => {
 
     expect(configured.host.services.data).toBeDefined();
     expect(configured.host.snapshot().services.map((service) => service.id)).toEqual(["data"]);
+  });
+
+  it("ticks standard input and game services from the app host frame", async () => {
+    const router = createInputRouter();
+    const emitted: string[] = [];
+    const runtimeTicks: number[] = [];
+    const app = defineGameApp({
+      id: "standard-frame",
+      services: [{ id: "input" }, { id: "game", dependencies: ["input"] }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        input: {
+          router,
+          configure(_ctx, input) {
+            input.registerAction({
+              id: "camera.pan_right",
+              name: "Pan Right",
+              defaultBindings: [
+                { device: "keyboard", code: "KeyD", phase: "pressed" },
+                { device: "keyboard", code: "KeyD", phase: "held" },
+                { device: "keyboard", code: "KeyD", phase: "released" }
+              ]
+            });
+            input.onAction((event) => {
+              emitted.push(`${event.actionId}:${event.phase}:${event.timestamp}`);
+            });
+          }
+        },
+        game: {
+          createRuntime(_ctx, modules) {
+            return createGame({
+              modules,
+              world: createMemoryWorld(),
+              eventBus: createEventBus(),
+              seed: "standard-frame"
+            });
+          }
+        }
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+    const runtime = configured.host.services.game;
+    if (!runtime) {
+      throw new Error("Missing game runtime");
+    }
+    runtime.systems.register({
+      id: "test.tick",
+      update({ delta }) {
+        runtimeTicks.push(delta);
+      }
+    });
+
+    await configured.host.start();
+    router.handle({
+      id: "key-down",
+      device: "keyboard",
+      code: "KeyD",
+      phase: "pressed",
+      timestamp: 1
+    });
+    configured.host.tick(16, 17);
+
+    expect(emitted).toEqual(["camera.pan_right:pressed:1", "camera.pan_right:held:17"]);
+    expect(runtimeTicks).toEqual([16]);
   });
 
   it("boots the standard UI service with panels and snapshot access", async () => {
@@ -524,6 +619,9 @@ function createLifecycleBinding(
       },
       start() {
         calls.push(`${id}.start`);
+      },
+      tick(_ctx, frame) {
+        calls.push(`${id}.tick:${frame.delta}:${frame.timestamp}`);
       },
       stop() {
         calls.push(`${id}.stop`);

@@ -20,9 +20,12 @@ export function updateSandboxHud(
   state: SandboxWorkbenchState
 ): void {
   handles.latestSandbox = sandbox;
+  handles.latestWorkbenchState = { ...state };
+  const selectionCleared = state.selectionCleared === true;
   const snapshot = sandbox.snapshot({
-    selectedActorId: state.selectedActorId,
-    selectedEntityId: state.selectedEntityId
+    selectedActorId: selectionCleared ? undefined : state.selectedActorId,
+    selectedEntityId: selectionCleared ? undefined : state.selectedEntityId,
+    defaultSelection: !selectionCleared
   });
   const clock = snapshot.clock;
 
@@ -42,6 +45,7 @@ export function updateSandboxHud(
   if (shouldRenderWorkbench(handles)) {
     renderInspector(handles, sandbox, state);
     renderTimeline(handles, sandbox, state);
+    handles.latestWorkbenchState = { ...state };
   }
 }
 
@@ -104,19 +108,23 @@ function shouldRenderWorkbench(handles: SandboxUiHandles): boolean {
 }
 
 function readWorkbenchState(handles: SandboxUiHandles): SandboxWorkbenchState {
+  const previous = handles.latestWorkbenchState;
   const activeInspectorTab =
     handles.inspectorTabs.find((tab) => tab.classList.contains("is-active"))?.dataset
-      .inspectorTab ?? "actor";
+      .inspectorTab ??
+    previous?.activeInspectorTab ??
+    "actor";
   const timelineFilter =
     handles.timelineFilters.find((filter) => filter.classList.contains("is-active"))?.dataset
-      .timelineFilter ?? "all";
-
-  const selectedActorText = handles.selectedActor.textContent;
+      .timelineFilter ??
+    previous?.timelineFilter ??
+    "all";
 
   return {
-    selectedActorId:
-      selectedActorText && selectedActorText !== "none" ? selectedActorText : undefined,
-    selectedEntityId: handles.latestSandbox?.snapshot().selected?.entityId,
+    selectedActorId: previous?.selectedActorId,
+    selectedEntityId: previous?.selectedEntityId,
+    selectionCleared: previous?.selectionCleared,
+    followedEntityId: previous?.followedEntityId,
     activeInspectorTab: activeInspectorTab as SandboxWorkbenchState["activeInspectorTab"],
     timelineFilter: timelineFilter as SandboxWorkbenchState["timelineFilter"]
   };

@@ -1,14 +1,15 @@
 import { createAppConfigRuntime } from "./config-runtime";
 import { createAppDiagnostics } from "./diagnostics";
-import { runLifecycleStage } from "./lifecycle-coordinator";
+import { runLifecycleStage, runLifecycleTick } from "./lifecycle-coordinator";
 import { createAppServiceRegistry } from "./service-registry";
 import type { AppHost, AppHostContext, AppLifecyclePhase, CreateAppHostOptions } from "./types";
 
 export function createAppHost(options: CreateAppHostOptions): AppHost {
   let phase: AppLifecyclePhase = "registered";
+  const clock = options.clock ?? (() => Date.now());
   const services = createAppServiceRegistry();
   const config = createAppConfigRuntime(options.configSources);
-  const diagnostics = createAppDiagnostics({ clock: options.clock });
+  const diagnostics = createAppDiagnostics({ clock });
 
   for (const binding of options.services ?? []) {
     services.register(binding);
@@ -40,6 +41,12 @@ export function createAppHost(options: CreateAppHostOptions): AppHost {
         source: "app-host",
         payload: { hostId: host.id }
       });
+    },
+    tick(delta, timestamp = clock()) {
+      if (phase !== "started") {
+        return;
+      }
+      runLifecycleTick(services, createContext(host), { delta, timestamp });
     },
     async stop() {
       phase = "stopping";

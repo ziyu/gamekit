@@ -19,7 +19,8 @@ import type {
   InputBinding,
   InputContext,
   InputContextId,
-  InputRouter
+  InputRouter,
+  NormalizedInputEvent
 } from "./types";
 
 export type CreateInputRouterOptions = {
@@ -31,6 +32,8 @@ export function createInputRouter(options: CreateInputRouterOptions = {}): Input
   const actionBindings = new Map<InputActionId, InputBinding[]>();
   const contexts = new Map<InputContextId, InputContext>();
   const listeners = new Set<InputActionListener>();
+  const activeActions = new Map<string, InputActionEvent>();
+  let heldSequence = 0;
 
   for (const context of options.defaultContexts ?? [DEFAULT_GLOBAL_CONTEXT]) {
     contexts.set(context.id, { ...context });
@@ -118,6 +121,7 @@ export function createInputRouter(options: CreateInputRouterOptions = {}): Input
         for (const event of contextEvents) {
           emitted.push(event);
           emittedActionIds.add(event.actionId);
+          updateActiveAction(activeActions, event, actionBindings.get(event.actionId) ?? []);
           for (const listener of listeners) {
             listener(event);
           }
@@ -128,7 +132,36 @@ export function createInputRouter(options: CreateInputRouterOptions = {}): Input
         }
       }
 
+      clearReleasedInputs(activeActions, input);
       return emitted;
+    },
+    tick(frame) {
+      const events: InputActionEvent[] = [];
+
+      for (const active of activeActions.values()) {
+        const input: NormalizedInputEvent = {
+          ...active.input,
+          id: `${active.input.id}:held:${++heldSequence}`,
+          phase: "held",
+          timestamp: frame.timestamp
+        };
+        const event: InputActionEvent = {
+          ...active,
+          id: createInputActionEventId(input, active.actionId),
+          phase: "held",
+          value: inputValue(input),
+          input,
+          timestamp: frame.timestamp
+        };
+
+        activeActions.set(activeActionKey(event), event);
+        events.push(event);
+        for (const listener of listeners) {
+          listener(event);
+        }
+      }
+
+      return events;
     },
     onAction(listener) {
       listeners.add(listener);
@@ -162,6 +195,62 @@ function actionAcceptsInputScope(
   }
 
   return input.scope !== undefined && action.scopes.includes(input.scope);
+}
+
+function updateActiveAction(
+  activeActions: Map<string, InputActionEvent>,
+  event: InputActionEvent,
+  bindings: InputBinding[]
+): void {
+  const key = activeActionKey(event);
+  if (event.phase === "pressed" || event.phase === "held") {
+    if (actionSupportsHeld(bindings, event.input)) {
+      activeActions.set(key, event);
+    }
+    return;
+  }
+
+  if (event.phase === "released" || event.phase === "cancelled") {
+    activeActions.delete(key);
+  }
+}
+
+function actionSupportsHeld(bindings: InputBinding[], input: NormalizedInputEvent): boolean {
+  return bindings.some((binding) =>
+    matchesInputBinding(binding, {
+      ...input,
+      phase: "held"
+    })
+  );
+}
+
+function clearReleasedInputs(
+  activeActions: Map<string, InputActionEvent>,
+  input: { phase: string; device: string; code?: string; button?: string; pointerId?: string }
+): void {
+  if (input.phase !== "released" && input.phase !== "cancelled") {
+    return;
+  }
+
+  const inputKey = inputIdentity(input);
+  for (const [key, event] of activeActions) {
+    if (inputIdentity(event.input) === inputKey) {
+      activeActions.delete(key);
+    }
+  }
+}
+
+function activeActionKey(event: InputActionEvent): string {
+  return `${event.contextId}:${event.actionId}:${inputIdentity(event.input)}`;
+}
+
+function inputIdentity(input: {
+  device: string;
+  code?: string;
+  button?: string;
+  pointerId?: string;
+}): string {
+  return `${input.device}:${input.code ?? ""}:${input.button ?? ""}:${input.pointerId ?? ""}`;
 }
 
 function updateContext(
