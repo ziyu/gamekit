@@ -22,6 +22,7 @@ export type SandboxWorkbenchState = {
   selectedEntityId?: string | number | undefined;
   selectionCleared?: boolean | undefined;
   followedEntityId?: string | number | undefined;
+  saveStatus?: string | undefined;
   activeInspectorTab: SandboxInspectorTab;
   timelineFilter: SandboxTimelineFilter;
 };

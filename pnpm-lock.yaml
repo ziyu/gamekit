@@ -84,6 +84,9 @@ importers:
       '@gamekit/renderer-core':
         specifier: workspace:*
         version: link:../../packages/renderer-core
+      '@gamekit/save':
+        specifier: workspace:*
+        version: link:../../packages/save
       '@gamekit/tca':
         specifier: workspace:*
         version: link:../../packages/tca
@@ -151,6 +154,9 @@ importers:
       '@gamekit/renderer-core':
         specifier: workspace:*
         version: link:../renderer-core
+      '@gamekit/save':
+        specifier: workspace:*
+        version: link:../save
       '@gamekit/tca':
         specifier: workspace:*
         version: link:../tca
@@ -345,6 +351,15 @@ importers:
       '@gamekit/test-utils':
         specifier: workspace:*
         version: link:../test-utils
+
+  packages/save:
+    dependencies:
+      '@gamekit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@gamekit/platform-core':
+        specifier: workspace:*
+        version: link:../platform-core
 
   packages/tca:
     dependencies:

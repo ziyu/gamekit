@@ -15,6 +15,7 @@ import { createDomInputAdapter } from "@gamekit/input-dom";
 import type { PlatformRuntime } from "@gamekit/platform-core";
 import { createWebPlatform } from "@gamekit/platform-web";
 import type { RendererAdapter, RendererBootContext } from "@gamekit/renderer-core";
+import { createPlatformStorageSaveStore, type SaveManager } from "@gamekit/save";
 import { createTcaTraceStore, mergeTcaDefinitionSets } from "@gamekit/tca";
 import type { UiRuntime } from "@gamekit/ui-core";
 import { createKootaWorld } from "@gamekit/world-koota";
@@ -22,6 +23,7 @@ import { createSandboxCameraController } from "./camera";
 import {
   createSandboxDataRegistry,
   createSandboxRuntime,
+  createSandboxSaveContributor,
   SANDBOX_RENDER_SIZE,
   type SandboxRuntime
 } from "./game";
@@ -47,6 +49,7 @@ export type SandboxAppContext = {
   inputRouter?: InputRouter | undefined;
   cameraController?: CameraController | undefined;
   gasRuntime?: GasRuntime | undefined;
+  saveManager?: SaveManager | undefined;
   sandbox?: SandboxRuntime | undefined;
 };
 
@@ -74,6 +77,7 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
       context.renderer = state.renderer;
       context.assetManager = state.assets;
       context.inputRouter = state.input;
+      context.saveManager = state.save;
       if (state.ui) {
         context.uiRuntime = state.ui;
       }
@@ -223,6 +227,23 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
           refs.sandbox = sandbox;
           context.sandbox = sandbox;
           return sandbox.runtime;
+        }
+      },
+      save: {
+        store: createPlatformStorageSaveStore({
+          storage: platform.services.storage,
+          prefix: "sandbox.tiny-camp.save"
+        }),
+        formatVersion: "1.0.0",
+        gameVersion: "0.1.0",
+        serviceContext: {
+          include: ["data", "assets", "game"]
+        },
+        contributorPolicy: {
+          excludeScopes: ["presentation", "debug", "cache", "ui"]
+        },
+        contributors({ context }) {
+          return context.sandbox ? [createSandboxSaveContributor(context.sandbox)] : [];
         }
       }
     }

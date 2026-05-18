@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { createEventBus } from "@gamekit/event-bus";
+import { GasAttributes } from "@gamekit/gas";
+import { createMemorySaveStore, createSaveManager } from "@gamekit/save";
 import { createMemoryRenderer } from "@gamekit/test-utils";
 import { createKootaWorld } from "@gamekit/world-koota";
-import { createSandboxDataRegistry, createSandboxRuntime } from "./sandbox-game";
+import {
+  createSandboxDataRegistry,
+  createSandboxRuntime,
+  createSandboxSaveContributor,
+  ResourceStorage,
+  Selectable,
+  SANDBOX_SAVE_CONTRIBUTOR_ID,
+  SANDBOX_SAVE_SLOT_ID
+} from "./sandbox-game";
+import type { SandboxSaveData } from "./sandbox-game";
 
 type TestSandboxRuntimeOptions = Omit<
   Parameters<typeof createSandboxRuntime>[0],
@@ -201,6 +212,134 @@ describe("sandbox runtime", () => {
     expect(campfire?.building?.zone).toBe("camp");
     expect(campfire?.objective?.phaseId).toBe("objective.sandbox.phase.bootstrap");
     expect(snapshot.objective.progress).toBeGreaterThan(0);
+  });
+
+  it("saves and loads Tiny Camp gameplay state through the save contributor", async () => {
+    const sandbox = createTestSandboxRuntime("sandbox-save-seed");
+    const manager = createSaveManager({
+      appId: "sandbox",
+      gameId: "sandbox",
+      gameVersion: "0.1.0",
+      formatVersion: "1.0.0",
+      store: createMemorySaveStore()
+    });
+    manager.registerContributor(createSandboxSaveContributor(sandbox));
+
+    sandbox.runtime.start();
+    for (let i = 0; i < 18; i += 1) {
+      sandbox.runtime.tick(100);
+    }
+    const savedSnapshot = sandbox.snapshot();
+    const savedCampfire = savedSnapshot.entities.find((entity) => entity.role === "campfire");
+    const savedWorker = savedSnapshot.entities.find((entity) => entity.role === "worker");
+    const savedWorkerGas = savedSnapshot.gasActors.find(
+      (actor) => actor.actor.actorId === savedWorker?.actorId
+    );
+    expect(savedCampfire).toBeDefined();
+    expect(savedWorker).toBeDefined();
+    expect(savedWorkerGas).toBeDefined();
+    sandbox.runtime.world.set(savedWorker!.id, Selectable, { order: 1, selected: true });
+
+    const saved = await manager.save(SANDBOX_SAVE_SLOT_ID, {
+      runtime: {
+        seed: "sandbox-save-seed",
+        clock: savedSnapshot.clock
+      }
+    });
+    const section = saved.envelope.payload.sections[SANDBOX_SAVE_CONTRIBUTOR_ID];
+    expect(section).toBeDefined();
+    const savedData = section!.data as SandboxSaveData;
+    expect(savedData.entities.some((entity) => "selectable" in entity)).toBe(false);
+
+    sandbox.runtime.world.set(savedCampfire!.id, ResourceStorage, { resource: 999 });
+    sandbox.runtime.world.set(savedWorker!.id, Selectable, { order: 1, selected: false });
+    sandbox.runtime.world.set(savedWorker!.id, GasAttributes, {
+      current: {
+        ...savedWorkerGas!.attributes.current,
+        health: 5
+      }
+    });
+    expect(
+      sandbox.snapshot().gasActors.find((actor) => actor.actor.actorId === savedWorker?.actorId)
+        ?.attributes.current.health
+    ).toBe(5);
+
+    await manager.load(SANDBOX_SAVE_SLOT_ID);
+    sandbox.runtime.clock.restore({
+      elapsed: savedSnapshot.clock.elapsed,
+      ticks: savedSnapshot.clock.ticks,
+      running: sandbox.runtime.isRunning()
+    });
+    const loadedSnapshot = sandbox.snapshot();
+    const loadedCampfire = loadedSnapshot.entities.find(
+      (entity) => entity.objectId === savedCampfire?.objectId
+    );
+    const loadedWorker = loadedSnapshot.entities.find(
+      (entity) => entity.objectId === savedWorker?.objectId
+    );
+
+    expect(loadedCampfire?.resource).toBe(savedCampfire?.resource);
+    expect(loadedCampfire?.objective?.progressResources).toBe(
+      savedCampfire?.objective?.progressResources
+    );
+    expect(loadedWorker?.task).toBe(savedWorker?.task);
+    expect(sandbox.runtime.world.get(savedWorker!.id, Selectable)?.selected).toBe(false);
+    expect(loadedSnapshot.gasActors).toEqual(savedSnapshot.gasActors);
+    expect(loadedSnapshot.clock.ticks).toBe(savedSnapshot.clock.ticks);
+    expect(loadedSnapshot.clock.elapsed).toBe(savedSnapshot.clock.elapsed);
+    expect(loadedSnapshot.events.map((event) => event.type)).toContain("sandbox.save_restored");
+  });
+
+  it("does not save selected targets or confirm interaction transients", async () => {
+    const sandbox = createTestSandboxRuntime("sandbox-save-transient-seed");
+    const manager = createSaveManager({
+      appId: "sandbox",
+      gameId: "sandbox",
+      gameVersion: "0.1.0",
+      formatVersion: "1.0.0",
+      store: createMemorySaveStore()
+    });
+    manager.registerContributor(createSandboxSaveContributor(sandbox));
+
+    sandbox.runtime.start();
+    sandbox.runtime.tick(16);
+    const worker = sandbox.snapshot().entities.find((entity) => entity.role === "worker");
+    expect(worker).toBeDefined();
+
+    sandbox.runtime.world.set(worker!.id, Selectable, { order: 1, selected: true });
+    sandbox.runtime.eventBus.emit(
+      "input.action",
+      { actionId: "game.confirm", contextId: "gameplay", phase: "pressed", value: 1 },
+      "test"
+    );
+    expect(
+      sandbox.snapshot().gasActors.some((actor) => actor.tags.values.includes("state.overcharged"))
+    ).toBe(true);
+
+    const saved = await manager.save(SANDBOX_SAVE_SLOT_ID, {
+      runtime: {
+        seed: "sandbox-save-transient-seed",
+        clock: sandbox.snapshot().clock
+      }
+    });
+    const section = saved.envelope.payload.sections[SANDBOX_SAVE_CONTRIBUTOR_ID];
+    expect(section).toBeDefined();
+    const savedData = section!.data as SandboxSaveData;
+
+    expect(savedData.entities.some((entity) => "selectable" in entity)).toBe(false);
+    expect(
+      savedData.gasActors.some((actor) => actor.tags.values.includes("state.overcharged"))
+    ).toBe(false);
+    expect(
+      savedData.gasActors.some((actor) =>
+        actor.effects.active.some(
+          (effect) =>
+            effect.effectId === "gas.effect.sandbox.overcharge_regen" ||
+            effect.effectId === "gas.effect.sandbox.campfire_boost" ||
+            effect.grantedTags.includes("state.overcharged")
+        )
+      )
+    ).toBe(false);
   });
 
   it("syncs renderable entities to the renderer", async () => {

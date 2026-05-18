@@ -700,11 +700,74 @@
 
 模块设计：`docs/modules/save.md`
 
+当前状态：首轮垂直切片已实现并完成一次边界修正。已新增 `@gamekit/save` 核心协议、JSON codec、memory/platform storage store、migration registry、SaveManager、contributor policy / selection、App Host `services.save` 标准入口、可配置 contributor service context 和基础测试。Sandbox 已接入本地 storage slot、Host tab Save/Load 交互和 Tiny Camp gameplay contributor，可验证保存后修改状态再加载恢复。World/GAS/TCA/Camera 的通用标准 contributor helper 仍属于本阶段后续实现。
+
 预期新增：
 
 - `@gamekit/save`
-- SaveGame schema
-- migration registry
+- Save envelope / payload / slot metadata
+- SaveManager
+- SaveStore / SaveCodec
+- SaveContributor protocol
+- Migration registry
+- Memory / Platform-backed store
+- App Host `services.save`
+- Save diagnostics / snapshot
+
+设计原则：
+
+- Save 是框架级能力，不是某个 demo 的存档脚本。
+- `@gamekit/save` 定义协议、manager、store、codec、migration 和 contributor registry，不直接依赖 GAS、TCA、Camera、Renderer、React、Koota、Phaser 或具体游戏。
+- GAS、TCA、Camera 和具体游戏通过 SaveContributor 注册 capture / restore 行为。
+- Platform 提供 storage / file 能力；Save 不直接调用 localStorage、Tauri FS 或浏览器私有 API。
+- Data / Asset / Content Package 通过 id、version 和 compatibility metadata 参与恢复，不把完整 DataPack、Asset binary 或 Content package payload 嵌入普通存档。
+- 保存 runtime/gameplay 长期状态，不保存 renderer native handle、React component state、adapter cache 或每帧临时状态。
+
+任务拆分：
+
+1. Save Core 协议
+   - 新增 `@gamekit/save`。
+   - 定义 `SaveEnvelope`、`SavePayload`、`SaveSection`、`SaveSlotMetadata`、`SaveCompatibilityMetadata`。
+   - 定义稳定错误码、diagnostic 结构和 snapshot 模型。
+   - 提供 JSON codec，默认可读、可迁移、可 checksum。
+
+2. Store / Codec
+   - 实现 `SaveStore` 协议：list/read/write/delete/exists。
+   - 实现 `MemorySaveStore` 用于测试。
+   - 实现基于 PlatformStorage 或 PlatformFileSystem 的 store。
+   - 明确默认路径：`appData/saves`，写入支持临时文件/替换语义，失败不破坏旧存档。
+
+3. Contributor Registry
+   - 实现 `SaveContributor` 注册、排序、capture、restore、validate。
+   - 支持 required / optional section 语义。
+   - Contributor 使用 id、scope、tags 描述保存范围，SaveManager 支持全局 policy 和单次 save/load selection。
+   - Capture/restore context 默认只暴露 Data、Asset 和 GameRuntime；其他 Host service 必须由 profile 显式 opt-in，避免保存逻辑依赖 renderer/input/UI/platform 私有对象。
+   - Restore 支持 entity remap，供 World/GAS/TCA 等 section 恢复引用。
+
+4. Migration Registry
+   - 实现 `SaveMigrationRegistry`。
+   - 支持 from/to migration plan。
+   - 缺失迁移路径、未知版本、迁移失败给出稳定错误。
+   - 至少提供一个旧版本 envelope 到当前版本的迁移测试样例。
+
+5. Standard Contributors
+   - 实现或预留基础 runtime contributor：seed、clock、rng state。
+   - 实现 world contributor 的最小协议：只保存显式声明可保存的 component，不保存 ECS adapter 内部状态。
+   - 让 GAS/TCA 在各自包中提供 save contributor helper，避免 `@gamekit/save` 直接依赖它们。
+   - Camera/UI 状态作为 optional contributor，默认只保存可恢复的用户视角或 UI layout，不保存组件实例。
+
+6. App Host 集成
+   - App Host 增加可选标准 `services.save`。
+   - Profile 可配置 store、codec、format version、contributor policy、service context、autosave strategy 和 contributor helper。
+   - Host diagnostics 展示 save service phase、slots、最近 save/load 结果、migration 和 compatibility issue。
+   - Headless Host fixture 支持 MemorySaveStore。
+
+7. Integration Verification
+   - 固定 seed runtime tick N 次后保存。
+   - 新 runtime load 后继续 tick M 次。
+   - 与未中断 runtime snapshot 对比。
+   - 覆盖 corrupted save、missing slot、unsupported version、missing migration、missing contributor、missing data/asset compatibility。
+   - Sandbox 只做最小验证入口：Host tab 可保存当前 runtime gameplay 状态到本地 storage，并可加载回当前 Tiny Camp runtime，证明基础状态恢复；不继续扩展玩法。
 
 完成定义：
 
@@ -712,6 +775,12 @@
 - Save 通过 PlatformStorage / PlatformFileSystem，不直接依赖 localStorage 或 Tauri FS。
 - 缺失/未知版本能给出明确错误。
 - migration 至少有一个测试样例。
+- `@gamekit/save` 不依赖 Phaser、React、Koota、Tauri adapter、GAS/TCA 具体实现或具体 app。
+- SaveManager 支持 slot list/save/load/delete/inspect/snapshot。
+- Contributor capture/restore 顺序可配置、可测试，失败能定位到 contributor 和 section。
+- World/GAS/TCA 等状态通过 contributor 恢复，renderer native handle 和 React state 不进入 payload。
+- App Host 可以通过 `services.save` 管理 save lifecycle 和 diagnostics。
+- `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 通过。
 
 ## Phase 14：DevTools
 

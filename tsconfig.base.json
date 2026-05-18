@@ -42,6 +42,7 @@
       "@gamekit/gas": ["packages/gas/src/index.ts"],
       "@gamekit/ui-core": ["packages/ui-core/src/index.ts"],
       "@gamekit/react-ui": ["packages/react-ui/src/index.ts"],
+      "@gamekit/save": ["packages/save/src/index.ts"],
       "@gamekit/test-utils": ["packages/test-utils/src/index.ts"]
     }
   }

@@ -8,6 +8,16 @@ import type { GameInstallContext, GameRuntime } from "@gamekit/game-runtime";
 import type { InputDevice, InputRouter, InputSourceAdapter } from "@gamekit/input-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
 import type { RendererAdapter, RendererBootContext } from "@gamekit/renderer-core";
+import type {
+  SaveCodec,
+  SaveCompatibilityMetadata,
+  SaveContributor,
+  SaveContributorPolicy,
+  SaveManager,
+  SaveMigrationRegistry,
+  SaveStore,
+  SaveVersion
+} from "@gamekit/save";
 import type { TcaDefinitionSet, TcaTraceStore, TcaRuntime } from "@gamekit/tca";
 import type { UiRuntime } from "@gamekit/ui-core";
 import type {
@@ -15,7 +25,7 @@ import type {
   AppServiceFactory,
   AppServiceFactoryContext
 } from "../definition/types";
-import type { AppConfigSource } from "../runtime/types";
+import type { AppConfigSource, AppStandardServiceId } from "../runtime/types";
 
 export type StandardAppServiceState = {
   platform?: PlatformRuntime;
@@ -26,6 +36,7 @@ export type StandardAppServiceState = {
   input?: InputRouter;
   game?: GameRuntime;
   ui?: UiRuntime;
+  save?: SaveManager;
 };
 
 export type StandardServiceBuildContext<TContext> = Omit<
@@ -55,6 +66,7 @@ export type StandardAppProfileOptions<TContext> = {
   input?: StandardInputOptions<TContext> | undefined;
   game?: StandardGameOptions<TContext> | undefined;
   ui?: StandardUiOptions<TContext> | undefined;
+  save?: StandardSaveOptions<TContext> | undefined;
 };
 
 export type StandardValue<TValue, TContext> =
@@ -118,6 +130,32 @@ export type StandardUiOptions<TContext> = {
     tags?: string[];
   }>;
   openPanels?(ctx: StandardServiceBuildContext<TContext>): string[] | undefined;
+};
+
+export type StandardSaveOptions<TContext> = {
+  manager?: StandardValue<SaveManager, TContext> | undefined;
+  store?: StandardValue<SaveStore, TContext> | undefined;
+  codec?: StandardValue<SaveCodec, TContext> | undefined;
+  migrations?: StandardValue<SaveMigrationRegistry, TContext> | undefined;
+  serviceContext?: StandardValue<StandardSaveServiceContextOptions, TContext> | undefined;
+  contributorPolicy?: StandardValue<SaveContributorPolicy, TContext> | undefined;
+  contributors?(
+    ctx: StandardServiceBuildContext<TContext>,
+    manager: SaveManager
+  ): SaveContributor[];
+  appId?: StandardValue<string, TContext> | undefined;
+  gameId?: StandardValue<string, TContext> | undefined;
+  gameVersion?: StandardValue<string, TContext> | undefined;
+  formatVersion: StandardValue<SaveVersion, TContext>;
+  compatibility?: StandardValue<SaveCompatibilityMetadata, TContext> | undefined;
+};
+
+export type StandardSaveServiceContextKey = Exclude<AppStandardServiceId, "save">;
+
+export type StandardSaveServiceContextOptions = {
+  include?: StandardSaveServiceContextKey[] | undefined;
+  exclude?: StandardSaveServiceContextKey[] | undefined;
+  extra?: Record<string, unknown> | undefined;
 };
 
 export type StandardGameOptions<TContext> = {

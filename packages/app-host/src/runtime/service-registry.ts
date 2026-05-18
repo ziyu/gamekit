@@ -6,6 +6,7 @@ import {
   INPUT_SERVICE,
   PLATFORM_SERVICE,
   RENDERER_SERVICE,
+  SAVE_SERVICE,
   UI_SERVICE
 } from "./standard-keys";
 import { createDuplicateServiceError, createMissingServiceError } from "./errors";
@@ -130,6 +131,9 @@ function assignStandardService(
   if (standard === "ui") {
     registry.ui = binding.service as never;
   }
+  if (standard === "save") {
+    registry.save = binding.service as never;
+  }
 }
 
 function deleteStandardService(registry: AppServiceRegistry, standard: AppStandardServiceId): void {
@@ -160,6 +164,9 @@ function standardFromKey(key: AppServiceKey<unknown>): AppStandardServiceId | un
   }
   if (key.id === UI_SERVICE.id) {
     return "ui";
+  }
+  if (key.id === SAVE_SERVICE.id) {
+    return "save";
   }
 
   return undefined;

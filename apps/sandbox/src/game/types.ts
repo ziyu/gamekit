@@ -3,7 +3,17 @@ import type { GasActorRuntimeState, GasTraceEntry, GasTraceStore } from "@gameki
 import type { GameRuntime } from "@gamekit/game-runtime";
 import type { TcaTraceEntry, TcaTraceStore } from "@gamekit/tca";
 import type { EntityId } from "@gamekit/world";
-import type { SandboxSceneRole } from "./components";
+import type {
+  SandboxBuildingState,
+  SandboxLinkState,
+  SandboxObjectiveState,
+  SandboxProductionState,
+  SandboxResourceStorage,
+  SandboxSceneObject,
+  SandboxSceneRole,
+  SandboxThreatState,
+  SandboxWorkAssignment
+} from "./components";
 
 export type SandboxEntitySnapshot = {
   id: EntityId;
@@ -125,5 +135,27 @@ export type SandboxRuntime = {
   tcaTraceStore: TcaTraceStore;
   gasTraceStore: GasTraceStore;
   resolveEntityPosition(entityId: EntityId): { x: number; y: number } | undefined;
+  captureSaveData(): SandboxSaveData;
+  restoreSaveData(data: SandboxSaveData): void;
   snapshot(options?: SandboxSnapshotOptions): SandboxSnapshot;
+};
+
+export type SandboxSaveData = {
+  version: "1.0.0";
+  entities: SandboxSavedEntity[];
+  gasActors: GasActorRuntimeState[];
+};
+
+export type SandboxSavedEntity = {
+  objectId: string;
+  sceneObject: SandboxSceneObject;
+  position?: { x: number; y: number } | undefined;
+  velocity?: { x: number; y: number } | undefined;
+  storage?: SandboxResourceStorage | undefined;
+  building?: SandboxBuildingState | undefined;
+  production?: SandboxProductionState | undefined;
+  work?: SandboxWorkAssignment | undefined;
+  objective?: SandboxObjectiveState | undefined;
+  threat?: SandboxThreatState | undefined;
+  link?: SandboxLinkState | undefined;
 };

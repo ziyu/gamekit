@@ -11,6 +11,7 @@ import {
 } from "./app-input";
 import { sandboxAppDefinition } from "./app-definition";
 import { createSandboxWebProfile, type SandboxAppContext } from "./app-profile";
+import { SANDBOX_SAVE_SLOT_ID } from "./game";
 import { resolveSandboxSceneClickTarget } from "./scene-hit-test";
 import {
   applySandboxSceneClickSelection,
@@ -66,6 +67,12 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
     },
     onStopFollow() {
       context.sandbox?.runtime.eventBus.emit("camera.stop_follow", {}, "sandbox.inspector");
+    },
+    onSave() {
+      void saveSandbox(context, workbench, refreshWorkbench);
+    },
+    onLoad() {
+      void loadSandbox(context, workbench, refreshWorkbench);
     },
     onSceneOverlayInput(event) {
       routeSandboxSceneOverlayInput(context, event);
@@ -133,6 +140,89 @@ function requireSandboxContext<TValue>(value: TValue | undefined, name: string):
   }
 
   return value;
+}
+
+async function saveSandbox(
+  context: SandboxAppContext,
+  workbench: ReturnType<typeof createSandboxWorkbenchState>,
+  refreshWorkbench: () => void
+): Promise<void> {
+  if (!context.sandbox || !context.saveManager) {
+    workbench.saveStatus = "save unavailable";
+    refreshWorkbench();
+    return;
+  }
+
+  workbench.saveStatus = "saving...";
+  refreshWorkbench();
+  try {
+    const clock = context.sandbox.runtime.clock.snapshot();
+    await context.saveManager.save(SANDBOX_SAVE_SLOT_ID, {
+      runtime: {
+        seed: "tiny-camp-dev-seed",
+        clock: {
+          ticks: clock.ticks,
+          elapsed: clock.elapsed
+        }
+      },
+      metadata: {
+        label: "Tiny Camp Local",
+        description: "Sandbox local save",
+        playtimeMs: clock.elapsed,
+        tags: ["sandbox", "tiny-camp"]
+      }
+    });
+    context.sandbox.runtime.eventBus.emit("sandbox.save_completed", {}, "sandbox.ui");
+    workbench.saveStatus = `saved tick ${clock.ticks}`;
+  } catch (error) {
+    workbench.saveStatus = `save failed: ${readErrorMessage(error)}`;
+  }
+  refreshWorkbench();
+}
+
+async function loadSandbox(
+  context: SandboxAppContext,
+  workbench: ReturnType<typeof createSandboxWorkbenchState>,
+  refreshWorkbench: () => void
+): Promise<void> {
+  if (!context.sandbox || !context.saveManager) {
+    workbench.saveStatus = "load unavailable";
+    refreshWorkbench();
+    return;
+  }
+
+  workbench.saveStatus = "loading...";
+  refreshWorkbench();
+  try {
+    const wasRunning = context.sandbox.runtime.isRunning();
+    const result = await context.saveManager.load(SANDBOX_SAVE_SLOT_ID);
+    context.sandbox.runtime.clock.restore({
+      elapsed: result.envelope.payload.runtime.clock.elapsed,
+      ticks: result.envelope.payload.runtime.clock.ticks,
+      running: wasRunning
+    });
+    context.sandbox.runtime.eventBus.emit(
+      "sandbox.load_completed",
+      {
+        migrated: result.migrated,
+        ticks: result.envelope.payload.runtime.clock.ticks
+      },
+      "sandbox.ui"
+    );
+    workbench.selectedActorId = undefined;
+    workbench.selectedEntityId = undefined;
+    workbench.followedEntityId = undefined;
+    workbench.selectionCleared = true;
+    context.sandbox.runtime.eventBus.emit("camera.stop_follow", {}, "sandbox.load");
+    workbench.saveStatus = `loaded ${result.envelope.slot.label ?? result.slotId} · tick ${result.envelope.payload.runtime.clock.ticks}`;
+  } catch (error) {
+    workbench.saveStatus = `load failed: ${readErrorMessage(error)}`;
+  }
+  refreshWorkbench();
+}
+
+function readErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function resolveSceneClickSelection(

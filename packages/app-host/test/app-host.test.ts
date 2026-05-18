@@ -15,6 +15,7 @@ import { createEventBus } from "@gamekit/event-bus";
 import { createGasDataTypes, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
 import { createGame } from "@gamekit/game-runtime";
 import { createInputRouter } from "@gamekit/input-core";
+import { createMemorySaveStore } from "@gamekit/save";
 import { type GameWorld } from "@gamekit/world";
 import { createTcaRuleDataType } from "@gamekit/tca";
 import { createUiRuntime } from "@gamekit/ui-core";
@@ -153,6 +154,23 @@ describe("headless host", () => {
       "assets"
     ]);
   });
+
+  it("can expose an optional standard save service", async () => {
+    const host = createHeadlessHost({
+      id: "headless-save",
+      saveStore: createMemorySaveStore()
+    });
+
+    await host.boot();
+
+    expect(host.services.save).toBeDefined();
+    expect(host.snapshot().services.map((service) => service.id)).toEqual([
+      "data",
+      "renderer",
+      "assets",
+      "save"
+    ]);
+  });
 });
 
 describe("configured app host", () => {
@@ -232,6 +250,92 @@ describe("configured app host", () => {
 
     expect(configured.host.services.data).toBeDefined();
     expect(configured.host.snapshot().services.map((service) => service.id)).toEqual(["data"]);
+  });
+
+  it("builds a standard save service from a store", async () => {
+    const app = defineGameApp({
+      id: "standard-save",
+      services: [{ id: "save" }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        save: {
+          store: createMemorySaveStore(),
+          formatVersion: "1.0.0",
+          gameVersion: "0.1.0"
+        }
+      }
+    });
+
+    const configured = createConfiguredAppHost({
+      app,
+      profile,
+      context: {}
+    });
+
+    await configured.host.boot();
+
+    expect(configured.host.services.save).toBeDefined();
+    expect(configured.host.services.require({ id: "save" })).toBe(configured.host.services.save);
+    expect(configured.host.snapshot().services[0]).toMatchObject({
+      id: "save",
+      standard: "save"
+    });
+  });
+
+  it("exposes a configurable service context to save contributors", async () => {
+    const dataRegistry = createDataRegistry();
+    const capturedServices: Array<Record<string, unknown> | undefined> = [];
+    const app = defineGameApp({
+      id: "standard-save-context",
+      services: [{ id: "data" }, { id: "save", dependencies: ["data"] }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        data: {
+          registry: dataRegistry
+        },
+        save: {
+          store: createMemorySaveStore(),
+          formatVersion: "1.0.0",
+          gameVersion: "0.1.0",
+          serviceContext: {
+            include: ["data"],
+            extra: {
+              campaignId: "test-campaign"
+            }
+          }
+        }
+      }
+    });
+
+    const configured = createConfiguredAppHost({
+      app,
+      profile,
+      context: {}
+    });
+    await configured.host.boot();
+    configured.host.services.save?.registerContributor({
+      id: "game.progress",
+      version: "1.0.0",
+      capture(ctx) {
+        capturedServices.push(ctx.services);
+        return { id: "game.progress", version: "1.0.0", data: { day: 2 } };
+      }
+    });
+
+    await configured.host.services.save?.save("slot-1", {
+      runtime: {
+        seed: "standard-save-context",
+        clock: { ticks: 1, elapsed: 16 }
+      }
+    });
+
+    expect(capturedServices[0]?.data).toBe(dataRegistry);
+    expect(capturedServices[0]?.campaignId).toBe("test-campaign");
+    expect(capturedServices[0]).not.toHaveProperty("save");
   });
 
   it("ticks standard input and game services from the app host frame", async () => {

@@ -1,6 +1,7 @@
 import type { AppProfile, AppServiceFactory } from "../definition/types";
 import { createAssetManager } from "@gamekit/asset";
 import { createDriverRegistry } from "@gamekit/driver-core";
+import { createSaveManager } from "@gamekit/save";
 import type { AppServiceBinding } from "../runtime/types";
 import {
   ASSET_SERVICE,
@@ -10,6 +11,7 @@ import {
   INPUT_SERVICE,
   PLATFORM_SERVICE,
   RENDERER_SERVICE,
+  SAVE_SERVICE,
   UI_SERVICE
 } from "../runtime/standard-keys";
 import { createStandardContext, exposeStandardState } from "./context";
@@ -23,6 +25,8 @@ import { resolveStandardAdapter, resolveStandardValue } from "./resolve";
 import type {
   StandardAppServiceState,
   StandardInputOptions,
+  StandardSaveServiceContextKey,
+  StandardSaveServiceContextOptions,
   StandardServiceBuildContext
 } from "./types";
 import type { InputRouter, InputSourceAdapter } from "@gamekit/input-core";
@@ -354,6 +358,70 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
       }
     );
   },
+  save<TContext>(
+    profile: AppProfile<TContext>,
+    stateByContext: Map<TContext, StandardAppServiceState>
+  ) {
+    return createManagedStandardServiceFactory(
+      profile,
+      stateByContext,
+      profile.standard?.save,
+      (ctx, options) => {
+        let manager;
+        if (options.manager !== undefined) {
+          manager = resolveStandardValue(ctx, options.manager);
+        } else {
+          if (options.store === undefined) {
+            throw new Error("Standard save service requires manager or store");
+          }
+          manager = createSaveManager({
+            appId: resolveStandardValue(ctx, options.appId ?? ctx.app.id),
+            gameId: resolveStandardValue(ctx, options.gameId ?? ctx.app.id),
+            gameVersion: resolveStandardValue(ctx, options.gameVersion ?? "0.1.0"),
+            formatVersion: resolveStandardValue(ctx, options.formatVersion),
+            store: resolveStandardValue(ctx, options.store),
+            ...(options.contributorPolicy === undefined
+              ? {}
+              : { contributorPolicy: resolveStandardValue(ctx, options.contributorPolicy) }),
+            ...(options.codec === undefined
+              ? {}
+              : { codec: resolveStandardValue(ctx, options.codec) }),
+            ...(options.migrations === undefined
+              ? {}
+              : { migrations: resolveStandardValue(ctx, options.migrations) }),
+            ...(options.compatibility === undefined
+              ? {}
+              : { compatibility: resolveStandardValue(ctx, options.compatibility) }),
+            services: () =>
+              createSaveServiceContext(
+                ctx.state,
+                options.serviceContext === undefined
+                  ? undefined
+                  : resolveStandardValue(ctx, options.serviceContext)
+              )
+          });
+        }
+        ctx.state.save = manager;
+        for (const contributor of options.contributors?.(ctx, manager) ?? []) {
+          if (!manager.listContributors().some((registered) => registered.id === contributor.id)) {
+            manager.registerContributor(contributor);
+          }
+        }
+        return {
+          key: SAVE_SERVICE,
+          service: manager,
+          standard: "save",
+          lifecycle: {
+            id: SAVE_SERVICE.id,
+            dependencies: ctx.service.dependencies,
+            snapshot() {
+              return manager.snapshot();
+            }
+          }
+        };
+      }
+    );
+  },
   game<TContext>(
     profile: AppProfile<TContext>,
     stateByContext: Map<TContext, StandardAppServiceState>
@@ -423,6 +491,51 @@ function createManagedStandardServiceFactory<TContext, TOptions>(
     exposeStandardState(profile, standardCtx);
     return binding;
   };
+}
+
+const DEFAULT_SAVE_SERVICE_CONTEXT_KEYS: StandardSaveServiceContextKey[] = [
+  "data",
+  "assets",
+  "game"
+];
+
+const saveServiceContextResolvers: Record<
+  StandardSaveServiceContextKey,
+  (state: StandardAppServiceState) => unknown
+> = {
+  platform: (state) => state.platform,
+  drivers: (state) => state.drivers,
+  data: (state) => state.data,
+  assets: (state) => state.assets,
+  renderer: (state) => state.renderer,
+  input: (state) => state.input,
+  game: (state) => state.game,
+  ui: (state) => state.ui
+};
+
+function createSaveServiceContext(
+  state: StandardAppServiceState,
+  options: StandardSaveServiceContextOptions | undefined
+): Record<string, unknown> {
+  const services: Record<string, unknown> = {};
+  const include = new Set(options?.include ?? DEFAULT_SAVE_SERVICE_CONTEXT_KEYS);
+  const exclude = new Set(options?.exclude ?? []);
+
+  for (const key of include) {
+    if (exclude.has(key)) {
+      continue;
+    }
+    const value = saveServiceContextResolvers[key](state);
+    if (value !== undefined) {
+      services[key] = value;
+    }
+  }
+
+  if (options?.extra) {
+    Object.assign(services, options.extra);
+  }
+
+  return services;
 }
 
 function createDriverInputSources<TContext>(

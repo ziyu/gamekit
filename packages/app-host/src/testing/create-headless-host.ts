@@ -10,6 +10,7 @@ import type {
   RendererBootContext,
   RendererCapabilities
 } from "@gamekit/renderer-core";
+import type { SaveStore } from "@gamekit/save";
 import { createConfiguredAppHost } from "../definition/create-configured-app-host";
 import { defineGameApp } from "../definition/define-game-app";
 import type { AppHost, AppServiceBinding, CreateAppHostOptions } from "../runtime/types";
@@ -20,6 +21,7 @@ export type CreateHeadlessHostOptions = {
   types?: Array<DataTypeDefinition> | undefined;
   dataPacks?: DataPack[] | undefined;
   preloadGroups?: string[] | undefined;
+  saveStore?: SaveStore | undefined;
   services?: Array<AppServiceBinding> | undefined;
   configSources?: CreateAppHostOptions["configSources"] | undefined;
 };
@@ -39,6 +41,7 @@ export function createHeadlessHost(options: CreateHeadlessHostOptions = {}): App
       { id: "data" },
       { id: "renderer" },
       { id: "assets" },
+      ...(options.saveStore === undefined ? [] : [{ id: "save", dependencies: ["data"] }]),
       ...extensionServices.map((binding) => ({
         id: binding.key.id,
         dependencies: binding.lifecycle.dependencies
@@ -60,7 +63,18 @@ export function createHeadlessHost(options: CreateHeadlessHostOptions = {}): App
         manager: assets,
         dataRegistry: () => data,
         preloadGroups: () => options.preloadGroups
-      }
+      },
+      ...(options.saveStore === undefined
+        ? {}
+        : {
+            save: {
+              store: options.saveStore,
+              formatVersion: "1.0.0",
+              appId,
+              gameId: appId,
+              gameVersion: "0.1.0"
+            }
+          })
     },
     extensions: Object.fromEntries(
       extensionServices.map((binding) => [binding.key.id, () => binding])

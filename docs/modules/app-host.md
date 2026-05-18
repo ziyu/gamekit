@@ -56,7 +56,7 @@ App Host 管理应用级 lifecycle：
 
 GameRuntime 不直接拥有 driver、renderer、input、platform、asset、data。App Host 可以把这些能力作为 services 组合给 app、GameModule factory 或 bridge module 使用。
 
-Camera、TCA、GAS、gameplay save capture 等能力更接近游戏会话模块：它们通常需要读写 world、监听 EventBus、注册 system、理解 actor/rule/rig 等玩法上下文。App Host 可以提供 renderer/input/data 等依赖，但不应该把这些 gameplay runtime 直接做成默认标准服务。
+Camera、TCA、GAS、gameplay save capture 等能力更接近游戏会话模块：它们通常需要读写 world、监听 EventBus、注册 system、理解 actor/rule/rig 等玩法上下文。App Host 可以提供 renderer/input/data/save manager 等依赖，但不应该把这些 gameplay runtime 直接做成默认标准服务。
 
 App Host 可以提供标准 GameModule helper 来减少装配代码，例如 camera、TCA、GAS 的标准启动方式。这些 helper 属于应用组合便利层：它们可以读取 profile 参数、接入 services、注册 GameRuntime module，并把 renderer/input/data bridge 注入进去；但它们不把 gameplay 能力提升为 Host service。以 camera 为例，标准 helper 可以提供输入映射、平滑、renderer sync 和 follow target resolver，resolver 仍由 app/game context 提供，Host 不直接理解业务 entity 位置。
 
@@ -467,6 +467,7 @@ App Host 不应该把所有高层能力都变成 standard service。能力归属
 - AssetManager
 - RendererAdapter
 - Input source adapters / InputRouter
+- SaveManager / SaveStore / SaveCodec
 - UI shell / DevTools shell
 
 典型 Game Module：
@@ -474,10 +475,16 @@ App Host 不应该把所有高层能力都变成 standard service。能力归属
 - Camera controller / camera rig / camera input action
 - TCA runtime
 - GAS runtime
-- gameplay save capture / restore
+- gameplay save contributor / restore bridge
 - gameplay-specific UI bindings
 
 App Host 可以帮助 Game Module 无痛启动：`profile.standard.game.standardModules` 描述要启用的标准游戏模块，App Host 在创建 `game` service 时把这些模块解析成 `GameModule[]`，再传给 `game.createRuntime(ctx, modules)`。这些模块不是 App Service，不进入 Host service registry；它们的订阅、system 和 cleanup 仍跟随 GameRuntime lifecycle。
+
+Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务管理 slot、store、codec、migration 和 diagnostics；World、TCA、GAS、Camera 和具体游戏状态的 capture / restore 通过 SaveContributor 或标准 GameModule bridge 注册到 SaveManager。GameRuntime 不直接依赖 PlatformStorage、PlatformFileSystem 或 SaveStore。
+
+标准 Save service 不能把 Host 里的所有 service 无差别暴露给 contributor。App Host 应提供可配置 service context，默认只给 contributor 暴露 Data、Assets 和 GameRuntime，具体游戏可以显式 include/exclude 其他服务或追加 `campaignId`、`profileId` 这类轻量上下文。Renderer、Input、UI、Platform 等运行时对象只有在明确 opt-in 时才进入 contributor context，避免保存逻辑不小心依赖表现层或平台私有对象。
+
+标准 Save service 还应支持 contributor policy：app 可以按 contributor id、tag、scope 配置默认保存范围，单次 save/load 可以进一步选择范围。这样 autosave、checkpoint、debug snapshot、settings-only save 和 cloud sync 可以复用同一个 SaveManager，而不是复制多条保存流水线。
 
 标准游戏模块用于减少重复装配代码，但不能模糊边界：
 

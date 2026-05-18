@@ -42,7 +42,7 @@ export function renderInspector(
     return;
   }
   if (state.activeInspectorTab === "host") {
-    handles.inspectorBody.replaceChildren(renderHostTab(handles.latestHost));
+    handles.inspectorBody.replaceChildren(renderHostTab(handles.latestHost, state));
     return;
   }
 
@@ -218,25 +218,37 @@ function renderRulesTab(snapshot: SandboxSnapshot): HTMLElement {
   );
 }
 
-function renderHostTab(host: AppHost | undefined): HTMLElement {
+function renderHostTab(host: AppHost | undefined, state: SandboxWorkbenchState): DocumentFragment {
   const snapshot = host?.snapshot();
-  return createSection(
-    "App Host",
-    createKvList([
-      ["Phase", snapshot?.phase ?? "pending"],
-      ["Services", snapshot?.services.length ?? 0],
-      ["Diagnostics", snapshot?.diagnostics.length ?? 0]
-    ]),
-    createSummaryList(
-      (snapshot?.services ?? []).map((service) =>
-        createListItem(
-          createTextElement("code", service.id),
-          createTextElement("strong", service.phase),
-          createTextElement("span", `deps ${service.dependencies.length}`)
+  const fragment = document.createDocumentFragment();
+  fragment.append(
+    createSection(
+      "App Host",
+      createKvList([
+        ["Phase", snapshot?.phase ?? "pending"],
+        ["Services", snapshot?.services.length ?? 0],
+        ["Diagnostics", snapshot?.diagnostics.length ?? 0]
+      ]),
+      createSummaryList(
+        (snapshot?.services ?? []).map((service) =>
+          createListItem(
+            createTextElement("code", service.id),
+            createTextElement("strong", service.phase),
+            createTextElement("span", `deps ${service.dependencies.length}`)
+          )
         )
       )
+    ),
+    createSection(
+      "Local Save",
+      createKvList([
+        ["Slot", "tiny-camp.local"],
+        ["Status", state.saveStatus ?? "ready"]
+      ]),
+      createSaveActions()
     )
   );
+  return fragment;
 }
 
 function createSection(title: string, ...children: Node[]): HTMLElement {
@@ -299,6 +311,24 @@ function createInspectorActions(
   stopFollow.dataset.cameraStopFollow = "";
   stopFollow.textContent = "Free Camera";
   actions.append(stopFollow);
+  return actions;
+}
+
+function createSaveActions(): HTMLElement {
+  const actions = document.createElement("div");
+  actions.className = "inspector-actions";
+
+  const save = document.createElement("button");
+  save.type = "button";
+  save.dataset.saveAction = "save";
+  save.textContent = "Save Local";
+
+  const load = document.createElement("button");
+  load.type = "button";
+  load.dataset.saveAction = "load";
+  load.textContent = "Load Local";
+
+  actions.append(save, load);
   return actions;
 }
 

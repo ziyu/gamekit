@@ -281,6 +281,8 @@ export function bindSandboxWorkbenchControls(
     onChange: () => void;
     onFollowEntity?(entityId: string | number): void;
     onStopFollow?(): void;
+    onSave?(): void;
+    onLoad?(): void;
     onSceneOverlayInput?(event: MouseEvent | WheelEvent): void;
   }
 ): void {
@@ -415,6 +417,16 @@ export function bindSandboxWorkbenchControls(
       actions.onStopFollow?.();
       handles.lastWorkbenchRenderAt = undefined;
       actions.onChange();
+      return;
+    }
+
+    const saveActionButton = target.closest<HTMLButtonElement>("[data-save-action]");
+    if (saveActionButton?.dataset.saveAction === "save") {
+      actions.onSave?.();
+      return;
+    }
+    if (saveActionButton?.dataset.saveAction === "load") {
+      actions.onLoad?.();
     }
   });
 }

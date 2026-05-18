@@ -284,6 +284,25 @@ EventBus 只承载低频事实，例如 input action、rule fired、ability acti
 
 高频位置、动画和每帧表现不通过 EventBus。
 
+### Save
+
+Sandbox 需要以最小但正确的方式集成 Save，用来验证框架保存链路，而不是把 Tiny Camp 做成完整游戏存档系统。
+
+Sandbox Save 集成原则：
+
+- SaveManager 由 App Host `services.save` 提供，Sandbox 不直接创建 store、codec 或 migration pipeline。
+- Sandbox 的 gameplay 状态通过 contributor 注册，不能让 SaveManager 直接理解 Tiny Camp 组件。
+- 首轮只保存能证明确定性恢复的长期状态：runtime seed/clock、Tiny Camp objective progress、resource/building/worker/monster 的必要 world 状态、GAS actor 的长期运行态、TCA 低频规则状态、Camera 可选状态。
+- 不保存当前选中对象、follow target、confirm 操作上下文、renderer native handle、Phaser object、DOM/UI panel open state、Input held state、Timeline 日志、缓存、pathfinding 临时结果或可由 Data/Asset 重建的内容。
+- 玩家 confirm 产生的临时交互效果只作为当前会话反馈保存到 timeline / trace，不进入普通进度存档；如果未来某个 confirm 结果应成为长期事实，必须由 gameplay system 写入明确的长期组件或 GAS 状态。
+- Contributor 必须声明 `scope` 和 `tags`，例如 `world`、`gameplay`、`gas`、`tca`、`camera`，Sandbox profile 通过 Save contributor policy 决定默认保存范围。
+- Save/load UI 应作为 Workbench 的低频操作进入 Inspector 或 Host tab，展示 slot、section、version、compatibility 和最近 diagnostics；不要把 save 控件塞进主舞台高频 HUD。
+- 当前交互入口放在 Inspector 的 Host tab：`Save Local` 写入 Web Platform storage，`Load Local` 从同一 slot 恢复当前 Tiny Camp 运行状态；浏览器刷新后仍可读取同一 localStorage slot。
+- Load 必须同时恢复 SaveEnvelope 的 runtime clock。保存时如果 HUD tick 是 1587，刷新页面后加载同一 slot，HUD 应回到 1587，再从后续 tick 继续推进。
+- Sandbox 长链路测试需要覆盖“固定 seed → tick → save → 重建 runtime → load → 继续 tick”的结果确定性。
+
+Sandbox 默认保存范围应偏保守：保存 `world`、`gameplay`、`gas`、`tca` 和可选 `camera`，排除 `presentation`、`debug`、`cache`、`ui`。
+
 ## Workbench UI
 
 Sandbox UI 由三块组成：

@@ -86,7 +86,7 @@ Sandbox 的长期演示设计见 `docs/apps/sandbox.md`。阶段任务和当前�
 
 ```txt
 apps/* → packages/*
-app-host → core / event-bus / game-runtime / platform-core / data / asset / renderer-core / input-core / camera-core
+app-host → core / event-bus / game-runtime / platform-core / data / asset / renderer-core / input-core / camera-core / save
 adapter packages → facade packages
 driver packages → core protocol packages / external runtime
 game-runtime → core / world / event-bus
@@ -99,6 +99,7 @@ asset → data / core
 tca → core / data / event-bus / game-runtime
 gas → core / data / event-bus / game-runtime / tca / world
 react-ui → ui-core
+save → core / platform-core
 ```
 
 禁止方向：
@@ -266,6 +267,16 @@ GameKit 只要求进入 DataRegistry 的数据有 `type + id` 这类弱约束，
 Assets 是资源加载运行时。AssetDefinition 作为 `asset.definition` DataType 进入 DataRegistry，也可以由编辑器、导入器或远程 manifest 提供。具体玩法数据通过 `AssetRef` 引用资源，资源定义不要求和引用它的数据位于同一个 DataPack。AssetManager 从 DataRegistry 或其他资源声明来源读取 AssetDefinition，并委托 adapter 加载。Asset adapter 不管理 gameplay definitions，DataRegistry 不管理加载状态。
 
 详细设计见 `docs/modules/assets.md`。
+
+### Save
+
+Save 负责长期运行状态的 capture、store、load、restore 和 migration。Save 是混合能力：slot 管理、store、codec、migration registry 属于 App Service；World、TCA、GAS、Camera 和游戏自定义状态通过 GameModule / contributor bridge 提供 capture 与 restore。
+
+`@gamekit/save` 只定义协议、manager、store、codec、migration 和 contributor registry，不直接依赖 GAS、TCA、Camera、Renderer、React、Koota、Phaser 或具体 app。GAS/TCA 等包可以各自提供 save contributor helper，App Host 通过 `services.save` 统一管理生命周期和 diagnostics。
+
+Save 不复制 DataPack、Content Package 或 Asset binary。存档记录 runtime/gameplay 长期状态和 Data/Asset/Content 的 id/version/compatibility metadata；加载时由 App Host 先准备 Data、Asset 和未来 Content package 环境，再恢复 runtime 状态。
+
+详细设计见 `docs/modules/save.md`。
 
 ## 包内拆分约定
 

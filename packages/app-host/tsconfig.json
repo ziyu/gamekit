@@ -16,6 +16,7 @@
     { "path": "../input-core" },
     { "path": "../platform-core" },
     { "path": "../renderer-core" },
+    { "path": "../save" },
     { "path": "../tca" },
     { "path": "../ui-core" }
   ]

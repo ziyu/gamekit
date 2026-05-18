@@ -5,6 +5,7 @@ import type { GameRuntime } from "@gamekit/game-runtime";
 import type { InputRouter } from "@gamekit/input-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
 import type { RendererAdapter } from "@gamekit/renderer-core";
+import type { SaveManager } from "@gamekit/save";
 import type { UiRuntime } from "@gamekit/ui-core";
 import type { AppServiceKey } from "./types";
 
@@ -46,4 +47,9 @@ export const GAME_SERVICE: AppServiceKey<GameRuntime> = {
 export const UI_SERVICE: AppServiceKey<UiRuntime> = {
   id: "ui",
   description: "UI runtime"
+};
+
+export const SAVE_SERVICE: AppServiceKey<SaveManager> = {
+  id: "save",
+  description: "Save manager"
 };

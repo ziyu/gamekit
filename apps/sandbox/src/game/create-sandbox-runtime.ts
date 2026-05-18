@@ -3,6 +3,12 @@ import {
   createGasModule,
   createGasTcaDefinitions,
   createGasTraceStore,
+  GasAbilities,
+  GasActor,
+  GasAttributes,
+  GasEffects,
+  GasTags,
+  type GasActorRuntimeState,
   type GasRuntime,
   type GasTraceStore
 } from "@gamekit/gas";
@@ -15,7 +21,7 @@ import {
   mergeTcaDefinitionSets,
   type TcaTraceStore
 } from "@gamekit/tca";
-import type { GameWorld } from "@gamekit/world";
+import type { ComponentDef, EntityId, GameWorld } from "@gamekit/world";
 import type { DataRegistry } from "@gamekit/data";
 import {
   LinkState,
@@ -49,6 +55,8 @@ import type {
   SandboxModuleSummary,
   SandboxObjectiveSnapshot,
   SandboxRuntime,
+  SandboxSaveData,
+  SandboxSavedEntity,
   SandboxSnapshotOptions,
   SandboxTimelineEntry
 } from "./types";
@@ -57,6 +65,12 @@ export const SANDBOX_RENDER_SIZE = {
   width: 720,
   height: 524
 } as const;
+
+const TRANSIENT_SAVE_TAGS = new Set(["state.overcharged"]);
+const TRANSIENT_SAVE_EFFECT_IDS = new Set([
+  "gas.effect.sandbox.overcharge_regen",
+  "gas.effect.sandbox.campfire_boost"
+]);
 
 export type CreateSandboxRuntimeOptions = {
   seed?: string;
@@ -157,6 +171,20 @@ export function createSandboxRuntime(options: CreateSandboxRuntimeOptions): Sand
             y: position.y
           }
         : undefined;
+    },
+    captureSaveData() {
+      return captureSandboxSaveData(world, readGasRuntime);
+    },
+    restoreSaveData(data) {
+      restoreSandboxSaveData(world, readGasRuntime, data);
+      eventBus.emit(
+        "sandbox.save_restored",
+        {
+          entities: data.entities.length,
+          gasActors: data.gasActors.length
+        },
+        "sandbox.save"
+      );
     },
     snapshot(snapshotOptions?: SandboxSnapshotOptions) {
       const gasActors = readGasRuntime()?.snapshot().actors ?? [];
@@ -278,6 +306,121 @@ export function createSandboxRuntime(options: CreateSandboxRuntimeOptions): Sand
       };
     }
   };
+}
+
+function captureSandboxSaveData(
+  world: GameWorld,
+  readGasRuntime: () => GasRuntime | undefined
+): SandboxSaveData {
+  return {
+    version: "1.0.0",
+    entities: world
+      .query([SceneObject])
+      .map((entity): SandboxSavedEntity | undefined => {
+        const sceneObject = world.get(entity, SceneObject);
+        if (!sceneObject) {
+          return undefined;
+        }
+
+        return {
+          objectId: sceneObject.objectId,
+          sceneObject: cloneData(sceneObject),
+          position: cloneOptional(world.get(entity, Position)),
+          velocity: cloneOptional(world.get(entity, Velocity)),
+          storage: cloneOptional(world.get(entity, ResourceStorage)),
+          building: cloneOptional(world.get(entity, BuildingState)),
+          production: cloneOptional(world.get(entity, ProductionState)),
+          work: cloneOptional(world.get(entity, WorkAssignment)),
+          objective: cloneOptional(world.get(entity, ObjectiveState)),
+          threat: cloneOptional(world.get(entity, ThreatState)),
+          link: cloneOptional(world.get(entity, LinkState))
+        };
+      })
+      .filter((entry): entry is SandboxSavedEntity => entry !== undefined),
+    gasActors: (readGasRuntime()?.snapshot().actors ?? []).map(cloneGasActorForSave)
+  };
+}
+
+function restoreSandboxSaveData(
+  world: GameWorld,
+  readGasRuntime: () => GasRuntime | undefined,
+  data: SandboxSaveData
+): void {
+  const entityByObjectId = new Map(
+    world
+      .query([SceneObject])
+      .map((entity) => [world.get(entity, SceneObject)?.objectId, entity] as const)
+      .filter((entry): entry is [string, EntityId] => entry[0] !== undefined)
+  );
+
+  for (const saved of data.entities) {
+    const entity = entityByObjectId.get(saved.objectId);
+    if (entity === undefined) {
+      continue;
+    }
+
+    world.set(entity, SceneObject, saved.sceneObject);
+    setIfPresent(world, entity, Position, saved.position);
+    setIfPresent(world, entity, Velocity, saved.velocity);
+    setIfPresent(world, entity, ResourceStorage, saved.storage);
+    setIfPresent(world, entity, BuildingState, saved.building);
+    setIfPresent(world, entity, ProductionState, saved.production);
+    setIfPresent(world, entity, WorkAssignment, saved.work);
+    setIfPresent(world, entity, ObjectiveState, saved.objective);
+    setIfPresent(world, entity, ThreatState, saved.threat);
+    setIfPresent(world, entity, LinkState, saved.link);
+  }
+
+  const gasRuntime = readGasRuntime();
+  for (const savedActor of data.gasActors) {
+    if (!gasRuntime?.hasActor(savedActor.actor.actorId)) {
+      continue;
+    }
+    const currentActor = gasRuntime.getActor(savedActor.actor.actorId);
+    const entity = currentActor.actor.entityId;
+    if (entity === undefined) {
+      continue;
+    }
+
+    world.set(entity, GasActor, {
+      ...savedActor.actor,
+      entityId: entity
+    });
+    world.set(entity, GasAttributes, cloneData(savedActor.attributes));
+    world.set(entity, GasTags, cloneData(savedActor.tags));
+    world.set(entity, GasAbilities, cloneData(savedActor.abilities));
+    world.set(entity, GasEffects, cloneData(savedActor.effects));
+  }
+}
+
+function setIfPresent<T extends object>(
+  world: GameWorld,
+  entity: EntityId,
+  component: ComponentDef<T>,
+  value: T | undefined
+): void {
+  if (value !== undefined) {
+    world.set(entity, component, value);
+  }
+}
+
+function cloneOptional<T>(value: T | undefined): T | undefined {
+  return value === undefined ? undefined : cloneData(value);
+}
+
+function cloneGasActorForSave(state: GasActorRuntimeState): GasActorRuntimeState {
+  const actor = cloneData(state);
+  actor.tags.values = actor.tags.values.filter((tag) => !TRANSIENT_SAVE_TAGS.has(tag));
+  actor.effects.active = actor.effects.active.filter(
+    (effect) =>
+      !TRANSIENT_SAVE_EFFECT_IDS.has(effect.effectId) &&
+      !effect.grantedTags.some((tag) => TRANSIENT_SAVE_TAGS.has(tag))
+  );
+  return actor;
+}
+
+function cloneData<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function createObjectiveSnapshot(entities: SandboxEntitySnapshot[]): SandboxObjectiveSnapshot {
