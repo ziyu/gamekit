@@ -64,6 +64,7 @@ packages/
   react-ui/
   save/
   devtools/
+  devtools-ui/
   test-utils/
 ```
 
@@ -99,6 +100,7 @@ asset → data / core
 tca → core / data / event-bus / game-runtime
 gas → core / data / event-bus / game-runtime / tca / world
 react-ui → ui-core
+devtools-ui → devtools / ui-core / react-ui
 save → core / platform-core
 ```
 
@@ -173,6 +175,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 | `@gamekit/react-ui`                                              | App/UI adapter                               | React UI 实现。                                                                      |
 | `@gamekit/save`                                                  | 混合：App Service + Game Module bridge       | 存储 adapter 和 profile 是应用服务；snapshot capture/restore 是游戏模块桥接。        |
 | `@gamekit/devtools`                                              | App Service / tooling                        | 观察 Host、Data、TCA、GAS、profiler，不进入 gameplay loop。                          |
+| `@gamekit/devtools-ui`                                           | App/tooling UI package                       | DevTools launcher、shell、标准面板；依赖 DevTools runtime，不进入 gameplay loop。    |
 | `@gamekit/world`                                                 | Runtime facade                               | ECS facade。                                                                         |
 | `@gamekit/world-koota`                                           | Runtime adapter                              | Koota adapter。                                                                      |
 | `@gamekit/core` / `@gamekit/event-bus` / `@gamekit/game-runtime` | Core Runtime                                 | 薄内核、事件、GameModule lifecycle。                                                 |
@@ -253,6 +256,16 @@ UI style/theme 属于 React UI / app 层，不进入 `ui-core`。游戏应能定
 `@gamekit/react-ui` 的默认实现以 Tailwind CSS 作为样式基础、GSAP 作为低频 UI 动效基础，并推荐 shadcn/ui 作为组件 recipe 最佳实践。这些依赖不能泄漏到 `ui-core`、GameRuntime、gameplay module、DataType、TCA/GAS 协议或 renderer adapter。
 
 详细设计见 `docs/modules/ui.md`。
+
+### DevTools UI
+
+DevTools 的运行时协议和可视化实现必须拆开。`@gamekit/devtools` 只负责 data source、trace、diagnostic、profiler、panel metadata 和 command；`@gamekit/devtools-ui` 负责 DevTools launcher、shell、标准面板、DevTools focus bridge 和 React 渲染实现。
+
+`@gamekit/react-ui` 不承载 DevTools 专用面板。它只提供通用 panel/window/modal/style/focus 基础设施，供 `@gamekit/devtools-ui` 和普通游戏 UI 复用。App Host 可以在 `devtools: true` 时注册 DevTools runtime、标准 sources 和 UI panel metadata，但不直接 import 或渲染 `@gamekit/devtools-ui`。
+
+普通 Web 游戏模板应默认安装并挂载 `@gamekit/devtools-ui`。因此在标准 Web bootstrap 中配置 `devtools: true` 后，应自动出现 DevTools 入口；headless app 或未安装 DevTools UI 的自定义 shell 只获得 DevToolsRuntime 和 sources。
+
+详细设计见 `docs/modules/devtools.md`。
 
 ### Data
 

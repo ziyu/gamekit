@@ -22,6 +22,7 @@ export type CreateHeadlessHostOptions = {
   dataPacks?: DataPack[] | undefined;
   preloadGroups?: string[] | undefined;
   saveStore?: SaveStore | undefined;
+  devtools?: boolean | undefined;
   services?: Array<AppServiceBinding> | undefined;
   configSources?: CreateAppHostOptions["configSources"] | undefined;
 };
@@ -42,6 +43,7 @@ export function createHeadlessHost(options: CreateHeadlessHostOptions = {}): App
       { id: "renderer" },
       { id: "assets" },
       ...(options.saveStore === undefined ? [] : [{ id: "save", dependencies: ["data"] }]),
+      ...(options.devtools === true ? [{ id: "devtools", dependencies: ["data", "assets"] }] : []),
       ...extensionServices.map((binding) => ({
         id: binding.key.id,
         dependencies: binding.lifecycle.dependencies
@@ -74,7 +76,12 @@ export function createHeadlessHost(options: CreateHeadlessHostOptions = {}): App
               gameId: appId,
               gameVersion: "0.1.0"
             }
-          })
+          }),
+      ...(options.devtools === true
+        ? {
+            devtools: true
+          }
+        : {})
     },
     extensions: Object.fromEntries(
       extensionServices.map((binding) => [binding.key.id, () => binding])

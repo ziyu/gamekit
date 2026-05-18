@@ -1,4 +1,5 @@
 import "@gamekit/react-ui/styles.css";
+import "@gamekit/devtools-ui/styles.css";
 import "./ui/theme.css";
 import "./styles.css";
 import { createConfiguredAppHost } from "@gamekit/app-host";
@@ -22,7 +23,8 @@ import {
   updateDataStatus,
   updateHostStatus,
   updatePlatformStatus,
-  updateSandboxHud
+  updateSandboxHud,
+  mountSandboxDevToolsOverlay
 } from "./ui/render-sandbox";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -99,6 +101,9 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
   updateHostStatus(ui, host);
   await host.boot();
   updateHostStatus(ui, host);
+  if (context.devtools) {
+    mountSandboxDevToolsOverlay(ui, context.devtools);
+  }
   updateDataStatus(ui, requireSandboxContext(context.dataRegistry, "dataRegistry"));
   updateAssetStatus(ui, requireSandboxContext(context.assetManager, "assetManager"));
 

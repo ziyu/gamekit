@@ -60,6 +60,10 @@ export const sandboxAppDefinition = defineGameApp({
     {
       id: "save",
       dependencies: ["data", "assets", "game"]
+    },
+    {
+      id: "devtools",
+      dependencies: ["data", "assets", "renderer", "input", "ui", "game", "save"]
     }
   ]
 });

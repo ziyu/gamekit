@@ -29,6 +29,9 @@ export default defineConfig({
       "@gamekit/ui-core": new URL("./packages/ui-core/src/index.ts", import.meta.url).pathname,
       "@gamekit/react-ui": new URL("./packages/react-ui/src/index.ts", import.meta.url).pathname,
       "@gamekit/save": new URL("./packages/save/src/index.ts", import.meta.url).pathname,
+      "@gamekit/devtools": new URL("./packages/devtools/src/index.ts", import.meta.url).pathname,
+      "@gamekit/devtools-ui": new URL("./packages/devtools-ui/src/index.ts", import.meta.url)
+        .pathname,
       "@gamekit/camera-core": new URL("./packages/camera-core/src/index.ts", import.meta.url)
         .pathname,
       "@gamekit/input-core": new URL("./packages/input-core/src/index.ts", import.meta.url)

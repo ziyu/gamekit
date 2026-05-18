@@ -171,6 +171,36 @@ describe("headless host", () => {
       "save"
     ]);
   });
+
+  it("can expose an optional standard devtools service", async () => {
+    const host = createHeadlessHost({
+      id: "headless-devtools",
+      devtools: true
+    });
+
+    await host.boot();
+
+    expect(host.services.devtools).toBeDefined();
+    const snapshot = host.services.devtools?.snapshot({ includeSourceSnapshots: true });
+    expect(host.snapshot().services.map((service) => service.id)).toEqual([
+      "data",
+      "renderer",
+      "assets",
+      "devtools"
+    ]);
+    expect(snapshot?.dataSources.map((source) => source.id)).toEqual([
+      "host",
+      "data",
+      "assets",
+      "renderer"
+    ]);
+    expect(snapshot?.sourceSnapshots?.map((source) => source.kind)).toEqual([
+      "host",
+      "data",
+      "asset",
+      "renderer"
+    ]);
+  });
 });
 
 describe("configured app host", () => {
@@ -431,6 +461,39 @@ describe("configured app host", () => {
     expect(configured.host.snapshot().services[0]?.snapshot).toMatchObject({
       focus: { scope: "ui", target: "inspector" }
     });
+  });
+
+  it("registers standard DevTools UI metadata when a UI service is available", async () => {
+    const ui = createUiRuntime();
+    const app = defineGameApp({
+      id: "standard-devtools-ui",
+      services: [{ id: "ui" }, { id: "devtools", dependencies: ["ui"] }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        ui: {
+          runtime: ui
+        },
+        devtools: true
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+
+    await configured.host.boot();
+
+    expect(ui.panels().map((panel) => panel.id)).toEqual([
+      "gamekit.devtools.launcher",
+      "gamekit.devtools.shell"
+    ]);
+    expect(ui.panel("gamekit.devtools.shell")).toMatchObject({
+      kind: "devtools",
+      title: "GameKit DevTools"
+    });
+    expect(
+      configured.host.services.devtools?.snapshot().dataSources.map((source) => source.id)
+    ).toContain("ui");
   });
 
   it("resolves standard renderer service from a driver capability", async () => {

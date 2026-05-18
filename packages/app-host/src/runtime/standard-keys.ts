@@ -1,5 +1,6 @@
 import type { AssetManager } from "@gamekit/asset";
 import type { DataRegistry } from "@gamekit/data";
+import type { DevToolsRuntime } from "@gamekit/devtools";
 import type { DriverRegistry } from "@gamekit/driver-core";
 import type { GameRuntime } from "@gamekit/game-runtime";
 import type { InputRouter } from "@gamekit/input-core";
@@ -52,4 +53,9 @@ export const UI_SERVICE: AppServiceKey<UiRuntime> = {
 export const SAVE_SERVICE: AppServiceKey<SaveManager> = {
   id: "save",
   description: "Save manager"
+};
+
+export const DEVTOOLS_SERVICE: AppServiceKey<DevToolsRuntime> = {
+  id: "devtools",
+  description: "DevTools runtime"
 };

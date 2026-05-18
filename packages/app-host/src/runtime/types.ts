@@ -1,5 +1,6 @@
 import type { AssetManager } from "@gamekit/asset";
 import type { DataRegistry } from "@gamekit/data";
+import type { DevToolsRuntime } from "@gamekit/devtools";
 import type { DriverRegistry } from "@gamekit/driver-core";
 import type { GameRuntime } from "@gamekit/game-runtime";
 import type { InputRouter } from "@gamekit/input-core";
@@ -123,6 +124,7 @@ export type AppServiceRegistry = {
   game?: GameRuntime;
   ui?: UiRuntime;
   save?: SaveManager;
+  devtools?: DevToolsRuntime;
   has<TService>(key: AppServiceKey<TService>): boolean;
   get<TService>(key: AppServiceKey<TService>): TService | undefined;
   require<TService>(key: AppServiceKey<TService>): TService;
@@ -164,7 +166,8 @@ export type AppStandardServiceId =
   | "input"
   | "game"
   | "ui"
-  | "save";
+  | "save"
+  | "devtools";
 
 export type CreateAppHostOptions = {
   id: string;

@@ -52,6 +52,7 @@ function createFakeUi(): SandboxUiHandles {
       contains: (node: Node) => node === element,
       getBoundingClientRect: () => ({ width: 100, height: 100, left: 0, top: 0 })
     } as unknown as SandboxUiHandles["stage"],
+    devtoolsRoot: element,
     rendererRoot: {
       ...element,
       focus: () => undefined,

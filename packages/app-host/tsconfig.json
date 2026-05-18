@@ -10,6 +10,7 @@
     { "path": "../camera-core" },
     { "path": "../core" },
     { "path": "../data" },
+    { "path": "../devtools" },
     { "path": "../driver-core" },
     { "path": "../gas" },
     { "path": "../game-runtime" },

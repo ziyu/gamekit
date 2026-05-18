@@ -220,6 +220,7 @@ function renderRulesTab(snapshot: SandboxSnapshot): HTMLElement {
 
 function renderHostTab(host: AppHost | undefined, state: SandboxWorkbenchState): DocumentFragment {
   const snapshot = host?.snapshot();
+  const devtools = host?.services.devtools?.snapshot();
   const fragment = document.createDocumentFragment();
   fragment.append(
     createSection(
@@ -246,6 +247,25 @@ function renderHostTab(host: AppHost | undefined, state: SandboxWorkbenchState):
         ["Status", state.saveStatus ?? "ready"]
       ]),
       createSaveActions()
+    ),
+    createSection(
+      "DevTools",
+      createKvList([
+        ["Sources", devtools?.dataSources.length ?? 0],
+        ["Panels", devtools?.panels.length ?? 0],
+        ["Traces", devtools?.traces.length ?? 0],
+        ["Diagnostics", devtools?.diagnostics.length ?? 0],
+        ["Profiler", devtools?.profiler.length ?? 0]
+      ]),
+      createSummaryList(
+        (devtools?.dataSources ?? []).map((source) =>
+          createListItem(
+            createTextElement("code", source.id),
+            createTextElement("strong", source.kind),
+            createTextElement("span", source.label)
+          )
+        )
+      )
     )
   );
   return fragment;

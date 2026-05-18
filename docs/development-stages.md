@@ -809,19 +809,36 @@
 
 模块设计：`docs/modules/devtools.md`
 
+当前状态：首轮核心切片已开始实现。已新增 `@gamekit/devtools`，具备 data source / panel / command registry、trace ring buffer、diagnostic buffer 和 profiler 聚合；App Host 已支持 `devtools: true` 标准 preset，并能自动注册 Host、Platform、Drivers、Data、Assets、Renderer、Input、GameRuntime、UI、Save 等标准服务 source；Sandbox 已把 DevTools 摘要接入 Host inspector，且只追加 Sandbox/TCA/GAS/Camera 这类验证面专用 source。下一步需要新增独立 `@gamekit/devtools-ui` 包，用于 DevTools launcher、shell 和标准面板；EventBus bridge、trace correlator、runtime profiler wrapper 和更完整的 Inspector detail 仍属于本阶段后续工作。
+
 预期新增：
 
 - `@gamekit/devtools`
-- DevTools trace model
-- DevTools React panels
-- System profiler 基础数据
+- DevToolsRuntime
+- DevToolsDataSource
+- DevToolsTraceEntry / trace correlator
+- DevToolsProfiler
+- DevToolsPanelDefinition
+- DevToolsCommandDefinition
+- App Host `services.devtools`
+- App Host `devtools: true` standard preset
+- `@gamekit/devtools-ui`
+- DevTools launcher / shell / standard panels
 
 完成定义：
 
+- DevTools Core 不依赖 Phaser、Three、Koota、React internal 或具体 app。
+- App Host 可以通过 `devtools: true` 快速启动 `services.devtools`，并暴露 Host/service/driver diagnostics。
+- 标准 Web app 安装并挂载 `@gamekit/devtools-ui` 后，`devtools: true` 会自动出现 DevTools 入口，点击打开 DevTools shell。
+- DevTools 能注册 EventBus、TCA、GAS、Renderer、Asset、Save、World、Data、Runtime profiler 等 data source。
+- Trace timeline 能通过 `correlationId` / `parentId` 展示 input → event → TCA → GAS → world/renderer/save 的链路。
+- System profiler 至少记录 system id、调用次数、最近耗时、平均耗时、最大耗时和预算状态。
 - 在 sandbox 或 demo 中能打开 DevTools 面板。
-- 点击事件能看到关联 TCA trace、状态变更、后续 event。
-- system profiler 至少记录 system id、调用次数、最近耗时。
+- 点击事件能看到关联 TCA trace、GAS trace、状态变更、后续 event 和 renderer diagnostic。
 - renderer escaped/native/direct path 可被标记。
+- DevTools focus 下 gameplay/camera input 不误触发。
+- Debug command 必须显式注册、可诊断，不改变正式玩法结果。
+- trace buffer 和 profiler 有上限，不把每帧完整 world/render patch 塞进 React UI。
 
 ## Phase 15：Hero Road Demo
 

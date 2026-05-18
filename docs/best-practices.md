@@ -27,6 +27,7 @@
 - UI Core / React UI：`docs/modules/ui.md`
 - App Host：`docs/modules/app-host.md`
 - Save：`docs/modules/save.md`
+- DevTools：`docs/modules/devtools.md`
 - Sandbox：`docs/apps/sandbox.md`
 
 ## 跨模块边界

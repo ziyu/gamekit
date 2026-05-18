@@ -4,12 +4,13 @@
 
 UI 分为 UI Core 和 React UI。UI Core 描述窗口、面板、命令、焦点、布局状态和 UI snapshot；React UI 提供具体渲染实现、shell、组件 bridge、样式基础设施和状态订阅。
 
-UI 是应用层能力，不是 GameRuntime 的一部分。它负责低频 HUD、Inspector、Timeline、窗口、弹窗、DevTools、编辑器面板和玩家界面，不进入 world tick、renderer patch 或 ECS 高频数据路径。
+UI 是应用层能力，不是 GameRuntime 的一部分。它负责低频 HUD、Inspector、Timeline、窗口、弹窗、编辑器面板和玩家界面，不进入 world tick、renderer patch 或 ECS 高频数据路径。DevTools 可复用 UI runtime 和 React UI 基础设施，但 DevTools 专用 launcher、shell 和面板属于 `@gamekit/devtools-ui`，不内置在 `@gamekit/react-ui`。
 
 相关包：
 
 - `@gamekit/ui-core`
 - `@gamekit/react-ui`
+- `@gamekit/devtools-ui`
 
 核心原则：
 
@@ -20,7 +21,7 @@ UI 是应用层能力，不是 GameRuntime 的一部分。它负责低频 HUD、
 - gameplay packages 不直接 import React、shadcn/ui、Base UI 或 app-specific UI component。
 - UI focus 必须能影响 Input Context / Scope，避免文本输入、Inspector、DevTools 中误触发 gameplay input。
 - `ui-core` 不定义 theme 或 style token；游戏主题、皮肤和组件库组织属于 React UI / app 层。
-- 应用、demo、Editor 和 DevTools 应复用同一套 UI runtime / panel / window 协议。
+- 应用、demo、Editor 和 DevTools UI 应复用同一套 UI runtime / panel / window 协议。
 
 ## UI Core
 
@@ -87,6 +88,7 @@ UI Core 可以提供常见 manager 概念，但不要先把 `WindowManager`、`M
 职责边界：
 
 - `@gamekit/react-ui` 提供样式基础设施、shell/panel/window 的默认样式、可替换组件库组织方式、React-only theme provider 和 UI 动效基础。
+- `@gamekit/devtools-ui` 提供 DevTools 专用 launcher、shell、面板和调试视图；它可以复用 `@gamekit/react-ui` 的通用基础设施，但 DevTools 专用组件不回流进 `react-ui`。
 - 游戏 app 定义自己的视觉主题、设计 token、组件 recipes、HUD/Inspector/Editor 组件和品牌皮肤。
 - `@gamekit/ui-core` 只提供 panel/window/command/focus/snapshot，不知道 theme、CSS variables、className 或 ReactNode。
 - App Host/Profile 可以把 React UI 所需的 style preset、CSS variables、className 或 provider props 作为 UI service 参数传入，但 Host 不解释它们。

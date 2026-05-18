@@ -164,6 +164,7 @@ function createFakeUi(): SandboxUiHandles {
         height: SANDBOX_RENDER_SIZE.height
       })
     } as unknown as SandboxUiHandles["stage"],
+    devtoolsRoot: element,
     rendererRoot: {
       ...element,
       focus: () => undefined,

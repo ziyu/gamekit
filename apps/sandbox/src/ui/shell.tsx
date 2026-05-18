@@ -190,6 +190,7 @@ export function renderSandboxShell(
             <ol className="timeline" data-ui="timeline-list" />
           </section>
         </section>
+        <div className="devtools-overlay-root" data-ui="devtools-overlay-root" />
       </GameKitUiShell>
     );
   });
@@ -199,6 +200,7 @@ export function renderSandboxShell(
     reactRoot: root,
     uiRuntime,
     stage: readElement(appElement, "stage", HTMLElement),
+    devtoolsRoot: readElement(appElement, "devtools-overlay-root", HTMLElement),
     rendererRoot: readElement(appElement, "renderer-root", HTMLDivElement),
     sceneOverlay: readElement(appElement, "scene-object-overlay", HTMLElement),
     status: readElement(appElement, "status", HTMLDivElement),

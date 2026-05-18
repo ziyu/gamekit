@@ -7,6 +7,7 @@ import {
 } from "@gamekit/app-host";
 import type { CameraController } from "@gamekit/camera-core";
 import type { DataRegistry } from "@gamekit/data";
+import type { DevToolsRuntime } from "@gamekit/devtools";
 import { createPhaserDriver } from "@gamekit/driver-phaser";
 import { createEventBus } from "@gamekit/event-bus";
 import { createGasTcaDefinitions, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
@@ -50,6 +51,7 @@ export type SandboxAppContext = {
   cameraController?: CameraController | undefined;
   gasRuntime?: GasRuntime | undefined;
   saveManager?: SaveManager | undefined;
+  devtools?: DevToolsRuntime | undefined;
   sandbox?: SandboxRuntime | undefined;
 };
 
@@ -84,6 +86,7 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
       context.cameraController = camera;
       context.gasRuntime = refs.gasRuntime;
       context.sandbox = refs.sandbox;
+      context.devtools = state.devtools;
     },
     services: {
       platform: {
@@ -244,6 +247,53 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
         },
         contributors({ context }) {
           return context.sandbox ? [createSandboxSaveContributor(context.sandbox)] : [];
+        }
+      },
+      devtools: {
+        options: {
+          traceLimit: 500,
+          diagnosticLimit: 200,
+          profilerBudgetMs: 6
+        },
+        dataSources({ context }) {
+          return [
+            {
+              id: "sandbox",
+              label: "Sandbox Snapshot",
+              kind: "custom",
+              snapshot() {
+                return (
+                  context.sandbox?.snapshot({
+                    defaultSelection: false
+                  }) ?? { status: "pending" }
+                );
+              }
+            },
+            {
+              id: "camera",
+              label: "Camera",
+              kind: "camera",
+              snapshot() {
+                return camera.getState();
+              }
+            },
+            {
+              id: "tca",
+              label: "TCA Trace",
+              kind: "tca",
+              snapshot() {
+                return tcaTraceStore.snapshot();
+              }
+            },
+            {
+              id: "gas",
+              label: "GAS Runtime",
+              kind: "gas",
+              snapshot() {
+                return refs.gasRuntime?.snapshot() ?? gasTraceStore.snapshot();
+              }
+            }
+          ];
         }
       }
     }

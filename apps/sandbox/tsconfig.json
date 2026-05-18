@@ -13,6 +13,8 @@
     { "path": "../../packages/app-host" },
     { "path": "../../packages/core" },
     { "path": "../../packages/data" },
+    { "path": "../../packages/devtools" },
+    { "path": "../../packages/devtools-ui" },
     { "path": "../../packages/driver-core" },
     { "path": "../../packages/driver-phaser" },
     { "path": "../../packages/event-bus" },

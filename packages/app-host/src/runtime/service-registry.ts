@@ -1,6 +1,7 @@
 import {
   ASSET_SERVICE,
   DATA_SERVICE,
+  DEVTOOLS_SERVICE,
   DRIVER_SERVICE,
   GAME_SERVICE,
   INPUT_SERVICE,
@@ -134,6 +135,9 @@ function assignStandardService(
   if (standard === "save") {
     registry.save = binding.service as never;
   }
+  if (standard === "devtools") {
+    registry.devtools = binding.service as never;
+  }
 }
 
 function deleteStandardService(registry: AppServiceRegistry, standard: AppStandardServiceId): void {
@@ -167,6 +171,9 @@ function standardFromKey(key: AppServiceKey<unknown>): AppStandardServiceId | un
   }
   if (key.id === SAVE_SERVICE.id) {
     return "save";
+  }
+  if (key.id === DEVTOOLS_SERVICE.id) {
+    return "devtools";
   }
 
   return undefined;

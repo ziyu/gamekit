@@ -2,6 +2,14 @@ import type { AssetDiagnosticEvent, AssetLoaderAdapter, AssetManager } from "@ga
 import type { CameraController, CameraState2D, PointLike } from "@gamekit/camera-core";
 import type { GameModule } from "@gamekit/core";
 import type { DataPack, DataRegistry, DataTypeDefinition } from "@gamekit/data";
+import type {
+  DevToolsCommandDefinition,
+  DevToolsDataSource,
+  DevToolsPanelDefinition,
+  DevToolsRuntime,
+  DevToolsRuntimeOptions,
+  DevToolsUiOptions
+} from "@gamekit/devtools";
 import type { DriverBootContext, DriverRegistry, GameDriver } from "@gamekit/driver-core";
 import type { GasRuntime, GasTraceStore } from "@gamekit/gas";
 import type { GameInstallContext, GameRuntime } from "@gamekit/game-runtime";
@@ -37,6 +45,7 @@ export type StandardAppServiceState = {
   game?: GameRuntime;
   ui?: UiRuntime;
   save?: SaveManager;
+  devtools?: DevToolsRuntime;
 };
 
 export type StandardServiceBuildContext<TContext> = Omit<
@@ -67,6 +76,7 @@ export type StandardAppProfileOptions<TContext> = {
   game?: StandardGameOptions<TContext> | undefined;
   ui?: StandardUiOptions<TContext> | undefined;
   save?: StandardSaveOptions<TContext> | undefined;
+  devtools?: StandardDevToolsProfileOptions<TContext> | undefined;
 };
 
 export type StandardValue<TValue, TContext> =
@@ -157,6 +167,38 @@ export type StandardSaveServiceContextOptions = {
   exclude?: StandardSaveServiceContextKey[] | undefined;
   extra?: Record<string, unknown> | undefined;
 };
+
+export type StandardDevToolsOptions<TContext> = {
+  enabled?: boolean | undefined;
+  runtime?: StandardValue<DevToolsRuntime, TContext> | undefined;
+  options?: StandardValue<DevToolsRuntimeOptions, TContext> | undefined;
+  includeHostSource?: boolean | undefined;
+  preset?: StandardDevToolsPreset | undefined;
+  standardSources?: boolean | undefined;
+  standardPanels?: boolean | undefined;
+  includeSources?: StandardDevToolsSourceId[] | undefined;
+  excludeSources?: StandardDevToolsSourceId[] | undefined;
+  ui?: boolean | DevToolsUiOptions | undefined;
+  dataSources?(ctx: StandardServiceBuildContext<TContext>): DevToolsDataSource[];
+  panels?(ctx: StandardServiceBuildContext<TContext>): DevToolsPanelDefinition[];
+  commands?(ctx: StandardServiceBuildContext<TContext>): DevToolsCommandDefinition[];
+};
+
+export type StandardDevToolsProfileOptions<TContext> = boolean | StandardDevToolsOptions<TContext>;
+
+export type StandardDevToolsPreset = "minimal" | "standard";
+
+export type StandardDevToolsSourceId =
+  | "host"
+  | "platform"
+  | "drivers"
+  | "data"
+  | "assets"
+  | "renderer"
+  | "input"
+  | "game"
+  | "ui"
+  | "save";
 
 export type StandardGameOptions<TContext> = {
   runtime?: StandardValue<GameRuntime, TContext> | undefined;

@@ -30,8 +30,10 @@ export type SandboxWorkbenchState = {
 export type SandboxUiHandles = {
   root: HTMLElement;
   reactRoot: ReactRoot;
+  devtoolsReactRoot?: ReactRoot | undefined;
   uiRuntime: UiRuntime;
   stage: HTMLElement;
+  devtoolsRoot: HTMLElement;
   rendererRoot: HTMLDivElement;
   sceneOverlay: HTMLElement;
   status: HTMLDivElement;

@@ -10,6 +10,7 @@
     { "path": "./packages/renderer-phaser" },
     { "path": "./packages/driver-core" },
     { "path": "./packages/driver-phaser" },
+    { "path": "./packages/devtools-ui" },
     { "path": "./packages/test-utils" },
     { "path": "./apps/sandbox" }
   ]

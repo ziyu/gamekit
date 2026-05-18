@@ -54,6 +54,13 @@ code {
   padding: 14px;
 }
 
+.devtools-overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+}
+
 .topbar,
 .stage-panel,
 .inspector,

@@ -43,6 +43,8 @@
       "@gamekit/ui-core": ["packages/ui-core/src/index.ts"],
       "@gamekit/react-ui": ["packages/react-ui/src/index.ts"],
       "@gamekit/save": ["packages/save/src/index.ts"],
+      "@gamekit/devtools": ["packages/devtools/src/index.ts"],
+      "@gamekit/devtools-ui": ["packages/devtools-ui/src/index.ts"],
       "@gamekit/test-utils": ["packages/test-utils/src/index.ts"]
     }
   }

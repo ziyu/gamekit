@@ -1,11 +1,13 @@
 import type { AppProfile, AppServiceFactory } from "../definition/types";
 import { createAssetManager } from "@gamekit/asset";
+import { createDevToolsRuntime, type DevToolsRuntime } from "@gamekit/devtools";
 import { createDriverRegistry } from "@gamekit/driver-core";
 import { createSaveManager } from "@gamekit/save";
 import type { AppServiceBinding } from "../runtime/types";
 import {
   ASSET_SERVICE,
   DATA_SERVICE,
+  DEVTOOLS_SERVICE,
   DRIVER_SERVICE,
   GAME_SERVICE,
   INPUT_SERVICE,
@@ -15,6 +17,12 @@ import {
   UI_SERVICE
 } from "../runtime/standard-keys";
 import { createStandardContext, exposeStandardState } from "./context";
+import {
+  createStandardDevToolsDataSources,
+  createStandardDevToolsPanels,
+  normalizeStandardDevToolsOptions,
+  registerStandardDevToolsUiPanels
+} from "./devtools";
 import {
   resolveDriverAssetLoader,
   resolveDriverInputSourceFactory,
@@ -422,6 +430,73 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
       }
     );
   },
+  devtools<TContext>(
+    profile: AppProfile<TContext>,
+    stateByContext: Map<TContext, StandardAppServiceState>
+  ) {
+    const devtoolsOptions = normalizeStandardDevToolsOptions(profile.standard?.devtools);
+    if (devtoolsOptions === undefined) {
+      return undefined;
+    }
+
+    return createManagedStandardServiceFactory(
+      profile,
+      stateByContext,
+      devtoolsOptions,
+      (ctx, options) => {
+        let ownsRuntime = true;
+        let runtime: DevToolsRuntime;
+        if (options.runtime === undefined) {
+          runtime = createDevToolsRuntime(
+            options.options === undefined ? undefined : resolveStandardValue(ctx, options.options)
+          );
+        } else {
+          ownsRuntime = false;
+          runtime = resolveStandardValue(ctx, options.runtime);
+        }
+        const cleanups: Array<() => void> = [];
+        ctx.state.devtools = runtime;
+        return {
+          key: DEVTOOLS_SERVICE,
+          service: runtime,
+          standard: "devtools",
+          lifecycle: {
+            id: DEVTOOLS_SERVICE.id,
+            dependencies: ctx.service.dependencies,
+            boot(hostCtx) {
+              for (const source of createStandardDevToolsDataSources(ctx, hostCtx, options)) {
+                cleanups.push(runtime.registerDataSource(source));
+              }
+              for (const source of options.dataSources?.(ctx) ?? []) {
+                cleanups.push(runtime.registerDataSource(source));
+              }
+              for (const panel of createStandardDevToolsPanels(options)) {
+                cleanups.push(runtime.registerPanel(panel));
+              }
+              for (const panel of options.panels?.(ctx) ?? []) {
+                cleanups.push(runtime.registerPanel(panel));
+              }
+              for (const command of options.commands?.(ctx) ?? []) {
+                cleanups.push(runtime.registerCommand(command));
+              }
+              cleanups.push(...registerStandardDevToolsUiPanels(ctx, options));
+            },
+            dispose() {
+              for (const cleanup of cleanups.splice(0).reverse()) {
+                cleanup();
+              }
+              if (ownsRuntime) {
+                runtime.dispose();
+              }
+            },
+            snapshot() {
+              return runtime.snapshot();
+            }
+          }
+        };
+      }
+    );
+  },
   game<TContext>(
     profile: AppProfile<TContext>,
     stateByContext: Map<TContext, StandardAppServiceState>
@@ -510,7 +585,8 @@ const saveServiceContextResolvers: Record<
   renderer: (state) => state.renderer,
   input: (state) => state.input,
   game: (state) => state.game,
-  ui: (state) => state.ui
+  ui: (state) => state.ui,
+  devtools: (state) => state.devtools
 };
 
 function createSaveServiceContext(

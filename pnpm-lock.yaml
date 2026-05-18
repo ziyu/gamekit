@@ -57,6 +57,12 @@ importers:
       '@gamekit/data':
         specifier: workspace:*
         version: link:../../packages/data
+      '@gamekit/devtools':
+        specifier: workspace:*
+        version: link:../../packages/devtools
+      '@gamekit/devtools-ui':
+        specifier: workspace:*
+        version: link:../../packages/devtools-ui
       '@gamekit/driver-phaser':
         specifier: workspace:*
         version: link:../../packages/driver-phaser
@@ -136,6 +142,9 @@ importers:
       '@gamekit/data':
         specifier: workspace:*
         version: link:../data
+      '@gamekit/devtools':
+        specifier: workspace:*
+        version: link:../devtools
       '@gamekit/driver-core':
         specifier: workspace:*
         version: link:../driver-core
@@ -186,6 +195,37 @@ importers:
       '@gamekit/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/devtools:
+    dependencies:
+      '@gamekit/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/devtools-ui:
+    dependencies:
+      '@gamekit/devtools':
+        specifier: workspace:*
+        version: link:../devtools
+      '@gamekit/react-ui':
+        specifier: workspace:*
+        version: link:../react-ui
+      '@gamekit/ui-core':
+        specifier: workspace:*
+        version: link:../ui-core
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.28
+      '@types/react-dom':
+        specifier: ^18.3.1
+        version: 18.3.7(@types/react@18.3.28)
 
   packages/driver-core:
     dependencies:
