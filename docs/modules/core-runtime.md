@@ -164,3 +164,20 @@ update runtime clock
 - 高频逻辑放 system。
 - 中低频事实通过 EventBus。
 - React 不进入主循环。
+
+## 最佳实践
+
+### 模块集成
+
+- GameRuntime 集成只负责模块安装、clock、system tick、start/stop/dispose 和低频 runtime event，不负责 boot App Service 或创建外部 runtime。
+- 标准 GameModule helper 应隐藏重复装配，例如 TCA 的 EventBus 订阅和 trace store lifecycle、Camera 的 input action 绑定和 renderer adapter sync。
+- GameRuntime 的 system 注册顺序是行为契约。新增标准模块 helper 时，如果顺序影响结果，必须用测试固定，并在模块设计中说明依赖。
+- GameModule `install()` 应只做注册和订阅，不隐式启动外部 runtime；订阅、interval、adapter bridge 和 trace store cleanup 必须在 GameRuntime dispose 时释放。
+
+### 模块使用
+
+- `@gamekit/core` 只放低层通用工具，例如 Registry、Clock、Result、GameError、seeded rng 和 GameModule 类型；不要把 renderer、input、asset、platform、TCA、GAS 或具体游戏概念塞进 Core。
+- Registry、Clock、GameError 等基础工具的错误消息要稳定、可测试、可定位，避免为了方便返回 `undefined` 后让调用方在更远处失败。
+- EventBus 事件应表达已经发生的低频事实，事件 payload 保持小而可序列化；不要用 EventBus 广播每帧 transform、raw pointer move、held input 或 render patch。
+- `start()`、`stop()`、`tick()`、`dispose()` 的边界要清楚：`stop()` 不释放模块，`dispose()` 释放长期句柄，`tick()` 不应该悄悄 boot app service。
+- 测试优先覆盖 lifecycle、重复安装、system 顺序、stop 后不执行、dispose cleanup、clock restore 和错误路径。

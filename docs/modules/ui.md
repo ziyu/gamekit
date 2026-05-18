@@ -332,3 +332,19 @@ UI 可以缓存为展示服务的派生状态，但 source of truth 应留在对
 应用、demo、DevTools 和 Editor 应复用同一套窗口、面板、focus 和 command 协议，而不是各自手写互不兼容的 UI runtime。具体应用如何在场景中使用 focus 框、对象摘要、modal、tip、Inspector 或 Timeline，属于 `docs/apps/` 下的应用设计文档，不在 UI 模块文档中维护。
 
 DevTools 和 Editor 可以复用同一套窗口、面板、focus 和 command 协议，但它们的复杂业务状态应留在各自模块或 app 内，不上推到 UI Core。
+
+## 最佳实践
+
+### 模块集成
+
+- UI Core 定义窗口、面板、modal、tip、focus、command 和 snapshot 协议；React UI 负责组件、主题、样式和动画实现。不要把 Tailwind、GSAP、shadcn、Radix 等概念放进 UI Core。
+- UI service 集成应由 App Host/app shell 负责 mount/unmount、style provider、focus bridge、input scope bridge、panel registration 和 diagnostics。
+- UI focus 必须反馈给 Input Scope。modal、text input、DevTools、Inspector 聚焦时，gameplay/camera action 不应穿透。
+- 测试应覆盖 runtime store snapshot 稳定性、subscribe/unsubscribe、React `useSyncExternalStore` snapshot 缓存、focus bridge、modal/panel lifecycle 和 reduced motion。
+
+### 模块使用
+
+- 交互 UI 使用 React/组件系统或显式 DOM builder。不要用 `innerHTML`、HTML 字符串模板或 `insertAdjacentHTML` 实现游戏 UI、Editor UI 或 DevTools UI。
+- UI 状态保存选择、展开、筛选、窗口位置和用户偏好；World/GAS/TCA/Data/Asset 的 source of truth 留在对应系统，通过 snapshot 或 selector 读取。
+- GSAP 只用于低频 UI 动效，例如 modal、panel、toast、timeline 强调；不要用 UI 动画时钟驱动 gameplay tick 或 renderer object movement。
+- 组件库优先提供语义组件和 props，例如 `AbilityButton`、`ResourceMeter`、`ActorPortrait`、`InspectorTable`，不要要求业务到处传底层 class string。

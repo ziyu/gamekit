@@ -275,7 +275,7 @@ profile 决定：
 
 ## Data / Asset 启动边界
 
-App Host 负责把已经可用的 DataType、DataPack 和 AssetManager 按应用启动顺序组合起来，但不应该在当前阶段定义 DataPack source/loader/manifest 体系。内容从哪里来、如何解压、如何处理实际资源文件和脚本，属于未来 Content Package System、平台 adapter、编辑器导入器或 app/profile 层。
+App Host 负责把已经可用的 DataType、DataPack 和 AssetManager 按应用启动顺序组合起来，但不定义 DataPack source/loader/manifest 体系。内容从哪里来、如何解压、如何处理实际资源文件和脚本，属于 Content Package System、平台 adapter、编辑器导入器或 app/profile 层。
 
 标准启动顺序：
 
@@ -302,7 +302,7 @@ App Host 在这个边界上的职责：
 App Host 不应做的事：
 
 - 不解释 hero、monster、building、rule、ability 等业务数据结构。
-- 不在当前阶段定义 DataPackSource / DataPackLoader / DataPackManifest。
+- 不定义 DataPackSource / DataPackLoader / DataPackManifest。
 - 不让 AssetManager 直接读取 DataPack。
 - 不把资源加载失败写成 DataRegistry 校验错误。
 
@@ -516,3 +516,20 @@ Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务�
 - App Host 不替代 Platform；Platform 仍是底层平台能力抽象。
 - App Host 不替代 DevTools；它只提供统一可观察入口。
 - App Host 不把所有模块硬编码进核心；标准 services 有快捷入口，扩展 services 通过 registry 注册。
+
+## 最佳实践
+
+### 模块集成
+
+- App 应优先通过 GameAppDefinition + AppProfile 启动。Definition 描述需要什么能力，Profile 描述当前运行环境提供哪些 adapter、driver 和少量参数。
+- 标准 service binding 由 App Host 内部定义表创建，profile 不应手写一大坨 service factory。扩展 service 使用同一套 registry/lifecycle，不走特殊分支。
+- `services.xxx` 只暴露 App Service，例如 platform、data、assets、drivers、renderer、input、ui、save、devtools；Camera/TCA/GAS 等玩法会话能力通过标准 GameModule helper 注入 GameRuntime。
+- Driver 由 App Host 管 lifecycle，Renderer/Input/Asset/Camera adapter 通过 Driver capability 选择；多个 Driver 并存时 profile 必须显式选择。
+- Save service context 默认保持最小，只给 contributor 暴露必要服务；renderer/input/ui/platform 等对象必须显式 opt-in。
+- Headless Host 是标准组合路径的测试入口。新增标准 service 或标准 game module helper 时，必须能在不启动浏览器/Tauri 的情况下测试生命周期和依赖顺序。
+
+### 模块使用
+
+- App Host diagnostics 记录 service phase、dependencies、driver capabilities、recent errors 和 snapshot summary，不记录大 payload、native object 或每帧状态。
+- 游戏和工具通过 `services.xxx` 读取应用级能力，通过 GameRuntime/standard GameModule helper 消费玩法会话能力；不要在业务代码里重新组装 Host 内部 service binding。
+- 业务代码不要把 Host 当全局上帝对象。能通过 Data、World、EventBus、RendererAdapter、Input action、SaveContributor 等局部 facade 完成的事，不扩大到 Host 依赖。

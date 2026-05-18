@@ -281,3 +281,19 @@ TCA、GAS、Renderer、Asset 都可以提供内置 DataTypeDefinition，但它�
 - patch target missing
 
 校验错误必须报告 source pack、entry type、entry id、字段路径和目标 key。数据驱动越自由，错误定位越重要。
+
+## 最佳实践
+
+### 模块集成
+
+- App/profile/content package 负责注册 DataTypeDefinition、接收或物化 DataPack，并把它们注册进 DataRegistry；业务系统日常只读取稳定 registry。
+- Content Package 到来后，Data loader 只接收已经从内容包 section 中物化出的 DataPack；不要在 DataRegistry 里提前实现资源、脚本、权限或包挂载系统。
+- DataTypeDefinition 的 `normalize`、`validate`、`references` 和 `indexes` 应保持纯数据处理，不读取 DOM、renderer、Platform FS 或外部 runtime。
+
+### 模块使用
+
+- 游戏开发者可以自由定义 `game.hero`、`game.monster`、`game.building`、`game.dialogue` 等 DataType；框架只要求注册、校验、引用和诊断，不要求套内置模板。
+- DataPack 应按真实业务内容组织，而不是为了框架方便按全局类型大表拆散。一个业务文件可以同时包含 `game.hero`、`gas.actor`、`render.object` 和 `asset.definition`。
+- Runtime system 不应把运行时状态写回 DataRegistry。DataRegistry 是定义来源，World/GAS/TCA/Save 才是运行态。
+- 引用校验优先给出人能修文件的信息：source pack、entry type、entry id、字段 path、目标 type/id。
+- 查询热点应通过 indexes 或预编译结构解决，不要让 runtime 每帧扫描所有 documents 或做动态 JSON path 匹配。

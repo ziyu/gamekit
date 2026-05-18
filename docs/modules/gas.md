@@ -155,3 +155,21 @@ Trace 是 GAS 的核心能力之一，因为数据驱动玩法如果不可解释
 Actor、Attribute、Tag、Ability、Effect、Cue、Clue 都通过明确的 DataType 注册和校验，例如 `gas.actor`、`gas.ability`、`gas.effect`。DataPack 可以混合这些内置类型和游戏自定义类型，例如 `game.hero` 或 `game.monster`。
 
 GAS 不要求游戏必须按 GAS 类型组织内容文件。真实项目可以把某个 hero 的 `game.hero`、`gas.actor`、`gas.ability`、`render.object` 和 asset references 放在同一个业务文件里，也可以拆到不同 DataPack。引用关系必须在 DataPack load 阶段通过 DataRef / AssetRef 检查。
+
+## 最佳实践
+
+### 模块集成
+
+- GAS module 集成负责从 DataRegistry 读取 definitions、创建 ECS-backed runtime、注册 effect tick system、合并 TCA definitions、写 trace，并在 GameRuntime dispose 时清理。
+- Actor 与 EntityId 的绑定、save/load entity mapping、spawn/despawn 策略由 game module 或 Save contributor 明确处理，不由 GAS core 猜测。
+- 测试应覆盖 cost/cooldown/tag requirement、effect stack/expire/periodic、attribute modifier、cue dispatch、entity binding、save/restore 边界和 TCA integration。
+
+### 模块使用
+
+- GAS 是通用 actor/ability/effect runtime，不写死 RPG、卡牌、塔防或动作游戏概念。Attribute、Tag、Ability、Effect 都使用游戏可定义 key。
+- Actor 可以绑定 EntityId。热状态应尽量落在 World component 上，让系统查询和批量更新利用 ECS 性能；Data definitions 保留配置自由度。
+- `actorId` 不必须等于 `entityId`。需要 save/load、spawn/despawn、场景迁移时，使用稳定 actor id 和 entity mapping 明确恢复关系。
+- Ability 激活只做低频语义行为。持续移动、碰撞、寻路、渲染动画和 camera smoothing 不应被包装成每帧 ability。
+- Effect 的持续 tick 可以由 system 推进，必要时复用 TCA action；不要在 GAS core 里复制一套规则引擎。
+- Cue/Presentation 只表达表现意图，不决定 gameplay 结果。GAS 不直接调用 Renderer、Audio、Camera、React 或 Phaser。
+- Trace 必须和 DataType、actor、ability、effect、cue、TCA rule 关联起来。数据驱动玩法不可解释时，编辑器和 DevTools 会失去维护能力。

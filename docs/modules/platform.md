@@ -174,3 +174,18 @@ Tauri 桌面端需要额外处理：
 - 多窗口编辑器
 
 这些应转成 platform/input/system event，再由 Runtime 分发。
+
+## 最佳实践
+
+### 模块集成
+
+- Platform service 可以进入 App Host lifecycle，但 GameRuntime 不直接依赖 Platform；需要平台能力的 GameModule 通过 app/profile 注入稳定 bridge。
+- Tauri/Web/Headless adapter 必须实现相同 core protocol，平台私有类型不能泄漏到 Save、Asset、Data、GameRuntime 或 gameplay 包。
+- 权限按能力最小化声明。游戏运行、编辑器、mod 导入、导出文件应使用不同 permission profile，不为了方便开放整个文件系统。
+
+### 模块使用
+
+- Platform 只抽象运行环境能力，例如 storage、filesystem、window、dialog、clipboard、shell、permissions；不承载 gameplay、renderer object 或 editor-specific data model。
+- 业务层使用语义路径和 baseDir，不写用户机器绝对路径。Save、Asset、Editor import/export 都应通过 Platform path policy。
+- Platform diagnostics 要区分 permission denied、unsupported capability、path unavailable、quota exceeded、user cancelled 等错误，不要只返回 generic failure。
+- 测试应使用 memory/headless platform 覆盖 storage/fs/permission 行为，再用少量 Web/Tauri adapter 测试验证平台映射。

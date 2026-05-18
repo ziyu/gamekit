@@ -782,6 +782,27 @@
 - App Host 可以通过 `services.save` 管理 save lifecycle 和 diagnostics。
 - `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 通过。
 
+## 横向补全：已实现模块最佳实践文档
+
+目标：在进入 DevTools 之前，为当前已经实现或已经形成稳定边界的模块补齐长期最佳实践，降低后续开发重复踩边界问题的概率。
+
+当前状态：已完成首轮补全。
+
+范围：
+
+- `docs/best-practices.md` 增加模块最佳实践索引和跨模块通用实践。
+- `docs/modules/` 中已实现模块补充“最佳实践”段落。
+- `docs/apps/sandbox.md` 补充 Sandbox 作为验证面的实践边界。
+- `AGENTS.md` 补充后续开发维护最佳实践的规则。
+
+完成定义：
+
+- 已实现模块都有模块专属最佳实践入口。
+- 跨模块通用规则集中在 `docs/best-practices.md`，不在多个模块文档复制维护。
+- 模块文档仍只写长期设计和长期实践，不写阶段状态、TODO、临时计划或完成定义。
+- Sandbox 玩法细节不泄漏到核心模块文档。
+- 文档格式检查通过。
+
 ## Phase 14：DevTools
 
 目标：游戏可调试，尤其是数据驱动逻辑可解释。

@@ -217,3 +217,19 @@ Effect periodic action = Runtime/System + TCA action
 ```
 
 GAS 不重新实现一套规则引擎。
+
+## 最佳实践
+
+### 模块集成
+
+- Trigger、Condition、Action definition 应由外部模块注册并合并，TCA core 不硬编码具体游戏、GAS、UI、quest 或 renderer 行为。
+- 规则在加载或 runtime 启动时预编译，运行时按 event type index 查找候选规则；不要每个 EventBus event 扫描所有规则。
+- TCA module 集成负责 EventBus 订阅、DataRegistry rule loading、definition merge、trace store 和 dispose cleanup，业务代码不重复手写这套装配。
+- 测试应覆盖 trigger index、definition duplicate、condition pass/fail、action error、trace ordering、unsubscribe/cleanup、DataRegistry rule loading 和与 GAS definition set 的组合。
+
+### 模块使用
+
+- TCA 负责低频、可解释、可追踪的规则链路，不负责 movement、camera smoothing、render sync、pathfinding 等每帧高频逻辑。
+- Handler 只通过 TcaHandlerContext 访问稳定 facade。需要表现或 UI 时发低频 event/command，不直接 import Phaser、DOM、React 或具体 app。
+- Condition/action 的 value resolver 尽量在 compile 阶段准备，运行时减少字符串 path 解析和临时对象。
+- Trace 是 TCA 的主要可维护性工具。每次规则跳过、失败或执行都应能解释 event、rule、condition、action 和派生 event。

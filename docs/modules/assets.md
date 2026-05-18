@@ -200,3 +200,19 @@ Renderer adapter 可以持有底层资源句柄，但这些句柄不进入 gamep
 - adapter load failure
 
 缺失引用和加载失败是两类问题：缺失引用属于数据/声明错误，加载失败属于运行时资源错误。两者都必须能在 snapshot 和 diagnostics 中区分。
+
+## 最佳实践
+
+### 模块集成
+
+- App Host/profile 负责按 Data → AssetManager → adapter preload 的顺序集成资源系统；AssetManager 不自己读取 DataPack 或猜测 gameplay document。
+- Phaser、Three 等资源加载必须通过 Driver 暴露的 asset loader adapter，共享同一个外部 runtime cache；不要为 Asset 单独创建另一套 Phaser/Three runtime。
+- Preload group 应面向启动体验和场景切换，不应把所有资源一次性塞进首屏加载。大资源、可选包和编辑器预览应支持 lazy/retry/unload。
+
+### 模块使用
+
+- AssetDefinition 是资源声明，AssetManager 是运行时加载状态管理；不要把 gameplay data、DataPack 解析或 renderer native object 放进 AssetManager。
+- 资源引用应使用 AssetRef 或业务数据里的明确资源引用字段，不要求资源定义与使用者处于同一 DataPack。
+- AssetManager 默认只读取 `asset.definition` 或外部显式指定的同形资源定义；不要让它扫描任意 gameplay document 猜测资源。
+- 资源加载失败、缺失引用和平台 source 不支持要分成不同 diagnostics，方便编辑器和 DevTools 给出正确修复建议。
+- Renderer 使用 asset id 或 adapter-specific props 取资源句柄；gameplay、DataType 和 Save payload 不保存 texture、image element、WebGL resource 或 Phaser cache object。

@@ -76,10 +76,13 @@
 - 模块最终长期设计、协议、adapter、扩展点变化：更新对应的 `docs/modules/<module>.md`。
 - 实现约束、代码质量标准变化：更新 `docs/implementation-principles.md`。
 - 新形成的实践、反模式、性能经验：更新 `docs/best-practices.md`。
+- 模块专属最佳实践：更新对应 `docs/modules/<module>.md` 的“最佳实践”段落；跨模块通用实践仍写入 `docs/best-practices.md`。
 - 阶段完成、范围变化、下一阶段目标变化：更新 `docs/development-stages.md`。
 - 高影响决策：新增 ADR，文件名格式为 `docs/adr/000X-short-title.md`。
 
 文档不是补充材料，是项目设计的一部分。实现和文档冲突时，必须主动修正其中一方。
+
+新增模块、公共 API、adapter、driver、App Host standard service、standard GameModule helper、Save contributor 或长期测试夹具时，必须判断是否需要补充最佳实践。模块文档里的最佳实践必须是长期设计实践，并明确区分“模块集成”和“模块使用”：集成写一次性装配、lifecycle、profile/driver/adapter/test harness；使用写业务代码和工具日常如何消费该模块。不写当前实现状态、临时计划、完成定义、TODO 或 Sandbox 玩法细节；如果同一实践适用于多个模块，写入 `docs/best-practices.md`，不要在多个模块文档复制同一段。
 
 ## 验证命令
 

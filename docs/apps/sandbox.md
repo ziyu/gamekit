@@ -384,3 +384,19 @@ Sandbox 必须有一套长期维护的长链路集成测试，用来证明 Tiny 
 - 基础概念必须容易理解，复杂性应来自系统组合和状态变化，而不是名词抽象。
 - 任何新第三方库仍必须通过 Driver、adapter 或 app 层接入。
 - 固定 seed 下的自动循环必须可测试、可复现。
+
+## 最佳实践
+
+### 模块集成
+
+- Sandbox 首要任务是验证框架协作链路，不是沉淀可复用玩法。复杂 demo 逻辑只能服务于 App Host、Data、Asset、Renderer、Input、Camera、TCA、GAS、Save 和 UI 的端到端说明。
+- Sandbox app shell 负责把 App Host、Driver、Renderer、Input、UI、Save 和标准 GameModule helper 组装起来；Sandbox game module 不直接 import Phaser、Koota、DOM 或 React internal。
+- Sandbox 长链路测试应优先覆盖“模块是否协作”：内容引用、资源加载、自动循环、TCA/GAS 链路、选择/镜头、save/load、diagnostics/timeline。
+- 浏览器手动验收关注第一屏信息层级、game viewport scope、camera 坐标转换、可点击对象、Save/Load 本地恢复和 console error；不要以视觉花活替代协议验证。
+
+### 模块使用
+
+- Sandbox 内容按 Tiny Camp 真实业务概念组织，但不要把 Worker、Campfire、Monster、Recipe 等演示概念写入核心模块文档或公共 API。
+- Sandbox UI 只消费 snapshot、diagnostics 和低频状态；当前 selection、follow target、inspector tab、timeline filter 和 save/load 按钮状态属于 workbench state，不写入 GameRuntime 或普通进度存档。
+- 场景点击、confirm、camera action 都通过 Input action/scope 进入系统，不绕过 Input 直接改玩法状态。点击空白应明确清空 selection，而不是触发默认兜底选中。
+- 交互 UI 使用 React 或 DOM builder + `textContent`，不要用 `innerHTML` 拼接按钮、Inspector、Modal、Tip 或场景对象卡片。

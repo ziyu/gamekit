@@ -512,3 +512,19 @@ Event payload 不应包含完整存档数据、敏感内容或大对象。详细
 - Save 包不依赖 Phaser、React、Koota、Tauri adapter 或具体 game app。
 - Renderer native handle 不进入 save payload。
 - Asset/Data 通过 id/version/reference 恢复，不复制完整定义或资源 payload。
+
+## 最佳实践
+
+### 模块集成
+
+- SaveManager、SaveStore、SaveCodec、migration registry、contributor policy 和 service context 由 App Host/app profile 组合；GameRuntime 不直接依赖 PlatformStorage、PlatformFileSystem 或 SaveStore。
+- Contributor 负责具体模块 capture/restore，SaveManager 不直接理解 World/GAS/TCA/Camera 或游戏组件结构。
+- Load 时先准备 Data/Asset/Content 环境，再恢复 runtime state。缺失内容包、Data entry 或 Asset definition 应形成 compatibility diagnostic。
+- 测试必须覆盖固定 seed save/load/tick continuation、corrupted payload、missing slot、unsupported version、missing migration、contributor selection/policy 和 excluded UI/transient state。
+
+### 模块使用
+
+- 普通继续游戏存档保存长期玩法事实和 runtime clock。tick 1587 保存后，加载同一 slot 应回到 tick 1587，再从后续 tick 继续推进。
+- 不保存当前选中目标、hover/focus target、confirm UI 交互上下文、held input、Timeline 日志、React component state、renderer native handle、adapter cache 或 pathfinding cache。
+- 每个 contributor 必须有稳定 id、version、scope、tags、validate 和可定位 diagnostics；capture/restore 失败必须能定位到 contributor、section 和 path。
+- Save payload 引用 Data、Asset、Content Package 时使用 id/version/compatibility metadata，不复制完整 DataPack、Asset binary 或内容包 payload。

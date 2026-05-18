@@ -172,3 +172,19 @@ Phaser Driver 的 camera adapter 映射到 `Scene.cameras.main`，Three Driver �
 Adapter 映射必须尊重底层渲染器自己的 camera 语义，但不能改变 GameKit 的公共坐标模型。以 Phaser 为例，GameKit 的 `CameraState2D.x/y` 表示 viewport 中心对应的 world point；Phaser 的 `scrollX/scrollY` 是未随 zoom 缩放的 camera scroll，因此应映射为 `center - viewport / 2`，再单独设置 zoom。不要把 viewport 尺寸除以 zoom 后再写入 Phaser scroll，否则 renderer、picking 和 overlay 会在 zoom 后一起向右下错位。
 
 Renderer camera adapter 本身是 bridge，不拥有 gameplay camera state。它可以由 camera module 调用，也可以由 editor/devtools module 调用。
+
+## 最佳实践
+
+### 模块集成
+
+- Camera 是游戏会话能力，优先通过标准 GameModule helper 启动；不要把 camera controller 默认做成 App Host standard service。
+- Camera Core 不依赖 World、Renderer、Input、Phaser、Three 或 DOM。Follow target、input action 和 renderer sync 都通过 helper/profile 注入。
+- Camera module 集成负责订阅已经归一化的 input action、解析 follow target、推进 smoothing，并调用 renderer camera adapter sync hook；renderer adapter 只应用传入状态。
+- 测试应覆盖 pan、zoom with anchor、screen/world/client/viewport 转换、bounds、follow resolver、smoothing、renderer adapter sync 和 dispose cleanup。
+
+### 模块使用
+
+- 所有坐标转换必须复用 Camera Core 方法。UI overlay、picking、renderer adapter 和 input bridge 不应各写一套转换公式。
+- Zoom anchor 必须是 renderer viewport 坐标。滚轮缩放和平滑插值都要保持 anchor 对应的 world point 稳定，避免看起来从右下角或错误点缩放。
+- Controller 表示目标状态，display camera 可以平滑追赶目标状态；平滑属于 camera module/rig，不属于 renderer adapter。
+- Camera action 只响应正确 input scope。游戏镜头、编辑器镜头、DevTools preview 镜头应有不同 context/scope。

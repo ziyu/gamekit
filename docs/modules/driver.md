@@ -238,3 +238,19 @@ Driver diagnostic 是低频应用事实，进入 App Host diagnostics 或 DevToo
 - RendererAdapter 重新定义 input event 或 gameplay command。
 - App Host 根据包名猜测某个 adapter 属于哪个底层 runtime。
 - 业务数据里保存 Phaser Texture、Three Mesh 或 native object reference。
+
+## 最佳实践
+
+### 模块集成
+
+- 只要第三方库同时影响 renderer、asset、input、camera 或 scene lifecycle，就优先建 Driver，而不是散落多个独立 adapter。
+- Driver 是外部 runtime owner：负责 boot、resize、pause/resume、dispose、diagnostics 和 capability 暴露；Adapter 是协议映射者，不重新创建 runtime。
+- Profile 必须显式选择标准服务使用哪个 driver capability。多 Driver 并存时不要靠默认顺序或包名猜测。
+- 新增 Three、Pixi、Godot bridge 等 Driver 时，先复用现有 Renderer/Input/Asset/Camera 协议，不够用再通过 ADR 调整协议。
+- 测试 Driver 时优先使用 fake runtime/driver harness 验证 lifecycle 和 capability mapping，浏览器或真实 canvas 只用于少量端到端验证。
+
+### 模块使用
+
+- Driver public API 不导出 Phaser、Three 等原生类型给 gameplay。确需逃生口时，使用受控 handle，并标记为 presentation/tooling path。
+- Driver diagnostics 只发低频事实，例如 runtime phase、capability、surface size、asset cache summary；不要把每帧 render patch 或 raw input 打进 diagnostics。
+- GameModule 和业务代码只消费 Driver 派生的 RendererAdapter、AssetLoaderAdapter、InputSource 或 camera sync adapter，不直接拿 Phaser Scene 或 Three Scene 写玩法。

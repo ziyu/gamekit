@@ -209,3 +209,20 @@ Input 不直接执行复杂 TCA 逻辑。
 UI focus、active window、active tool 可以由 UI 状态管理，但物理输入到语义 action 的映射归 input-core。
 
 UI 不直接改 gameplay 状态。UI 应输出焦点/scope 信号，Input adapter 或 app shell 将其转成 `NormalizedInputEvent.scope`，再由 input-core 按 action/context 规则路由。
+
+## 最佳实践
+
+### 模块集成
+
+- Source adapter 只负责把 DOM、Driver、Touch、Gamepad、Tauri menu 等 raw input 归一化，不直接改 World、Camera、Renderer 或 UI state。
+- Input service 集成应由 App Host/app shell 统一推进 held tick、scope gate、source cleanup 和 EventBus bridge，业务代码不直接调用 router 内部刷新细节。
+- UI focus、modal、text input、game viewport 和 DevTools 应由 app shell 或 UI bridge 转成 scope/context 状态，再交给 input-core 路由。
+
+### 模块使用
+
+- Gameplay、Camera、Editor、DevTools、Modal、TextInput 都应通过 scope/context 隔离。默认不要让 `global` action 穿透到 gameplay。
+- `held` action 应由 Input service 在稳定 tick 中产出，不依赖浏览器 key repeat。持续移动、拖拽和蓄力都不要用 repeated keydown 当主时钟。
+- 点击场景也应走 input action，例如 `scene.click`，命中 entity 只是 action payload 或后续 hit-test 结果，不应绕过 Input 模块直接调用 gameplay。
+- UI focus 变化、modal 打开、文本输入聚焦必须能切换或提升 input context，阻断 game viewport scope 下的 gameplay/camera action。
+- Input action 是语义层，不是业务规则层。复杂校验应进入 system、TCA 或 game module，而不是写在 adapter 里。
+- 测试应覆盖 binding resolution、scope/context priority、pressed/released/held/cancelled、focus gate、重复按键、source adapter cleanup 和 EventBus bridge。

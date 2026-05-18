@@ -175,3 +175,19 @@ Animation 不作为默认独立业务模块。动画主要归入：
 - Renderer Adapter 内部执行。
 - Cue / Presentation 把 gameplay event 转成 render command。
 - UI 动画在 react-ui 内部处理。
+
+## 最佳实践
+
+### 模块集成
+
+- RendererAdapter 由 Driver runtime slice 创建或绑定；不要在 renderer adapter 内部创建 Phaser.Game、Three renderer、input plugin、asset loader 或 gameplay camera。
+- Renderer 测试应覆盖 object tree、nested node update、unknown object type、missing object、command dispatch、diagnostics callback 和 adapter capability。
+- App Host/profile 负责 renderer boot、surface/container 注入、diagnostics bridge 和 resize；GameRuntime 不拥有 renderer lifecycle。
+
+### 模块使用
+
+- Renderer Core 只暴露 RenderObject、RenderNode、RenderTransform、RenderCommand、RendererAdapter 和 diagnostics，不暴露 sprite-first API、Phaser Scene、Three Mesh 或 gameplay input。
+- RenderObjectDefinition 应描述可重建的表现结构；运行时 native handle 由 adapter 私有维护，不进入 Data、World component 或 Save payload。
+- 复杂对象优先通过 object tree、node patch 和 command 表达。不要因为某个后端支持 sprite/mesh/particle 就把这些类型升成 core 方法。
+- 高频 render sync 只同步必要变更，不通过 EventBus 发每帧 patch。object create/destroy、unsupported type、adapter lifecycle 可以发低频 diagnostics。
+- Escape hatch 只用于表现层热点路径、DevTools 或 adapter extension。使用 direct/native path 时必须保持 GameKit object lifecycle 可追踪。
