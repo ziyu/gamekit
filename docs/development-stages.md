@@ -315,97 +315,85 @@
 - 示例 actor 数据通过 DataPack 注册和校验。
 - Sandbox 展示 input/event → TCA → GAS ability → effect → state/cue/trace 链路。
 
-## Phase 10.5：Sandbox Signal Outpost
+## Phase 10.5：Sandbox Tiny Camp
 
-目标：把 Sandbox 主场景升级为 `Signal Outpost` 自动放置 demo，让模块协作主要发生并表现于主舞台，而不是只堆在 Inspector 和 Timeline 中。Sandbox 要像一个可运行的小型系统 demo，而不是一张由实体点和面板组成的架构示意图。
+目标：把 Sandbox 主场景调整为概念直觉、机制足够复杂的 `Tiny Camp` 自动放置 demo。基础概念是营地、工人、资源、建筑、防御塔和怪物；模块协作通过采集、搬运、建造、维修、防御、波次和升级自然体现，而不是依赖抽象架构隐喻。
 
 设计文档：`docs/apps/sandbox.md`
 
-当前状态：Phase 10.5A 已实现；Phase 10.5B / 10.5C 待实现。已有 outpost 系统舞台和调度循环，但压力层、玩家策略操作、成长层和表现打磨仍未完成，不能视为整个 Phase 10.5 完成。
+当前状态：已完成 10.5A 和 10.5D。Sandbox 主循环、内容命名、舞台对象、Inspector 基础展示、Timeline 规则链路、渲染同步和长链路 runtime 测试已迁移为 Tiny Camp；后续 10.5B/10.5C 继续增强 monster wave、玩家操作、成长解锁和表现打磨。
 
-已有原型基线：
+迁移原则：
 
-- Signal Outpost 主舞台对象：Command Core、Relay Tower、Scout、Data Node、Asset Fabricator、Interference Node、Signal Link。
-- Sandbox DataPack 扩展 sceneObject / sceneLayout，并通过引用图关联 renderObject、renderRig 和 GAS actor definition。
-- Sandbox-local world components：SceneObject、Selectable、SignalStorage、ProductionState、WorkAssignment、ThreatState、LinkState。
-- 自动放置循环：signal production、scout transport、interference strike、objective progress。
-- 主舞台复合 RenderObject：不同角色独立视觉结构，link beam、charge bar、cargo/task/threat field 由 runtime state 驱动。
-- Snapshot / Inspector / Timeline 展示 Outpost 对象、signal storage、GAS state 和跨模块链路。
+- 不保留 Signal Outpost 作为长期演示概念。
+- 先迁移 Sandbox 内部内容、组件、snapshot、UI 文案和 DataType id，不上推 Tiny Camp 概念到核心包。
+- 保持已经验证的技术边界：Sandbox game module 不直接依赖 Phaser、Koota、DOM 或 App Host 内部实现。
+- 保持 App Host、Driver、Renderer、Input、Camera、Data、Asset、TCA、GAS 的现有公共边界不因 demo 换皮而破坏。
 
-下一步拆分为三个连续版本，避免继续在单个原型上堆功能。
+### Phase 10.5A：Tiny Camp 基础循环迁移
 
-### Phase 10.5A：系统舞台与调度循环
-
-目标：让主舞台从“对象陈列”变成可读的 outpost 运行系统。
-
-当前状态：已实现。
-
-已实现：
-
-- Sandbox DataPack 新增 station、productionRecipe、objectivePhase、threatProfile、outpostRoute。
-- sceneObject 引用 station definition 和 production recipe，sceneLayout link 引用 route definition。
-- ECS 状态新增 StationState、ObjectiveState，并扩展 Scout WorkAssignment 的 battery、fatigue、source、route progress。
-- Scout dispatcher 按 repair、suppress、support、collect、deliver 需求生成任务。
-- Command Core objective state 消耗 delivered signal 推进 phase progress。
-- Station heat、stability、priority、throughput 和 Scout route/battery/fatigue 进入 snapshot 和 renderer node sync。
-- 主舞台点击对象可切换 Inspector 选中对象，Inspector 可请求标准 camera module 跟随或释放选中 entity。
-- Sandbox 将 game viewport pointer 输入归一化为 renderer-local 坐标，camera zoom 以操作点为 anchor。
+目标：把主舞台从 outpost 语义迁移为营地语义，并保留无输入自动推进。
 
 任务拆分：
 
-1. 场景数据重构
-   - 扩展 Sandbox DataPack：station、objective、production recipe、threat profile、render rig、scene layout。
-   - 定义 Command Core、Relay Tower、Scout、Data Node、Asset Fabricator、Interference Node、Signal Link。
-   - 确保新数据仍通过 DataRegistry 注册、校验、引用追踪，不绕过 DataPack。
+1. 内容和命名迁移
+   - 将 sceneObject / station / productionRecipe / threatProfile / route 等 Sandbox 内容重命名为 worker、building、resourceNode、recipe、monster、wave、route/layout 等更直觉的业务类型。
+   - DataPack 内容按 Tiny Camp 业务概念组织：camp、workers、buildings、resources、monsters、waves、recipes、visuals。
+   - 保证所有内容仍通过 DataRegistry 注册、校验和引用追踪。
+
+   当前状态：已实现。Sandbox 内容已拆为 core/buildings/workers/monsters/objectives/visuals，并通过 DataRegistry 的 `entries[]` 注册。
 
 2. World 组件和场景模型
-   - 新增 sandbox-local components：SceneRole、Selectable、ProductionState、SignalStorage、WorkAssignment、ThreatState、LinkState。
-   - 让主场景对象都能关联 entity、data definition、render object 和可选 GAS actor。
-   - 保持这些组件只在 `apps/sandbox` 内部，不上推到核心包。
+   - 新增或迁移 Sandbox-local components：SceneObject、Selectable、ResourceStorage、ProductionState、ConstructionState、WorkAssignment、ThreatState、CombatState、RouteState、RenderPresentation。
+   - Campfire、Worker、Resource Node、Storage、Workshop、Tower、Monster 和 Road/Task Path 都能关联 entity、data definition、render object 和可选 GAS actor。
+
+   当前状态：已实现基础模型。当前使用 ResourceStorage、BuildingState、ProductionState、WorkAssignment、ThreatState、LinkState、ObjectiveState 和 RenderObjectPresentation 表达 Tiny Camp 基础循环；Construction/Combat 后续随 10.5B/10.5C 细化。
 
 3. 自动放置循环
-   - 实现 signal production system：Relay Tower 周期产出 signal。
-   - 实现 scout dispatcher：按 station priority 和当前需求自动生成 collect / deliver / repair / suppress / scan 任务。
-   - 实现 scout work system：Scout 拥有 cargo、battery、fatigue、route progress、current order，并在舞台上显示路线。
-   - 实现 objective system：Command Core 消耗 signal 推进 objective phase，并产生 milestone event。
+   - 实现 resource production / gather / haul / storage。
+   - 实现 build site / material delivery / construction progress。
+   - 实现 Worker task dispatcher，按 gather、haul、build、repair、defend 分配任务。
+   - 实现 Campfire objective，消耗资源或完成建筑推进阶段。
+
+   当前状态：已实现基础循环。Worker 能采集、搬运、维修、防御和执行建造任务；Campfire objective 会随资源交付推进。
 
 4. 主舞台结构
-   - 固定空间语义：中央 Command Core、左上 Signal Field、右上 Fabrication Bay、左下 Archive Wing、右下 Interference Rift。
-   - Signal Link 和 scout route 必须可见，能看出 signal、任务和资源流向。
-   - 第一屏不依赖 Inspector 也能看出 outpost 在生产、运输和推进 objective。
+   - 固定空间语义：中央 Campfire，左侧 Forest，右侧 Quarry，下方 Food source，上方 Storage/Workshop，边缘 Monster Path。
+   - Worker 路线、资源流向、building progress 和 threat path 必须可见。
+
+   当前状态：已实现基础舞台。Campfire、Forest、Quarry、Berry Patch、Storage、Workshop、Watchtower、Monster Den、Road/Task Path 均使用独立场景对象和 RenderObject 表达。
 
 完成定义：
 
-- 无输入时，场景能持续生产、运输、消耗 signal 并推进 objective。
-- Scout 有清晰任务状态、目标和路线，不只是随机移动实体。
-- DataPack 中 station、recipe、objective、route/link 能被 DataRegistry 查询并出现在 reference graph。
-- 主舞台空间结构、对象角色和资源流向清晰可见。
+- 无输入时，场景能持续采集、搬运、建造、消耗资源并推进 objective。
+- Worker 有清晰任务状态、目标、携带资源和路线。
+- 主舞台第一眼能看懂“营地正在生产、防御和成长”。
 
 ### Phase 10.5B：压力、规则与能力链路
 
-目标：让 TCA/GAS 成为场景里的自动化和状态变化机制，而不是面板中的 trace 样例。
+目标：让 TCA/GAS 成为营地里的自动化和状态变化机制，而不是面板中的 trace 样例。
 
 任务拆分：
 
-1. 压力层
-   - 实现 Interference Node 的 pressure cycle：signal storm、data corruption、tower overload、scout jammed、core instability。
-   - pressure 影响 station stability、link flow、scout work efficiency 或 objective progress。
-   - 威胁范围、预警、污染、断连和修复状态必须在舞台上表现。
+1. Monster wave 和压力层
+   - 实现 Monster 从边缘路径进入，攻击 Worker、Tower、Storage 或 Campfire。
+   - 实现 burning、poisoned、stunned、fortified、repairing 等 effect。
+   - 压力影响生产、路线、建筑生命、Worker 效率或 objective progress。
 
 2. TCA / GAS 链路增强
-   - 扩展 Sandbox TCA rules：confirm overcharge、low stability repair、interference response、objective milestone。
-   - 扩展 GAS 数据：station actor、signal_strike、overcharge_relay、field_repair、stabilize_core、interference mark、repair over time。
+   - 扩展 TCA rules：building low health repair、wave started defense response、storage full build decision、recipe completed unlock、selected target confirm。
+   - 扩展 GAS 数据：worker boost、quick repair、tower shot、monster bite、build boost、rally worker。
    - Timeline 必须能看到 input → TCA → GAS → effect/cue → scene feedback。
 
 3. 玩家操作
-   - 支持选择 station、scout、threat 和 link。
-   - `confirm` 根据选中对象触发 overcharge、repair、suppress 或 scan。
-   - 支持 `stabilize`、`boost`、`suppress` outpost mode，影响 TCA 自动响应。
-   - 支持 station priority 调整，影响 scout dispatcher。
+   - 支持选择 worker、building、resource、monster 和 route。
+   - `confirm` 根据选中对象触发 boost、repair、prioritize construction、focus tower fire 或 rally worker。
+   - 支持 `gather`、`build`、`defend` camp mode，影响 TCA 自动响应和 Worker dispatcher。
+   - 支持优先级调整，影响 Worker 任务分配。
 
 完成定义：
 
-- pressure event 会改变 world/GAS state，并通过 Renderer 表现出来。
+- monster event 会改变 world/GAS state，并通过 Renderer 表现出来。
 - 玩家操作能触发 TCA rule 和 GAS ability，且能在舞台和 Timeline 中同时被观察。
 - 自动规则能根据 mode、priority 和当前状态做不同响应。
 - EventBus 仍只承载低频事实，不承载每帧移动或动画。
@@ -417,17 +405,16 @@
 任务拆分：
 
 1. 成长层
-   - Data Node 解锁新的 TCA rule、GAS ability、production recipe 或 station mode。
-   - Asset Fabricator 解锁 render layer、状态灯、beam skin 或 cue effect。
-   - Objective 分 phase 推进，每个 phase 解锁新自动化或新 pressure type。
+   - Workshop 解锁新的 recipe、building blueprint、tool、worker role 或 tower upgrade。
+   - Campfire objective 分阶段推进，每个阶段解锁新自动化或新 monster wave。
+   - Asset 加载成功后改变建筑、Worker、Monster、Tower shot 或 UI icon 的表现。
 
 2. Renderer 主舞台表现
-   - 为不同角色创建不同复合 RenderObject，不再使用同质移动球表达主场景。
-   - Command Core 显示进度光带和稳定度。
-   - Relay Tower 显示 signal charge、beam 和过载状态。
-   - Scout 显示任务状态、方向、携带 signal 和受击/修复反馈。
-   - Interference Node 显示预警范围、干扰脉冲和 debuff 状态。
-   - Signal Link 显示流动、断连、增强或污染状态。
+   - 为 Campfire、Worker、Resource Node、Storage、Workshop、Tower、Monster 和 Road/Task Path 创建不同复合 RenderObject。
+   - Campfire 显示生命、目标阶段和营地范围。
+   - Worker 显示方向、任务图标、携带资源、体力和状态效果。
+   - Building 显示库存、建造进度、维修状态和升级层。
+   - Monster 显示路径、生命、攻击预警和 debuff。
 
 3. Workbench 解释层
    - Inspector 从选中对象出发展示 world、render、data、asset、TCA/GAS 关联。
@@ -435,9 +422,8 @@
    - Content summary 能展示 Data unlock、Asset loaded/failed 和被对象引用的 content。
 
 4. Snapshot 与测试
-   - 扩展 SandboxSnapshot：scene objects、links、production/threat/objective state、selected object detail。
-   - fixed seed 下自动循环、pressure 和成长结果确定。
-   - 测试 signal production、scout dispatch、threat damage、GAS effect、confirm overcharge、unlock、timeline 合并排序。
+   - 扩展 SandboxSnapshot：scene objects、resources、construction、combat、wave、objective、selected object detail。
+   - fixed seed 下自动循环、monster wave、GAS effect、unlock 和成长结果确定。
    - Browser 验收第一屏可见主舞台、objective、选中对象、timeline，并且无 console error。
 
 完成定义：
@@ -447,10 +433,52 @@
 - Workbench 不再靠模块卡片堆叠解释全部能力，而是围绕选中对象和事件链路组织。
 - Browser 验收中，第一屏能看见 canvas、objective、选中对象、最近链路和主要资源/威胁流。
 
+### Phase 10.5D：Sandbox 长链路集成测试
+
+目标：为 Tiny Camp 建立一套长期维护的长链路集成测试，确保 Sandbox 的所有核心机制和跨模块协作持续运转正常。详细测试职责和长期场景定义见 `docs/apps/sandbox.md` 的“长链路测试要求”。
+
+当前状态：已实现。Sandbox 已新增 headless harness、snapshot assertions、long-chain scenarios 和 `sandbox-long-chain.test.ts`，覆盖 boot、idle automation、input/TCA/GAS、monster pressure、render sync、selection/camera/input scope 和 content reference 链路。
+
+任务拆分：
+
+1. 测试 harness
+   - 新增 `apps/sandbox/src/test/sandbox-harness.ts`。
+   - 提供固定 seed 创建 Sandbox runtime、memory renderer、fake asset summary、tick helper、snapshot helper、input helper。
+   - 提供常用查找函数，例如按 role、objectId、actorId、timeline kind、renderer object 查询。
+
+2. 快照断言工具
+   - 新增 `apps/sandbox/src/test/snapshot-assertions.ts`。
+   - 封装 deterministic snapshot、timeline chain、content reference、renderer object/node patch、selection/camera/input scope 等断言。
+   - 避免测试直接依赖完整数组顺序和脆弱时间点，优先使用存在性、区间、单调增长和固定 seed 片段。
+
+3. 长链路场景定义
+   - 新增 `apps/sandbox/src/test/long-chain-scenarios.ts`。
+   - 把 boot、idle automation、confirm、monster pressure、render sync、selection/camera、content reference 等步骤做成可复用 scenario。
+   - scenario 只描述行为步骤和观察点，不夹杂 UI DOM 实现细节。
+
+4. Runtime 长链路测试
+   - 新增 `apps/sandbox/src/sandbox-long-chain.test.ts`。
+   - 覆盖 Boot Chain、Idle Automation Chain、Input → TCA → GAS Chain、Monster Pressure Chain、Render Sync Chain、Selection / Camera / Input Scope Chain、Content Reference Chain。
+   - 默认使用 memory renderer 和 headless runtime，纳入 `corepack pnpm test`。
+
+5. Browser smoke 验收入口
+   - 保留轻量浏览器验收策略：启动 Vite 后检查第一屏、canvas、Inspector、Timeline、无 console error、关键点击/confirm 行为。
+   - Browser smoke 不替代 runtime 长链路测试，也不做像素级视觉回归。
+
+完成定义：
+
+- `corepack pnpm test` 中包含 Sandbox 长链路 runtime 测试。
+- 固定 seed 下 Tiny Camp 自动循环可复现，且 resource、worker、route、objective、threat、GAS、TCA、renderer sync 都被覆盖。
+- `confirm` 能被测试证明走完整 input/event → TCA → GAS → effect/cue → timeline 链路。
+- selection、空白点击取消、camera follow/free 和 input scope gate 有端到端覆盖。
+- Data/Asset/content reference 能从选中对象反查到 source pack、render、asset、GAS/TCA 相关 entry，且没有 missing reference diagnostic。
+- 测试工具按 harness/assertions/scenarios 拆分，不把所有逻辑堆在单个测试文件中。
+- `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 通过。
+
 本阶段总完成定义：
 
-- 主舞台能直接看出 Command Core、Relay Tower、Scout、Data Node、Asset Fabricator、Interference Node 和 Signal Link 的职责。
-- 自动循环在无输入时持续推进 signal production、transport、threat 和 objective。
+- 主舞台能直接看出 Campfire、Worker、Resource Node、Storage、Workshop、Tower、Monster 和 Road/Task Path 的职责。
+- 自动循环在无输入时持续推进 gather、haul、build、defend、repair 和 objective。
 - 玩家输入可以选择对象并触发与 TCA/GAS 相关的能力。
 - Data、Asset、World、Renderer、Input、Camera、TCA、GAS、EventBus、App Host 都在场景或 Workbench 中有可观察表达。
 - Sandbox game module 不直接依赖 Phaser、Koota、DOM 或 App Host 内部实现。
@@ -506,17 +534,17 @@
    当前状态：已实现。`createAssetDataType()` 和默认 `asset.definition` 已实现；AssetManager 默认读取 `asset.definition`。旧 `asset` data kind 入口已移除，Asset snapshot 反查引用由 DataRegistry reference graph 提供。
 
 5. Sandbox 内容重组
-   - 拆分当前巨大的 sandbox data 文件，按 Signal Outpost 业务概念组织，例如 core、stations、scouts、threats、objectives。
-   - 每个业务文件允许混合 station、GAS、TCA、render、asset 等不同 DataType。
+   - 拆分当前巨大的 sandbox data 文件，按真实业务概念组织，例如 camp、workers、buildings、resources、monsters、waves、objectives。
+   - 每个业务文件允许混合 building、GAS、TCA、render、asset 等不同 DataType。
    - Inspector Content tab 从“按类型统计”升级为“选中对象关联的 data entries、refs、assets 和 source pack”。
 
-   当前状态：已实现第一步。Sandbox DataPack 已改为 `entries[]`，内容入口拆到 `content/core`、`content/stations`、`content/scouts`、`content/threats`、`content/objectives`、`content/visuals`；Inspector 文案已切到 Types。更细的“选中对象关联 content graph”留给后续 Workbench 打磨。
+   当前状态：已实现第一步并完成 Tiny Camp 语义迁移。Sandbox DataPack 已改为 `entries[]`，内容入口已按 core/buildings/workers/monsters/objectives/visuals 拆分；更细的“选中对象关联 content graph”留给后续 Workbench 打磨。
 
 完成定义：
 
 - 用户自定义 DataType 能注册、校验、索引和被查询。
 - 一个 DataPack 可以混合内置类型和用户自定义类型。
-- 同一个业务文件可以定义 hero/building/scout 所需的多种类型数据，不需要按类型拆表。
+- 同一个业务文件可以定义 hero/building/worker 所需的多种类型数据，不需要按类型拆表。
 - DataRef / AssetRef 缺失时错误能定位到 pack、entry 和字段路径。
 - 资源定义可以在独立 pack 中，引用它的数据仍能通过 AssetRef 校验和加载。
 - Sandbox 内容重组后，DataRegistry snapshot 和 Inspector 能说明选中对象来自哪些 entry 和引用了哪些资源。
@@ -539,7 +567,7 @@
 
 模块设计：`docs/modules/ui.md`
 
-当前状态：首轮垂直切片已实现。已建立 `ui-core` / `react-ui` 包、App Host 可选 UI service、Sandbox React shell、Input focus bridge、React UI 基础样式、GSAP 动效 helper 和 Signal Outpost theme 覆盖。Sandbox 现在通过场景对象自然验证 UI：选中实体会在 renderer stage 上显示 focus 框和对象浮层，场景点击只执行 focus/inspect，`UiModalHost` 改由 Objective Briefing 这类明确低频操作触发。完整 DevTools、Editor、复杂组件库和游戏 HUD 皮肤仍属于后续阶段。
+当前状态：首轮垂直切片已实现。已建立 `ui-core` / `react-ui` 包、App Host 可选 UI service、Sandbox React shell、Input focus bridge、React UI 基础样式、GSAP 动效 helper 和 Sandbox theme 覆盖。Sandbox 现在通过场景对象自然验证 UI：选中实体会在 renderer stage 上显示 focus 框和对象浮层，场景点击只执行 focus/inspect，`UiModalHost` 改由明确低频操作触发。完整 DevTools、Editor、复杂组件库和游戏 HUD 皮肤仍属于后续阶段。
 
 已实现：
 
@@ -589,7 +617,7 @@
    - React UI 以 GSAP 作为低频 UI 动效基础，用于 window/modal/toast/timeline/inspector 的进入、退出、强调和布局过渡。
    - shadcn/ui 作为推荐最佳实践，组件 recipe 应封装在 `@gamekit/react-ui` 或游戏 UI 包中，不能让业务代码到处直接依赖第三方 primitive。
    - 定义 shell、panel、window、modal、toolbar、focus ring、density、reduced motion 的 React UI 默认样式。
-   - Sandbox 定义自己的 Signal Outpost theme 和组件层，逐步替代散落硬编码颜色。
+   - Sandbox 定义自己的 Tiny Camp theme 和组件层，逐步替代散落硬编码颜色。
    - App Host/Profile 可以传递不透明的 React UI style 参数，但不解释 CSS 细节或主题协议。
 
 4. App Host 接入
@@ -601,7 +629,7 @@
 5. Sandbox Workbench 迁移
    - 将当前 vanilla DOM 的 HUD、Inspector、Timeline、Content/Asset/Data/Host summary 迁移为 React panels。
    - Phaser canvas 仍由 renderer service 管理，React shell 只负责布局和 overlay。
-   - Signal Outpost game module 不依赖 React 或 UI package 的实现组件。
+   - Sandbox game module 不依赖 React 或 UI package 的实现组件。
    - 现有 fixed seed integration test 保持稳定。
 
 6. Input focus 协作

@@ -4,7 +4,7 @@ import type { CameraState2D } from "@gamekit/camera-core";
 import type { DataRegistry } from "@gamekit/data";
 import type { UiRuntime } from "@gamekit/ui-core";
 import type { Root as ReactRoot } from "react-dom/client";
-import type { SandboxRuntime } from "../game";
+import type { SandboxRuntime, SandboxSnapshot } from "../game";
 
 export type SandboxInspectorTab = "actor" | "runtime" | "content" | "rules" | "host";
 
@@ -58,8 +58,10 @@ export type SandboxUiHandles = {
   latestDataRegistry?: DataRegistry | undefined;
   latestAssetManager?: AssetManager | undefined;
   latestSandbox?: SandboxRuntime | undefined;
+  latestSnapshot?: SandboxSnapshot | undefined;
   latestCameraStatus?: SandboxCameraStatus | undefined;
   latestWorkbenchState?: SandboxWorkbenchState | undefined;
+  lastSnapshotAt?: number | undefined;
   lastWorkbenchRenderAt?: number | undefined;
 };
 

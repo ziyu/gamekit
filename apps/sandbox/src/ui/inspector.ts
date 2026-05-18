@@ -1,7 +1,7 @@
 import type { AppHost } from "@gamekit/app-host";
 import type { DataRegistry } from "@gamekit/data";
 import type { SandboxRuntime, SandboxSnapshot } from "../game";
-import { escapeHtml, formatNumber, upper } from "./format";
+import { formatNumber, upper } from "./format";
 import type { SandboxUiHandles, SandboxWorkbenchState } from "./types";
 
 export function renderInspector(
@@ -30,130 +30,303 @@ export function renderInspector(
   setActiveTabs(handles, state);
 
   if (state.activeInspectorTab === "runtime") {
-    handles.inspectorBody.innerHTML = renderRuntimeTab(snapshot);
+    handles.inspectorBody.replaceChildren(renderRuntimeTab(snapshot));
     return;
   }
   if (state.activeInspectorTab === "content") {
-    handles.inspectorBody.innerHTML = renderContentTab(snapshot, handles.latestDataRegistry);
+    handles.inspectorBody.replaceChildren(renderContentTab(snapshot, handles.latestDataRegistry));
     return;
   }
   if (state.activeInspectorTab === "rules") {
-    handles.inspectorBody.innerHTML = renderRulesTab(snapshot);
+    handles.inspectorBody.replaceChildren(renderRulesTab(snapshot));
     return;
   }
   if (state.activeInspectorTab === "host") {
-    handles.inspectorBody.innerHTML = renderHostTab(handles.latestHost);
+    handles.inspectorBody.replaceChildren(renderHostTab(handles.latestHost));
     return;
   }
 
-  handles.inspectorBody.innerHTML = renderActorTab(snapshot, state, selectedActorId);
+  handles.inspectorBody.replaceChildren(renderActorTab(snapshot, state, selectedActorId));
 }
 
 function renderActorTab(
   snapshot: SandboxSnapshot,
   state: SandboxWorkbenchState,
   selectedActorId: string | undefined
-): string {
+): DocumentFragment {
+  const fragment = document.createDocumentFragment();
   const selectedActor = snapshot.gasActors.find((actor) => actor.actor.actorId === selectedActorId);
   const selectedEntity = state.selectionCleared
     ? undefined
     : (snapshot.entities.find((entity) => entity.id === snapshot.selected?.entityId) ??
       snapshot.entities.find((entity) => entity.actorId === selectedActorId));
-  const sceneObjects = snapshot.entities.filter(
-    (entity) => entity.role && entity.role !== "signal-link"
+  const sceneObjects = snapshot.entities.filter((entity) => entity.role && entity.role !== "road");
+
+  fragment.append(
+    createSection(
+      "Camp Objects",
+      createSummaryList(
+        sceneObjects.map((entity) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "entity-row";
+          button.classList.toggle("is-selected", entity.id === selectedEntity?.id);
+          button.dataset.selectEntity = String(entity.id);
+          if (entity.actorId) {
+            button.dataset.selectActor = entity.actorId;
+          }
+
+          button.append(
+            createTextElement("code", entity.label ?? entity.objectId ?? String(entity.id)),
+            createTextElement("strong", entity.role ?? "object"),
+            createTextElement(
+              "span",
+              `${renderEntityStorage(entity)}${entity.building ? ` · p${entity.building.priority} · ${entity.building.zone}` : ""}`
+            )
+          );
+          return createListItem(button);
+        })
+      )
+    ),
+    createSection(
+      "GAS Actors",
+      createActorButtons(
+        snapshot.gasActors.map((actor) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.classList.toggle("is-selected", actor.actor.actorId === selectedActorId);
+          button.dataset.selectActor = actor.actor.actorId;
+          if (actor.actor.entityId !== undefined) {
+            button.dataset.selectEntity = String(actor.actor.entityId);
+          }
+          button.append(
+            createTextElement("span", formatActorName(actor.actor.actorId)),
+            createTextElement("strong", `${formatNumber(actor.attributes.current.health ?? 0)} hp`)
+          );
+          return button;
+        })
+      )
+    ),
+    createSection(
+      "Entity Link",
+      createKvList([
+        ["Object", selectedEntity?.label ?? selectedEntity?.objectId ?? "unbound"],
+        ["Role", selectedEntity?.role ?? "unknown"],
+        ["Entity", String(selectedEntity?.id ?? "unbound")],
+        ["Render", selectedEntity?.renderObjectId ?? "pending"],
+        [
+          "Position",
+          `${formatNumber(selectedEntity?.x ?? 0)}, ${formatNumber(selectedEntity?.y ?? 0)}`
+        ],
+        [
+          "Velocity",
+          `${formatNumber(selectedEntity?.vx ?? 0)}, ${formatNumber(selectedEntity?.vy ?? 0)}`
+        ],
+        ["Storage", renderEntityStorage(selectedEntity)],
+        ["Building", renderBuildingState(selectedEntity)],
+        ["Task", renderWorkState(selectedEntity)]
+      ]),
+      createInspectorActions(selectedEntity, state)
+    ),
+    createSection(
+      "GAS State",
+      createKvList([
+        ...Object.entries(selectedActor?.attributes.current ?? {}).map(
+          ([key, value]) => [key, formatNumber(value)] as const
+        ),
+        ["Tags", selectedActor?.tags.values.join(", ") || "none"],
+        [
+          "Effects",
+          selectedActor?.effects.active.map((effect) => effect.effectId).join(", ") || "none"
+        ]
+      ])
+    )
   );
 
-  return `
-    <section class="inspector-section">
-      <h2>Outpost Objects</h2>
-      <ol class="summary-list">
-        ${sceneObjects
-          .map(
-            (entity) => `
-          <li>
-            <button type="button" class="entity-row ${entity.id === selectedEntity?.id ? "is-selected" : ""}" data-select-entity="${escapeHtml(String(entity.id))}" ${entity.actorId ? `data-select-actor="${escapeHtml(entity.actorId)}"` : ""}>
-              <code>${escapeHtml(entity.label ?? entity.objectId ?? String(entity.id))}</code>
-              <strong>${escapeHtml(entity.role ?? "object")}</strong>
-              <span>${renderEntitySignal(entity)}${entity.station ? ` · p${entity.station.priority} · ${escapeHtml(entity.station.zone)}` : ""}</span>
-            </button>
-          </li>
-        `
-          )
-          .join("")}
-      </ol>
-    </section>
-
-    <section class="inspector-section">
-      <h2>GAS Actors</h2>
-      <div class="actor-buttons">
-        ${snapshot.gasActors
-          .map(
-            (actor) => `
-          <button type="button" data-select-actor="${escapeHtml(actor.actor.actorId)}" ${actor.actor.entityId === undefined ? "" : `data-select-entity="${escapeHtml(String(actor.actor.entityId))}"`} class="${actor.actor.actorId === selectedActorId ? "is-selected" : ""}">
-            <span>${escapeHtml(formatActorName(actor.actor.actorId))}</span>
-            <strong>${formatNumber(actor.attributes.current.health ?? 0)} hp</strong>
-          </button>
-        `
-          )
-          .join("")}
-      </div>
-    </section>
-
-    <section class="inspector-section">
-      <h2>Entity Link</h2>
-      <dl class="kv">
-        <div><dt>Object</dt><dd>${escapeHtml(selectedEntity?.label ?? selectedEntity?.objectId ?? "unbound")}</dd></div>
-        <div><dt>Role</dt><dd>${escapeHtml(selectedEntity?.role ?? "unknown")}</dd></div>
-        <div><dt>Entity</dt><dd>${escapeHtml(String(selectedEntity?.id ?? "unbound"))}</dd></div>
-        <div><dt>Render</dt><dd>${escapeHtml(selectedEntity?.renderObjectId ?? "pending")}</dd></div>
-        <div><dt>Position</dt><dd>${formatNumber(selectedEntity?.x ?? 0)}, ${formatNumber(selectedEntity?.y ?? 0)}</dd></div>
-        <div><dt>Velocity</dt><dd>${formatNumber(selectedEntity?.vx ?? 0)}, ${formatNumber(selectedEntity?.vy ?? 0)}</dd></div>
-        <div><dt>Signal</dt><dd>${renderEntitySignal(selectedEntity)}</dd></div>
-        <div><dt>Station</dt><dd>${renderStationState(selectedEntity)}</dd></div>
-        <div><dt>Task</dt><dd>${renderWorkState(selectedEntity)}</dd></div>
-      </dl>
-      <div class="inspector-actions">
-        ${
-          selectedEntity
-            ? `<button type="button" data-camera-follow="${escapeHtml(String(selectedEntity.id))}" class="${state.followedEntityId === selectedEntity.id ? "is-selected" : ""}">Follow Camera</button>`
-            : ""
-        }
-        <button type="button" data-camera-stop-follow>Free Camera</button>
-      </div>
-    </section>
-
-    <section class="inspector-section">
-      <h2>GAS State</h2>
-      <dl class="kv">
-        ${Object.entries(selectedActor?.attributes.current ?? {})
-          .map(
-            ([key, value]) => `
-          <div><dt>${escapeHtml(key)}</dt><dd>${formatNumber(value)}</dd></div>
-        `
-          )
-          .join("")}
-        <div><dt>Tags</dt><dd>${escapeHtml(selectedActor?.tags.values.join(", ") || "none")}</dd></div>
-        <div><dt>Effects</dt><dd>${escapeHtml(selectedActor?.effects.active.map((effect) => effect.effectId).join(", ") || "none")}</dd></div>
-      </dl>
-    </section>
-  `;
+  return fragment;
 }
 
-function renderEntitySignal(entity: SandboxSnapshot["entities"][number] | undefined): string {
-  if (!entity || entity.signal === undefined || entity.capacity === undefined) {
+function renderRuntimeTab(snapshot: SandboxSnapshot): HTMLElement {
+  return createSection(
+    "Module Flow",
+    createSummaryList(
+      snapshot.moduleSummary.map((module) =>
+        createListItem(
+          createTextElement("code", module.id),
+          createTextElement("strong", module.status),
+          createTextElement("span", module.detail)
+        )
+      )
+    )
+  );
+}
+
+function renderContentTab(
+  snapshot: SandboxSnapshot,
+  registry: DataRegistry | undefined
+): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  const documents = registry?.snapshot().documents.slice(0, 10) ?? [];
+  fragment.append(
+    createSection(
+      "Content Graph",
+      createKvList([
+        ["Packs", snapshot.contentSummary.packs],
+        ["Types", snapshot.contentSummary.types],
+        ["Documents", snapshot.contentSummary.documents],
+        ["References", snapshot.contentSummary.references],
+        ["Assets loaded", snapshot.contentSummary.assetsLoaded],
+        ["Assets failed", snapshot.contentSummary.assetsFailed]
+      ])
+    ),
+    createSection(
+      "Recent Data",
+      createSummaryList(
+        documents.map((document) =>
+          createListItem(
+            createTextElement("code", `${document.type}:${document.id}`),
+            createTextElement("span", document.tags.join(" · ") || "untagged")
+          )
+        )
+      )
+    )
+  );
+  return fragment;
+}
+
+function renderRulesTab(snapshot: SandboxSnapshot): HTMLElement {
+  return createSection(
+    "TCA Rules",
+    createKvList([
+      ["Rules", snapshot.tcaRuleCount],
+      ["TCA traces", snapshot.tcaTraces.length],
+      ["GAS traces", snapshot.gasTraces.length]
+    ]),
+    createSummaryList(
+      snapshot.tcaTraces
+        .slice()
+        .reverse()
+        .slice(0, 8)
+        .map((trace) =>
+          createListItem(
+            createTextElement("code", trace.ruleId),
+            createTextElement("strong", upper(trace.status)),
+            createTextElement("span", `${trace.eventType} · ${trace.actions.length} actions`)
+          )
+        )
+    )
+  );
+}
+
+function renderHostTab(host: AppHost | undefined): HTMLElement {
+  const snapshot = host?.snapshot();
+  return createSection(
+    "App Host",
+    createKvList([
+      ["Phase", snapshot?.phase ?? "pending"],
+      ["Services", snapshot?.services.length ?? 0],
+      ["Diagnostics", snapshot?.diagnostics.length ?? 0]
+    ]),
+    createSummaryList(
+      (snapshot?.services ?? []).map((service) =>
+        createListItem(
+          createTextElement("code", service.id),
+          createTextElement("strong", service.phase),
+          createTextElement("span", `deps ${service.dependencies.length}`)
+        )
+      )
+    )
+  );
+}
+
+function createSection(title: string, ...children: Node[]): HTMLElement {
+  const section = document.createElement("section");
+  section.className = "inspector-section";
+  const heading = document.createElement("h2");
+  heading.textContent = title;
+  section.append(heading, ...children);
+  return section;
+}
+
+function createSummaryList(items: Node[]): HTMLOListElement {
+  const list = document.createElement("ol");
+  list.className = "summary-list";
+  list.append(...items);
+  return list;
+}
+
+function createActorButtons(buttons: HTMLButtonElement[]): HTMLElement {
+  const container = document.createElement("div");
+  container.className = "actor-buttons";
+  container.append(...buttons);
+  return container;
+}
+
+function createListItem(...children: Node[]): HTMLLIElement {
+  const item = document.createElement("li");
+  item.append(...children);
+  return item;
+}
+
+function createKvList(rows: ReadonlyArray<readonly [string, string | number]>): HTMLElement {
+  const list = document.createElement("dl");
+  list.className = "kv";
+  for (const [label, value] of rows) {
+    const row = document.createElement("div");
+    row.append(createTextElement("dt", label), createTextElement("dd", String(value)));
+    list.append(row);
+  }
+  return list;
+}
+
+function createInspectorActions(
+  selectedEntity: SandboxSnapshot["entities"][number] | undefined,
+  state: SandboxWorkbenchState
+): HTMLElement {
+  const actions = document.createElement("div");
+  actions.className = "inspector-actions";
+  if (selectedEntity) {
+    const follow = document.createElement("button");
+    follow.type = "button";
+    follow.dataset.cameraFollow = String(selectedEntity.id);
+    follow.classList.toggle("is-selected", state.followedEntityId === selectedEntity.id);
+    follow.textContent = "Follow Camera";
+    actions.append(follow);
+  }
+
+  const stopFollow = document.createElement("button");
+  stopFollow.type = "button";
+  stopFollow.dataset.cameraStopFollow = "";
+  stopFollow.textContent = "Free Camera";
+  actions.append(stopFollow);
+  return actions;
+}
+
+function createTextElement<K extends keyof HTMLElementTagNameMap>(
+  tagName: K,
+  text: string
+): HTMLElementTagNameMap[K] {
+  const element = document.createElement(tagName);
+  element.textContent = text;
+  return element;
+}
+
+function renderEntityStorage(entity: SandboxSnapshot["entities"][number] | undefined): string {
+  if (!entity || entity.resource === undefined || entity.capacity === undefined) {
     return "no storage";
   }
 
-  const fragments = entity.fragments ? ` · ${formatNumber(entity.fragments)} frg` : "";
-  return `${formatNumber(entity.signal)} / ${formatNumber(entity.capacity)}${fragments}`;
+  const materials =
+    entity.materials && entity.materials > 0 ? ` · ${formatNumber(entity.materials)} mat` : "";
+  return `${formatNumber(entity.resource)} / ${formatNumber(entity.capacity)} res${materials}`;
 }
 
-function renderStationState(entity: SandboxSnapshot["entities"][number] | undefined): string {
-  if (!entity?.station) {
+function renderBuildingState(entity: SandboxSnapshot["entities"][number] | undefined): string {
+  if (!entity?.building) {
     return "none";
   }
 
-  return `${entity.station.zone} · stability ${formatNumber(entity.station.stability)} · heat ${formatNumber(entity.station.heat)} · mode ${entity.station.mode}`;
+  return `${entity.building.zone} · health ${formatNumber(entity.building.health)} · heat ${formatNumber(entity.building.heat)} · mode ${entity.building.mode}`;
 }
 
 function renderWorkState(entity: SandboxSnapshot["entities"][number] | undefined): string {
@@ -166,115 +339,6 @@ function renderWorkState(entity: SandboxSnapshot["entities"][number] | undefined
 
 function formatActorName(actorId: string): string {
   return actorId.replace("gas.actor.sandbox.", "");
-}
-
-function renderRuntimeTab(snapshot: SandboxSnapshot): string {
-  return `
-    <section class="inspector-section">
-      <h2>Module Flow</h2>
-      <ol class="summary-list">
-        ${snapshot.moduleSummary
-          .map(
-            (module) => `
-          <li>
-            <code>${escapeHtml(module.id)}</code>
-            <strong>${escapeHtml(module.status)}</strong>
-            <span>${escapeHtml(module.detail)}</span>
-          </li>
-        `
-          )
-          .join("")}
-      </ol>
-    </section>
-  `;
-}
-
-function renderContentTab(snapshot: SandboxSnapshot, registry: DataRegistry | undefined): string {
-  const documents = registry?.snapshot().documents.slice(0, 10) ?? [];
-  return `
-    <section class="inspector-section">
-      <h2>Content Graph</h2>
-      <dl class="kv">
-        <div><dt>Packs</dt><dd>${snapshot.contentSummary.packs}</dd></div>
-        <div><dt>Types</dt><dd>${snapshot.contentSummary.types}</dd></div>
-        <div><dt>Documents</dt><dd>${snapshot.contentSummary.documents}</dd></div>
-        <div><dt>References</dt><dd>${snapshot.contentSummary.references}</dd></div>
-        <div><dt>Assets loaded</dt><dd>${snapshot.contentSummary.assetsLoaded}</dd></div>
-        <div><dt>Assets failed</dt><dd>${snapshot.contentSummary.assetsFailed}</dd></div>
-      </dl>
-    </section>
-    <section class="inspector-section">
-      <h2>Recent Data</h2>
-      <ol class="summary-list">
-        ${documents
-          .map(
-            (document) => `
-          <li>
-            <code>${escapeHtml(document.type)}:${escapeHtml(document.id)}</code>
-            <span>${document.tags.map(escapeHtml).join(" · ") || "untagged"}</span>
-          </li>
-        `
-          )
-          .join("")}
-      </ol>
-    </section>
-  `;
-}
-
-function renderRulesTab(snapshot: SandboxSnapshot): string {
-  return `
-    <section class="inspector-section">
-      <h2>TCA Rules</h2>
-      <dl class="kv">
-        <div><dt>Rules</dt><dd>${snapshot.tcaRuleCount}</dd></div>
-        <div><dt>TCA traces</dt><dd>${snapshot.tcaTraces.length}</dd></div>
-        <div><dt>GAS traces</dt><dd>${snapshot.gasTraces.length}</dd></div>
-      </dl>
-      <ol class="summary-list">
-        ${snapshot.tcaTraces
-          .slice()
-          .reverse()
-          .slice(0, 8)
-          .map(
-            (trace) => `
-          <li>
-            <code>${escapeHtml(trace.ruleId)}</code>
-            <strong>${escapeHtml(upper(trace.status))}</strong>
-            <span>${escapeHtml(trace.eventType)} · ${trace.actions.length} actions</span>
-          </li>
-        `
-          )
-          .join("")}
-      </ol>
-    </section>
-  `;
-}
-
-function renderHostTab(host: AppHost | undefined): string {
-  const snapshot = host?.snapshot();
-  return `
-    <section class="inspector-section">
-      <h2>App Host</h2>
-      <dl class="kv">
-        <div><dt>Phase</dt><dd>${escapeHtml(snapshot?.phase ?? "pending")}</dd></div>
-        <div><dt>Services</dt><dd>${snapshot?.services.length ?? 0}</dd></div>
-        <div><dt>Diagnostics</dt><dd>${snapshot?.diagnostics.length ?? 0}</dd></div>
-      </dl>
-      <ol class="summary-list">
-        ${(snapshot?.services ?? [])
-          .map(
-            (service) => `
-          <li>
-            <code>${escapeHtml(service.id)}</code>
-            <strong>${escapeHtml(service.phase)}</strong>
-            <span>deps ${service.dependencies.length}</span>
-          </li>
-        `
-          )
-          .join("")}
-      </ol>
-    </section>
-  `;
 }
 
 function setActiveTabs(handles: SandboxUiHandles, state: SandboxWorkbenchState): void {

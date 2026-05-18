@@ -17,16 +17,12 @@ import type {
 export function updateSandboxHud(
   handles: SandboxUiHandles,
   sandbox: SandboxRuntime,
-  state: SandboxWorkbenchState
+  state: SandboxWorkbenchState,
+  options: { forceSnapshot?: boolean; forceWorkbench?: boolean } = {}
 ): void {
   handles.latestSandbox = sandbox;
   handles.latestWorkbenchState = { ...state };
-  const selectionCleared = state.selectionCleared === true;
-  const snapshot = sandbox.snapshot({
-    selectedActorId: selectionCleared ? undefined : state.selectedActorId,
-    selectedEntityId: selectionCleared ? undefined : state.selectedEntityId,
-    defaultSelection: !selectionCleared
-  });
+  const snapshot = readCachedSnapshot(handles, sandbox, state, options.forceSnapshot === true);
   const clock = snapshot.clock;
 
   handles.status.classList.toggle("status--running", snapshot.running);
@@ -40,9 +36,11 @@ export function updateSandboxHud(
   handles.tick.textContent = String(clock.ticks);
   handles.modules.textContent = String(sandbox.runtime.modules.length);
   handles.systems.textContent = String(sandbox.runtime.systems.values().length);
-  renderSceneOverlay(handles, snapshot, state);
+  renderSceneOverlay(handles, snapshot, state, {
+    resolveEntityPosition: sandbox.resolveEntityPosition
+  });
 
-  if (shouldRenderWorkbench(handles)) {
+  if (shouldRenderWorkbench(handles, options.forceWorkbench === true)) {
     renderInspector(handles, sandbox, state);
     renderTimeline(handles, sandbox, state);
     handles.latestWorkbenchState = { ...state };
@@ -88,7 +86,7 @@ function rerenderFromLatest(handles: SandboxUiHandles): void {
   if (!handles.latestSandbox) {
     return;
   }
-  if (!shouldRenderWorkbench(handles)) {
+  if (!shouldRenderWorkbench(handles, false)) {
     return;
   }
 
@@ -97,7 +95,39 @@ function rerenderFromLatest(handles: SandboxUiHandles): void {
   renderTimeline(handles, handles.latestSandbox, state);
 }
 
-function shouldRenderWorkbench(handles: SandboxUiHandles): boolean {
+function readCachedSnapshot(
+  handles: SandboxUiHandles,
+  sandbox: SandboxRuntime,
+  state: SandboxWorkbenchState,
+  forceSnapshot: boolean
+) {
+  const now = performance.now();
+  const selectionCleared = state.selectionCleared === true;
+  if (
+    !forceSnapshot &&
+    handles.latestSnapshot &&
+    handles.lastSnapshotAt !== undefined &&
+    now - handles.lastSnapshotAt < 250
+  ) {
+    return handles.latestSnapshot;
+  }
+
+  const snapshot = sandbox.snapshot({
+    selectedActorId: selectionCleared ? undefined : state.selectedActorId,
+    selectedEntityId: selectionCleared ? undefined : state.selectedEntityId,
+    defaultSelection: !selectionCleared
+  });
+  handles.latestSnapshot = snapshot;
+  handles.lastSnapshotAt = now;
+  return snapshot;
+}
+
+function shouldRenderWorkbench(handles: SandboxUiHandles, force: boolean): boolean {
+  if (force) {
+    handles.lastWorkbenchRenderAt = performance.now();
+    return true;
+  }
+
   const now = performance.now();
   if (handles.lastWorkbenchRenderAt !== undefined && now - handles.lastWorkbenchRenderAt < 5000) {
     return false;

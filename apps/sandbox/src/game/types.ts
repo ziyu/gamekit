@@ -16,15 +16,15 @@ export type SandboxEntitySnapshot = {
   y: number;
   vx: number;
   vy: number;
-  signal?: number | undefined;
-  fragments?: number | undefined;
+  resource?: number | undefined;
+  materials?: number | undefined;
   capacity?: number | undefined;
-  station?:
+  building?:
     | {
-        stationId: string;
+        buildingId: string;
         zone: string;
         priority: number;
-        stability: number;
+        health: number;
         heat: number;
         throughput: number;
         mode: string;
@@ -45,8 +45,8 @@ export type SandboxEntitySnapshot = {
     | {
         objectiveId: string;
         phaseId: string;
-        progressSignal: number;
-        targetSignal: number;
+        progressResources: number;
+        targetResources: number;
         unlocked: string[];
       }
     | undefined;
@@ -124,5 +124,6 @@ export type SandboxRuntime = {
   events: GameEvent[];
   tcaTraceStore: TcaTraceStore;
   gasTraceStore: GasTraceStore;
+  resolveEntityPosition(entityId: EntityId): { x: number; y: number } | undefined;
   snapshot(options?: SandboxSnapshotOptions): SandboxSnapshot;
 };

@@ -20,7 +20,7 @@ UI 是应用层能力，不是 GameRuntime 的一部分。它负责低频 HUD、
 - gameplay packages 不直接 import React、shadcn/ui、Base UI 或 app-specific UI component。
 - UI focus 必须能影响 Input Context / Scope，避免文本输入、Inspector、DevTools 中误触发 gameplay input。
 - `ui-core` 不定义 theme 或 style token；游戏主题、皮肤和组件库组织属于 React UI / app 层。
-- Sandbox、Hero Road、Editor 和 DevTools 应复用同一套 UI runtime / panel / window 协议。
+- 应用、demo、Editor 和 DevTools 应复用同一套 UI runtime / panel / window 协议。
 
 ## UI Core
 
@@ -131,10 +131,10 @@ export type GameUiTheme = {
 
 这只是推荐形状，不是 `ui-core` 公共协议。真实游戏可以按自己的业务组织，例如：
 
-- `heroRoadTheme`
-- `signalOutpostTheme`
+- `gameplayTheme`
 - `editorTheme`
 - `devtoolsTheme`
+- `highContrastTheme`
 
 不同游戏的 token 可以完全不同，但应该避免把 CSS 值散落在每个组件里。游戏主题最好集中放在 app 或 game UI package 中，再由组件库消费。
 
@@ -327,8 +327,8 @@ UI 可以缓存为展示服务的派生状态，但 source of truth 应留在对
 - UI 通过 selector 订阅低频 summary。
 - 高频舞台表现仍由 Renderer / Camera / World system 处理。
 
-## Sandbox / DevTools / Editor
+## App / DevTools / Editor
 
-Sandbox 应使用 UI runtime 验证默认路径，而不是长期只手写 DOM 面板。Sandbox 的 UI 能力应尽量来自场景内容本身，例如在 game viewport / renderer stage 上给选中实体显示 focus 框和对象摘要、点击场景对象只执行 focus/inspect 这类高频操作、在对象操作上通过 tip primitive 展示上下文提示。`UiModalHost` 应用于更明确、低频的交互，例如 Objective Briefing、确认操作或深层配置，避免场景点击频繁弹窗。Inspector、Timeline、Content summary、Host summary 应逐步成为注册 panel。
+应用、demo、DevTools 和 Editor 应复用同一套窗口、面板、focus 和 command 协议，而不是各自手写互不兼容的 UI runtime。具体应用如何在场景中使用 focus 框、对象摘要、modal、tip、Inspector 或 Timeline，属于 `docs/apps/` 下的应用设计文档，不在 UI 模块文档中维护。
 
 DevTools 和 Editor 可以复用同一套窗口、面板、focus 和 command 协议，但它们的复杂业务状态应留在各自模块或 app 内，不上推到 UI Core。

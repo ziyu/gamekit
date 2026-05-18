@@ -33,7 +33,7 @@ export function renderSandboxShell(
         runtime={uiRuntime}
         className="gamekit-sandbox-ui"
         density="compact"
-        theme="signal-outpost"
+        theme="tiny-camp"
       >
         <UiFocusBridge
           runtime={uiRuntime}
@@ -44,7 +44,7 @@ export function renderSandboxShell(
           <header className="topbar">
             <div>
               <p className="eyebrow">GameKit / Scene Workbench</p>
-              <h1>Signal Outpost</h1>
+              <h1>Tiny Camp</h1>
             </div>
             <div className="status" data-ui="status">
               <span />
@@ -58,7 +58,7 @@ export function renderSandboxShell(
                 <div className="stage-panel__bar">
                   <div>
                     <span className="label">Objective</span>
-                    <strong data-ui="objective-label">Signal Outpost</strong>
+                    <strong data-ui="objective-label">Tiny Camp</strong>
                   </div>
                   <div className="objective-state">
                     <span data-ui="objective-status">waiting</span>
@@ -91,7 +91,7 @@ export function renderSandboxShell(
                 </div>
               </article>
 
-              <section className="signal-strip" data-ui-panel="sandbox.hud">
+              <section className="camp-strip" data-ui-panel="sandbox.hud">
                 <div>
                   <span>Tick</span>
                   <strong data-ui="tick">0</strong>
@@ -239,7 +239,7 @@ function SandboxObjectiveBriefingModal({ panel }: { panel: UiOpenPanel }) {
     <div className="scene-modal">
       <div className="scene-modal__hero">
         <span>Objective Briefing</span>
-        <strong>{props?.label ?? "Signal Outpost"}</strong>
+        <strong>{props?.label ?? "Tiny Camp"}</strong>
         <p>{props?.detail ?? "No objective telemetry available."}</p>
       </div>
       <dl className="scene-modal__stats">
@@ -281,6 +281,7 @@ export function bindSandboxWorkbenchControls(
     onChange: () => void;
     onFollowEntity?(entityId: string | number): void;
     onStopFollow?(): void;
+    onSceneOverlayInput?(event: MouseEvent | WheelEvent): void;
   }
 ): void {
   for (const tab of handles.inspectorTabs) {
@@ -350,7 +351,23 @@ export function bindSandboxWorkbenchControls(
         handles.lastWorkbenchRenderAt = undefined;
         actions.onChange();
       }
+      return;
     }
+
+    if (target.closest(".scene-object-card")) {
+      return;
+    }
+
+    actions.onSceneOverlayInput?.(event);
+  });
+
+  handles.sceneOverlay.addEventListener("wheel", (event) => {
+    const target = event.target;
+    if (target instanceof HTMLElement && target.closest(".scene-object-card")) {
+      return;
+    }
+
+    actions.onSceneOverlayInput?.(event);
   });
 
   handles.inspectorBody.addEventListener("click", (event) => {

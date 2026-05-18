@@ -17,9 +17,9 @@ describe("sandbox scene hit test", () => {
     const snapshot = {
       entities: [
         {
-          id: "scout-1",
-          actorId: "actor.scout.1",
-          role: "scout",
+          id: "worker-1",
+          actorId: "actor.worker.1",
+          role: "worker",
           x: 50,
           y: 50
         }
@@ -27,8 +27,8 @@ describe("sandbox scene hit test", () => {
     } as unknown as SandboxSnapshot;
 
     expect(resolveSandboxSceneClickTarget(snapshot, { x: 360, y: 262 }, camera)).toEqual({
-      entityId: "scout-1",
-      actorId: "actor.scout.1"
+      entityId: "worker-1",
+      actorId: "actor.worker.1"
     });
     expect(resolveSandboxSceneClickTarget(snapshot, { x: 390, y: 262 }, camera)).toBeUndefined();
   });
@@ -47,8 +47,8 @@ describe("sandbox scene hit test", () => {
     const snapshot = {
       entities: [
         {
-          id: "station-1",
-          role: "station",
+          id: "campfire-1",
+          role: "campfire",
           x: 50,
           y: 50
         }

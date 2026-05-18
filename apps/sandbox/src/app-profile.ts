@@ -8,6 +8,7 @@ import {
 import type { CameraController } from "@gamekit/camera-core";
 import type { DataRegistry } from "@gamekit/data";
 import { createPhaserDriver } from "@gamekit/driver-phaser";
+import { createEventBus } from "@gamekit/event-bus";
 import { createGasTcaDefinitions, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
 import { createInputRouter, type InputRouter } from "@gamekit/input-core";
 import { createDomInputAdapter } from "@gamekit/input-dom";
@@ -16,6 +17,7 @@ import { createWebPlatform } from "@gamekit/platform-web";
 import type { RendererAdapter, RendererBootContext } from "@gamekit/renderer-core";
 import { createTcaTraceStore, mergeTcaDefinitionSets } from "@gamekit/tca";
 import type { UiRuntime } from "@gamekit/ui-core";
+import { createKootaWorld } from "@gamekit/world-koota";
 import { createSandboxCameraController } from "./camera";
 import {
   createSandboxDataRegistry,
@@ -183,9 +185,7 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
             actions: sandboxCameraActions(),
             follow: {
               resolveTarget({ context }, targetEntity) {
-                const entity = context.sandbox
-                  ?.snapshot()
-                  .entities.find((entry) => entry.id === targetEntity);
+                const entity = context.sandbox?.resolveEntityPosition(targetEntity);
                 return entity
                   ? {
                       x: (entity.x / 100) * SANDBOX_RENDER_SIZE.width,
@@ -211,6 +211,8 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
           const sandbox = createSandboxRuntime({
             renderer: requireStandardState(state.renderer, "renderer"),
             renderSize: SANDBOX_RENDER_SIZE,
+            world: createKootaWorld(),
+            eventBus: createEventBus({ clock: () => Math.round(performance.now()) }),
             dataRegistry: requireStandardState(state.data, "data"),
             assetSummary: () => summarizeAssets(requireStandardState(state.assets, "assets")),
             modules,

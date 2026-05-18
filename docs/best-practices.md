@@ -69,6 +69,13 @@ Sandbox 是架构验证场，不是最终 demo。
 - 在 sandbox 里沉淀长期玩法规则。
 - 直接绕过 GameKit 公共接口访问 adapter 内部。
 
+## UI / DOM
+
+- 游戏 app、demo、sandbox、editor 的交互 UI 应通过 React/组件系统或显式 DOM builder 构建，不用 HTML 字符串拼接。
+- 需要更新已有 DOM 时，优先更新 `textContent`、`style`、`classList`、`dataset` 或子节点；避免每帧或每次 snapshot 都重建可交互节点。
+- 可点击、可输入、可选择文本的 UI 节点应保持稳定，避免刷新时打断焦点、hover、文本选择、按钮状态和动画。
+- 游戏数据、内容包数据、用户输入和诊断文本都按不可信文本处理；写入 DOM 时使用 `textContent` 或组件文本子节点。
+
 ## React UI
 
 - `@gamekit/react-ui` 使用 Tailwind CSS 作为默认样式基础，样式应通过组件、recipe、CSS variables 和语义 props 组织，而不是把 class 字符串散落在业务页面中。

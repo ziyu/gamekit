@@ -301,7 +301,7 @@ App Host 在这个边界上的职责：
 
 App Host 不应做的事：
 
-- 不解释 hero、monster、station、rule、ability 等业务数据结构。
+- 不解释 hero、monster、building、rule、ability 等业务数据结构。
 - 不在当前阶段定义 DataPackSource / DataPackLoader / DataPackManifest。
 - 不让 AssetManager 直接读取 DataPack。
 - 不把资源加载失败写成 DataRegistry 校验错误。
@@ -486,9 +486,9 @@ App Host 可以帮助 Game Module 无痛启动：`profile.standard.game.standard
 - `gas` 标准游戏模块负责从 DataRegistry 读取 GAS 定义、创建 ECS-backed GAS runtime、注册 effect tick system、写入 trace，并在 GameRuntime dispose 时释放。
 - 标准游戏模块只能依赖稳定 facade、App Host services 和 profile 注入的定义，不能直接依赖 Phaser、DOM、Tauri 或具体 app 入口。
 
-## Sandbox / Test Host
+## Test Host
 
-Sandbox 应使用 App Host definition/profile 验证默认路径，而不是长期手写初始化流水线。
+测试环境应能使用 headless Host 验证标准组合路径，而不是依赖具体浏览器、窗口系统或应用入口。
 
 测试环境应能使用 headless Host：
 

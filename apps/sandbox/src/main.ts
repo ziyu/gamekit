@@ -4,7 +4,11 @@ import "./styles.css";
 import { createConfiguredAppHost } from "@gamekit/app-host";
 import type { NormalizedInputEvent } from "@gamekit/input-core";
 import { createUiRuntime } from "@gamekit/ui-core";
-import { SANDBOX_SCENE_CLICK_ACTION_ID, toRendererLocalInput } from "./app-input";
+import {
+  routeSandboxSceneOverlayInput,
+  SANDBOX_SCENE_CLICK_ACTION_ID,
+  toRendererLocalInput
+} from "./app-input";
 import { sandboxAppDefinition } from "./app-definition";
 import { createSandboxWebProfile, type SandboxAppContext } from "./app-profile";
 import { resolveSandboxSceneClickTarget } from "./scene-hit-test";
@@ -44,7 +48,10 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
   });
   const refreshWorkbench = () => {
     if (context.sandbox) {
-      updateSandboxHud(ui, context.sandbox, workbench);
+      updateSandboxHud(ui, context.sandbox, workbench, {
+        forceSnapshot: true,
+        forceWorkbench: true
+      });
     }
   };
 
@@ -59,6 +66,9 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
     },
     onStopFollow() {
       context.sandbox?.runtime.eventBus.emit("camera.stop_follow", {}, "sandbox.inspector");
+    },
+    onSceneOverlayInput(event) {
+      routeSandboxSceneOverlayInput(context, event);
     }
   });
 

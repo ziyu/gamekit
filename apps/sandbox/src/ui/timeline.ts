@@ -1,6 +1,6 @@
 import { createGameKitUiAnimator } from "@gamekit/react-ui";
 import type { SandboxRuntime } from "../game";
-import { escapeHtml, upper } from "./format";
+import { upper } from "./format";
 import type { SandboxUiHandles, SandboxWorkbenchState } from "./types";
 
 const timelineAnimator = createGameKitUiAnimator({ duration: 0.24 });
@@ -26,20 +26,7 @@ export function renderTimeline(
   }
 
   const visibleEntries = entries.slice().reverse().slice(0, 18);
-
-  handles.timelineList.innerHTML = visibleEntries
-    .slice()
-    .map(
-      (entry) => `
-      <li class="timeline-entry timeline-entry--${escapeHtml(entry.kind)}" data-timeline-entry="${escapeHtml(entry.id)}">
-        <span class="timeline-entry__meta">${escapeHtml(upper(entry.kind))} · ${formatTime(entry.time)}</span>
-        <strong class="timeline-entry__label">${escapeHtml(entry.label)}</strong>
-        <code>${escapeHtml(entry.source)}</code>
-        <span class="timeline-entry__status">${escapeHtml(entry.status ?? "observed")}${entry.actorId ? ` · ${escapeHtml(entry.actorId)}` : ""}</span>
-      </li>
-    `
-    )
-    .join("");
+  handles.timelineList.replaceChildren(...visibleEntries.map(createTimelineEntryElement));
 
   const latestEntry = visibleEntries[0];
   if (!latestEntry || latestEntry.id === handles.lastAnimatedTimelineEntryId) {
@@ -57,4 +44,30 @@ export function renderTimeline(
 
 function formatTime(time: number): string {
   return `${Math.round(time)}ms`;
+}
+
+function createTimelineEntryElement(
+  entry: ReturnType<SandboxRuntime["snapshot"]>["timeline"][number]
+): HTMLElement {
+  const item = document.createElement("li");
+  item.className = `timeline-entry timeline-entry--${entry.kind}`;
+  item.dataset.timelineEntry = entry.id;
+
+  const meta = document.createElement("span");
+  meta.className = "timeline-entry__meta";
+  meta.textContent = `${upper(entry.kind)} · ${formatTime(entry.time)}`;
+
+  const label = document.createElement("strong");
+  label.className = "timeline-entry__label";
+  label.textContent = entry.label;
+
+  const source = document.createElement("code");
+  source.textContent = entry.source;
+
+  const status = document.createElement("span");
+  status.className = "timeline-entry__status";
+  status.textContent = `${entry.status ?? "observed"}${entry.actorId ? ` · ${entry.actorId}` : ""}`;
+
+  item.append(meta, label, source, status);
+  return item;
 }

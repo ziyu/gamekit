@@ -2,6 +2,7 @@ import { defineGameModule } from "@gamekit/core";
 import type { GameInstallContext } from "@gamekit/game-runtime";
 import type {
   RenderNodePatch,
+  RenderNodePath,
   RenderObjectDefinition,
   RenderObjectPatch,
   RendererAdapter
@@ -13,8 +14,8 @@ import {
   Position,
   RenderObjectPresentation,
   SceneObject,
-  StationState,
-  SignalStorage,
+  BuildingState,
+  ResourceStorage,
   ThreatState,
   WorkAssignment,
   type SandboxRenderNodeAnimation
@@ -32,10 +33,39 @@ type SandboxRenderTransformPatch = {
   width?: number | undefined;
 };
 
+type RenderObjectPatchSignature = {
+  x?: number | undefined;
+  y?: number | undefined;
+  rotation?: number | undefined;
+  width?: number | undefined;
+  alpha?: number | undefined;
+  tint?: number | undefined;
+};
+
+type RenderNodePatchSignature = {
+  x?: number | undefined;
+  y?: number | undefined;
+  rotation?: number | undefined;
+  scaleX?: number | undefined;
+  scaleY?: number | undefined;
+  width?: number | undefined;
+  alpha?: number | undefined;
+  tint?: number | undefined;
+};
+
+type RenderSyncCache = {
+  objectPatches: Map<string, RenderObjectPatchSignature>;
+  nodePatches: Map<string, Map<string, RenderNodePatchSignature>>;
+  positionsByObjectId: Map<string, { x: number; y: number }>;
+};
+
 export type SandboxRenderSyncOptions = {
   renderer: RendererAdapter;
   size: SandboxRenderSize;
 };
+
+const RENDER_POSITION_EPSILON = 0.01;
+const RENDER_VALUE_EPSILON = 0.001;
 
 export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions) {
   return defineGameModule<GameInstallContext>({
@@ -46,16 +76,21 @@ export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions)
         { rendererId: options.renderer.id },
         "sandbox.render_sync"
       );
+      const cache: RenderSyncCache = {
+        objectPatches: new Map(),
+        nodePatches: new Map(),
+        positionsByObjectId: new Map()
+      };
 
       ctx.systems.register({
         id: "sandbox.render_sync_system",
         update({ world, tick, elapsed }) {
-          const positionsByObjectId = new Map<string, { x: number; y: number }>();
+          cache.positionsByObjectId.clear();
           for (const entity of world.query([SceneObject, Position])) {
             const object = world.get(entity, SceneObject);
             const position = world.get(entity, Position);
             if (object && position) {
-              positionsByObjectId.set(object.objectId, position);
+              cache.positionsByObjectId.set(object.objectId, position);
             }
           }
 
@@ -68,7 +103,7 @@ export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions)
 
             const link = world.get(entity, LinkState);
             const renderTransform: SandboxRenderTransformPatch = link
-              ? createLinkTransform(link, positionsByObjectId, options.size)
+              ? createLinkTransform(link, cache.positionsByObjectId, options.size)
               : {
                   x: toPixel(position.x, options.size.width),
                   y: toPixel(position.y, options.size.height)
@@ -93,17 +128,26 @@ export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions)
               continue;
             }
 
-            options.renderer.updateObject(
+            updateObjectIfChanged(
+              options.renderer,
+              cache,
               presentation.renderObjectId,
               createObjectPatch(renderTransform, link)
             );
             applyNodeAnimations(
               options.renderer,
+              cache,
               presentation.renderObjectId,
               presentation,
               elapsed
             );
-            applySceneNodeState(options.renderer, presentation.renderObjectId, world, entity);
+            applySceneNodeState(
+              options.renderer,
+              cache,
+              presentation.renderObjectId,
+              world,
+              entity
+            );
           }
 
           if (tick % 120 === 0) {
@@ -117,6 +161,7 @@ export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions)
 
 function applyNodeAnimations(
   renderer: RendererAdapter,
+  cache: RenderSyncCache,
   renderObjectId: string,
   presentation: ReturnType<typeof RenderObjectPresentation.create>,
   elapsed: number
@@ -127,7 +172,13 @@ function applyNodeAnimations(
 
   const seconds = elapsed / 1000;
   for (const animation of presentation.nodeAnimations) {
-    renderer.updateNode(renderObjectId, animation.nodePath, createNodePatch(animation, seconds));
+    updateNodeIfChanged(
+      renderer,
+      cache,
+      renderObjectId,
+      animation.nodePath,
+      createNodePatch(animation, seconds)
+    );
   }
 }
 
@@ -211,7 +262,7 @@ function createObjectPatch(
     },
     props: {
       ...(transform.width === undefined ? {} : { width: transform.width }),
-      ...(link ? { tint: link.status === "corrupted" ? 0xdd3627 : 0x64c2d0 } : {})
+      ...(link ? { tint: linkTint(link.status) } : {})
     }
   };
 
@@ -244,6 +295,7 @@ function createLinkTransform(
 
 function applySceneNodeState(
   renderer: RendererAdapter,
+  cache: RenderSyncCache,
   renderObjectId: string,
   world: GameWorld,
   entity: EntityId
@@ -252,24 +304,23 @@ function applySceneNodeState(
     return;
   }
 
-  const storage = world.get(entity, SignalStorage);
-  const station = world.get(entity, StationState);
+  const storage = world.get(entity, ResourceStorage);
+  const building = world.get(entity, BuildingState);
   const work = world.get(entity, WorkAssignment);
   const threat = world.get(entity, ThreatState);
   const objective = world.get(entity, ObjectiveState);
-  const link = world.get(entity, LinkState);
   const object = world.get(entity, SceneObject);
 
   if (storage) {
-    const ratio = storage.capacity <= 0 ? 0 : Math.min(1, storage.signal / storage.capacity);
-    renderer.updateNode(renderObjectId, "charge/fill", {
+    const ratio = storage.capacity <= 0 ? 0 : Math.min(1, storage.resource / storage.capacity);
+    updateNodeIfChanged(renderer, cache, renderObjectId, "charge/fill", {
       props: {
         width: 4 + ratio * 48,
         tint: ratio > 0.85 ? 0xd9b35f : 0x7fd16b
       },
       alpha: 0.45 + ratio * 0.55
     });
-    renderer.updateNode(renderObjectId, "beacon", {
+    updateNodeIfChanged(renderer, cache, renderObjectId, "beacon", {
       alpha: 0.25 + ratio * 0.75,
       transform: {
         scale: {
@@ -280,17 +331,17 @@ function applySceneNodeState(
     });
   }
 
-  if (station) {
-    const stability = clamp(station.stability / 100, 0, 1);
-    const heat = clamp(station.heat / 100, 0, 1);
-    renderer.updateNode(renderObjectId, "outer", {
+  if (building) {
+    const health = clamp(building.health / 100, 0, 1);
+    const heat = clamp(building.heat / 100, 0, 1);
+    updateNodeIfChanged(renderer, cache, renderObjectId, "outer", {
       props: {
-        tint: heat > 0.68 ? 0xdd3627 : stability < 0.72 ? 0xd9b35f : 0x64c2d0
+        tint: heat > 0.68 ? 0xdd3627 : health < 0.72 ? 0xd9b35f : 0x64c2d0
       },
-      alpha: 0.44 + station.priority * 0.08
+      alpha: 0.44 + building.priority * 0.08
     });
-    renderer.updateNode(renderObjectId, "inner", {
-      alpha: 0.25 + stability * 0.58,
+    updateNodeIfChanged(renderer, cache, renderObjectId, "inner", {
+      alpha: 0.25 + health * 0.58,
       transform: {
         scale: {
           x: 0.9 + heat * 0.18,
@@ -302,7 +353,7 @@ function applySceneNodeState(
 
   if (work) {
     const carrying = work.cargo > 0 ? Math.min(1, work.cargo / 18) : 0;
-    renderer.updateNode(renderObjectId, "cargo", {
+    updateNodeIfChanged(renderer, cache, renderObjectId, "cargo", {
       alpha: carrying,
       transform: {
         scale: {
@@ -311,19 +362,19 @@ function applySceneNodeState(
         }
       }
     });
-    renderer.updateNode(renderObjectId, "task", {
+    updateNodeIfChanged(renderer, cache, renderObjectId, "task", {
       props: {
         tint: taskTint(work.task)
       },
       alpha: 0.35 + Math.max(work.progress, work.routeProgress) * 0.55
     });
-    renderer.updateNode(renderObjectId, "outer", {
+    updateNodeIfChanged(renderer, cache, renderObjectId, "outer", {
       alpha: 0.3 + (work.battery / 100) * 0.42
     });
   }
 
   if (threat) {
-    renderer.updateNode(renderObjectId, "field", {
+    updateNodeIfChanged(renderer, cache, renderObjectId, "field", {
       alpha: 0.12 + threat.intensity * 0.42,
       transform: {
         scale: {
@@ -336,10 +387,10 @@ function applySceneNodeState(
 
   if (objective) {
     const progress =
-      objective.targetSignal <= 0
+      objective.targetResources <= 0
         ? 0
-        : Math.min(1, objective.progressSignal / objective.targetSignal);
-    renderer.updateNode(renderObjectId, "aura", {
+        : Math.min(1, objective.progressResources / objective.targetResources);
+    updateNodeIfChanged(renderer, cache, renderObjectId, "aura", {
       alpha: 0.24 + progress * 0.5,
       transform: {
         scale: {
@@ -348,45 +399,173 @@ function applySceneNodeState(
         }
       }
     });
-    renderer.updateNode(renderObjectId, "core", {
+    updateNodeIfChanged(renderer, cache, renderObjectId, "core", {
       props: {
         tint: progress > 0.78 ? 0xd9b35f : 0xf3f0e8
       }
     });
   }
 
-  if (link) {
-    const tint =
-      link.status === "corrupted" ? 0xdd3627 : link.status === "overloaded" ? 0xd9b35f : 0x64c2d0;
-    renderer.updateObject(renderObjectId, {
-      props: { tint },
-      alpha: 0.2 + link.flow * 0.65
-    });
-  }
-
-  if (object?.role === "data-node") {
-    renderer.updateNode(renderObjectId, "core", {
+  if (object?.role === "storage") {
+    updateNodeIfChanged(renderer, cache, renderObjectId, "core", {
       props: { tint: 0x9d89d8 }
     });
   }
-  if (object?.role === "asset-fabricator") {
-    renderer.updateNode(renderObjectId, "core", {
+  if (object?.role === "workshop") {
+    updateNodeIfChanged(renderer, cache, renderObjectId, "core", {
       props: { tint: 0xd9b35f }
     });
   }
 }
 
+function linkTint(status: ReturnType<typeof LinkState.create>["status"]): number {
+  if (status === "danger") {
+    return 0xdd3627;
+  }
+  if (status === "blocked") {
+    return 0xd9b35f;
+  }
+  return 0x64c2d0;
+}
+
+function updateObjectIfChanged(
+  renderer: RendererAdapter,
+  cache: RenderSyncCache,
+  renderObjectId: string,
+  patch: RenderObjectPatch
+): void {
+  const signature = createObjectPatchSignature(patch);
+  if (sameObjectSignature(cache.objectPatches.get(renderObjectId), signature)) {
+    return;
+  }
+  renderer.updateObject(renderObjectId, patch);
+  cache.objectPatches.set(renderObjectId, signature);
+}
+
+function updateNodeIfChanged(
+  renderer: RendererAdapter,
+  cache: RenderSyncCache,
+  renderObjectId: string,
+  nodePath: RenderNodePath,
+  patch: RenderNodePatch
+): void {
+  if (!renderer.updateNode) {
+    return;
+  }
+
+  const signature = createNodePatchSignature(patch);
+  const nodePatches = getNodePatchCache(cache, renderObjectId);
+  const cacheKey = createNodePathCacheKey(nodePath);
+  if (sameNodeSignature(nodePatches.get(cacheKey), signature)) {
+    return;
+  }
+  renderer.updateNode(renderObjectId, nodePath, patch);
+  nodePatches.set(cacheKey, signature);
+}
+
+function createNodePathCacheKey(nodePath: RenderNodePath): string {
+  return Array.isArray(nodePath) ? nodePath.join("/") : nodePath;
+}
+
+function getNodePatchCache(
+  cache: RenderSyncCache,
+  renderObjectId: string
+): Map<string, RenderNodePatchSignature> {
+  const existing = cache.nodePatches.get(renderObjectId);
+  if (existing) {
+    return existing;
+  }
+  const nodePatches = new Map<string, RenderNodePatchSignature>();
+  cache.nodePatches.set(renderObjectId, nodePatches);
+  return nodePatches;
+}
+
+function createObjectPatchSignature(patch: RenderObjectPatch): RenderObjectPatchSignature {
+  return {
+    x: patch.transform?.position?.x,
+    y: patch.transform?.position?.y,
+    rotation: patch.transform?.rotation?.z,
+    width: readNumberProp(patch.props, "width"),
+    alpha: patch.alpha,
+    tint: readNumberProp(patch.props, "tint")
+  };
+}
+
+function createNodePatchSignature(patch: RenderNodePatch): RenderNodePatchSignature {
+  return {
+    x: patch.transform?.position?.x,
+    y: patch.transform?.position?.y,
+    rotation: patch.transform?.rotation?.z,
+    scaleX: patch.transform?.scale?.x,
+    scaleY: patch.transform?.scale?.y,
+    width: readNumberProp(patch.props, "width"),
+    alpha: patch.alpha,
+    tint: readNumberProp(patch.props, "tint")
+  };
+}
+
+function readNumberProp(
+  props: Partial<Record<string, unknown>> | undefined,
+  key: string
+): number | undefined {
+  const value = props?.[key];
+  return typeof value === "number" ? value : undefined;
+}
+
+function sameObjectSignature(
+  previous: RenderObjectPatchSignature | undefined,
+  next: RenderObjectPatchSignature
+): boolean {
+  return (
+    !!previous &&
+    sameOptionalNumber(previous.x, next.x, RENDER_POSITION_EPSILON) &&
+    sameOptionalNumber(previous.y, next.y, RENDER_POSITION_EPSILON) &&
+    sameOptionalNumber(previous.rotation, next.rotation, RENDER_VALUE_EPSILON) &&
+    sameOptionalNumber(previous.width, next.width, RENDER_POSITION_EPSILON) &&
+    sameOptionalNumber(previous.alpha, next.alpha, RENDER_VALUE_EPSILON) &&
+    previous.tint === next.tint
+  );
+}
+
+function sameNodeSignature(
+  previous: RenderNodePatchSignature | undefined,
+  next: RenderNodePatchSignature
+): boolean {
+  return (
+    !!previous &&
+    sameOptionalNumber(previous.x, next.x, RENDER_POSITION_EPSILON) &&
+    sameOptionalNumber(previous.y, next.y, RENDER_POSITION_EPSILON) &&
+    sameOptionalNumber(previous.rotation, next.rotation, RENDER_VALUE_EPSILON) &&
+    sameOptionalNumber(previous.scaleX, next.scaleX, RENDER_VALUE_EPSILON) &&
+    sameOptionalNumber(previous.scaleY, next.scaleY, RENDER_VALUE_EPSILON) &&
+    sameOptionalNumber(previous.width, next.width, RENDER_POSITION_EPSILON) &&
+    sameOptionalNumber(previous.alpha, next.alpha, RENDER_VALUE_EPSILON) &&
+    previous.tint === next.tint
+  );
+}
+
+function sameOptionalNumber(
+  previous: number | undefined,
+  next: number | undefined,
+  epsilon: number
+): boolean {
+  if (previous === undefined || next === undefined) {
+    return previous === next;
+  }
+  return Math.abs(previous - next) <= epsilon;
+}
+
 function taskTint(task: ReturnType<typeof WorkAssignment.create>["task"]): number {
-  if (task === "deliver") {
+  if (task === "haul") {
     return 0xd9b35f;
   }
   if (task === "repair") {
     return 0x7fd16b;
   }
-  if (task === "suppress") {
+  if (task === "defend") {
     return 0xdd3627;
   }
-  if (task === "scan") {
+  if (task === "build") {
     return 0x9d89d8;
   }
   return 0x64c2d0;

@@ -16,4 +16,4 @@
 
 ## 应用索引
 
-- `sandbox.md`：Sandbox / Signal Outpost 框架验证面。
+- `sandbox.md`：Sandbox / Tiny Camp 框架验证面。

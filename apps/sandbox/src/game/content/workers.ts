@@ -1,16 +1,16 @@
 import type { DataPackEntry } from "@gamekit/data";
 
-export const sandboxScoutEntries: DataPackEntry[] = [
+export const sandboxWorkerEntries: DataPackEntry[] = [
   {
     type: "sandbox.actor",
-    id: "actor.sandbox.scout_swarm",
+    id: "actor.sandbox.camp_crew",
     data: {
-      id: "actor.sandbox.scout_swarm",
-      name: "Scout Swarm",
+      id: "actor.sandbox.camp_crew",
+      name: "Camp Crew",
       entityCount: 5,
       baseSpeed: 24,
-      renderRigId: "renderRig.sandbox.scout_swarm",
-      abilityIds: ["ability.sandbox.phase_dash", "ability.sandbox.signal_ping"],
+      renderRigId: "renderRig.sandbox.camp_crew",
+      abilityIds: ["ability.sandbox.phase_dash", "ability.sandbox.camp_ping"],
       tags: ["sandbox", "runtime-seed", "complex-data"]
     }
   },
@@ -52,10 +52,10 @@ export const sandboxScoutEntries: DataPackEntry[] = [
   },
   {
     type: "sandbox.ability",
-    id: "ability.sandbox.signal_ping",
+    id: "ability.sandbox.camp_ping",
     data: {
-      id: "ability.sandbox.signal_ping",
-      name: "Signal Ping",
+      id: "ability.sandbox.camp_ping",
+      name: "Camp Ping",
       cooldownMs: 2400,
       trigger: {
         type: "runtime.interval",
@@ -66,7 +66,7 @@ export const sandboxScoutEntries: DataPackEntry[] = [
         {
           type: "event.emit",
           params: {
-            eventType: "sandbox.signal_ping"
+            eventType: "sandbox.camp_ping"
           }
         },
         {
@@ -82,10 +82,10 @@ export const sandboxScoutEntries: DataPackEntry[] = [
   },
   {
     type: "sandbox.biome",
-    id: "biome.sandbox.neon_ruins",
+    id: "biome.sandbox.forest_clearing",
     data: {
-      id: "biome.sandbox.neon_ruins",
-      name: "Neon Ruins",
+      id: "biome.sandbox.forest_clearing",
+      name: "Forest Clearing",
       navigation: {
         friction: 0.08,
         preferredAltitude: 0,
@@ -101,7 +101,7 @@ export const sandboxScoutEntries: DataPackEntry[] = [
             }
           },
           {
-            id: "signal-fog",
+            id: "night-fog",
             severity: 0.35,
             bounds: {
               x: 58,
@@ -121,11 +121,11 @@ export const sandboxScoutEntries: DataPackEntry[] = [
   },
   {
     type: "sandbox.spawnProfile",
-    id: "spawn.sandbox.scout_patrol",
+    id: "spawn.sandbox.camp_shift",
     data: {
-      id: "spawn.sandbox.scout_patrol",
-      actorId: "actor.sandbox.scout_swarm",
-      biomeId: "biome.sandbox.neon_ruins",
+      id: "spawn.sandbox.camp_shift",
+      actorId: "actor.sandbox.camp_crew",
+      biomeId: "biome.sandbox.forest_clearing",
       formation: {
         type: "arc",
         radius: 36,
@@ -170,10 +170,10 @@ export const sandboxScoutEntries: DataPackEntry[] = [
   },
   {
     type: "gas.attribute",
-    id: "signal",
+    id: "focus",
     data: {
-      id: "signal",
-      name: "Signal",
+      id: "focus",
+      name: "Focus",
       min: 0,
       max: 100,
       defaultValue: 12,
@@ -189,7 +189,7 @@ export const sandboxScoutEntries: DataPackEntry[] = [
       min: 0,
       max: 100,
       defaultValue: 100,
-      tags: ["gas", "station"]
+      tags: ["gas", "building"]
     }
   },
   {
@@ -206,10 +206,10 @@ export const sandboxScoutEntries: DataPackEntry[] = [
   },
   {
     type: "gas.tag",
-    id: "team.scout",
+    id: "team.worker",
     data: {
-      id: "team.scout",
-      name: "Scout Team",
+      id: "team.worker",
+      name: "Worker Team",
       tags: ["sandbox", "team"]
     }
   },
@@ -242,12 +242,12 @@ export const sandboxScoutEntries: DataPackEntry[] = [
   },
   {
     type: "gas.cue",
-    id: "cue.sandbox.signal_hit",
+    id: "cue.sandbox.damage_hit",
     data: {
-      id: "cue.sandbox.signal_hit",
+      id: "cue.sandbox.damage_hit",
       type: "ui.floating_text",
       payload: {
-        text: "-7 signal",
+        text: "-7 health",
         tone: "warning"
       },
       tags: ["sandbox", "cue", "ui"]
@@ -268,10 +268,10 @@ export const sandboxScoutEntries: DataPackEntry[] = [
   },
   {
     type: "gas.ability",
-    id: "gas.ability.sandbox.signal_strike",
+    id: "gas.ability.sandbox.spark_strike",
     data: {
-      id: "gas.ability.sandbox.signal_strike",
-      name: "Signal Strike",
+      id: "gas.ability.sandbox.spark_strike",
+      name: "Spark Strike",
       costs: [
         {
           attribute: "energy",
@@ -281,7 +281,7 @@ export const sandboxScoutEntries: DataPackEntry[] = [
       cooldownMs: 200,
       effects: [
         {
-          effectId: "gas.effect.sandbox.signal_damage",
+          effectId: "gas.effect.sandbox.bite_damage",
           target: "target"
         }
       ],
@@ -314,12 +314,12 @@ export const sandboxScoutEntries: DataPackEntry[] = [
       cooldownMs: 900,
       effects: [
         {
-          effectId: "gas.effect.sandbox.signal_boost",
+          effectId: "gas.effect.sandbox.campfire_boost",
           target: "self"
         }
       ],
       cues: ["cue.sandbox.pulse"],
-      tags: ["sandbox", "ability", "station"]
+      tags: ["sandbox", "ability", "building"]
     }
   },
   {
@@ -346,17 +346,17 @@ export const sandboxScoutEntries: DataPackEntry[] = [
   },
   {
     type: "gas.actor",
-    id: "gas.actor.sandbox.scout",
+    id: "gas.actor.sandbox.worker",
     data: {
-      id: "gas.actor.sandbox.scout",
-      name: "Scout",
+      id: "gas.actor.sandbox.worker",
+      name: "Worker",
       attributes: {
         health: 100,
         energy: 40,
-        signal: 12
+        focus: 12
       },
-      tags: ["team.scout"],
-      abilities: ["gas.ability.sandbox.signal_strike", "gas.ability.sandbox.overcharge"],
+      tags: ["team.worker"],
+      abilities: ["gas.ability.sandbox.spark_strike", "gas.ability.sandbox.overcharge"],
       metadata: {
         role: "sandbox-validation"
       }
@@ -364,41 +364,41 @@ export const sandboxScoutEntries: DataPackEntry[] = [
   },
   {
     type: "gas.actor",
-    id: "gas.actor.sandbox.station",
+    id: "gas.actor.sandbox.building",
     data: {
-      id: "gas.actor.sandbox.station",
-      name: "Outpost Station",
+      id: "gas.actor.sandbox.building",
+      name: "Camp Building",
       attributes: {
         health: 120,
         energy: 30,
-        signal: 0,
+        focus: 0,
         stability: 100,
         throughput: 60
       },
-      tags: ["team.scout"],
+      tags: ["team.worker"],
       abilities: ["gas.ability.sandbox.overcharge_relay"],
       metadata: {
-        role: "station"
+        role: "building"
       }
     }
   },
   {
     type: "gas.actor",
-    id: "gas.actor.sandbox.interference",
+    id: "gas.actor.sandbox.monster",
     data: {
-      id: "gas.actor.sandbox.interference",
-      name: "Interference Node",
+      id: "gas.actor.sandbox.monster",
+      name: "Monster",
       attributes: {
         health: 160,
         energy: 80,
-        signal: 0,
+        focus: 0,
         stability: 100,
         throughput: 0
       },
       tags: ["state.marked"],
-      abilities: ["gas.ability.sandbox.signal_strike"],
+      abilities: ["gas.ability.sandbox.spark_strike"],
       metadata: {
-        role: "threat"
+        role: "monster"
       }
     }
   }

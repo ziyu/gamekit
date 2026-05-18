@@ -2,7 +2,7 @@
 
 ## 定位
 
-Hero Road 是用于验证 GameKit 全架构的真实小 demo，不是 sandbox。Sandbox 只验证框架切片；Hero Road 用于证明 DataPack、TCA、GAS、Renderer、Input、Camera、UI、Save、DevTools 能组合成游戏。
+Hero Road 是用于验证 GameKit 全架构的真实小 demo。它用于证明 DataPack、TCA、GAS、Renderer、Input、Camera、UI、Save、DevTools 能组合成游戏。
 
 ## 游戏概念
 

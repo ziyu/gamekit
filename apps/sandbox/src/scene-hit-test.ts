@@ -28,7 +28,7 @@ function findNearestClickableEntity(
 ): SandboxSnapshot["entities"][number] | undefined {
   let best: { entity: SandboxSnapshot["entities"][number]; distance: number } | undefined;
   for (const entity of snapshot.entities) {
-    if (entity.role === "signal-link") {
+    if (entity.role === "road") {
       continue;
     }
 
@@ -46,5 +46,5 @@ function findNearestClickableEntity(
 }
 
 function clickableRadius(entity: SandboxSnapshot["entities"][number]): number {
-  return entity.role === "command-core" ? 42 : entity.role === "scout" ? 22 : 30;
+  return entity.role === "campfire" ? 42 : entity.role === "worker" ? 22 : 30;
 }

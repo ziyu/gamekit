@@ -31,7 +31,7 @@ content/
   monsters/
     forest-slime.ts
   buildings/
-    relay-tower.ts
+    stone-workshop.ts
   chapters/
     chapter-01.ts
 ```

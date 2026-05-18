@@ -63,6 +63,7 @@
 - 不允许业务代码直接依赖 Koota、Phaser、GSAP 等底层库，除非该代码本身就是 adapter。
 - `src/index.ts` 只做公共出口，不写主要实现。
 - 新模块按职责拆分文件：类型、创建函数、运行时实现、adapter 私有类型、测试工具分开。
+- 不使用 `innerHTML`、HTML 字符串模板或 `insertAdjacentHTML` 实现交互 UI、游戏内容 UI 或 Editor UI；优先使用 React/组件系统或 DOM API + `textContent`。确需渲染外部 HTML 时必须有清洗边界、测试和 ADR。
 - 不提交构建产物、缓存、日志、本地环境文件。
 - 不做无关重构，不回滚他人改动。
 

@@ -1,48 +1,48 @@
 import type { DataPackEntry } from "@gamekit/data";
 
-export const sandboxThreatEntries: DataPackEntry[] = [
+export const sandboxMonsterEntries: DataPackEntry[] = [
   {
-    type: "sandbox.threatProfile",
-    id: "threat.sandbox.signal_storm",
+    type: "sandbox.wave",
+    id: "wave.sandbox.night_bite",
     data: {
-      id: "threat.sandbox.signal_storm",
-      label: "Signal Storm",
+      id: "wave.sandbox.night_bite",
+      label: "Night Bite",
       cadenceTicks: 150,
-      effectId: "gas.effect.sandbox.interference_mark",
-      targetRoles: ["relay-tower", "command-core"],
-      tags: ["sandbox", "threat", "signal"]
+      effectId: "gas.effect.sandbox.monster_pressure",
+      targetRoles: ["tower", "campfire"],
+      tags: ["sandbox", "wave", "monster"]
     }
   },
   {
-    type: "sandbox.threatProfile",
-    id: "threat.sandbox.data_corruption",
+    type: "sandbox.wave",
+    id: "wave.sandbox.storage_raid",
     data: {
-      id: "threat.sandbox.data_corruption",
-      label: "Data Corruption",
+      id: "wave.sandbox.storage_raid",
+      label: "Storage Raid",
       cadenceTicks: 210,
-      effectId: "gas.effect.sandbox.interference_mark",
-      targetRoles: ["data-node"],
-      tags: ["sandbox", "threat", "data"]
+      effectId: "gas.effect.sandbox.monster_pressure",
+      targetRoles: ["storage"],
+      tags: ["sandbox", "wave", "storage"]
     }
   },
   {
-    type: "sandbox.threatProfile",
-    id: "threat.sandbox.scout_jam",
+    type: "sandbox.wave",
+    id: "wave.sandbox.worker_panic",
     data: {
-      id: "threat.sandbox.scout_jam",
-      label: "Scout Jam",
+      id: "wave.sandbox.worker_panic",
+      label: "Worker Panic",
       cadenceTicks: 180,
-      effectId: "gas.effect.sandbox.signal_damage",
-      targetRoles: ["scout"],
-      tags: ["sandbox", "threat", "worker"]
+      effectId: "gas.effect.sandbox.bite_damage",
+      targetRoles: ["worker"],
+      tags: ["sandbox", "wave", "worker"]
     }
   },
   {
     type: "gas.effect",
-    id: "gas.effect.sandbox.signal_damage",
+    id: "gas.effect.sandbox.bite_damage",
     data: {
-      id: "gas.effect.sandbox.signal_damage",
-      name: "Signal Damage",
+      id: "gas.effect.sandbox.bite_damage",
+      name: "Bite Damage",
       attributeModifiers: [
         {
           attribute: "health",
@@ -52,7 +52,7 @@ export const sandboxThreatEntries: DataPackEntry[] = [
       ],
       grantedTags: ["state.marked"],
       durationMs: 600,
-      cues: ["cue.sandbox.signal_hit"],
+      cues: ["cue.sandbox.damage_hit"],
       tags: ["sandbox", "effect", "damage"]
     }
   },
@@ -78,10 +78,10 @@ export const sandboxThreatEntries: DataPackEntry[] = [
   },
   {
     type: "gas.effect",
-    id: "gas.effect.sandbox.interference_mark",
+    id: "gas.effect.sandbox.monster_pressure",
     data: {
-      id: "gas.effect.sandbox.interference_mark",
-      name: "Interference Mark",
+      id: "gas.effect.sandbox.monster_pressure",
+      name: "Monster Pressure",
       attributeModifiers: [
         {
           attribute: "stability",
@@ -91,7 +91,7 @@ export const sandboxThreatEntries: DataPackEntry[] = [
       ],
       grantedTags: ["state.interfered"],
       durationMs: 1200,
-      cues: ["cue.sandbox.signal_hit"],
+      cues: ["cue.sandbox.damage_hit"],
       tags: ["sandbox", "effect", "threat"]
     }
   },
@@ -116,10 +116,10 @@ export const sandboxThreatEntries: DataPackEntry[] = [
   },
   {
     type: "gas.effect",
-    id: "gas.effect.sandbox.signal_boost",
+    id: "gas.effect.sandbox.campfire_boost",
     data: {
-      id: "gas.effect.sandbox.signal_boost",
-      name: "Signal Boost",
+      id: "gas.effect.sandbox.campfire_boost",
+      name: "Campfire Boost",
       durationMs: 1800,
       attributeModifiers: [
         {
@@ -135,9 +135,9 @@ export const sandboxThreatEntries: DataPackEntry[] = [
   },
   {
     type: "tca.rule",
-    id: "rule.sandbox.confirm_signal",
+    id: "rule.sandbox.confirm_boost",
     data: {
-      id: "rule.sandbox.confirm_signal",
+      id: "rule.sandbox.confirm_boost",
       trigger: {
         type: "sandbox.input_action",
         args: {
@@ -166,7 +166,7 @@ export const sandboxThreatEntries: DataPackEntry[] = [
           args: {
             eventType: "sandbox.tca_confirmed",
             payload: {
-              ruleId: "rule.sandbox.confirm_signal"
+              ruleId: "rule.sandbox.confirm_boost"
             }
           }
         }
@@ -295,9 +295,9 @@ export const sandboxThreatEntries: DataPackEntry[] = [
   },
   {
     type: "tca.rule",
-    id: "rule.sandbox.gas_signal_strike",
+    id: "rule.sandbox.gas_spark_strike",
     data: {
-      id: "rule.sandbox.gas_signal_strike",
+      id: "rule.sandbox.gas_spark_strike",
       trigger: {
         type: "event.type",
         args: {
@@ -308,7 +308,7 @@ export const sandboxThreatEntries: DataPackEntry[] = [
         {
           type: "gas.attribute.compare",
           args: {
-            actorId: "gas.actor.sandbox.scout.0",
+            actorId: "gas.actor.sandbox.worker.0",
             attribute: "energy",
             operator: ">=",
             value: 3
@@ -317,7 +317,7 @@ export const sandboxThreatEntries: DataPackEntry[] = [
         {
           type: "gas.attribute.compare",
           args: {
-            actorId: "gas.actor.sandbox.scout.1",
+            actorId: "gas.actor.sandbox.worker.1",
             attribute: "health",
             operator: ">",
             value: 0
@@ -328,9 +328,9 @@ export const sandboxThreatEntries: DataPackEntry[] = [
         {
           type: "gas.activate_ability",
           args: {
-            actorId: "gas.actor.sandbox.scout.0",
-            abilityId: "gas.ability.sandbox.signal_strike",
-            targetActorId: "gas.actor.sandbox.scout.1"
+            actorId: "gas.actor.sandbox.worker.0",
+            abilityId: "gas.ability.sandbox.spark_strike",
+            targetActorId: "gas.actor.sandbox.worker.1"
           }
         }
       ],
@@ -354,8 +354,8 @@ export const sandboxThreatEntries: DataPackEntry[] = [
         {
           type: "gas.actor.has_tag",
           args: {
-            actorId: "gas.actor.sandbox.scout.0",
-            tag: "team.scout"
+            actorId: "gas.actor.sandbox.worker.0",
+            tag: "team.worker"
           }
         }
       ],
@@ -363,9 +363,9 @@ export const sandboxThreatEntries: DataPackEntry[] = [
         {
           type: "gas.activate_ability",
           args: {
-            actorId: "gas.actor.sandbox.scout.0",
+            actorId: "gas.actor.sandbox.worker.0",
             abilityId: "gas.ability.sandbox.overcharge",
-            targetActorId: "gas.actor.sandbox.scout.0"
+            targetActorId: "gas.actor.sandbox.worker.0"
           }
         }
       ],
@@ -375,28 +375,28 @@ export const sandboxThreatEntries: DataPackEntry[] = [
   },
   {
     type: "tca.rule",
-    id: "rule.sandbox.interference_response",
+    id: "rule.sandbox.monster_pressure_response",
     data: {
-      id: "rule.sandbox.interference_response",
+      id: "rule.sandbox.monster_pressure_response",
       trigger: {
         type: "event.type",
         args: {
-          eventType: "sandbox.interference_strike"
+          eventType: "sandbox.monster_attack"
         }
       },
       actions: [
         {
           type: "sandbox.log",
           args: {
-            message: "Interference strike routed to field repair response"
+            message: "Monster attack routed to field repair response"
           }
         },
         {
           type: "gas.activate_ability",
           args: {
-            actorId: "gas.actor.sandbox.scout.0",
+            actorId: "gas.actor.sandbox.worker.0",
             abilityId: "gas.ability.sandbox.field_repair",
-            targetActorId: "gas.actor.sandbox.relay.northwest"
+            targetActorId: "gas.actor.sandbox.campfire"
           }
         }
       ],

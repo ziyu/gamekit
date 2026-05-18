@@ -1,4 +1,4 @@
-import { createEventBus, type GameEvent } from "@gamekit/event-bus";
+import { createEventBus, type EventBus, type GameEvent } from "@gamekit/event-bus";
 import {
   createGasModule,
   createGasTcaDefinitions,
@@ -15,7 +15,7 @@ import {
   mergeTcaDefinitionSets,
   type TcaTraceStore
 } from "@gamekit/tca";
-import { createKootaWorld } from "@gamekit/world-koota";
+import type { GameWorld } from "@gamekit/world";
 import type { DataRegistry } from "@gamekit/data";
 import {
   LinkState,
@@ -25,23 +25,23 @@ import {
   RenderObjectPresentation,
   SceneObject,
   Selectable,
-  StationState,
-  SignalStorage,
+  BuildingState,
+  ResourceStorage,
   ThreatState,
   Velocity,
   WorkAssignment
 } from "./components";
 import {
   createSandboxDataRegistry,
+  getSandboxBuildingDefinition,
   getSandboxObjectivePhase,
   getSandboxRenderObject,
   getSandboxRenderRig,
   getSandboxSceneObjects,
-  getSandboxSignalOutpostLayout,
-  getSandboxStationDefinition
+  getSandboxTinyCampLayout
 } from "./sandbox-data";
+import { createSandboxCampModule } from "./modules/sandbox-camp-module";
 import { createSandboxRenderSyncModule } from "./modules/sandbox-render-sync-module";
-import { createSandboxOutpostModule } from "./modules/sandbox-outpost-module";
 import { createSandboxTcaDefinitions } from "./modules/sandbox-tca-definitions";
 import type {
   SandboxContentSummary,
@@ -60,6 +60,9 @@ export const SANDBOX_RENDER_SIZE = {
 
 export type CreateSandboxRuntimeOptions = {
   seed?: string;
+  world: GameWorld;
+  eventBus?: EventBus;
+  clock?: () => number;
   renderer?: RendererAdapter;
   dataRegistry?: DataRegistry;
   modules?: Array<GameModule<GameInstallContext>>;
@@ -74,19 +77,18 @@ export type CreateSandboxRuntimeOptions = {
   };
 };
 
-export function createSandboxRuntime(
-  seedOrOptions: string | CreateSandboxRuntimeOptions = "hero-road-dev-seed"
-): SandboxRuntime {
-  const options = typeof seedOrOptions === "string" ? { seed: seedOrOptions } : seedOrOptions;
-  const world = createKootaWorld();
-  const eventBus = createEventBus({ clock: () => Math.round(performance.now()) });
+export function createSandboxRuntime(options: CreateSandboxRuntimeOptions): SandboxRuntime {
+  const world = options.world;
+  const eventBus =
+    options.eventBus ??
+    createEventBus(options.clock === undefined ? undefined : { clock: options.clock });
   const events: GameEvent[] = [];
   const dataRegistry = options.dataRegistry ?? createSandboxDataRegistry();
   const tcaTraceStore = options.tcaTraceStore ?? createTcaTraceStore({ limit: 20 });
   const gasTraceStore = options.gasTraceStore ?? createGasTraceStore({ limit: 30 });
   let gasRuntime: GasRuntime | undefined;
   const readGasRuntime = options.gasRuntime ?? (() => gasRuntime);
-  const outpostLayout = getSandboxSignalOutpostLayout(dataRegistry);
+  const campLayout = getSandboxTinyCampLayout(dataRegistry);
   const modules = [
     ...(options.modules ?? [
       createGasModule({
@@ -108,12 +110,12 @@ export function createSandboxRuntime(
         )
       })
     ]),
-    createSandboxOutpostModule({
-      layout: outpostLayout,
-      sceneObjects: getSandboxSceneObjects(dataRegistry, outpostLayout),
+    createSandboxCampModule({
+      layout: campLayout,
+      sceneObjects: getSandboxSceneObjects(dataRegistry, campLayout),
       renderObject: (id) => getSandboxRenderObject(dataRegistry, id),
       renderRig: (id) => getSandboxRenderRig(dataRegistry, id),
-      stationDefinition: (id) => getSandboxStationDefinition(dataRegistry, id),
+      buildingDefinition: (id) => getSandboxBuildingDefinition(dataRegistry, id),
       objectivePhase: (id) => getSandboxObjectivePhase(dataRegistry, id),
       gasRuntime: readGasRuntime
     })
@@ -139,7 +141,7 @@ export function createSandboxRuntime(
     modules,
     world,
     eventBus,
-    seed: options.seed ?? "hero-road-dev-seed"
+    seed: options.seed ?? "tiny-camp-dev-seed"
   });
 
   return {
@@ -147,6 +149,15 @@ export function createSandboxRuntime(
     events,
     tcaTraceStore,
     gasTraceStore,
+    resolveEntityPosition(entityId) {
+      const position = world.get(entityId, Position);
+      return position
+        ? {
+            x: position.x,
+            y: position.y
+          }
+        : undefined;
+    },
     snapshot(snapshotOptions?: SandboxSnapshotOptions) {
       const gasActors = readGasRuntime()?.snapshot().actors ?? [];
       const actorIdByEntity = new Map(
@@ -161,8 +172,8 @@ export function createSandboxRuntime(
           const velocity = world.get(entity, Velocity);
           const presentation = world.get(entity, RenderObjectPresentation);
           const sceneObject = world.get(entity, SceneObject);
-          const storage = world.get(entity, SignalStorage);
-          const station = world.get(entity, StationState);
+          const storage = world.get(entity, ResourceStorage);
+          const building = world.get(entity, BuildingState);
           const production = world.get(entity, ProductionState);
           const work = world.get(entity, WorkAssignment);
           const threat = world.get(entity, ThreatState);
@@ -181,18 +192,18 @@ export function createSandboxRuntime(
             y: position?.y ?? 0,
             vx: velocity?.x ?? 0,
             vy: velocity?.y ?? 0,
-            signal: storage?.signal,
-            fragments: storage?.fragments,
+            resource: storage?.resource,
+            materials: storage?.materials,
             capacity: storage?.capacity,
-            station: station
+            building: building
               ? {
-                  stationId: station.stationId,
-                  zone: station.zone,
-                  priority: station.priority,
-                  stability: station.stability,
-                  heat: station.heat,
-                  throughput: station.throughput,
-                  mode: station.mode
+                  buildingId: building.buildingId,
+                  zone: building.zone,
+                  priority: building.priority,
+                  health: building.health,
+                  heat: building.heat,
+                  throughput: building.throughput,
+                  mode: building.mode
                 }
               : undefined,
             productionRate: production?.ratePerSecond,
@@ -210,8 +221,8 @@ export function createSandboxRuntime(
               ? {
                   objectiveId: objective.objectiveId,
                   phaseId: objective.phaseId,
-                  progressSignal: objective.progressSignal,
-                  targetSignal: objective.targetSignal,
+                  progressResources: objective.progressResources,
+                  targetResources: objective.targetResources,
                   unlocked: objective.unlocked
                 }
               : undefined,
@@ -270,42 +281,46 @@ export function createSandboxRuntime(
 }
 
 function createObjectiveSnapshot(entities: SandboxEntitySnapshot[]): SandboxObjectiveSnapshot {
-  const core = entities.find((entity) => entity.role === "command-core");
-  const relays = entities.filter((entity) => entity.role === "relay-tower");
-  const threat = entities.find((entity) => entity.role === "interference-node");
-  const objective = core?.objective;
-  const averageStability =
-    relays.length === 0
+  const campfire = entities.find((entity) => entity.role === "campfire");
+  const resources = entities.filter((entity) => entity.role === "resource-node");
+  const threat = entities.find((entity) => entity.role === "monster");
+  const objective = campfire?.objective;
+  const averageHealth =
+    resources.length === 0
       ? 100
-      : relays.reduce((total, relay) => total + (relay.station?.stability ?? 100), 0) /
-        relays.length;
-  const signalProgress = Math.min(
+      : resources.reduce((total, resource) => total + (resource.building?.health ?? 100), 0) /
+        resources.length;
+  const objectiveProgress = Math.min(
     1,
-    Math.max(0, (objective?.progressSignal ?? core?.signal ?? 0) / (objective?.targetSignal ?? 220))
+    Math.max(
+      0,
+      (objective?.progressResources ?? campfire?.resource ?? 0) /
+        (objective?.targetResources ?? 220)
+    )
   );
-  const relayProgress =
-    relays.length === 0
+  const resourceProgress =
+    resources.length === 0
       ? 0
-      : relays.reduce((total, relay) => {
-          const capacity = relay.capacity ?? 1;
-          return total + Math.min(1, (relay.signal ?? 0) / capacity);
-        }, 0) / relays.length;
+      : resources.reduce((total, resource) => {
+          const capacity = resource.capacity ?? 1;
+          return total + Math.min(1, (resource.resource ?? 0) / capacity);
+        }, 0) / resources.length;
   const progress = Math.round(
-    (signalProgress * 0.72 + relayProgress * 0.18 + (averageStability / 100) * 0.1) * 100
+    (objectiveProgress * 0.72 + resourceProgress * 0.18 + (averageHealth / 100) * 0.1) * 100
   );
 
   return {
-    id: "signal-outpost",
+    id: "tiny-camp",
     label:
       objective?.phaseId === "objective.sandbox.phase.bootstrap"
-        ? "Signal Outpost / Bootstrap Uplink"
-        : "Signal Outpost",
+        ? "Tiny Camp / Stock the Campfire"
+        : "Tiny Camp",
     status: progress >= 100 ? "complete" : progress > 0 ? "running" : "waiting",
     progress,
     detail:
       progress === 0
-        ? "Signal relays are warming up. Focus the viewport and press confirm to overcharge."
-        : `Phase ${objective?.phaseId.replace("objective.sandbox.phase.", "") ?? "bootstrap"} · objective signal ${Math.round(objective?.progressSignal ?? 0)} / ${Math.round(objective?.targetSignal ?? 220)} · relay charge ${Math.round(relayProgress * 100)}% · stability ${Math.round(averageStability)}% · threat ${Math.round((threat?.threatIntensity ?? 0) * 100)}%`
+        ? "Workers are warming up. Focus the viewport and press confirm to boost the selected object."
+        : `Phase ${objective?.phaseId.replace("objective.sandbox.phase.", "") ?? "bootstrap"} · camp resources ${Math.round(objective?.progressResources ?? 0)} / ${Math.round(objective?.targetResources ?? 220)} · resource nodes ${Math.round(resourceProgress * 100)}% · health ${Math.round(averageHealth)}% · threat ${Math.round((threat?.threatIntensity ?? 0) * 100)}%`
   };
 }
 
@@ -351,7 +366,7 @@ function createTimeline(input: {
     )
   ]
     .sort((left, right) => left.time - right.time || left.id.localeCompare(right.id))
-    .slice(-80);
+    .slice(-120);
 }
 
 function createModuleSummary(
@@ -370,7 +385,7 @@ function createModuleSummary(
       id: "world",
       label: "World",
       status: `${entityCount} entities`,
-      detail: "Koota adapter hidden behind GameWorld facade"
+      detail: "Gameplay reads and writes through the GameWorld facade"
     },
     {
       id: "renderer",

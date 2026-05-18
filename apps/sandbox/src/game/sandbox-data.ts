@@ -5,34 +5,34 @@ import type { RenderObjectDefinition } from "@gamekit/renderer-core";
 import { createTcaRuleDataType } from "@gamekit/tca";
 import { sandboxCoreEntries } from "./content/core";
 import { sandboxObjectiveEntries } from "./content/objectives";
-import { sandboxScoutEntries } from "./content/scouts";
+import { sandboxWorkerEntries } from "./content/workers";
 import {
   SANDBOX_ACTOR_ID,
   SANDBOX_ENTITY_RENDER_OBJECT_ID,
   SANDBOX_ENTITY_RENDER_RIG_ID,
-  SANDBOX_SIGNAL_OUTPOST_LAYOUT_ID,
+  SANDBOX_TINY_CAMP_LAYOUT_ID,
   createAbilityDataType,
   createActorDataType,
   createBiomeDataType,
   createObjectivePhaseDataType,
-  createOutpostRouteDataType,
-  createProductionRecipeDataType,
+  createRouteDataType,
+  createRecipeDataType,
   createRenderObjectDataType,
   createRenderRigDataType,
   createSceneLayoutDataType,
   createSceneObjectDataType,
   createSpawnProfileDataType,
-  createStationDataType,
-  createThreatProfileDataType,
+  createBuildingDataType,
+  createWaveDataType,
   type SandboxActorDefinition,
   type SandboxObjectivePhaseDefinition,
   type SandboxRenderRigDefinition,
   type SandboxSceneLayoutDefinition,
   type SandboxSceneObjectDefinition,
-  type SandboxStationDefinition
+  type SandboxBuildingDefinition
 } from "./content/source";
-import { sandboxStationEntries } from "./content/stations";
-import { sandboxThreatEntries } from "./content/threats";
+import { sandboxBuildingEntries } from "./content/buildings";
+import { sandboxMonsterEntries } from "./content/monsters";
 import { sandboxVisualEntries } from "./content/visuals";
 
 export * from "./content/source";
@@ -43,9 +43,9 @@ export const sandboxDataPack: DataPack = {
   namespace: "sandbox",
   entries: [
     ...sandboxCoreEntries,
-    ...sandboxStationEntries,
-    ...sandboxScoutEntries,
-    ...sandboxThreatEntries,
+    ...sandboxBuildingEntries,
+    ...sandboxWorkerEntries,
+    ...sandboxMonsterEntries,
     ...sandboxObjectiveEntries,
     ...sandboxVisualEntries
   ]
@@ -57,11 +57,11 @@ export function createSandboxDataRegistry(): DataRegistry {
   registry.registerType(createRenderObjectDataType(["debug.square", "sprite", "container"]));
   registry.registerType(createRenderRigDataType());
   registry.registerType(createSceneObjectDataType());
-  registry.registerType(createStationDataType());
-  registry.registerType(createProductionRecipeDataType());
+  registry.registerType(createBuildingDataType());
+  registry.registerType(createRecipeDataType());
   registry.registerType(createObjectivePhaseDataType());
-  registry.registerType(createThreatProfileDataType());
-  registry.registerType(createOutpostRouteDataType());
+  registry.registerType(createWaveDataType());
+  registry.registerType(createRouteDataType());
   registry.registerType(createSceneLayoutDataType());
   registry.registerType(createActorDataType());
   registry.registerType(createAbilityDataType());
@@ -93,12 +93,10 @@ export function getSandboxEntityRenderObject(registry: DataRegistry): RenderObje
   );
 }
 
-export function getSandboxSignalOutpostLayout(
-  registry: DataRegistry
-): SandboxSceneLayoutDefinition {
+export function getSandboxTinyCampLayout(registry: DataRegistry): SandboxSceneLayoutDefinition {
   return registry.getValue<SandboxSceneLayoutDefinition>(
     "sandbox.sceneLayout",
-    SANDBOX_SIGNAL_OUTPOST_LAYOUT_ID
+    SANDBOX_TINY_CAMP_LAYOUT_ID
   );
 }
 
@@ -122,11 +120,11 @@ export function getSandboxRenderRig(
   return registry.getValue<SandboxRenderRigDefinition>("sandbox.renderRig", id);
 }
 
-export function getSandboxStationDefinition(
+export function getSandboxBuildingDefinition(
   registry: DataRegistry,
   id: string
-): SandboxStationDefinition {
-  return registry.getValue<SandboxStationDefinition>("sandbox.station", id);
+): SandboxBuildingDefinition {
+  return registry.getValue<SandboxBuildingDefinition>("sandbox.building", id);
 }
 
 export function getSandboxObjectivePhase(

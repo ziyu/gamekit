@@ -6,10 +6,10 @@ export const sandboxObjectiveEntries: DataPackEntry[] = [
     id: "objective.sandbox.phase.bootstrap",
     data: {
       id: "objective.sandbox.phase.bootstrap",
-      label: "Bootstrap Uplink",
-      targetSignal: 220,
-      unlocks: ["mode.stabilize"],
-      reward: "Enable station stabilize automation",
+      label: "Stock the Campfire",
+      targetResources: 220,
+      unlocks: ["mode.build"],
+      reward: "Enable workshop build automation",
       tags: ["sandbox", "objective"]
     }
   },
@@ -18,10 +18,10 @@ export const sandboxObjectiveEntries: DataPackEntry[] = [
     id: "objective.sandbox.phase.fabricate",
     data: {
       id: "objective.sandbox.phase.fabricate",
-      label: "Fabricate Relay Mesh",
-      targetSignal: 420,
-      unlocks: ["recipe.sandbox.module_fragment", "mode.boost"],
-      reward: "Enable boost mode and visible fabricator layers",
+      label: "Raise the Watchtower",
+      targetResources: 420,
+      unlocks: ["recipe.sandbox.build_watchtower", "mode.defend"],
+      reward: "Enable defend mode and visible tower layers",
       tags: ["sandbox", "objective", "asset"]
     }
   },
@@ -30,10 +30,10 @@ export const sandboxObjectiveEntries: DataPackEntry[] = [
     id: "objective.sandbox.phase.decode",
     data: {
       id: "objective.sandbox.phase.decode",
-      label: "Decode Counter-Rules",
-      targetSignal: 720,
-      unlocks: ["recipe.sandbox.rule_decode", "mode.suppress"],
-      reward: "Enable interference suppression automation",
+      label: "Prepare for Nightfall",
+      targetResources: 720,
+      unlocks: ["recipe.sandbox.campfire_supply", "mode.gather"],
+      reward: "Enable stronger worker automation",
       tags: ["sandbox", "objective", "data"]
     }
   }

@@ -57,6 +57,8 @@
 - 错误必须带上下文。框架层优先使用 `GameError` 和稳定 `code`。
 - 不写“顺手重构”。除非当前任务需要，否则不要改动无关模块。
 - 不把临时实验代码、调试输出、构建产物提交进仓库。
+- 交互 UI、游戏内容 UI、Editor UI 不使用 `innerHTML`、HTML 字符串模板或 `insertAdjacentHTML` 拼接。优先使用 React/组件系统，或使用 DOM API、`textContent`、`replaceChildren` 和显式事件绑定。
+- 如果确实需要渲染外部 HTML，必须限定为受信任/已清洗内容，并通过独立 helper、测试和 ADR 说明边界；不能把它作为常规 UI 构建方式。
 
 复杂度控制：
 

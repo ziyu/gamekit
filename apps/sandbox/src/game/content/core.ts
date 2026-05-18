@@ -3,60 +3,61 @@ import type { DataPackEntry } from "@gamekit/data";
 export const sandboxCoreEntries: DataPackEntry[] = [
   {
     type: "sandbox.sceneLayout",
-    id: "sceneLayout.sandbox.signal_outpost",
+    id: "sceneLayout.sandbox.tiny_camp",
     data: {
-      id: "sceneLayout.sandbox.signal_outpost",
-      name: "Signal Outpost",
+      id: "sceneLayout.sandbox.tiny_camp",
+      name: "Tiny Camp",
       objectIds: [
-        "scene.sandbox.command_core",
-        "scene.sandbox.relay_northwest",
-        "scene.sandbox.relay_north",
-        "scene.sandbox.relay_east",
-        "scene.sandbox.data_node",
-        "scene.sandbox.asset_fabricator",
-        "scene.sandbox.interference"
+        "scene.sandbox.campfire",
+        "scene.sandbox.forest",
+        "scene.sandbox.quarry",
+        "scene.sandbox.berry_patch",
+        "scene.sandbox.storage",
+        "scene.sandbox.workshop",
+        "scene.sandbox.watchtower",
+        "scene.sandbox.monster_den"
       ],
       links: [
         {
-          id: "link.relay_northwest.core",
-          fromObjectId: "scene.sandbox.relay_northwest",
-          toObjectId: "scene.sandbox.command_core",
-          routeId: "route.relay_northwest.core"
+          id: "path.forest.storage",
+          fromObjectId: "scene.sandbox.forest",
+          toObjectId: "scene.sandbox.storage",
+          routeId: "route.forest.storage"
         },
         {
-          id: "link.relay_north.core",
-          fromObjectId: "scene.sandbox.relay_north",
-          toObjectId: "scene.sandbox.command_core",
-          routeId: "route.relay_north.core"
+          id: "path.quarry.storage",
+          fromObjectId: "scene.sandbox.quarry",
+          toObjectId: "scene.sandbox.storage",
+          routeId: "route.quarry.storage"
         },
         {
-          id: "link.relay_east.core",
-          fromObjectId: "scene.sandbox.relay_east",
-          toObjectId: "scene.sandbox.command_core",
-          routeId: "route.relay_east.core"
+          id: "path.berry.storage",
+          fromObjectId: "scene.sandbox.berry_patch",
+          toObjectId: "scene.sandbox.storage",
+          routeId: "route.berry.storage"
         },
         {
-          id: "link.data.core",
-          fromObjectId: "scene.sandbox.data_node",
-          toObjectId: "scene.sandbox.command_core",
-          routeId: "route.data.core"
+          id: "path.storage.campfire",
+          fromObjectId: "scene.sandbox.storage",
+          toObjectId: "scene.sandbox.campfire",
+          routeId: "route.storage.campfire"
         },
         {
-          id: "link.asset.core",
-          fromObjectId: "scene.sandbox.asset_fabricator",
-          toObjectId: "scene.sandbox.command_core",
-          routeId: "route.asset.core"
+          id: "path.workshop.campfire",
+          fromObjectId: "scene.sandbox.workshop",
+          toObjectId: "scene.sandbox.campfire",
+          routeId: "route.workshop.campfire"
         },
         {
-          id: "link.interference.core",
-          fromObjectId: "scene.sandbox.interference",
-          toObjectId: "scene.sandbox.command_core",
-          routeId: "route.interference.core",
+          id: "path.monster.campfire",
+          fromObjectId: "scene.sandbox.monster_den",
+          toObjectId: "scene.sandbox.campfire",
+          routeId: "route.monster.campfire",
           corrupted: true
         }
       ],
-      scoutCount: 5,
-      tags: ["sandbox", "layout", "signal-outpost"]
+      workerCount: 5,
+      tags: ["sandbox", "layout", "tiny-camp"]
     }
   }
 ];

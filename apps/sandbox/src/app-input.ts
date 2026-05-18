@@ -5,17 +5,20 @@ import type { SandboxUiHandles } from "./ui/render-sandbox";
 import { updateInputStatus } from "./ui/render-sandbox";
 
 export const SANDBOX_SCENE_CLICK_ACTION_ID = "scene.click";
+const INPUT_ACTION_HELD_EVENT_INTERVAL_MS = 250;
 
 export type SandboxInputContext = {
   ui: SandboxUiHandles;
   activeInputScope: SandboxInputScope;
   sandbox?: SandboxRuntime | undefined;
+  inputRouter?: InputRouter | undefined;
 };
 
 export function configureSandboxInputRouter(
   context: SandboxInputContext,
   inputRouter: InputRouter
 ): void {
+  const inputTrace = createInputActionTraceGate(INPUT_ACTION_HELD_EVENT_INTERVAL_MS);
   context.ui.rendererRoot.addEventListener("focus", () => {
     focusGameViewport(context, "sandbox.focus");
   });
@@ -118,27 +121,29 @@ export function configureSandboxInputRouter(
   });
   inputRouter.onAction((event) => {
     const input = toRendererLocalInput(context, event.input);
-    context.sandbox?.runtime.eventBus.emit(
-      "input.action",
-      {
-        actionId: event.actionId,
-        contextId: event.contextId,
-        phase: event.phase,
-        value: event.value,
-        input: {
-          device: input.device,
-          code: input.code,
-          button: input.button,
-          x: input.x,
-          y: input.y,
-          dx: input.dx,
-          dy: input.dy,
-          wheelDelta: input.wheelDelta,
-          scope: input.scope
-        }
-      },
-      "sandbox.input"
-    );
+    if (inputTrace.shouldEmit(event.actionId, event.phase, input.timestamp)) {
+      context.sandbox?.runtime.eventBus.emit(
+        "input.action",
+        {
+          actionId: event.actionId,
+          contextId: event.contextId,
+          phase: event.phase,
+          value: event.value,
+          input: {
+            device: input.device,
+            code: input.code,
+            button: input.button,
+            x: input.x,
+            y: input.y,
+            dx: input.dx,
+            dy: input.dy,
+            wheelDelta: input.wheelDelta,
+            scope: input.scope
+          }
+        },
+        "sandbox.input"
+      );
+    }
     updateInputStatus(context.ui, {
       action:
         input.x === undefined || input.y === undefined
@@ -147,6 +152,29 @@ export function configureSandboxInputRouter(
       context: event.contextId
     });
   });
+}
+
+function createInputActionTraceGate(intervalMs: number) {
+  const lastHeldEventAt = new Map<string, number>();
+
+  return {
+    shouldEmit(actionId: string, phase: string, timestamp: number): boolean {
+      if (phase !== "held") {
+        if (phase === "released" || phase === "cancelled") {
+          lastHeldEventAt.delete(actionId);
+        }
+        return true;
+      }
+
+      const previous = lastHeldEventAt.get(actionId);
+      if (previous !== undefined && timestamp - previous < intervalMs) {
+        return false;
+      }
+
+      lastHeldEventAt.set(actionId, timestamp);
+      return true;
+    }
+  };
 }
 
 export function toRendererLocalInput(
@@ -171,6 +199,34 @@ export function toRendererLocalInput(
     ...input,
     ...clientToViewportPoint({ x: input.x, y: input.y }, bounds, SANDBOX_RENDER_SIZE)
   };
+}
+
+export function routeSandboxSceneOverlayInput(
+  context: SandboxInputContext,
+  event: MouseEvent | WheelEvent
+): void {
+  context.activeInputScope = "game";
+  context.ui.uiRuntime.setFocus({
+    scope: "game",
+    target: "viewport",
+    reason: "sandbox.scene_overlay"
+  });
+  context.ui.rendererRoot.focus({ preventScroll: true });
+  const input = {
+    id: `scene-overlay-${Math.round(event.timeStamp)}`,
+    device: "mouse",
+    phase: event instanceof WheelEvent ? "scrolled" : "released",
+    scope: "game",
+    source: "sandbox.scene-overlay",
+    x: event.clientX,
+    y: event.clientY,
+    timestamp: event.timeStamp
+  } as const;
+  context.inputRouter?.handle(
+    event instanceof WheelEvent
+      ? { ...input, wheelDelta: event.deltaY }
+      : { ...input, button: "primary" }
+  );
 }
 
 export function resolveSandboxInputScope(
