@@ -165,6 +165,29 @@ update runtime clock
 - 中低频事实通过 EventBus。
 - React 不进入主循环。
 
+## Runtime Profiling 边界
+
+GameRuntime 不直接依赖 DevTools，但必须保留可被外部包装和观察的 system 执行边界。Runtime profiler 的职责是测量运行时结构，不改变运行时语义。
+
+Runtime 层应暴露或保留这些可观察事实：
+
+- tick id / runtime clock。
+- system id。
+- module id where available。
+- system registration order。
+- system duration。
+- tick total duration。
+- system error 与原始抛错路径。
+
+Profiler 接入规则：
+
+- profiler 可以由 App Host、test harness 或标准 runtime wrapper 注入。
+- profiler disabled 时不应在每帧创建大量对象、闭包或数组。
+- `stop()` 后 system 不执行，也不记录 system sample。
+- system 抛错时，profiler 可以记录 diagnostic/span failure，但必须继续按原路径抛出错误。
+- profiler 不改变 system 顺序，不合并 system，不吞掉 system，不修改 world/eventBus。
+- 每帧完整 world snapshot、component dump 或 render object tree 不属于 Runtime profiler；这些只能通过 DevTools pause/detail 或模块专属 source 读取。
+
 ## 最佳实践
 
 ### 模块集成
@@ -173,6 +196,7 @@ update runtime clock
 - 标准 GameModule helper 应隐藏重复装配，例如 TCA 的 EventBus 订阅和 trace store lifecycle、Camera 的 input action 绑定和 renderer adapter sync。
 - GameRuntime 的 system 注册顺序是行为契约。新增标准模块 helper 时，如果顺序影响结果，必须用测试固定，并在模块设计中说明依赖。
 - GameModule `install()` 应只做注册和订阅，不隐式启动外部 runtime；订阅、interval、adapter bridge 和 trace store cleanup 必须在 GameRuntime dispose 时释放。
+- Runtime profiler wrapper 属于集成层；它可以测 system/tick，但不能把 DevToolsRuntime 变成 GameRuntime 的必需依赖。
 
 ### 模块使用
 
@@ -180,4 +204,5 @@ update runtime clock
 - Registry、Clock、GameError 等基础工具的错误消息要稳定、可测试、可定位，避免为了方便返回 `undefined` 后让调用方在更远处失败。
 - EventBus 事件应表达已经发生的低频事实，事件 payload 保持小而可序列化；不要用 EventBus 广播每帧 transform、raw pointer move、held input 或 render patch。
 - `start()`、`stop()`、`tick()`、`dispose()` 的边界要清楚：`stop()` 不释放模块，`dispose()` 释放长期句柄，`tick()` 不应该悄悄 boot app service。
+- 需要定位性能问题时，优先读取 Runtime profiler 的 system/tick summary，再决定是否开启更深的模块级 trace；不要把高频数据塞进 EventBus 或 React UI。
 - 测试优先覆盖 lifecycle、重复安装、system 顺序、stop 后不执行、dispose cleanup、clock restore 和错误路径。

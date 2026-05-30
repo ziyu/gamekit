@@ -40,7 +40,7 @@ DevTools 是 App Service / tooling，不是 GameModule，不进入 gameplay loop
 
 ## 非目标
 
-- 不做完整性能分析器、浏览器开发者工具替代品或录制回放系统。
+- 不替代浏览器开发者工具、引擎原生 CPU flamegraph、GPU profiler 或录制回放系统。DevTools 负责 GameKit 级 frame / system / service / adapter span、预算和归因。
 - 不负责修改 gameplay 规则；调试命令必须显式注册并可审计。
 - 不存储长期游戏进度；DevTools snapshot 和 trace buffer 是可丢弃调试数据。
 - 不直接解析具体游戏业务数据模型，例如 hero、monster、building。
@@ -81,6 +81,11 @@ export type DevToolsRuntime = {
   pushTrace(entry: DevToolsTraceInput): DevToolsTraceEntry;
   pushDiagnostic(event: DevToolsDiagnosticInput): DevToolsDiagnosticEvent;
   markProfilerSample(sample: DevToolsProfilerSample): void;
+  beginProfilerSpan(input: DevToolsProfilerSpanInput): DevToolsProfilerSpanHandle;
+  endProfilerSpan(handle: DevToolsProfilerSpanHandle, patch?: DevToolsProfilerSpanPatch): void;
+  measureProfilerSpan<T>(input: DevToolsProfilerSpanInput, fn: () => T): T;
+  startProfilerFrame(input: DevToolsProfilerFrameInput): DevToolsProfilerFrameHandle;
+  endProfilerFrame(handle: DevToolsProfilerFrameHandle): void;
   executeCommand(commandId: string, input?: unknown): Promise<void>;
   snapshot(options?: DevToolsSnapshotOptions): DevToolsSnapshot;
   clear(options?: DevToolsClearOptions): void;
@@ -93,7 +98,7 @@ DevToolsRuntime 应支持：
 - ring buffer 限制 trace 数量。
 - 数据源 lazy snapshot。
 - 低频 diagnostics。
-- profiler 聚合。
+- profiler span、frame rolling window 和聚合 summary。
 - panel registry。
 - command registry。
 - snapshot filter。
@@ -124,7 +129,7 @@ const profile = createStandardAppProfile({
 
 `devtools: true` 等价于启用标准 preset。标准 preset 由 App Host 自动注册已经存在的标准服务数据源，例如 Host、Platform、Drivers、Data、Assets、Renderer、Input、GameRuntime、UI 和 Save。缺失的服务不会生成空数据源。
 
-在标准 Web bootstrap 中，`devtools: true` 还表示“开发环境启用 DevTools 可视入口”：当应用安装并挂载 `@gamekit/devtools-ui` 且存在 `ui` service 时，页面应自动出现 DevTools launcher。点击 launcher 打开完整 DevTools shell；DevTools shell 读取 `services.devtools` snapshot 和 UI Runtime panel metadata，不要求普通游戏手写入口。
+在标准 Web bootstrap 中，`devtools: true` 还表示“开发环境启用 DevTools 可视入口”：当应用安装并挂载 `@gamekit/devtools-ui` 且存在 `ui` service 时，页面应自动出现 DevTools launcher，并可以显示标准 pinned widgets。点击 launcher 打开完整 DevTools shell；DevTools shell 读取 `services.devtools` snapshot 和 UI Runtime panel metadata，不要求普通游戏手写入口。
 
 Headless app、测试环境或没有挂载 `@gamekit/devtools-ui` 的自定义 shell 不创建可视入口，只创建 DevToolsRuntime、sources、panels 和 commands。这样 `devtools: true` 在所有环境都安全，但“自动看到按钮”只属于带 DevTools UI package 的标准浏览器启动路径。
 
@@ -136,7 +141,12 @@ devtools: {
   excludeSources: ["save"],
   options: {
     traceLimit: 500,
-    diagnosticLimit: 200
+    diagnosticLimit: 200,
+    profiler: {
+      enabled: true,
+      frameLimit: 180,
+      deepSpans: false
+    }
   }
 }
 ```
@@ -177,6 +187,7 @@ DevTools 必须拆成运行时协议和 UI 实现两个包：
 
 @gamekit/devtools-ui
   - DevToolsLauncher
+  - DevToolsPinDock / pinned widgets
   - DevToolsShell
   - 标准 DevTools 面板
   - DevTools focus bridge
@@ -200,9 +211,13 @@ devtools → core
 - `@gamekit/devtools-ui` 可以使用 `@gamekit/react-ui` 的通用基础设施，但 DevTools-specific UI 不回流进 `react-ui`。
 - 普通游戏可以不安装 `@gamekit/devtools-ui`；这时仍可在 headless 或测试中使用 `@gamekit/devtools`。
 
-## Launcher / Shell
+## Launcher / Pin Surface / Shell
 
-DevTools UI package 负责可视入口和完整 shell。
+DevTools UI package 负责可视入口、主屏幕 pinned 摘要层和完整 shell。三者是不同 UI 状态，不应互相替代：
+
+- `Closed`：只显示 launcher。
+- `Pinned`：DevTools shell 收起时，主屏幕显示若干轻量 pinned widgets。
+- `Open Shell`：打开完整 DevTools shell，展示完整 tabs、filters、details 和 commands。
 
 Launcher 职责：
 
@@ -210,6 +225,16 @@ Launcher 职责：
 - 通过 UI Runtime 打开或 toggle DevTools shell。
 - 支持配置位置、默认可见性、快捷键和禁用状态。
 - 不读取 gameplay 私有对象，只通过 DevToolsRuntime snapshot 显示摘要。
+
+Pin Surface 职责：
+
+- 在主屏幕显示少量可固定的 DevTools 摘要面板，例如性能状态、diagnostic warning、trace activity 或自定义业务状态。
+- Shell 关闭时仍可独立存在；Shell 打开时可以保持显示、自动收起或由用户配置隐藏。
+- 每个 pinned widget 都可以展开为小面板，也可以折叠为图标。
+- 折叠图标仍应显示最小状态，例如正常 / warning / error / over budget。
+- 点击 pinned widget 的 `Open`、标题或指定动作可以打开完整 DevTools shell，并切到对应 panel。
+- 刷新频率必须低于 gameplay tick，默认 250ms 或 500ms，不每帧拉取完整 source snapshot。
+- 聚焦时把 UI focus/scope 置为 `devtools` 或 `ui`，避免 gameplay/camera input 穿透。
 
 Shell 职责：
 
@@ -225,9 +250,16 @@ Shell 职责：
 devtools: {
   ui: {
     launcher: true,
-    defaultOpen: false,
-    hotkeys: ["F12", "Backquote"],
-    panelId: "gamekit.devtools.shell"
+    shell: {
+      defaultOpen: false,
+      hotkeys: ["F12", "Backquote"],
+      panelId: "gamekit.devtools.shell"
+    },
+    pins: {
+      enabled: true,
+      defaultPinned: ["devtools.performance"],
+      collapseToTray: true
+    }
   }
 }
 ```
@@ -239,12 +271,139 @@ devtools: {
   preset: "standard",
   ui: {
     launcher: true,
-    defaultOpen: false
+    shell: {
+      defaultOpen: false
+    },
+    pins: {
+      enabled: true,
+      defaultPinned: ["devtools.performance"]
+    }
   }
 }
 ```
 
-自定义游戏 shell 可以完全替换 launcher 和 shell，只要继续通过 DevToolsRuntime snapshot、commands 和 UI Runtime focus 协议交互。
+自定义游戏 shell 可以完全替换 launcher、pin surface 和 shell，只要继续通过 DevToolsRuntime snapshot、commands 和 UI Runtime focus 协议交互。
+
+## Pin Panel Metadata
+
+DevTools Core 不渲染 pinned widget，但 panel metadata 可以声明某个 panel 是否支持 pin。这样 App Host preset、DevTools UI 和自定义工具都能以同一协议理解“这个 panel 可以被固定到主屏幕”。
+
+建议类型：
+
+```ts
+export type DevToolsPanelPinDefinition = {
+  enabled?: boolean;
+  defaultPinned?: boolean;
+  defaultCollapsed?: boolean;
+  icon?: string;
+  label?: string;
+  order?: number;
+  area?: "top" | "right" | "bottom" | "left" | "floating";
+  size?: { width?: number; height?: number };
+  minSize?: { width?: number; height?: number };
+  refreshIntervalMs?: number;
+};
+
+export type DevToolsPanelDefinition = {
+  id: string;
+  label: string;
+  area?: DevToolsPanelArea;
+  order?: number;
+  sourceKinds?: DevToolsDataSourceKind[];
+  pin?: DevToolsPanelPinDefinition;
+};
+```
+
+长期规则：
+
+- `pin.enabled` 只表示“这个 panel 可以被 pin”，不代表当前一定 pinned。
+- 当前 pinned / collapsed / order / size / area 是 DevTools UI 状态，不进入 DevToolsRuntime snapshot 的核心调试事实。
+- App / profile 可以给默认 pin 配置；用户调整后的 pin 布局属于开发工具 UI 偏好，可以存在 platform storage、本地 profile 或 editor workspace，不进入游戏 Save。
+- Panel 不应假设自己一定有 pinned renderer；没有 `@gamekit/devtools-ui` 时 metadata 仍然安全。
+- Pinned widget 应优先读取 DevTools snapshot 中已经聚合好的 summary。需要详情时打开 Shell 或请求 panel detail，避免常驻 widget 拉全量 source snapshot。
+
+DevTools UI 内部可以维护如下状态：
+
+```ts
+export type DevToolsPinnedPanelState = {
+  panelId: string;
+  pinned: boolean;
+  collapsed: boolean;
+  order: number;
+  area: "top" | "right" | "bottom" | "left" | "floating";
+  size?: { width: number; height: number };
+};
+```
+
+这个状态属于 `@gamekit/devtools-ui`，不是 `@gamekit/devtools` 必须持久化的 runtime 状态。
+
+## Standard Pinned Widgets
+
+标准 preset 默认只 pin 性能摘要，避免主屏幕被调试 UI 淹没：
+
+```ts
+devtools: {
+  ui: {
+    pins: {
+      enabled: true,
+      defaultPinned: ["devtools.performance"]
+    }
+  }
+}
+```
+
+Performance pinned widget 最小信息：
+
+- frame budget 状态。
+- 短 frame graph，使用 `deltaMs` 表示真实 frame time。
+- FPS / frame time。
+- tick / render / ui measured work。
+- live warning 数量。
+- profiler 是否 paused / sampling。
+
+折叠为图标时至少显示：
+
+- 最小性能指标，例如 FPS。
+- green / yellow / red 状态点。
+- over-budget 计数或 warning badge。
+
+其他标准 panel 后续可以逐步支持 pin：
+
+- Diagnostics：显示最近 error/warning 数。
+- Trace：显示最近链路活动和当前 selected correlation。
+- Save：显示最近 save/load 结果。
+- Input：显示当前 scope / held action。
+- Custom：游戏可以声明自己的 economy、AI、quest、netcode 等业务 pinned widget。
+
+## Pin Rendering Contract
+
+完整 panel 和 pinned widget 是两套 renderer，不要把完整 panel 缩小后塞进主屏幕。
+
+建议 `@gamekit/devtools-ui` 文件组织：
+
+```txt
+components/
+  devtools-launcher.tsx
+  devtools-shell.tsx
+  devtools-pin-dock.tsx
+  devtools-pinned-panel.tsx
+  devtools-pin-tray.tsx (多 pin 管理阶段可选)
+
+panels/
+  performance-panel.tsx
+  performance-pin.tsx
+  standard-panels.tsx
+```
+
+渲染规则：
+
+- `renderStandardDevToolsPanel` 渲染完整 Shell panel。
+- `renderStandardPinnedPanel` 渲染轻量 pinned widget。
+- Pinned widget 不显示大型 JSON dump，不展示深层 data source tree，不提供破坏性 debug command。
+- Pinned widget 可以提供“打开 Shell 到此 panel”“暂停采样”“清空 warning”等明确调试操作；这些操作必须走 DevTools command 或 UI command，可诊断、可测试。
+- Pinned widget 的刷新和 Shell 的刷新互相独立；Shell 关闭时不应继续执行完整 panel 的 expensive render。
+- Pin dock 应支持多个 area，但首轮可以只实现 `floating` 或 `bottom-right`，只要 metadata 不锁死长期方向。
+- Performance frame chart 必须区分 frame time 和 measured work。Frame Window / pin graph 用 `deltaMs` 表示真实帧间隔；runtime / render / ui 数值表示被 profiler 包住的工作耗时。
 
 ## Data Source
 
@@ -362,9 +521,73 @@ input.action
 
 Correlation 优先使用显式 `correlationId`。没有显式 id 时，可以按时间窗口、actorId、entityId、event id、rule id、ability id 做弱关联，但 UI 必须标记为 inferred，不能把推断当成确定因果。
 
-## System Profiler
+## Performance Profiler
 
-System Profiler 用于回答哪些 system 在消耗时间，而不是做完整 JavaScript profiler。
+Performance Profiler 用于回答 GameKit 层面的“慢在哪里”，而不是做完整 JavaScript CPU profiler。它关注 frame、GameRuntime system、App Host service lifecycle、renderer sync、asset loading、driver boot 和 UI/DevTools 自身刷新成本。
+
+核心模型：
+
+```ts
+export type DevToolsProfilerSpan = {
+  id: string;
+  name: string;
+  category:
+    | "frame"
+    | "runtime"
+    | "system"
+    | "service"
+    | "renderer"
+    | "asset"
+    | "input"
+    | "ui"
+    | "devtools"
+    | "custom";
+  source: string;
+  parentId?: string;
+  frameId?: string;
+  startedAt: number;
+  durationMs: number;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+};
+
+export type DevToolsProfilerBudget = {
+  id: string;
+  match: {
+    category?: DevToolsProfilerSpan["category"];
+    source?: string;
+    name?: string;
+    tags?: string[];
+  };
+  warningMs: number;
+  criticalMs?: number;
+};
+```
+
+Profiler Runtime 应提供两层入口：
+
+- `markProfilerSample(sample)`：兼容和低成本手动采样入口，用于已经计算好 duration 的场景。
+- `beginSpan/endSpan`、`measure(name, fn)`、`frameStart/frameEnd`：结构化 span 入口，用于关联 frame、system、service 和 adapter 操作。
+
+Frame snapshot 至少包含：
+
+- frame id / tick
+- delta ms
+- total frame ms
+- runtime tick ms
+- render sync ms
+- UI / DevTools refresh ms
+- over-budget span count
+- 最近 N 帧趋势
+
+Performance UI 必须区分不同时间性质的成本：
+
+- Frame window：最近 N 帧的实时趋势。
+- Live loop hot spots：持续刷新的 tick、runtime system、render sync、UI refresh 等循环成本。
+- Lifecycle waterfall：`boot/start/stop/dispose` 等一次性生命周期成本。
+- Budget warnings：按 live loop 和 lifecycle 分开解释，避免把启动慢误读成当前帧仍在慢。
+
+生命周期 span 可以保留在 snapshot 中用于启动诊断，但默认不进入 live hot spots 排序。
 
 ```ts
 export type DevToolsProfilerSample = {
@@ -379,22 +602,36 @@ export type DevToolsProfilerSample = {
 
 聚合 snapshot 至少包含：
 
-- system id
-- module id
+- span name / category / source
+- system id / module id where applicable
 - 调用次数
 - 最近耗时
 - 平均耗时
+- p50 / p95
 - 最大耗时
 - 最近 N 次采样趋势
-- 是否高频系统
+- 所属 frame / parent span where available
+- budget id / threshold
 - 是否超过预算
 
 Profiler 规则：
 
 - 默认使用低成本 `performance.now()` 或注入 clock。
-- 采样应可开关；高频详细采样默认关闭。
+- 采样应可开关；高频详细 span 默认关闭，只保留 frame/system summary。
 - profiler 不能改变 system 执行顺序或吞掉 system 错误。
 - 预算只作为诊断，不自动改变 gameplay 行为。
+- span metadata 必须小而可序列化；大对象、World snapshot、RenderObject tree、native handle 不进入 profiler。
+- DevTools UI 默认展示 rolling window summary；单帧详情只能在用户明确展开或暂停时读取。
+- Profiler 自身开销也要可被观察，至少能记录 DevTools snapshot / panel render 的低频耗时。
+
+标准性能来源：
+
+- GameRuntime：tick total、每个 system duration、system order、module id、stop 后无采样。
+- App Host：service boot/start/stop/dispose duration、service dependency waterfall、失败 phase。
+- Renderer / Driver：boot、resize、render sync、object create/update/destroy 聚合计数、adapter command duration。
+- Asset：register、load、load group、failed load duration 和状态。
+- Input：每帧 held action flush 数量、scope/context 切换低频 span。
+- UI / DevTools：snapshot refresh、panel render、launcher/shell mount duration。
 
 ## 面板模型
 
@@ -427,7 +664,7 @@ Core 只定义 panel metadata 和数据源关系；`@gamekit/devtools-ui` 提供
 - Renderer Inspector：render object count、type distribution、escaped/native/direct path、capabilities。
 - Input / Camera Inspector：active scope/context、recent action、held action、camera state、follow target。
 - Save Inspector：slots、last operation、compatibility、contributor diagnostics。
-- System Profiler：system timing summary。
+- Performance：frame trend、system table、service waterfall、asset/renderer hot spots、budget warnings。
 
 这些面板是调试视图，不是 gameplay UI。游戏 UI 可以复用某些组件，但不能让 DevTools 面板状态成为游戏状态来源。
 
@@ -544,11 +781,14 @@ Sandbox 专用 Tiny Camp 概念不进入 DevTools Core。
 ## 性能与内存
 
 - trace buffer 必须有上限。
-- profiler 默认聚合，深度采样显式开启。
+- profiler buffer 必须有上限，默认保留 rolling window summary。
+- profiler 默认聚合，深度 span 采样显式开启。
 - DevTools UI 默认消费 summary，detail 懒加载。
 - 大 payload、binary、native handle 不进入 trace。
 - 高频 world/render 状态不要每帧复制进 React；需要时使用采样、摘要或明确 pause snapshot。
 - DevTools 关闭时应能注销订阅并释放 panel 和 buffer。
+- Performance 面板刷新频率必须低于 gameplay tick，默认节流到可配置 interval。
+- over-budget 只产生诊断和可视提示，不自动暂停 runtime 或修改 gameplay 状态。
 
 ## 安全与隐私
 
@@ -587,7 +827,8 @@ DevTools diagnostic 至少包含：
 - 标准浏览器应用若安装并挂载 `@gamekit/devtools-ui`，`devtools: true` 应自动出现 DevTools launcher 并能打开 shell。
 - 只有业务专属状态需要通过 app profile 追加自定义 data source、panel definitions 和 debug commands。
 - 各模块通过稳定 snapshot、trace store 或 diagnostics 接入 DevTools，不把私有 runtime、native handle 或第三方库对象交给 DevTools Core。
-- System profiler 通过 App Host/test harness 或 runtime wrapper 接入，不能改变 system 执行顺序、错误传播或 gameplay 结果。
+- Performance profiler 通过 App Host/test harness 或 runtime wrapper 接入，不能改变 system 执行顺序、错误传播或 gameplay 结果。
+- 普通游戏优先使用标准 profiler preset；只有业务热点需要自定义 span 或 budget。
 - DevTools UI 通过 `@gamekit/devtools-ui` mount，focus 必须进入 `devtools` 或 `ui` input scope。
 - Headless 测试应能不启动 React、浏览器或 Phaser，只用 DevToolsRuntime 验证 data source、trace correlation 和 profiler。
 
@@ -606,7 +847,8 @@ DevTools diagnostic 至少包含：
 - trace push、ring buffer、clear、filter。
 - correlationId / parentId 链路排序。
 - data source snapshot 失败生成 diagnostic，不拖垮整体 snapshot。
-- profiler sample 聚合 last/avg/max/count。
+- profiler sample/span 聚合 last/avg/p50/p95/max/count。
+- frame rolling window、budget warning、service lifecycle waterfall。
 - debug command 执行、拒绝、错误 diagnostic。
 - App Host devtools service lifecycle。
 - DevTools UI launcher 打开 shell。

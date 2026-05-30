@@ -19,6 +19,7 @@ import {
 import { createStandardContext, exposeStandardState } from "./context";
 import {
   createStandardDevToolsDataSources,
+  createStandardGameRuntimeProfiler,
   createStandardDevToolsPanels,
   normalizeStandardDevToolsOptions,
   registerStandardDevToolsUiPanels
@@ -464,6 +465,10 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
             id: DEVTOOLS_SERVICE.id,
             dependencies: ctx.service.dependencies,
             boot(hostCtx) {
+              if (ctx.state.game) {
+                ctx.state.game.setProfiler(createStandardGameRuntimeProfiler(runtime));
+                cleanups.push(() => ctx.state.game?.setProfiler(undefined));
+              }
               for (const source of createStandardDevToolsDataSources(ctx, hostCtx, options)) {
                 cleanups.push(runtime.registerDataSource(source));
               }

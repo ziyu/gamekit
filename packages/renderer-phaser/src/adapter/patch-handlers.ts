@@ -4,6 +4,15 @@ import type {
   RenderObjectPatch
 } from "@gamekit/renderer-core";
 
+const PHASER_TINT_MODES = {
+  multiply: 0,
+  fill: 1,
+  add: 2,
+  screen: 4,
+  overlay: 5,
+  hard_light: 6
+} as const;
+
 export function applyObjectPatch(
   object: any,
   patch: RenderObjectDefinition | RenderObjectPatch | RenderNodePatch
@@ -51,4 +60,19 @@ export function applyObjectPatch(
   if (typeof patch.props?.tint === "number") {
     object.setTint?.(patch.props.tint);
   }
+  const tintMode = resolveTintMode(patch.props?.tintMode);
+  if (tintMode !== undefined) {
+    object.setTintMode?.(tintMode);
+  }
+}
+
+function resolveTintMode(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  return PHASER_TINT_MODES[value as keyof typeof PHASER_TINT_MODES];
 }

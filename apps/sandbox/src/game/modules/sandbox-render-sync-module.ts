@@ -40,6 +40,7 @@ type RenderObjectPatchSignature = {
   width?: number | undefined;
   alpha?: number | undefined;
   tint?: number | undefined;
+  tintMode?: string | number | undefined;
 };
 
 type RenderNodePatchSignature = {
@@ -51,6 +52,7 @@ type RenderNodePatchSignature = {
   width?: number | undefined;
   alpha?: number | undefined;
   tint?: number | undefined;
+  tintMode?: string | number | undefined;
 };
 
 type RenderSyncCache = {
@@ -487,7 +489,8 @@ function createObjectPatchSignature(patch: RenderObjectPatch): RenderObjectPatch
     rotation: patch.transform?.rotation?.z,
     width: readNumberProp(patch.props, "width"),
     alpha: patch.alpha,
-    tint: readNumberProp(patch.props, "tint")
+    tint: readNumberProp(patch.props, "tint"),
+    tintMode: readTintModeProp(patch.props)
   };
 }
 
@@ -500,7 +503,8 @@ function createNodePatchSignature(patch: RenderNodePatch): RenderNodePatchSignat
     scaleY: patch.transform?.scale?.y,
     width: readNumberProp(patch.props, "width"),
     alpha: patch.alpha,
-    tint: readNumberProp(patch.props, "tint")
+    tint: readNumberProp(patch.props, "tint"),
+    tintMode: readTintModeProp(patch.props)
   };
 }
 
@@ -510,6 +514,13 @@ function readNumberProp(
 ): number | undefined {
   const value = props?.[key];
   return typeof value === "number" ? value : undefined;
+}
+
+function readTintModeProp(
+  props: Partial<Record<string, unknown>> | undefined
+): string | number | undefined {
+  const value = props?.tintMode;
+  return typeof value === "string" || typeof value === "number" ? value : undefined;
 }
 
 function sameObjectSignature(
@@ -523,7 +534,8 @@ function sameObjectSignature(
     sameOptionalNumber(previous.rotation, next.rotation, RENDER_VALUE_EPSILON) &&
     sameOptionalNumber(previous.width, next.width, RENDER_POSITION_EPSILON) &&
     sameOptionalNumber(previous.alpha, next.alpha, RENDER_VALUE_EPSILON) &&
-    previous.tint === next.tint
+    previous.tint === next.tint &&
+    previous.tintMode === next.tintMode
   );
 }
 
@@ -540,7 +552,8 @@ function sameNodeSignature(
     sameOptionalNumber(previous.scaleY, next.scaleY, RENDER_VALUE_EPSILON) &&
     sameOptionalNumber(previous.width, next.width, RENDER_POSITION_EPSILON) &&
     sameOptionalNumber(previous.alpha, next.alpha, RENDER_VALUE_EPSILON) &&
-    previous.tint === next.tint
+    previous.tint === next.tint &&
+    previous.tintMode === next.tintMode
   );
 }
 

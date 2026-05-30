@@ -1,5 +1,6 @@
 import type {
   DevToolsLauncherOptions,
+  DevToolsPinsOptions,
   DevToolsRuntime,
   DevToolsShellOptions,
   DevToolsUiSnapshot
@@ -11,12 +12,13 @@ export type DevToolsUiBridgeOptions = {
   ui: UiRuntime;
   launcher?: DevToolsLauncherOptions | undefined;
   shell?: DevToolsShellOptions | undefined;
+  pins?: DevToolsPinsOptions | undefined;
 };
 
 export type DevToolsUiBridge = {
   launcherPanelId: string;
   shellPanelId: string;
-  openShell(): void;
+  openShell(panelId?: string): void;
   closeShell(): void;
   toggleShell(): void;
   focusShell(): void;

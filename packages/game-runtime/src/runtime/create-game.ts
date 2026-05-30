@@ -6,7 +6,12 @@ import {
   type GameModuleInstallResult
 } from "@gamekit/core";
 import { createSystemRegistry } from "./system-registry";
-import type { CreateGameConfig, GameInstallContext, GameRuntime } from "./types";
+import type {
+  CreateGameConfig,
+  GameInstallContext,
+  GameRuntime,
+  GameRuntimeProfiler
+} from "./types";
 
 export function createGame(config: CreateGameConfig): GameRuntime {
   const clock = new Clock();
@@ -14,6 +19,7 @@ export function createGame(config: CreateGameConfig): GameRuntime {
   const systemRegistry = createSystemRegistry();
   const installedModules = new Registry<GameModule<GameInstallContext>>();
   const cleanups: Array<() => void> = [];
+  let profiler: GameRuntimeProfiler | undefined = config.profiler;
   let disposed = false;
 
   const installContext: GameInstallContext = {
@@ -73,14 +79,50 @@ export function createGame(config: CreateGameConfig): GameRuntime {
         return;
       }
 
-      for (const system of systemRegistry.values()) {
-        system.update({
-          world: config.world,
-          delta: snapshot.delta,
-          elapsed: snapshot.elapsed,
-          tick: snapshot.ticks
-        });
+      const frameHandle = profiler?.startFrame?.({
+        tick: snapshot.ticks,
+        deltaMs: snapshot.delta,
+        timestamp: snapshot.elapsed
+      });
+      try {
+        for (const system of systemRegistry.values()) {
+          const startedAt = Date.now();
+          const spanHandle = profiler?.beginSystem?.({
+            systemId: system.id,
+            tick: snapshot.ticks,
+            ...(frameHandle === undefined ? {} : { frameId: frameHandle.id }),
+            startedAt
+          });
+          try {
+            system.update({
+              world: config.world,
+              delta: snapshot.delta,
+              elapsed: snapshot.elapsed,
+              tick: snapshot.ticks
+            });
+            if (spanHandle) {
+              profiler?.endSystem?.(spanHandle, {
+                durationMs: Math.max(0, Date.now() - startedAt)
+              });
+            }
+          } catch (error) {
+            if (spanHandle) {
+              profiler?.endSystem?.(spanHandle, {
+                durationMs: Math.max(0, Date.now() - startedAt),
+                error
+              });
+            }
+            throw error;
+          }
+        }
+      } finally {
+        if (frameHandle) {
+          profiler?.endFrame?.(frameHandle);
+        }
       }
+    },
+    setProfiler(nextProfiler) {
+      profiler = nextProfiler;
     },
     dispose() {
       if (disposed) {

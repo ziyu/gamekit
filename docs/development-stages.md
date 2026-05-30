@@ -809,7 +809,7 @@
 
 模块设计：`docs/modules/devtools.md`
 
-当前状态：首轮核心切片已开始实现。已新增 `@gamekit/devtools`，具备 data source / panel / command registry、trace ring buffer、diagnostic buffer 和 profiler 聚合；App Host 已支持 `devtools: true` 标准 preset，并能自动注册 Host、Platform、Drivers、Data、Assets、Renderer、Input、GameRuntime、UI、Save 等标准服务 source；Sandbox 已把 DevTools 摘要接入 Host inspector，且只追加 Sandbox/TCA/GAS/Camera 这类验证面专用 source。下一步需要新增独立 `@gamekit/devtools-ui` 包，用于 DevTools launcher、shell 和标准面板；EventBus bridge、trace correlator、runtime profiler wrapper 和更完整的 Inspector detail 仍属于本阶段后续工作。
+当前状态：首轮核心切片已实现。已新增 `@gamekit/devtools`，具备 data source / panel / command registry、trace ring buffer、diagnostic buffer 和基础 profiler 聚合；App Host 已支持 `devtools: true` 标准 preset，并能自动注册 Host、Platform、Drivers、Data、Assets、Renderer、Input、GameRuntime、UI、Save 等标准服务 source；已新增独立 `@gamekit/devtools-ui`，提供 DevTools launcher、shell 和标准面板；Sandbox 已接入 DevTools 可视入口。EventBus bridge、trace correlator、更完整的 Inspector detail 和性能工具深化进入后续阶段。
 
 预期新增：
 
@@ -839,6 +839,132 @@
 - DevTools focus 下 gameplay/camera input 不误触发。
 - Debug command 必须显式注册、可诊断，不改变正式玩法结果。
 - trace buffer 和 profiler 有上限，不把每帧完整 world/render patch 塞进 React UI。
+
+## Phase 14.5：Performance Tools
+
+目标：把 DevTools 的基础 profiler 从“手动耗时聚合”升级为 GameKit 级性能工具，让框架能回答 frame、system、service lifecycle、render sync、asset loading、UI/DevTools refresh 的性能归因和预算问题。
+
+模块设计：`docs/modules/devtools.md`
+
+关联边界：
+
+- Runtime profiler 边界：`docs/modules/core-runtime.md`
+- App Host lifecycle profiling：`docs/modules/app-host.md`
+- 性能实践：`docs/best-practices.md`
+
+当前状态：首轮核心能力已实现。`@gamekit/devtools` 已支持 profiler sample、结构化 span、frame rolling window、budget warning、p50/p95 聚合；`@gamekit/game-runtime` 暴露 profiler 注入点；App Host 标准 DevTools service 会把 profiler 接入 GameRuntime，并对 service lifecycle/tick 记录 span；`@gamekit/devtools-ui` 已新增 Performance 面板，按 Frame Window、Live Loop Hot Spots、Live Budget Warnings 和 Lifecycle Waterfall 分区展示，避免一次性 boot 成本混入持续刷新热点。Renderer/Asset 的首轮性能数据通过 service lifecycle span 和 runtime render-sync system span 进入 Performance 面板；更细的 renderer object counter、asset group waterfall 和 DevTools 自身 render cost 属于后续增强。
+
+已实现：
+
+- `DevToolsProfilerSpanInput`
+- `DevToolsProfilerBudget`
+- frame start/end 和 rolling window summary
+- `beginProfilerSpan/endProfilerSpan`
+- `measureProfilerSpan(name, fn)`
+- Runtime system profiler wrapper
+- App Host service lifecycle profiler
+- DevTools Performance 标准面板
+- Sandbox 通过标准 DevTools shell 获得 Performance tab
+
+后续增强：
+
+- Renderer object create/update/destroy 聚合计数。
+- Asset load group waterfall 和失败耗时归因。
+- Driver boot/resize 更细粒度 span。
+- DevTools snapshot refresh / panel render 自身成本采样。
+- Profiler disabled 模式下的零分配基准验证。
+
+完成定义：
+
+- Profiler 支持 sample 和结构化 span 两种入口。
+- Profiler snapshot 至少包含 last、avg、p50、p95、max、count、over-budget 状态。
+- Frame rolling window 能展示 delta、frame ms、runtime tick ms、render sync ms 和 over-budget count。
+- Runtime system profiler 记录 system id、module id、执行顺序、调用次数和耗时，不改变 system 顺序、错误传播或 gameplay 结果。
+- App Host lifecycle profiler 记录 service boot/start/stop/dispose waterfall，并在失败时保留原始错误和 diagnostics。
+- Renderer / Driver / Asset 记录 boot、resize、render sync、object create/update/destroy 聚合、asset load group duration。
+- DevTools UI Performance 面板不显示 JSON dump，使用 frame chart、system table、service waterfall、hot spots 和 budget warnings。
+- Profiler disabled 时，高频 tick 路径没有明显对象分配、数组复制或 React state 更新。
+- Sandbox 打开 DevTools 后能看到真实 frame/system/service/asset/renderer 性能数据。
+- `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 通过。
+
+## Phase 14.6：DevTools Pin Surface
+
+目标：让 DevTools 在完整 shell 收起时，仍能把少量高价值调试摘要固定到主屏幕。默认固定 Performance 摘要；后续支持 Diagnostics、Trace、Save、Input 和游戏自定义业务状态。Pinned widget 可以展开为小面板，也可以折叠成图标，不要求普通游戏手写调试 UI。
+
+模块设计：`docs/modules/devtools.md`
+
+当前状态：首轮已实现。`@gamekit/devtools` 已增加 panel pin metadata 和 UI pins snapshot；App Host 标准 DevTools preset 默认 pin `devtools.performance`；`@gamekit/devtools-ui` 已提供 DevToolsPinDock、PerformancePin、Shell active panel 跳转和可折叠 pinned widget。Performance pin 和完整 Performance 面板都使用 profiler frame `deltaMs` 作为 Frame Window 的主图数据，避免把 game tick work duration 误当作浏览器帧时间。
+
+设计原则：
+
+- Pin Surface 属于 `@gamekit/devtools-ui` 的可视层能力；`@gamekit/devtools` 只提供 panel metadata、snapshot、profiler 和 commands。
+- App Host 可以通过 DevTools UI options 配置默认 pin，但不直接管理 DOM 布局、拖拽、折叠或样式。
+- Shell、Launcher、Pin Surface 是三种不同 UI 状态：launcher 负责入口，pin surface 负责主屏幕轻量摘要，shell 负责完整调试工作台。
+- Pinned widget 不等于完整 panel 缩小版；必须有轻量 renderer，避免把完整 source tree、JSON dump 或 expensive panel render 常驻到主屏幕。
+- Pinned widget 默认低频刷新，不进入 gameplay tick，不每帧拉取完整 source snapshot。
+- Pinned widget 聚焦时必须进入 `devtools` / `ui` focus scope，避免 gameplay/camera input 穿透。
+- 用户 pin 布局是开发工具 UI 偏好，不进入游戏 Save；可以由 platform storage、本地 profile 或 editor workspace 持久化。
+
+任务拆分：
+
+1. DevTools panel metadata 扩展
+   - 增加 `DevToolsPanelPinDefinition`。
+   - `DevToolsPanelDefinition` 增加可选 `pin` 字段。
+   - 标准 Performance panel 声明支持 pin，并默认可被 standard preset 固定。
+   - 确保 headless runtime 和没有 `@gamekit/devtools-ui` 的 app 仍能安全忽略 pin metadata。
+
+2. DevTools UI options 扩展
+   - 增加 `devtools.ui.pins` 配置。
+   - 支持 `enabled`、`defaultPinned`、`defaultCollapsed`、`collapseToTray`、默认 area 和 refresh interval。
+   - `devtools: true` 的标准 Web 默认 pin `devtools.performance`。
+
+3. Pin Surface 组件
+   - 新增 `DevToolsPinDock`。
+   - 新增 pinned panel 外壳和 collapsed icon 状态。
+   - Tray 作为长期形态保留在设计中；首轮由 collapsed pinned panel 表达。
+   - 支持 pinned panel 展开 / 折叠为 icon / 重新打开。
+   - 支持点击 pinned widget 打开完整 Shell 并切到对应 panel。
+
+4. Performance pinned widget
+   - 新增 `PerformancePin`，使用游戏内 debug overlay 风格展示 frame graph、FPS、frame time、tick/render/ui work 和 warning 数量。
+   - 折叠图标显示状态点和 warning badge。
+   - 不显示完整表格、完整 waterfall 或 JSON。
+
+5. Shell / Pin 协作
+   - Shell 打开与关闭不销毁 pinned state。
+   - Shell 的 active panel 可以由 pinned widget 指定。
+   - Shell 的完整刷新和 pinned widget 的低频刷新互相独立。
+   - DevTools focus bridge 覆盖 launcher、pin dock 和 shell。
+
+6. Sandbox 验证
+   - Sandbox 默认显示 Performance pinned widget。
+   - widget 可以折叠成图标再打开。
+   - 点击 widget 能打开 DevTools shell 的 Performance tab。
+   - DevTools pin focus 下 WASD / confirm 不触发 gameplay action。
+
+已实现：
+
+- `DevToolsPanelPinDefinition`
+- `DevToolsPinsOptions`
+- App Host standard `devtools: true` 默认 Performance pin
+- `DevToolsPinDock`
+- `PerformancePin`
+- Shell active panel bridge
+- Performance panel / pin 共用 frame bar 计算逻辑
+- DevTools profiler 默认使用 `performance.now()` 作为浏览器环境高精度 clock
+- Performance Frame Window 使用 `deltaMs` 展示真实 frame time，并在 tooltip 中区分 measured work
+
+完成定义：
+
+- `@gamekit/devtools` 不依赖 React、DOM、Tailwind、GSAP 或 `@gamekit/devtools-ui`。
+- `@gamekit/devtools-ui` 提供 launcher、pin dock、collapsed pin icon 和 shell 可视入口能力；独立 pin tray 可在多 pin 管理阶段补齐。
+- `devtools: true` 在标准 Web app 中默认启用 launcher，并默认 pin Performance 摘要。
+- Pinned Performance 显示真实 profiler summary，且不拉完整 source snapshot。
+- Pinned widget 可以展开、折叠成图标、从图标恢复，并能打开 Shell 到对应 panel。
+- Pin 状态不进入游戏 Save payload。
+- DevTools pin / shell 聚焦时 gameplay/camera input 不误触发。
+- 测试覆盖 metadata、默认配置、pin state、PerformancePin 渲染、Shell 跳转和 focus gate。
+- `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 通过。
 
 ## Phase 15：Hero Road Demo
 

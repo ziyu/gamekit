@@ -241,6 +241,60 @@ describe("configured app host", () => {
     expect(calls).toEqual(["data.boot", "game.boot"]);
   });
 
+  it("profiles host lifecycle and standard game runtime systems through devtools", async () => {
+    const calls: string[] = [];
+    const app = defineGameApp({
+      id: "profiled",
+      services: [{ id: "game" }, { id: "devtools", dependencies: ["game"] }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        game: {
+          createRuntime(_ctx, modules) {
+            return createGame({
+              modules: [
+                ...modules,
+                {
+                  id: "test.module",
+                  install(ctx) {
+                    ctx.systems.register({
+                      id: "test.system",
+                      update() {
+                        calls.push("system.update");
+                      }
+                    });
+                  }
+                }
+              ],
+              world: createMemoryWorld(),
+              eventBus: createEventBus({ clock: () => 1 }),
+              seed: "profiled"
+            });
+          }
+        },
+        devtools: true
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+
+    await configured.host.boot();
+    await configured.host.start();
+    configured.host.tick(16, 32);
+
+    const snapshot = configured.host.services.devtools?.snapshot();
+
+    expect(calls).toEqual(["system.update"]);
+    expect(snapshot?.profiler.map((sample) => sample.name)).toContain("test.system");
+    expect(snapshot?.profiler.map((sample) => sample.name)).toContain("game.tick");
+    expect(snapshot?.profilerFrames.at(-1)).toMatchObject({
+      tick: 1,
+      deltaMs: 16,
+      spanCount: 1
+    });
+  });
+
   it("throws clearly when a profile is missing a service provider", () => {
     const app = defineGameApp({
       id: "missing-factory",
@@ -491,6 +545,12 @@ describe("configured app host", () => {
       kind: "devtools",
       title: "GameKit DevTools"
     });
+    expect(configured.host.services.devtools?.snapshot().panels).toContainEqual(
+      expect.objectContaining({
+        id: "devtools.performance",
+        pin: expect.objectContaining({ defaultPinned: true })
+      })
+    );
     expect(
       configured.host.services.devtools?.snapshot().dataSources.map((source) => source.id)
     ).toContain("ui");

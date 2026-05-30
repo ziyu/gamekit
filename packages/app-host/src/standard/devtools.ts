@@ -2,9 +2,12 @@ import type {
   DevToolsDataSource,
   DevToolsLauncherOptions,
   DevToolsPanelDefinition,
+  DevToolsPinsOptions,
+  DevToolsRuntime,
   DevToolsShellOptions,
   DevToolsUiOptions
 } from "@gamekit/devtools";
+import type { GameRuntimeProfiler } from "@gamekit/game-runtime";
 import type { AppHostContext } from "../runtime/types";
 import type {
   StandardDevToolsOptions,
@@ -239,13 +242,78 @@ export function createStandardDevToolsPanels<TContext>(
       sourceKinds: ["renderer", "input", "camera", "ui"]
     },
     {
+      id: "devtools.performance",
+      label: "Performance",
+      area: "dock",
+      order: 5,
+      sourceKinds: ["host", "runtime", "renderer", "asset", "ui"],
+      pin: {
+        enabled: true,
+        defaultPinned: true,
+        defaultCollapsed: false,
+        icon: "perf",
+        label: "Performance",
+        order: 1,
+        area: "floating",
+        refreshIntervalMs: 500
+      }
+    },
+    {
       id: "devtools.save",
       label: "Save",
       area: "dock",
-      order: 5,
+      order: 6,
       sourceKinds: ["save"]
     }
   ];
+}
+
+export function createStandardGameRuntimeProfiler(
+  runtime: Pick<
+    DevToolsRuntime,
+    "startProfilerFrame" | "endProfilerFrame" | "beginProfilerSpan" | "endProfilerSpan"
+  >
+): GameRuntimeProfiler {
+  return {
+    startFrame(input) {
+      return runtime.startProfilerFrame({
+        tick: input.tick,
+        deltaMs: input.deltaMs,
+        timestamp: input.timestamp,
+        source: "game-runtime"
+      });
+    },
+    endFrame(handle) {
+      runtime.endProfilerFrame(handle);
+    },
+    beginSystem(input) {
+      return runtime.beginProfilerSpan({
+        name: input.systemId,
+        category: "system",
+        source: input.moduleId ?? "game-runtime",
+        frameId: input.frameId,
+        startedAt: input.startedAt,
+        metadata: {
+          systemId: input.systemId,
+          ...(input.moduleId === undefined ? {} : { moduleId: input.moduleId }),
+          tick: input.tick
+        }
+      });
+    },
+    endSystem(handle, input) {
+      runtime.endProfilerSpan(handle, {
+        durationMs: input.durationMs,
+        ...(input.error === undefined
+          ? {}
+          : {
+              tags: ["error"],
+              metadata: {
+                error: input.error instanceof Error ? input.error.message : String(input.error)
+              }
+            })
+      });
+    }
+  };
 }
 
 export function registerStandardDevToolsUiPanels<TContext>(
@@ -261,6 +329,7 @@ export function registerStandardDevToolsUiPanels<TContext>(
   const cleanups: Array<() => void> = [];
   const shell = normalizeShellOptions(uiOptions);
   const launcher = normalizeLauncherOptions(uiOptions, shell);
+  const pins = normalizePinsOptions(uiOptions);
 
   if (launcher.enabled && !ui.panel(launcher.panelId)) {
     ui.registerPanel({
@@ -268,7 +337,7 @@ export function registerStandardDevToolsUiPanels<TContext>(
       title: launcher.label,
       kind: "overlay",
       tags: ["gamekit", "devtools", "launcher"],
-      defaultProps: launcher
+      defaultProps: { launcher, pins }
     });
     cleanups.push(() => ui.unregisterPanel(launcher.panelId));
   }
@@ -279,7 +348,7 @@ export function registerStandardDevToolsUiPanels<TContext>(
       title: shell.title,
       kind: "devtools",
       tags: ["gamekit", "devtools", "shell"],
-      defaultProps: shell
+      defaultProps: { shell, pins }
     });
     cleanups.push(() => ui.unregisterPanel(shell.panelId));
   }
@@ -289,6 +358,31 @@ export function registerStandardDevToolsUiPanels<TContext>(
   }
 
   return cleanups;
+}
+
+function normalizePinsOptions(options: DevToolsUiOptions): RequiredDevToolsPinsOptions {
+  const pins = options.pins;
+  if (pins === false) {
+    return {
+      enabled: false,
+      defaultPinned: [],
+      defaultCollapsed: [],
+      collapseToTray: true,
+      area: "floating"
+    };
+  }
+
+  const pinOptions: DevToolsPinsOptions = pins === true || pins === undefined ? {} : pins;
+  return {
+    enabled: pinOptions.enabled !== false,
+    defaultPinned: pinOptions.defaultPinned ?? ["devtools.performance"],
+    defaultCollapsed: pinOptions.defaultCollapsed ?? [],
+    collapseToTray: pinOptions.collapseToTray !== false,
+    area: pinOptions.area ?? "floating",
+    ...(pinOptions.refreshIntervalMs === undefined
+      ? {}
+      : { refreshIntervalMs: pinOptions.refreshIntervalMs })
+  };
 }
 
 function selectSourceIds<TContext>(
@@ -387,4 +481,12 @@ type RequiredDevToolsLauncherOptions = DevToolsLauncherOptions & {
   label: string;
   position: NonNullable<DevToolsLauncherOptions["position"]>;
   hotkeys: string[];
+};
+
+type RequiredDevToolsPinsOptions = DevToolsPinsOptions & {
+  enabled: boolean;
+  defaultPinned: string[];
+  defaultCollapsed: string[];
+  collapseToTray: boolean;
+  area: NonNullable<DevToolsPinsOptions["area"]>;
 };

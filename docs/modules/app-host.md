@@ -331,6 +331,30 @@ export type AppHostSnapshot = {
 - 高频输入、render patch、world position update 不进入 Host diagnostics。
 - DevTools 可以同时订阅 Host diagnostics、EventBus、Data trace、TCA trace 和 profiler。
 
+## Lifecycle Profiling
+
+App Host 是应用启动、停止和外部 runtime 生命周期的编排层，因此它也是 service lifecycle 性能归因的边界。Host profiler 不替代 DevTools；它只把可观察 span 暴露给 DevTools 或测试夹具。
+
+Host lifecycle profiler 应覆盖：
+
+- service `boot/start/stop/dispose` duration。
+- service dependency waterfall。
+- driver boot / resize / dispose。
+- renderer boot / resize / destroy。
+- asset preload plan / load group。
+- input start / stop。
+- UI / DevTools mount。
+- GameRuntime start / stop / tick bridge。
+
+Profiler 规则：
+
+- Host service binding 不需要强制实现 profiler 接口；Host lifecycle coordinator 可以在调用 lifecycle hook 外层创建 span。
+- profiler disabled 时，lifecycle coordinator 只执行原本逻辑，不额外构建 waterfall 数据。
+- lifecycle span failure 必须同时保留原始 error，并在 Host diagnostics 中报告 service id、phase 和 error code。
+- Host snapshot 可以展示 lifecycle profiling summary，但不保存完整长期历史。
+- DevTools 可以展示 service waterfall 和 over-budget service；Host 本身不因为预算超时自动跳过、重试或重排服务。
+- 扩展 service 与内置 service 使用同一套 lifecycle span，不为内置服务写特殊性能路径。
+
 ## Game App Definition
 
 App Host 支持声明式 app definition。Definition 描述 app 需要什么，profile 描述当前运行环境如何提供这些能力。

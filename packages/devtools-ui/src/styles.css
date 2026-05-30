@@ -23,14 +23,277 @@
   pointer-events: auto;
 }
 
+.gamekit-devtools-pin-dock {
+  position: absolute;
+  right: 16px;
+  bottom: 60px;
+  display: grid;
+  gap: 8px;
+  width: min(320px, calc(100vw - 32px));
+  pointer-events: auto;
+}
+
+.gamekit-devtools-pin-dock--left {
+  right: auto;
+  left: 16px;
+}
+
+.gamekit-devtools-pin-dock--top {
+  top: 16px;
+  bottom: auto;
+}
+
+.gamekit-devtools-pin-dock--bottom,
+.gamekit-devtools-pin-dock--floating {
+  bottom: 60px;
+}
+
+.gamekit-devtools-pinned-panel {
+  position: relative;
+  overflow: hidden;
+  border: 2px solid rgb(76 86 98 / 0.92);
+  border-radius: 3px;
+  background: rgb(8 10 16 / 0.88);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 14px 36px rgb(0 0 0 / 0.34);
+  color: rgb(226 232 240);
+  backdrop-filter: blur(12px);
+}
+
+.gamekit-devtools-pinned-panel--collapsed {
+  justify-self: end;
+  width: auto;
+  cursor: pointer;
+}
+
+.gamekit-devtools-pinned-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  position: absolute;
+  top: -10px;
+  right: 8px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.gamekit-devtools-pinned-panel:hover .gamekit-devtools-pinned-panel__header,
+.gamekit-devtools-pinned-panel:focus-within .gamekit-devtools-pinned-panel__header {
+  opacity: 1;
+}
+
+.gamekit-devtools-pinned-panel__header button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgb(25 255 245 / 0.36);
+  border-radius: 2px;
+  background: rgb(4 8 14 / 0.96);
+  color: rgb(226 232 240);
+  cursor: pointer;
+  font:
+    900 12px/1 ui-sans-serif,
+    system-ui,
+    sans-serif;
+  padding: 0;
+}
+
+.gamekit-devtools-pinned-panel__body {
+  padding: 8px;
+}
+
+.gamekit-devtools-pinned-panel--collapsed .gamekit-devtools-pinned-panel__body {
+  padding: 0;
+}
+
+.gamekit-devtools-performance-pin {
+  display: grid;
+  gap: 6px;
+  width: 280px;
+  color: rgb(23 255 242);
+  font:
+    700 12px/1.25 ui-monospace,
+    "SFMono-Regular",
+    "Menlo",
+    "Consolas",
+    monospace;
+  letter-spacing: 0;
+  text-shadow: 0 0 8px rgb(23 255 242 / 0.32);
+  background-image: repeating-linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0.04) 0,
+    rgb(255 255 255 / 0.04) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+}
+
+.gamekit-devtools-performance-pin__graph {
+  display: flex;
+  align-items: end;
+  gap: 2px;
+  height: 34px;
+  border: 2px solid rgb(38 52 74);
+  background: rgb(0 215 216 / 0.16);
+  padding: 3px;
+}
+
+.gamekit-devtools-performance-pin__graph span {
+  flex: 1 1 3px;
+  min-width: 3px;
+  background: rgb(23 255 242);
+  box-shadow: 0 0 8px rgb(23 255 242 / 0.38);
+  transition: height 140ms linear;
+}
+
+.gamekit-devtools-performance-pin__graph span.is-warning {
+  background: rgb(253 230 138);
+  box-shadow: 0 0 8px rgb(253 230 138 / 0.42);
+}
+
+.gamekit-devtools-performance-pin__graph span.is-latest {
+  background: rgb(248 250 252);
+  box-shadow: 0 0 10px rgb(23 255 242 / 0.7);
+}
+
+.gamekit-devtools-performance-pin__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgb(159 166 178 / 0.4);
+  padding-bottom: 5px;
+  color: rgb(235 238 244);
+  text-shadow: none;
+}
+
+.gamekit-devtools-performance-pin__header span {
+  color: rgb(23 255 242);
+  font-weight: 800;
+}
+
+.gamekit-devtools-performance-pin__channels {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px 10px;
+  color: rgb(235 238 244);
+  text-shadow: none;
+}
+
+.gamekit-devtools-performance-pin__channel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.gamekit-devtools-performance-pin__channel > span {
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border: 1px solid rgb(235 238 244 / 0.92);
+  background: rgb(235 238 244 / 0.94);
+  color: rgb(7 17 22);
+  font-size: 10px;
+  line-height: 1;
+  box-shadow: 0 0 6px rgb(23 255 242 / 0.26);
+}
+
+.gamekit-devtools-performance-pin__readout {
+  display: grid;
+  gap: 3px;
+  border-top: 1px solid rgb(159 166 178 / 0.28);
+  padding-top: 6px;
+  font-size: 12px;
+}
+
+.gamekit-devtools-performance-pin__readout strong {
+  font-weight: 900;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.gamekit-devtools-pin-icon {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 66px;
+  min-height: 32px;
+  justify-content: center;
+  padding: 7px 10px;
+  color: rgb(23 255 242);
+  font:
+    800 12px/1 ui-monospace,
+    "SFMono-Regular",
+    "Menlo",
+    "Consolas",
+    monospace;
+  text-shadow: 0 0 8px rgb(23 255 242 / 0.32);
+}
+
+.gamekit-devtools-pin-icon strong {
+  color: rgb(23 255 242);
+  font-size: 18px;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.gamekit-devtools-pin-icon span:not(.gamekit-devtools-pin-status) {
+  color: rgb(23 255 242);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.gamekit-devtools-pin-icon em {
+  min-width: 16px;
+  border-radius: 2px;
+  background: rgb(253 230 138 / 0.18);
+  color: rgb(253 230 138);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  padding: 1px 4px;
+}
+
+.gamekit-devtools-pin-status {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: rgb(34 197 94);
+  box-shadow: 0 0 14px rgb(34 197 94 / 0.48);
+}
+
+.gamekit-devtools-pin-status--warning {
+  background: rgb(250 204 21);
+  box-shadow: 0 0 14px rgb(250 204 21 / 0.48);
+}
+
+.gamekit-devtools-pin-status--critical {
+  background: rgb(248 113 113);
+  box-shadow: 0 0 14px rgb(248 113 113 / 0.48);
+}
+
+.gamekit-devtools-generic-pin {
+  display: grid;
+  gap: 4px;
+}
+
+.gamekit-devtools-generic-pin span {
+  color: rgb(148 163 184);
+  font-size: 11px;
+}
+
 .gamekit-devtools-shell {
   position: absolute;
   right: 16px;
   bottom: 60px;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  width: min(980px, calc(100vw - 32px));
-  height: min(640px, calc(100vh - 96px));
+  width: min(var(--gamekit-devtools-shell-width, 980px), calc(100vw - 32px));
+  height: min(var(--gamekit-devtools-shell-height, 640px), calc(100vh - 96px));
   overflow: hidden;
   border: 1px solid rgb(148 163 184 / 0.35);
   border-radius: 8px;
@@ -38,6 +301,48 @@
   box-shadow: 0 22px 70px rgb(0 0 0 / 0.38);
   color: rgb(226 232 240);
   pointer-events: auto;
+}
+
+.gamekit-devtools-shell__resize {
+  position: absolute;
+  z-index: 2;
+  background: transparent;
+  touch-action: none;
+}
+
+.gamekit-devtools-shell__resize--left {
+  top: 12px;
+  bottom: 12px;
+  left: -5px;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.gamekit-devtools-shell__resize--top {
+  top: -5px;
+  right: 12px;
+  left: 12px;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.gamekit-devtools-shell__resize--top-left {
+  top: -7px;
+  left: -7px;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+}
+
+.gamekit-devtools-shell__resize--top-left::after {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid rgb(148 163 184 / 0.55);
+  border-left: 2px solid rgb(148 163 184 / 0.55);
+  content: "";
 }
 
 .gamekit-devtools-shell__header {
@@ -481,9 +786,86 @@
   border-color: rgb(251 191 36 / 0.34);
 }
 
+.gamekit-devtools-performance {
+  gap: 14px;
+}
+
+.gamekit-devtools-performance__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.85fr);
+  gap: 12px;
+}
+
+.gamekit-devtools-performance__section {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  border: 1px solid rgb(148 163 184 / 0.14);
+  border-radius: 8px;
+  background: rgb(15 23 42 / 0.5);
+  padding: 12px;
+}
+
+.gamekit-devtools-performance__section--wide {
+  grid-column: 1 / -1;
+}
+
+.gamekit-devtools-performance__section h3 {
+  margin: 0;
+  color: rgb(226 232 240);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.gamekit-devtools-frame-chart {
+  display: flex;
+  align-items: end;
+  gap: 3px;
+  height: 96px;
+  border: 1px solid rgb(148 163 184 / 0.12);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgb(15 23 42 / 0.65), rgb(2 6 23 / 0.65));
+  padding: 8px;
+}
+
+.gamekit-devtools-frame-chart span {
+  flex: 1 1 4px;
+  min-width: 3px;
+  border-radius: 3px 3px 0 0;
+  background: rgb(56 189 248 / 0.72);
+}
+
+.gamekit-devtools-frame-chart span.is-warning {
+  background: rgb(251 191 36 / 0.82);
+}
+
+.gamekit-devtools-frame-chart span.is-latest {
+  background: rgb(248 250 252 / 0.9);
+  box-shadow: 0 0 12px rgb(56 189 248 / 0.36);
+}
+
+.gamekit-devtools-warning-text {
+  color: rgb(253 230 138);
+  font-weight: 800;
+}
+
+.gamekit-devtools-note {
+  margin: 0;
+  color: rgb(148 163 184);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.gamekit-devtools-status--warning {
+  border-color: rgb(251 191 36 / 0.35);
+  background: rgb(113 63 18 / 0.22);
+  color: rgb(253 230 138);
+}
+
 @media (max-width: 760px) {
   .gamekit-devtools-panel__summary,
-  .gamekit-devtools-panel__grid {
+  .gamekit-devtools-panel__grid,
+  .gamekit-devtools-performance__grid {
     grid-template-columns: 1fr;
   }
 }

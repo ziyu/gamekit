@@ -97,12 +97,66 @@ describe("devtools runtime", () => {
 
     expect(profiler).toHaveLength(2);
     expect(profiler[0]).toMatchObject({
+      name: "move",
+      category: "system",
       systemId: "move",
       moduleId: "game",
       count: 1,
       maxDurationMs: 6,
+      p50DurationMs: 6,
+      p95DurationMs: 6,
       overBudget: true,
       tags: ["hot"]
+    });
+  });
+
+  it("records profiler spans, frames and budgets", () => {
+    let now = 100;
+    const runtime = createDevToolsRuntime({
+      clock: () => now,
+      profilerBudgets: [
+        {
+          id: "runtime.system",
+          category: "system",
+          warningMs: 3,
+          criticalMs: 8
+        }
+      ]
+    });
+
+    const frame = runtime.startProfilerFrame({ tick: 7, deltaMs: 16, timestamp: 112 });
+    const span = runtime.beginProfilerSpan({
+      name: "movement",
+      category: "system",
+      source: "game-runtime",
+      frameId: frame.id,
+      metadata: { systemId: "movement", moduleId: "sandbox.motion" }
+    });
+    now = 106;
+    runtime.endProfilerSpan(span);
+    now = 110;
+    runtime.endProfilerFrame(frame);
+
+    const snapshot = runtime.snapshot();
+
+    expect(snapshot.profiler[0]).toMatchObject({
+      name: "movement",
+      category: "system",
+      source: "game-runtime",
+      systemId: "movement",
+      moduleId: "sandbox.motion",
+      maxDurationMs: 6,
+      budgetId: "runtime.system",
+      overBudget: true,
+      critical: false
+    });
+    expect(snapshot.profilerFrames[0]).toMatchObject({
+      tick: 7,
+      deltaMs: 16,
+      durationMs: 10,
+      runtimeMs: 6,
+      spanCount: 1,
+      overBudgetCount: 1
     });
   });
 

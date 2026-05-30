@@ -24,8 +24,40 @@ export type GameRuntime = {
   start(): void;
   stop(): void;
   tick(delta: number): void;
+  setProfiler(profiler: GameRuntimeProfiler | undefined): void;
   dispose(): void;
   isRunning(): boolean;
+};
+
+export type GameRuntimeProfilerFrameHandle = {
+  id: string;
+};
+
+export type GameRuntimeProfilerSpanHandle = {
+  id: string;
+};
+
+export type GameRuntimeProfiler = {
+  startFrame?(input: {
+    tick: number;
+    deltaMs: number;
+    timestamp: number;
+  }): GameRuntimeProfilerFrameHandle;
+  endFrame?(handle: GameRuntimeProfilerFrameHandle): void;
+  beginSystem?(input: {
+    systemId: string;
+    moduleId?: string | undefined;
+    tick: number;
+    frameId?: string | undefined;
+    startedAt: number;
+  }): GameRuntimeProfilerSpanHandle;
+  endSystem?(
+    handle: GameRuntimeProfilerSpanHandle,
+    input: {
+      durationMs: number;
+      error?: unknown;
+    }
+  ): void;
 };
 
 export type CreateGameConfig = {
@@ -33,4 +65,5 @@ export type CreateGameConfig = {
   world: GameWorld;
   eventBus: EventBus;
   seed: string;
+  profiler?: GameRuntimeProfiler | undefined;
 };

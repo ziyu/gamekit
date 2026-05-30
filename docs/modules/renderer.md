@@ -126,6 +126,7 @@ Phaser Driver 暴露的 RendererAdapter：
 - 内部维护 render type registry。
 - 映射 `debug.square`、`sprite`、`container` 等类型到 Phaser object。
 - 可以提供 debug texture。
+- 支持 adapter-specific `props`，例如 Phaser 4 的 `tintMode`；使用白色 mask 纹理做纯色填充时应显式使用 `fill`，避免默认 multiply tint 把对象压暗。
 - 不承担 gameplay input；input 归 `input-*` 模块。
 - 不创建 `Phaser.Game`，不读取 Phaser input，不同步 Phaser camera，不加载 gameplay asset；这些能力由同一个 Phaser Driver 的独立 capability 提供。
 
@@ -188,6 +189,7 @@ Animation 不作为默认独立业务模块。动画主要归入：
 
 - Renderer Core 只暴露 RenderObject、RenderNode、RenderTransform、RenderCommand、RendererAdapter 和 diagnostics，不暴露 sprite-first API、Phaser Scene、Three Mesh 或 gameplay input。
 - RenderObjectDefinition 应描述可重建的表现结构；运行时 native handle 由 adapter 私有维护，不进入 Data、World component 或 Save payload。
+- Adapter-specific props 必须表达底层后端的真实语义。以 Phaser 为例，`tint` 和 `tintMode` 是两个独立概念；mask-style sprite 需要 `tintMode: "fill"`，真实贴图调色才使用 multiply 类模式。
 - 复杂对象优先通过 object tree、node patch 和 command 表达。不要因为某个后端支持 sprite/mesh/particle 就把这些类型升成 core 方法。
 - 高频 render sync 只同步必要变更，不通过 EventBus 发每帧 patch。object create/destroy、unsupported type、adapter lifecycle 可以发低频 diagnostics。
 - Escape hatch 只用于表现层热点路径、DevTools 或 adapter extension。使用 direct/native path 时必须保持 GameKit object lifecycle 可追踪。

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type PointerEvent } from "react";
 import type { DevToolsPanelDefinition, DevToolsRuntime, DevToolsSnapshot } from "@gamekit/devtools";
 import type { UiRuntime } from "@gamekit/ui-core";
 import { createDevToolsUiBridge } from "../runtime";
@@ -10,8 +10,21 @@ export type DevToolsShellProps = {
   shellPanelId?: string | undefined;
   title?: string | undefined;
   refreshIntervalMs?: number | undefined;
+  activePanelId?: string | undefined;
+  defaultPanelId?: string | undefined;
+  onActivePanelChange?: ((panelId: string) => void) | undefined;
   renderPanel?: DevToolsPanelRenderer | undefined;
 };
+
+type ShellSize = {
+  width: number;
+  height: number;
+};
+
+type ResizeEdge = "left" | "top" | "top-left";
+
+const DEFAULT_SHELL_SIZE: ShellSize = { width: 980, height: 640 };
+const MIN_SHELL_SIZE: ShellSize = { width: 560, height: 360 };
 
 export function DevToolsShell({
   runtime,
@@ -19,18 +32,28 @@ export function DevToolsShell({
   shellPanelId = "gamekit.devtools.shell",
   title = "GameKit DevTools",
   refreshIntervalMs = 250,
+  activePanelId,
+  defaultPanelId,
+  onActivePanelChange,
   renderPanel = renderStandardDevToolsPanel
 }: DevToolsShellProps) {
   const [snapshot, setSnapshot] = useState<DevToolsSnapshot>(() =>
     runtime.snapshot({ includeSourceSnapshots: true })
   );
-  const [activePanelId, setActivePanelId] = useState<string | undefined>(
-    () => snapshot.panels[0]?.id
+  const [shellSize, setShellSize] = useState<ShellSize>(DEFAULT_SHELL_SIZE);
+  const [internalActivePanelId, setInternalActivePanelId] = useState<string | undefined>(
+    () => defaultPanelId ?? snapshot.panels[0]?.id
   );
+  const resolvedActivePanelId = activePanelId ?? internalActivePanelId;
   const activePanel = useMemo(
-    () => readActivePanel(snapshot.panels, activePanelId),
-    [activePanelId, snapshot.panels]
+    () => readActivePanel(snapshot.panels, resolvedActivePanelId),
+    [resolvedActivePanelId, snapshot.panels]
   );
+
+  const setActivePanel = (panelId: string) => {
+    setInternalActivePanelId(panelId);
+    onActivePanelChange?.(panelId);
+  };
 
   useEffect(() => {
     const update = () => {
@@ -65,12 +88,52 @@ export function DevToolsShell({
     }).focusShell();
   };
 
+  const startResize = (edge: ResizeEdge, event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    focusDevTools();
+
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startSize = shellSize;
+
+    const onPointerMove = (moveEvent: globalThis.PointerEvent) => {
+      setShellSize(
+        clampShellSize({
+          width: edge.includes("left")
+            ? startSize.width + startX - moveEvent.clientX
+            : startSize.width,
+          height: edge.includes("top")
+            ? startSize.height + startY - moveEvent.clientY
+            : startSize.height
+        })
+      );
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp, { once: true });
+  };
+
   return (
     <section
       className="gamekit-devtools-shell"
       data-devtools-shell={shellPanelId}
       onPointerDown={focusDevTools}
+      style={
+        {
+          "--gamekit-devtools-shell-width": `${shellSize.width}px`,
+          "--gamekit-devtools-shell-height": `${shellSize.height}px`
+        } as CSSProperties
+      }
     >
+      <ResizeHandle edge="left" onResizeStart={startResize} />
+      <ResizeHandle edge="top" onResizeStart={startResize} />
+      <ResizeHandle edge="top-left" onResizeStart={startResize} />
       <header className="gamekit-devtools-shell__header">
         <div>
           <strong>{title}</strong>
@@ -88,7 +151,7 @@ export function DevToolsShell({
             key={panel.id}
             type="button"
             className={panel.id === activePanel?.id ? "is-active" : ""}
-            onClick={() => setActivePanelId(panel.id)}
+            onClick={() => setActivePanel(panel.id)}
           >
             {panel.label}
           </button>
@@ -101,6 +164,23 @@ export function DevToolsShell({
   );
 }
 
+function ResizeHandle({
+  edge,
+  onResizeStart
+}: {
+  edge: ResizeEdge;
+  onResizeStart(edge: ResizeEdge, event: PointerEvent<HTMLDivElement>): void;
+}) {
+  return (
+    <div
+      aria-label={`Resize DevTools ${edge}`}
+      className={`gamekit-devtools-shell__resize gamekit-devtools-shell__resize--${edge}`}
+      onPointerDown={(event) => onResizeStart(edge, event)}
+      role="separator"
+    />
+  );
+}
+
 function readActivePanel(
   panels: DevToolsPanelDefinition[],
   activePanelId: string | undefined
@@ -110,4 +190,20 @@ function readActivePanel(
 
 function EmptyPanel() {
   return <p className="gamekit-devtools-empty">No DevTools panels registered.</p>;
+}
+
+function clampShellSize(size: ShellSize): ShellSize {
+  const maxWidth =
+    typeof window === "undefined"
+      ? DEFAULT_SHELL_SIZE.width
+      : Math.max(320, window.innerWidth - 32);
+  const maxHeight =
+    typeof window === "undefined"
+      ? DEFAULT_SHELL_SIZE.height
+      : Math.max(260, window.innerHeight - 96);
+
+  return {
+    width: Math.min(maxWidth, Math.max(MIN_SHELL_SIZE.width, size.width)),
+    height: Math.min(maxHeight, Math.max(MIN_SHELL_SIZE.height, size.height))
+  };
 }

@@ -10,13 +10,17 @@ export function createDevToolsUiBridge(options: DevToolsUiBridgeOptions): DevToo
     options.shell?.panelId ?? options.launcher?.shellPanelId ?? DEFAULT_SHELL_PANEL_ID;
   const shellTitle = options.shell?.title ?? "GameKit DevTools";
   const launcherLabel = options.launcher?.label ?? "DevTools";
+  const pins = options.pins;
 
   return {
     launcherPanelId,
     shellPanelId,
-    openShell() {
+    openShell(panelId) {
       ensureShellPanel(options, shellPanelId, shellTitle);
-      options.ui.open(shellPanelId);
+      options.ui.open(
+        shellPanelId,
+        panelId === undefined ? options.shell : { activePanelId: panelId }
+      );
     },
     closeShell() {
       options.ui.close(shellPanelId);
@@ -49,12 +53,29 @@ export function createDevToolsUiBridge(options: DevToolsUiBridgeOptions): DevToo
           panelId: shellPanelId,
           title: shellTitle,
           open: shellPanel !== undefined,
-          activePanelId: options.shell?.defaultPanelId,
+          activePanelId: readActivePanelId(shellPanel?.props) ?? options.shell?.defaultPanelId,
           refreshIntervalMs: options.shell?.refreshIntervalMs
+        },
+        pins: {
+          enabled: pins?.enabled !== false,
+          defaultPinned: pins?.defaultPinned ?? ["devtools.performance"],
+          defaultCollapsed: pins?.defaultCollapsed ?? [],
+          collapseToTray: pins?.collapseToTray !== false,
+          area: pins?.area ?? "floating",
+          refreshIntervalMs: pins?.refreshIntervalMs
         }
       };
     }
   };
+}
+
+function readActivePanelId(props: unknown): string | undefined {
+  if (!props || typeof props !== "object" || !("activePanelId" in props)) {
+    return undefined;
+  }
+
+  const value = (props as { activePanelId?: unknown }).activePanelId;
+  return typeof value === "string" ? value : undefined;
 }
 
 function ensureShellPanel(

@@ -143,6 +143,12 @@
 - 性能判断必须有数据，先用 benchmark 或 profiler 记录基线。
 - 新增 adapter、renderer sync、TCA runner、asset loader 时应补最小 benchmark 或 profile 入口。
 - benchmark 结果只作为趋势参考，不写死成易碎测试。
+- DevTools Performance 面板只展示 GameKit 级 frame/system/service/adapter 归因，不替代浏览器 profiler；需要 CPU flamegraph、layout、paint、GPU 信息时仍使用浏览器或引擎原生工具。
+- 默认只开启低成本 summary；深度 span、单帧详情、完整 payload 展开必须由用户显式开启或在测试夹具中启用。
+- 每个热点模块都应定义自己的预算语义，例如 runtime tick、render sync、asset load group、service boot、UI refresh；预算超限只产生诊断，不改变 gameplay。
+- profiler disabled 时，高频路径不能留下明显对象分配、数组复制或 React state 更新。
+- Performance UI 刷新必须节流，不能跟随 gameplay tick 每帧重渲染。
+- 发现慢点后先确认归因维度：system 慢、adapter 慢、asset IO 慢、UI 刷新慢、DevTools 自身慢，避免用错误层级修问题。
 
 ## Sandbox
 

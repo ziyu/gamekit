@@ -25,6 +25,7 @@ type FakeNativeObject = {
   setVisible(visible: boolean): void;
   setDepth(depth: number): void;
   setTint(tint: number): void;
+  setTintMode(tintMode: number): void;
   add(child: FakeNativeObject): void;
   play(animationId: string): void;
   destroy(): void;
@@ -139,6 +140,9 @@ function createNativeObject(
     setTint(tint) {
       this.setData("tint", tint);
     },
+    setTintMode(tintMode) {
+      this.setData("tintMode", tintMode);
+    },
     add(child) {
       this.children.push(child);
     },
@@ -216,7 +220,7 @@ describe("createPhaserRenderer", () => {
     });
     renderer.updateNode(objectId, "body", {
       transform: { position: { x: 12, y: 18 } },
-      props: { tint: 0xff0000 }
+      props: { tint: 0xff0000, tintMode: "fill" }
     });
     renderer.command(objectId, {
       type: "animation.play",
@@ -230,6 +234,7 @@ describe("createPhaserRenderer", () => {
     expect(body?.x).toBe(12);
     expect(body?.y).toBe(18);
     expect(body?.getData("tint")).toBe(0xff0000);
+    expect(body?.getData("tintMode")).toBe(1);
     expect(body?.playedAnimations).toEqual(["pulse"]);
   });
 

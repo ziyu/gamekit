@@ -63,8 +63,8 @@ export function ChipList({ items }: { items: Array<number | string> }) {
 
   return (
     <div className="gamekit-devtools-chip-list">
-      {items.map((item) => (
-        <span className="gamekit-devtools-chip" key={String(item)}>
+      {items.map((item, index) => (
+        <span className="gamekit-devtools-chip" key={`${String(item)}:${index}`}>
           {item}
         </span>
       ))}

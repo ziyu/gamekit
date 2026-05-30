@@ -32,9 +32,25 @@ export function runLifecycleTick(
   frame: AppFrame
 ): void {
   for (const binding of orderBindings(registry.bindings())) {
+    const profiler = ctx.services.devtools;
+    const span = profiler?.beginProfilerSpan({
+      name: `${binding.lifecycle.id}.tick`,
+      category: "service",
+      source: binding.lifecycle.id,
+      metadata: { serviceId: binding.lifecycle.id, stage: "tick" }
+    });
     try {
       binding.lifecycle.tick?.(ctx, frame);
+      if (span) {
+        profiler?.endProfilerSpan(span);
+      }
     } catch (cause) {
+      if (span) {
+        profiler?.endProfilerSpan(span, {
+          tags: ["error"],
+          metadata: { error: cause instanceof Error ? cause.message : String(cause) }
+        });
+      }
       registry.setPhase(binding.lifecycle.id, "failed");
       ctx.diagnostics.emit({
         type: "app_host.service_failed",
@@ -100,9 +116,25 @@ async function runBindingStage(
     payload: { serviceId: binding.lifecycle.id, phase: phase.before }
   });
 
+  const profiler = ctx.services.devtools;
+  const span = profiler?.beginProfilerSpan({
+    name: `${binding.lifecycle.id}.${stage}`,
+    category: "service",
+    source: binding.lifecycle.id,
+    metadata: { serviceId: binding.lifecycle.id, stage }
+  });
   try {
     await binding.lifecycle[stage]?.(ctx);
+    if (span) {
+      profiler?.endProfilerSpan(span);
+    }
   } catch (cause) {
+    if (span) {
+      profiler?.endProfilerSpan(span, {
+        tags: ["error"],
+        metadata: { error: cause instanceof Error ? cause.message : String(cause) }
+      });
+    }
     registry.setPhase(binding.lifecycle.id, "failed");
     ctx.diagnostics.emit({
       type: "app_host.service_failed",

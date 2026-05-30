@@ -49,17 +49,19 @@ export function HostSourceView({ value }: { value: unknown }) {
 
 export function PlatformSourceView({ value }: { value: unknown }) {
   const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const services = records(record.services).map(recordId);
+  const capabilities = records(record.capabilities).map(recordId);
   return (
     <div className="gamekit-devtools-view">
       <KeyValueGrid
         entries={[
           ["Platform", readString(record.id)],
-          ["Services", readArray(record.services).length],
-          ["Capabilities", readArray(record.capabilities).length]
+          ["Services", services.length],
+          ["Capabilities", capabilities.length]
         ]}
       />
-      <ChipList items={readArray(record.services).map(String)} />
-      <ChipList items={readArray(record.capabilities).map(String)} />
+      <ChipList items={services} />
+      <ChipList items={capabilities} />
     </div>
   );
 }
