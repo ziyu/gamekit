@@ -12,7 +12,7 @@
 - Renderer Core + Phaser Adapter：已修正为通用 render object protocol。
 - 已实现基础切片已按长期模块设计重新对齐：renderer-core 不依赖 EventBus，renderer 诊断改为通用 callback，Sandbox 只在 app boot 层接入 Phaser adapter。
 
-新文档新增或强化了 Platform、Input、Camera 三个基础模块。由于当前仓库已经先实现 Runtime/Renderer，后续需要先回补这三个基础层，再进入 Asset/Data、TCA、GAS、UI、Save、DevTools 和 Hero Road。
+新文档新增或强化了 Platform、Input、Camera 三个基础模块。由于当前仓库已经先实现 Runtime/Renderer，后续需要先回补这三个基础层，再进入 Asset/Data、TCA、GAS、UI、Save、DevTools 和真实游戏验证应用。
 
 ## Phase 1：Runtime 垂直切片
 
@@ -563,7 +563,7 @@
 
 ## Phase 11：UI Core + React UI
 
-目标：建立 UI Core 协议和 React UI 实现，让 Sandbox Workbench、未来 DevTools、Editor 和 Hero Road 可以复用统一 panel/window/focus/command/snapshot 模型。React 只处理 HUD、Inspector、Timeline、window、modal、DevTools 等低频 UI，不进入 world tick、renderer patch 或 gameplay 主循环。
+目标：建立 UI Core 协议和 React UI 实现，让 Sandbox Workbench、未来 DevTools、Editor 和真实游戏验证应用可以复用统一 panel/window/focus/command/snapshot 模型。React 只处理 HUD、Inspector、Timeline、window、modal、DevTools 等低频 UI，不进入 world tick、renderer patch 或 gameplay 主循环。
 
 模块设计：`docs/modules/ui.md`
 
@@ -966,27 +966,66 @@
 - 测试覆盖 metadata、默认配置、pin state、PerformancePin 渲染、Shell 跳转和 focus gate。
 - `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 通过。
 
-## Phase 15：Hero Road Demo
+## Phase 15：Abyss Delve 游戏验证应用
 
-目标：用一个真实小 demo 验证整套架构，而不是只靠 sandbox。
+目标：用一个真实小型游戏验证整套架构，而不是只靠 Sandbox。Abyss Delve 是常见俯视角肉鸽暗黑-like，不追求玩法创新，专注验证框架在真实项目中的内容组织、战斗循环、掉落成长、UI、存档和 DevTools 解释能力。
 
-模块设计：`docs/modules/hero-road.md`
+应用设计：`docs/apps/abyss-delve.md`
 
 预期新增：
 
-- `apps/hero-road`
-- Hero Road game modules
-- Hero Road data packs
-- Hero Road UI windows
-- Hero Road renderer/input/camera/platform integration
+- `apps/abyss-delve`
+- Abyss Delve game modules
+- Abyss Delve data packs
+- Abyss Delve UI windows
+- 通过 App Host profile 选择 Phaser Driver capability，并由 GameModule bridge 使用 renderer/input/camera/platform 标准协议
+
+设计原则：
+
+- 采用成熟常见 ARPG roguelite 设计：房间推进、实时战斗、技能冷却、怪物波次、掉落、词缀、奖励选择、run 结算。
+- 不把游戏业务概念上推到核心包；职业、怪物、掉落、房间、词缀、UI 皮肤都留在 `apps/abyss-delve`。
+- 不绕过框架路径：内容来自 DataPack，资源来自 AssetManager，玩法通过 GameModule，战斗语义通过 GAS，低频规则通过 TCA，应用组合通过 App Host。
+- 质量水准不能低于“真实项目首个垂直切片”：主场景、HUD、战斗反馈、掉落反馈、存档和 DevTools 都必须可读、可测、可解释。
+
+建议任务拆分：
+
+1. 应用脚手架与 App Host profile
+   - 新增 `apps/abyss-delve`。
+   - 复用标准 Web profile、Phaser Driver、React UI、Save、DevTools。
+   - 建立 headless test harness。
+
+2. 内容模型和 DataPack
+   - 注册自定义 DataType：heroClass、actorArchetype、enemyProfile、roomTemplate、waveProfile、lootTable、itemBase、itemAffix、rewardPool。
+   - 定义首批 hero、monster、ability、effect、room、loot、render object、asset 和 TCA rule。
+
+3. 核心战斗循环
+   - 玩家移动、瞄准、普攻、技能、闪避。
+   - 怪物 AI、移动、攻击、死亡。
+   - GAS damage/effect/tag/cue 链路。
+   - Renderer 表现：角色、怪物、投射物、telegraph、伤害数字、死亡和掉落。
+
+4. 房间与掉落循环
+   - room entered -> spawn wave -> clear room -> reward choice。
+   - actor.died -> TCA loot roll -> loot pickup -> inventory/equipment state。
+   - 装备词缀影响属性或技能。
+
+5. UI / Save / DevTools
+   - HUD、技能栏、奖励选择、背包/装备、run summary。
+   - 保存 meta progression 和 run checkpoint。
+   - DevTools 能解释一次 input -> attack -> damage -> death -> loot -> pickup 链路，并显示 profiler。
 
 完成定义：
 
-- Demo 能从 DataPack 启动。
-- 英雄能移动并触发至少一个 TCA random event。
-- Basic Attack Ability 能通过 GAS 执行。
-- Event Log / Actor Detail / TCA Trace 可查看。
-- Save/Load 能恢复 demo 基础状态。
+- 应用能从 DataPack 启动，不硬编码核心内容。
+- 玩家能移动、攻击、使用至少两个技能并击败怪物。
+- Basic Attack 和至少一个主动技能通过 GAS 执行。
+- 怪物死亡能通过 TCA 触发掉落和房间完成检查。
+- 掉落装备或奖励能改变 actor attributes、tags 或 ability modifiers。
+- HUD、奖励选择、装备/背包、run summary 可用。
+- Save/Load 能恢复 meta progression 和 run checkpoint。
+- DevTools 能查看 Actor detail、Loot roll、TCA/GAS trace、Performance profiler。
+- App gameplay code 不直接 import Phaser、Koota、React、DOM 或 App Host 内部实现。
+- `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 通过。
 
 ## Phase 16：Editor / Tooling
 
@@ -1036,7 +1075,7 @@
 - 内容包依赖、版本兼容、权限需求和冲突能被诊断。
 - 内容包 mount / unmount 生命周期可被 App Host 或 Editor 编排。
 - Data、Asset、Script、Localization 等模块保持各自职责，不被 Content Package System 吞并。
-- Sandbox 或 Hero Road 至少能挂载一个额外内容包，新增数据和资源，并在 UI/diagnostics 中显示来源。
+- Sandbox 或 Abyss Delve 至少能挂载一个额外内容包，新增数据和资源，并在 UI/diagnostics 中显示来源。
 
 ## Phase 18：Three.js / 3D Driver Backlog
 

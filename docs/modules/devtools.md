@@ -36,7 +36,7 @@ DevTools 是 App Service / tooling，不是 GameModule，不进入 gameplay loop
 - 支持 headless 测试和 DevTools UI package 两种使用方式。
 - 支持低开销默认模式和显式开启的深度采样模式。
 - 不把 Phaser、Three、Koota、React internal、DevTools UI component 或具体游戏 app 类型泄漏到 DevTools Core 公共协议。
-- 让 Sandbox、Hero Road、Editor 和未来真实游戏复用同一套面板/数据源协议。
+- 让 Sandbox、Abyss Delve、Editor 和未来真实游戏复用同一套面板/数据源协议。
 
 ## 非目标
 

@@ -41,6 +41,7 @@ packages/
   world-koota/
 
   renderer-core/
+  renderer-phaser/
 
   input-core/
   input-dom/
@@ -80,6 +81,8 @@ packages/
 `apps/sandbox` 是框架验证面，不是长期玩法仓库，也不是模块协议的来源。它可以实现一个有真实运行循环的小 demo，但 demo 专用的 entity role、production recipe、threat、objective 和 presentation 组件必须留在 Sandbox 内部。
 
 Sandbox 的长期演示设计见 `docs/apps/sandbox.md`。阶段任务和当前实现状态仍放在 `docs/development-stages.md`。
+
+真实游戏验证应用放在 `docs/apps/` 下维护长期设计。Abyss Delve 是当前计划的真实游戏验证应用，用常见肉鸽暗黑-like 设计验证完整框架组合，但它的职业、怪物、掉落、房间和 UI 概念不作为核心协议来源。
 
 ## 依赖方向
 
@@ -166,6 +169,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 | `@gamekit/data`                                                  | App Service                                  | 全局内容数据注册、校验、来源追踪。                                                   |
 | `@gamekit/asset`                                                 | App Service                                  | 资源声明读取、加载状态、adapter 委托。                                               |
 | `@gamekit/renderer-core`                                         | App Service facade                           | 渲染对象协议。                                                                       |
+| `@gamekit/renderer-phaser`                                       | App Service adapter                          | Phaser render object 映射；由 Phaser Driver 绑定共享 runtime，不独立创建 Phaser。    |
 | `@gamekit/input-core`                                            | App Service facade + gameplay bridge toolkit | raw input 归一化、action/context/scope；具体玩法绑定由 GameModule 使用。             |
 | `@gamekit/input-dom` / `@gamekit/input-tauri`                    | App Service adapter                          | DOM/Tauri 输入来源接入；Phaser input 来源由 Phaser Driver 暴露。                     |
 | `@gamekit/camera-core`                                           | Game Module toolkit                          | CameraController、CameraRig、camera system/action helper；不作为 App Host 标准服务。 |
@@ -197,7 +201,6 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 - UI：`docs/modules/ui.md`
 - Save：`docs/modules/save.md`
 - DevTools：`docs/modules/devtools.md`
-- Hero Road：`docs/modules/hero-road.md`
 
 ## 关键边界
 

@@ -109,7 +109,7 @@ CameraRig 是可复用镜头行为。
 - CinematicRig
 - OrbitRig
 
-Hero Road 默认适合 `GridMapRig`：
+网格地图或房间制游戏默认适合 `GridMapRig`：
 
 - WASD / 拖拽移动。
 - 滚轮缩放。

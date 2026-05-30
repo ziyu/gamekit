@@ -28,8 +28,8 @@ describe("Registry", () => {
 
 describe("createSeededRng", () => {
   it("creates deterministic streams for the same seed", () => {
-    const a = createSeededRng("hero-road-dev-seed");
-    const b = createSeededRng("hero-road-dev-seed");
+    const a = createSeededRng("abyss-delve-dev-seed");
+    const b = createSeededRng("abyss-delve-dev-seed");
 
     expect([a.next(), a.next(), a.next()]).toEqual([b.next(), b.next(), b.next()]);
   });

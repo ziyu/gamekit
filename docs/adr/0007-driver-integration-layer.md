@@ -60,4 +60,4 @@ Phaser/Three 的公共第三方类型不进入 core protocol，也不进入 game
 
 - `input-phaser`、`asset-phaser`、`camera-phaser` 不应继续作为长期独立 package；这些能力收敛进 `driver-phaser` 的内部模块。
 - `renderer-phaser` 可以作为 Phaser 渲染映射包存在，但只能绑定到 `driver-phaser` 提供的 Phaser Scene runtime；它不创建 `Phaser.Game`，不持有 input/camera/asset runtime。
-- Sandbox / Hero Road / Editor 应优先通过 App Host profile 配置 driver，而不是手动组装多个 Phaser adapter。
+- Sandbox / Abyss Delve / Editor 应优先通过 App Host profile 配置 driver，而不是手动组装多个 Phaser adapter。
