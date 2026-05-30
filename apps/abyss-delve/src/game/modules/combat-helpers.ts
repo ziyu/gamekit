@@ -1,3 +1,4 @@
+import type { GasAbilityActivation } from "@gamekit/gas";
 import type { EntityId, GameWorld } from "@gamekit/world";
 import { Actor, Combat, FloatingText, Lifetime, Position, Presentation } from "../components";
 import { distance } from "../math";
@@ -53,10 +54,37 @@ export function applyGasDamage(
   return syncDamageAfterGas(state, target, elapsed);
 }
 
+export function activateAbyssAbility(
+  state: AbyssRuntimeState,
+  input: GasAbilityActivation
+): boolean {
+  const gas = state.gasRuntime();
+  if (!gas?.hasActor(input.actorId)) {
+    return false;
+  }
+
+  return gas.activateAbility(input).status === "activated";
+}
+
+export function syncAllCombatFromGas(state: AbyssRuntimeState, elapsed: number): void {
+  for (const entity of state.world.query([Actor, Combat])) {
+    syncCombatFromGas(state, entity, elapsed, false);
+  }
+}
+
 export function syncDamageAfterGas(
   state: AbyssRuntimeState,
   target: EntityId,
   elapsed: number
+): boolean {
+  return syncCombatFromGas(state, target, elapsed, true);
+}
+
+function syncCombatFromGas(
+  state: AbyssRuntimeState,
+  target: EntityId,
+  elapsed: number,
+  showNoDamageText: boolean
 ): boolean {
   const actor = state.world.get(target, Actor);
   const combat = state.world.get(target, Combat);
@@ -67,16 +95,24 @@ export function syncDamageAfterGas(
   const gasActor = state.gasRuntime()?.getActor(actor.actorId);
   const nextHealth = gasActor?.attributes.current.health ?? combat.health;
   const damage = Math.max(0, combat.health - nextHealth);
+  const healed = Math.max(0, nextHealth - combat.health);
   combat.health = nextHealth;
-  combat.hitFlashUntil = elapsed + 120;
+  if (damage > 0) {
+    combat.hitFlashUntil = elapsed + 120;
+  }
   state.world.set(target, Combat, combat);
-  spawnFloatingText(
-    state,
-    position.x,
-    position.y - 36,
-    damage > 0 ? String(Math.round(damage)) : "hit",
-    "damage"
-  );
+  if (damage > 0 || showNoDamageText) {
+    spawnFloatingText(
+      state,
+      position.x,
+      position.y - 36,
+      damage > 0 ? String(Math.round(damage)) : "hit",
+      "damage"
+    );
+  }
+  if (healed > 0) {
+    spawnFloatingText(state, position.x, position.y - 36, `+${Math.round(healed)}`, "reward");
+  }
 
   if (combat.health <= 0 && actor.alive) {
     actor.alive = false;

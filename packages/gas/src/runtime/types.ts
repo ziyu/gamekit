@@ -143,6 +143,24 @@ export type GasAbilityActivation = {
   targetActorId?: GasActorId | undefined;
 };
 
+export type GasAbilityActivationResult =
+  | {
+      status: "activated";
+      actorId: GasActorId;
+      abilityId: GasAbilityId;
+      targetActorId?: GasActorId | undefined;
+      cooldownUntil?: number | undefined;
+      paidCosts: GasAttributeCost[];
+      appliedEffects: GasEffectApplication[];
+    }
+  | {
+      status: "rejected";
+      actorId: GasActorId;
+      abilityId: GasAbilityId;
+      targetActorId?: GasActorId | undefined;
+      reason: string;
+    };
+
 export type GasEffectApplication = {
   effectId: GasEffectId;
   targetActorId: GasActorId;
@@ -207,7 +225,7 @@ export type GasRuntime = {
   hasActor(actorId: GasActorId): boolean;
   getActor(actorId: GasActorId): GasActorRuntimeState;
   actorForEntity(entityId: EntityId): GasActorRuntimeState | undefined;
-  activateAbility(input: GasAbilityActivation): void;
+  activateAbility(input: GasAbilityActivation): GasAbilityActivationResult;
   applyEffect(input: GasEffectApplication): void;
   modifyAttribute(actorId: GasActorId, modifier: GasAttributeModifier, source?: string): void;
   addTag(actorId: GasActorId, tag: GasTagId, source?: string): void;

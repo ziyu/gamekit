@@ -43,12 +43,26 @@ describe("GAS runtime", () => {
 
     runtime.createActor({ actorId: "actor.source", definitionId: "actor.scout", entityId: source });
     runtime.createActor({ actorId: "actor.target", definitionId: "actor.scout", entityId: target });
-    runtime.activateAbility({
+    const result = runtime.activateAbility({
       actorId: "actor.source",
       abilityId: "ability.strike",
       targetActorId: "actor.target"
     });
 
+    expect(result).toMatchObject({
+      status: "activated",
+      actorId: "actor.source",
+      abilityId: "ability.strike",
+      cooldownUntil: 100,
+      paidCosts: [{ attribute: "energy", amount: 5 }]
+    });
+    expect(result.status === "activated" ? result.appliedEffects : []).toEqual([
+      {
+        effectId: "effect.damage",
+        sourceActorId: "actor.source",
+        targetActorId: "actor.target"
+      }
+    ]);
     expect(runtime.getActor("actor.source").attributes.current.energy).toBe(35);
     expect(runtime.getActor("actor.target").attributes.current.health).toBe(88);
     expect(runtime.getActor("actor.target").tags.values).toContain("state.marked");
@@ -76,6 +90,33 @@ describe("GAS runtime", () => {
     runtime.update(800, 1050);
     expect(runtime.getActor("actor.source").tags.values).not.toContain("state.overcharged");
     expect(runtime.getActor("actor.source").effects.active).toHaveLength(0);
+  });
+
+  it("returns rejected activation results without paying costs", () => {
+    const world = createMemoryWorld();
+    const runtime = createTestGasRuntime(world);
+
+    runtime.createActor({ actorId: "actor.source", definitionId: "actor.scout" });
+    runtime.createActor({ actorId: "actor.target", definitionId: "actor.scout" });
+
+    expect(
+      runtime.activateAbility({
+        actorId: "actor.source",
+        abilityId: "ability.strike",
+        targetActorId: "actor.target"
+      }).status
+    ).toBe("activated");
+    const rejected = runtime.activateAbility({
+      actorId: "actor.source",
+      abilityId: "ability.strike",
+      targetActorId: "actor.target"
+    });
+
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      reason: "ability is on cooldown"
+    });
+    expect(runtime.getActor("actor.source").attributes.current.energy).toBe(35);
   });
 
   it("exposes TCA definitions that can drive GAS", () => {

@@ -27,11 +27,12 @@
 
 ## 子 Agent 记录
 
-| Agent       | 类型     | 任务                                      | 状态      | 结果                                                             |
-| ----------- | -------- | ----------------------------------------- | --------- | ---------------------------------------------------------------- |
-| Locke       | explorer | Phase 15 文档职责、一致性和旧示例残留审查 | Completed | 发现 4 个必改边界问题，已进入 P15.0 rework                       |
-| Helmholtz   | explorer | P15.1 playable room slice 只读实现审查    | Completed | 建议复用 Driver/App Host 边界，新增长链路和 gameplay 依赖扫描    |
-| Kierkegaard | explorer | P15.2 内容模型和 DataPack 深化边界审查    | Completed | 确认当前处于中间态，指出内容拆分、引用图、runtime 迁移和测试缺口 |
+| Agent       | 类型     | 任务                                      | 状态      | 结果                                                                |
+| ----------- | -------- | ----------------------------------------- | --------- | ------------------------------------------------------------------- |
+| Locke       | explorer | Phase 15 文档职责、一致性和旧示例残留审查 | Completed | 发现 4 个必改边界问题，已进入 P15.0 rework                          |
+| Helmholtz   | explorer | P15.1 playable room slice 只读实现审查    | Completed | 建议复用 Driver/App Host 边界，新增长链路和 gameplay 依赖扫描       |
+| Kierkegaard | explorer | P15.2 内容模型和 DataPack 深化边界审查    | Completed | 确认当前处于中间态，指出内容拆分、引用图、runtime 迁移和测试缺口    |
+| Aristotle   | explorer | P15.3 战斗和 GAS 深化边界审查             | Completed | 指出 ability 自伤、返回值缺失、cooldown 时间源和 GAS/World 同步风险 |
 
 后续每个实现任务应至少有一个子 Agent 参与实现、审查或验证。子 Agent 的写入范围必须和主线任务错开，避免互相覆盖。
 
@@ -42,7 +43,7 @@
 | P15.0  | Phase 15 设计落地与任务拆分  | 应用设计、阶段路线、实现文档                                      | Completed | 5fe749c |
 | P15.1  | Playable Room Vertical Slice | 可玩的第一房间：移动、攻击、敌人、掉落、奖励、HUD、DevTools trace | Completed | 4c76049 |
 | P15.2  | 内容模型扩展和 DataPack 深化 | 更多 hero/enemy/room/loot/reward 内容，引用图和内容验证           | Completed | c36da17 |
-| P15.3  | 战斗和 GAS 深化              | 技能成本、冷却、buff/debuff、更多 cue、actor inspector            | Planned   | -       |
+| P15.3  | 战斗和 GAS 深化              | 技能成本、冷却、buff/debuff、更多 cue、actor inspector            | Completed | 待提交  |
 | P15.4  | 房间推进和 Save checkpoint   | 多房间推进、run checkpoint、meta progression、load 恢复           | Planned   | -       |
 | P15.5  | 表现质量和 Camera            | 更完整复合 RenderObject、camera follow/lookahead/shake            | Planned   | -       |
 | P15.6  | DevTools 和长链路验收        | input -> damage -> death -> loot -> reward trace、browser smoke   | Planned   | -       |
@@ -214,40 +215,49 @@ Phase 15 不按“先完整战斗、再补数据、最后补工具”的方式�
 
 c36da17
 
-## P15.3：World 组件与基础运行时模块
+## P15.3：战斗和 GAS 深化
 
 ### 当前任务实现计划
 
-待实现。
+本任务在 P15.1 可玩战斗和 P15.2 内容模型之上，修正当前“技能激活、GAS effect、World combat 表现”之间的语义缝隙。目标是让技能成本、冷却、命中效果、持续效果、状态 tag、cue 和 actor inspector 都能在同一条链路中被验证。
 
-预期组件：
+实现任务：
 
-- `AbyssActor`
-- `Transform2D`
-- `Velocity2D`
-- `CombatState`
-- `AbilityIntent`
-- `Hitbox`
-- `ProjectileState`
-- `RoomState`
-- `LootState`
-- `PresentationState`
-
-预期模块：
-
-- dungeon-room
-- combat
-- loot
-- presentation
-- ui-bridge
+1. 修正技能激活语义。
+   - `ability.firebolt` 和 `ability.cleave` 激活只负责成本、冷却、cue，不再把伤害 effect 施加到 player self。
+   - combat module 不再用“energy 是否变化”推断技能是否成功，改成读取 GAS trace / cooldown 结果的显式 helper。
+   - basic attack、firebolt、cleave 都必须 respect GAS cooldown 和 cost rejected trace。
+2. 增加 buff / debuff / periodic effect。
+   - 新增 GAS tag / cue：burning、exposed、guarded、cast、impact。
+   - firebolt 命中造成直接伤害并施加 burning periodic damage。
+   - cleave 命中造成伤害并施加 exposed debuff tag。
+   - dodge 或防御窗口可以通过 guarded tag 表示，但不要把 dodge 重写成完整 GAS ability。
+3. 同步 GAS 和 World combat。
+   - combat system 每 tick 把 GAS attributes/effects/tags 同步到 World `Combat` / snapshot，确保 periodic damage 能反映到血量、死亡、浮字和 loot 链路。
+   - 不能让 Renderer 或 React 参与命中判定。
+4. 增加 actor inspector snapshot。
+   - `AbyssSnapshot` 增加轻量 actor inspector 数据：actorId、entityId、attributes、tags、activeEffects、abilities/cooldowns。
+   - DevTools/runtime source 可消费 snapshot，不新增长期框架 package。
+5. 测试和验收。
+   - 新增/更新 headless 测试：firebolt/cleave 不自伤，成本和冷却会 reject，burning periodic damage 会同步到 World，actor inspector 能看到 tag/effect/cooldown。
+   - 长链路 kill -> loot -> pickup -> reward 不倒退。
+   - 边界测试继续禁止 gameplay 直接 import Phaser/React/DOM/Koota/App Host。
 
 ### Review 记录
 
-待实现。
+| 检查项                                                 | 结果   | 记录                                                                           |
+| ------------------------------------------------------ | ------ | ------------------------------------------------------------------------------ |
+| 子 Agent 是否参与                                      | Passed | Aristotle 已完成只读审查                                                       |
+| 技能激活是否与命中 effect 解耦                         | Passed | firebolt/cleave activation 只负责 cost/cooldown/cue，命中后再 apply effect     |
+| cost/cooldown/rejected trace 是否可验证                | Passed | GAS `activateAbility` 返回 activated/rejected result，测试覆盖 cooldown reject |
+| burning/exposed/guarded 等 tag/effect/cue 是否进入链路 | Passed | 新增 burning/exposed/guarded tag/effect/cue，firebolt/cleave 链路已验证        |
+| GAS periodic effect 是否同步 World combat 和 death     | Passed | combat tick 同步 GAS attributes/effects/tags 到 World/snapshot                 |
+| Actor inspector snapshot 是否足够轻量                  | Passed | snapshot 暴露 attributes、tags、activeEffects、abilities/cooldowns             |
+| 长链路、边界、构建、格式是否通过                       | Passed | `test`、`build`、`lint`、`format` 已通过                                       |
 
 ### 提交记录
 
-待实现。
+待提交。
 
 ## P15.4：玩家控制与相机
 

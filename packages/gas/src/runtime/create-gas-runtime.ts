@@ -12,6 +12,7 @@ import type {
   CreateGasRuntimeConfig,
   GasAbilityDefinition,
   GasAbilityActivation,
+  GasAbilityActivationResult,
   GasActorDefinition,
   GasActorId,
   GasActorRuntimeState,
@@ -110,7 +111,7 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
     },
     activateAbility(input) {
       assertActive();
-      activateAbility(input);
+      return activateAbility(input);
     },
     applyEffect(input) {
       assertActive();
@@ -160,7 +161,7 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
 
   return runtime;
 
-  function activateAbility(input: GasAbilityActivation): void {
+  function activateAbility(input: GasAbilityActivation): GasAbilityActivationResult {
     const state = requireMutableActor(input.actorId);
     const ability = config.dataRegistry.getValue<GasAbilityDefinition>(
       GAS_ABILITY_TYPE,
@@ -168,33 +169,30 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
     );
 
     if (!state.abilities.ids.includes(input.abilityId)) {
-      rejectAbility(input, "actor does not know ability");
-      return;
+      return rejectAbility(input, "actor does not know ability");
     }
     if (state.abilities.disabled.includes(input.abilityId)) {
-      rejectAbility(input, "ability is disabled");
-      return;
+      return rejectAbility(input, "ability is disabled");
     }
     if ((state.abilities.cooldowns[input.abilityId] ?? 0) > elapsedNow) {
-      rejectAbility(input, "ability is on cooldown");
-      return;
+      return rejectAbility(input, "ability is on cooldown");
     }
     if (!hasRequiredTags(state, ability)) {
-      rejectAbility(input, "required tags are missing");
-      return;
+      return rejectAbility(input, "required tags are missing");
     }
     if (hasBlockedTags(state, ability)) {
-      rejectAbility(input, "blocked tags are present");
-      return;
+      return rejectAbility(input, "blocked tags are present");
     }
     if (!canPayCosts(state, ability)) {
-      rejectAbility(input, "ability costs cannot be paid");
-      return;
+      return rejectAbility(input, "ability costs cannot be paid");
     }
 
     payCosts(state, ability);
+    const resultEffects: GasEffectApplication[] = [];
+    const cooldownUntil =
+      (ability.cooldownMs ?? 0) > 0 ? elapsedNow + (ability.cooldownMs ?? 0) : undefined;
     if ((ability.cooldownMs ?? 0) > 0) {
-      state.abilities.cooldowns[input.abilityId] = elapsedNow + (ability.cooldownMs ?? 0);
+      state.abilities.cooldowns[input.abilityId] = cooldownUntil ?? elapsedNow;
     }
     persistState(state);
 
@@ -229,12 +227,26 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
         targetActorId,
         effectId: effect.effectId
       });
+      resultEffects.push({
+        sourceActorId: input.actorId,
+        targetActorId,
+        effectId: effect.effectId
+      });
     }
 
     emitCues(ability.cues ?? [], input.actorId, input.targetActorId);
+    return {
+      status: "activated",
+      actorId: input.actorId,
+      abilityId: input.abilityId,
+      targetActorId: input.targetActorId,
+      cooldownUntil,
+      paidCosts: [...(ability.costs ?? [])],
+      appliedEffects: resultEffects
+    };
   }
 
-  function rejectAbility(input: GasAbilityActivation, reason: string): void {
+  function rejectAbility(input: GasAbilityActivation, reason: string): GasAbilityActivationResult {
     trace("ability.rejected", {
       actorId: input.actorId,
       abilityId: input.abilityId,
@@ -249,6 +261,13 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
       targetActorId: input.targetActorId,
       reason
     });
+    return {
+      status: "rejected",
+      actorId: input.actorId,
+      abilityId: input.abilityId,
+      targetActorId: input.targetActorId,
+      reason
+    };
   }
 
   function applyEffect(input: GasEffectApplication): void {

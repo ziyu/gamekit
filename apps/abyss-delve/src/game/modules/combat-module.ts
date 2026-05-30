@@ -17,9 +17,11 @@ import { PLAYER_ACTOR_ID } from "../constants";
 import { angleTo, clampToRoom, distance, normalize } from "../math";
 import type { AbyssRuntimeState } from "../runtime-state";
 import {
+  activateAbyssAbility,
   applyGasDamage,
   livingEnemies,
   nearestLivingEnemy,
+  syncAllCombatFromGas,
   syncDamageAfterGas
 } from "./combat-helpers";
 
@@ -42,7 +44,9 @@ export function createAbyssCombatModule(options: CreateAbyssCombatModuleOptions)
         update(system) {
           const elapsed = system.elapsed;
           const deltaSeconds = system.delta / 1000;
+          options.state.lastElapsed = elapsed;
 
+          syncAllCombatFromGas(options.state, elapsed);
           regeneratePlayerEnergy(ctx, options.state, deltaSeconds);
           handlePlayerAttacks(ctx, options.state, elapsed);
           updateProjectiles(ctx, options.state, system.delta, elapsed);
@@ -132,11 +136,14 @@ function useBasicAttack(
     return;
   }
 
-  state.gasRuntime()?.activateAbility({
+  const activated = activateAbyssAbility(state, {
     actorId: PLAYER_ACTOR_ID,
     abilityId: "ability.basic",
     targetActorId: targetActor.actorId
   });
+  if (!activated) {
+    return;
+  }
   syncDamageAfterGas(state, target.entity, elapsed);
   spawnSlashTelegraph(ctx, player, playerPosition.x, playerPosition.y, 72, 140);
   traceCombat(state, "basic attack", targetActor.actorId, target.entity);
@@ -150,19 +157,13 @@ function usePrimarySkill(
   elapsed: number
 ): void {
   const gas = state.gasRuntime();
-  const beforeEnergy = gas?.hasActor(PLAYER_ACTOR_ID)
-    ? gas.getActor(PLAYER_ACTOR_ID).attributes.current.energy
-    : 0;
-  gas?.activateAbility({
+  const activated = activateAbyssAbility(state, {
     actorId: PLAYER_ACTOR_ID,
     abilityId: "ability.firebolt",
     targetActorId: PLAYER_ACTOR_ID
   });
-  const afterEnergy = gas?.hasActor(PLAYER_ACTOR_ID)
-    ? gas.getActor(PLAYER_ACTOR_ID).attributes.current.energy
-    : beforeEnergy;
   syncPlayerCombatFromGas(ctx, gas);
-  if (afterEnergy === beforeEnergy) {
+  if (!activated) {
     return;
   }
 
@@ -205,19 +206,13 @@ function useSecondarySkill(
   elapsed: number
 ): void {
   const gas = state.gasRuntime();
-  const beforeEnergy = gas?.hasActor(PLAYER_ACTOR_ID)
-    ? gas.getActor(PLAYER_ACTOR_ID).attributes.current.energy
-    : 0;
-  gas?.activateAbility({
+  const activated = activateAbyssAbility(state, {
     actorId: PLAYER_ACTOR_ID,
     abilityId: "ability.cleave",
     targetActorId: PLAYER_ACTOR_ID
   });
-  const afterEnergy = gas?.hasActor(PLAYER_ACTOR_ID)
-    ? gas.getActor(PLAYER_ACTOR_ID).attributes.current.energy
-    : beforeEnergy;
   syncPlayerCombatFromGas(ctx, gas);
-  if (afterEnergy === beforeEnergy) {
+  if (!activated) {
     return;
   }
 
@@ -242,6 +237,7 @@ function useSecondarySkill(
       distance(playerPosition, enemyPosition) <= PLAYER_CLEAVE_RANGE
     ) {
       applyGasDamage(state, enemy, "effect.cleave_damage", PLAYER_ACTOR_ID, elapsed);
+      applyGasDamage(state, enemy, "effect.exposed", PLAYER_ACTOR_ID, elapsed);
     }
   }
 
@@ -300,6 +296,7 @@ function hitEnemyWithProjectile(
 
     if (distance(projectilePosition, enemyPosition) <= projectile.hitRadius + enemyHitbox.radius) {
       applyGasDamage(state, enemy, "effect.fire_damage", PLAYER_ACTOR_ID, elapsed);
+      applyGasDamage(state, enemy, "effect.burning", PLAYER_ACTOR_ID, elapsed);
       ctx.world.despawn(projectileEntity);
       traceCombat(state, "projectile hit", enemyActor.actorId, enemy);
       return;

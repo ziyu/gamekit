@@ -1,8 +1,14 @@
 import type { GameEvent } from "@gamekit/event-bus";
 import type { EntityId } from "@gamekit/world";
 import { Actor, Combat, Loot, Position, Room } from "./components";
+import { PLAYER_ACTOR_ID } from "./constants";
 import type { AbyssRuntimeState } from "./runtime-state";
-import type { AbyssContentSummary, AbyssEntitySnapshot, AbyssSnapshot } from "./types";
+import type {
+  AbyssActorInspectorSnapshot,
+  AbyssContentSummary,
+  AbyssEntitySnapshot,
+  AbyssSnapshot
+} from "./types";
 
 const SKILLS = [
   { id: "ability.basic", key: "LMB", label: "Blade Cut" },
@@ -45,6 +51,7 @@ export function createAbyssSnapshot(state: AbyssRuntimeState): AbyssSnapshot {
     entities: state.world.query().map((entity) => createEntitySnapshot(state, entity)),
     recentLoot: state.run.recentLoot,
     contentSummary: createContentSummary(state),
+    actorInspectors: createActorInspectors(state),
     timeline: [...state.timeline],
     events: [...state.events],
     gasTraces: state.gasTraceStore.list(),
@@ -91,8 +98,8 @@ export function attachRuntimeSnapshot(
 
 function createSkillSnapshots(state: AbyssRuntimeState): AbyssSnapshot["skills"] {
   const gas = state.gasRuntime();
-  const actor = gas?.hasActor("player") ? gas.getActor("player") : undefined;
-  const now = state.world.count() >= 0 ? (state.timeline[0]?.time ?? 0) : 0;
+  const actor = gas?.hasActor(PLAYER_ACTOR_ID) ? gas.getActor(PLAYER_ACTOR_ID) : undefined;
+  const now = state.lastElapsed;
   return SKILLS.map((skill) => {
     const cooldownUntil = actor?.abilities.cooldowns[skill.id] ?? 0;
     const cooldownRemainingMs = Math.max(0, cooldownUntil - now);
@@ -102,6 +109,36 @@ function createSkillSnapshots(state: AbyssRuntimeState): AbyssSnapshot["skills"]
       ready: cooldownRemainingMs <= 0
     };
   });
+}
+
+function createActorInspectors(state: AbyssRuntimeState): AbyssActorInspectorSnapshot[] {
+  const gas = state.gasRuntime();
+  if (!gas) {
+    return [];
+  }
+
+  return gas.snapshot().actors.map((actor) => ({
+    actorId: actor.actor.actorId,
+    entityId: actor.actor.entityId,
+    definitionId: actor.actor.definitionId,
+    attributes: Object.fromEntries(
+      Object.entries(actor.attributes.base).map(([attribute, base]) => [
+        attribute,
+        { base, current: actor.attributes.current[attribute] ?? base }
+      ])
+    ),
+    tags: [...actor.tags.values],
+    activeEffects: actor.effects.active.map((effect) => ({
+      id: effect.id,
+      effectId: effect.effectId,
+      expiresAt: effect.expiresAt,
+      nextTickAt: effect.nextTickAt
+    })),
+    abilities: actor.abilities.ids.map((id) => ({
+      id,
+      cooldownUntil: actor.abilities.cooldowns[id] ?? 0
+    }))
+  }));
 }
 
 function createPickupPrompt(state: AbyssRuntimeState): AbyssSnapshot["pickupPrompt"] | undefined {

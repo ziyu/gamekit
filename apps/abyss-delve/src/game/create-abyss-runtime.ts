@@ -81,6 +81,7 @@ export function createAbyssRuntime(options: CreateAbyssRuntimeOptions = {}): Aby
     gasRuntime: () => gasRuntime,
     tcaTraceStore,
     gasTraceStore,
+    lastElapsed: 0,
     setGasRuntime(runtime) {
       gasRuntime = runtime;
     },

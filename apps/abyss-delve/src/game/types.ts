@@ -83,6 +83,24 @@ export type AbyssContentSummary = {
   }>;
 };
 
+export type AbyssActorInspectorSnapshot = {
+  actorId: string;
+  entityId?: EntityId | undefined;
+  definitionId: string;
+  attributes: Record<string, { current: number; base: number }>;
+  tags: string[];
+  activeEffects: Array<{
+    id: string;
+    effectId: string;
+    expiresAt?: number | undefined;
+    nextTickAt?: number | undefined;
+  }>;
+  abilities: Array<{
+    id: string;
+    cooldownUntil: number;
+  }>;
+};
+
 export type AbyssSnapshot = {
   running: boolean;
   clock: ReturnType<GameRuntime["clock"]["snapshot"]>;
@@ -116,6 +134,7 @@ export type AbyssSnapshot = {
   entities: AbyssEntitySnapshot[];
   recentLoot: string[];
   contentSummary: AbyssContentSummary;
+  actorInspectors: AbyssActorInspectorSnapshot[];
   timeline: AbyssTraceEntry[];
   events: GameEvent[];
   gasTraces: ReturnType<GasTraceStore["list"]>;

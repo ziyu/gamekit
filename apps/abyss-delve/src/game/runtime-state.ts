@@ -21,6 +21,7 @@ export type AbyssRuntimeState = {
   activeRoomId?: string | undefined;
   activeWaveId?: string | undefined;
   activeRewardPoolId?: string | undefined;
+  lastElapsed: number;
   playerEntity?: EntityId | undefined;
   roomEntity?: EntityId | undefined;
   setGasRuntime(runtime: GasRuntime): void;

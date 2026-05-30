@@ -1,5 +1,7 @@
 import type { DataPackEntry } from "@gamekit/data";
 import {
+  type GasAbilityDefinition,
+  type GasEffectDefinition,
   GAS_ABILITY_TYPE,
   GAS_ACTOR_TYPE,
   GAS_ATTRIBUTE_TYPE,
@@ -121,6 +123,24 @@ export function gasEffect(
       attributeModifiers: [{ attribute: "health", operation: "add", value: healthDelta }],
       cues
     }
+  };
+}
+
+export function gasEffectDefinition(data: GasEffectDefinition): DataPackEntry<GasEffectDefinition> {
+  return {
+    type: GAS_EFFECT_TYPE,
+    id: data.id,
+    data
+  };
+}
+
+export function gasAbilityDefinition(
+  data: GasAbilityDefinition
+): DataPackEntry<GasAbilityDefinition> {
+  return {
+    type: GAS_ABILITY_TYPE,
+    id: data.id,
+    data
   };
 }
 
