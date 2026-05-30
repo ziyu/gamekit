@@ -1,4 +1,4 @@
-import type { AbyssRenderObjectDefinition } from "./types";
+import type { AbyssRenderObjectDefinition } from "../types";
 
 const SQUARE = "debug.square";
 
@@ -13,6 +13,18 @@ export const abyssRenderObjects: AbyssRenderObjectDefinition[] = [
       node("body", 28, 34, 0xbfeaff, 0, 0),
       node("weapon", 34, 8, 0xffd27a, 26, -2),
       node("aim", 42, 4, 0x9de6ff, 42, 0, 0.65)
+    ]
+  },
+  {
+    id: "abyss.render.player.warden",
+    type: "container",
+    children: [
+      node("shadow", 50, 16, 0x05070b, 0, 18, 0.45),
+      node("ring", 44, 44, 0x8fffbe, 0, 0, 0.32),
+      node("cape", 28, 40, 0x18382c, -11, 2, 0.95),
+      node("body", 30, 36, 0xcaffd6, 0, 0),
+      node("weapon", 38, 8, 0xf3ff9c, 28, -2),
+      node("aim", 46, 4, 0xb7ffd0, 44, 0, 0.65)
     ]
   },
   {
@@ -46,6 +58,19 @@ export const abyssRenderObjects: AbyssRenderObjectDefinition[] = [
       node("core", 22, 22, 0x3b1d13, 0, 0, 0.8),
       hpBack(42),
       hpFill(0xffb24a, 42)
+    ]
+  },
+  {
+    id: "abyss.render.enemy.elite",
+    type: "container",
+    children: [
+      node("shadow", 66, 20, 0x05070b, 0, 24, 0.52),
+      node("aura", 58, 58, 0xff355d, 0, 0, 0.24),
+      node("body", 50, 46, 0xff405f, 0, 0),
+      node("core", 24, 24, 0x1f0b16, 0, 0, 0.9),
+      node("maul", 42, 10, 0xffd27a, 32, 4),
+      hpBack(48),
+      hpFill(0xff405f, 48)
     ]
   },
   {

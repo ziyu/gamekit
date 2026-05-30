@@ -2,7 +2,7 @@ import type { GameEvent } from "@gamekit/event-bus";
 import type { EntityId } from "@gamekit/world";
 import { Actor, Combat, Loot, Position, Room } from "./components";
 import type { AbyssRuntimeState } from "./runtime-state";
-import type { AbyssEntitySnapshot, AbyssSnapshot } from "./types";
+import type { AbyssContentSummary, AbyssEntitySnapshot, AbyssSnapshot } from "./types";
 
 const SKILLS = [
   { id: "ability.basic", key: "LMB", label: "Blade Cut" },
@@ -44,6 +44,7 @@ export function createAbyssSnapshot(state: AbyssRuntimeState): AbyssSnapshot {
     rewardChoices: state.run.rewardChoices,
     entities: state.world.query().map((entity) => createEntitySnapshot(state, entity)),
     recentLoot: state.run.recentLoot,
+    contentSummary: createContentSummary(state),
     timeline: [...state.timeline],
     events: [...state.events],
     gasTraces: state.gasTraceStore.list(),
@@ -54,6 +55,26 @@ export function createAbyssSnapshot(state: AbyssRuntimeState): AbyssSnapshot {
     snapshot.pickupPrompt = pickupPrompt;
   }
   return snapshot;
+}
+
+function createContentSummary(state: AbyssRuntimeState): AbyssContentSummary {
+  const snapshot = state.dataRegistry.snapshot();
+  const documentsByType = new Map<string, number>();
+  for (const document of snapshot.documents) {
+    documentsByType.set(document.type, (documentsByType.get(document.type) ?? 0) + 1);
+  }
+
+  return {
+    types: snapshot.types.length,
+    documents: snapshot.documents.length,
+    references: snapshot.references.length,
+    activeRoomId: state.activeRoomId,
+    activeWaveId: state.activeWaveId,
+    activeRewardPoolId: state.activeRewardPoolId,
+    documentsByType: [...documentsByType.entries()]
+      .map(([type, count]) => ({ type, count }))
+      .sort((left, right) => left.type.localeCompare(right.type))
+  };
 }
 
 export function attachRuntimeSnapshot(

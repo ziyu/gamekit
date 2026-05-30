@@ -12,8 +12,13 @@ import {
   Room,
   Velocity
 } from "../components";
-import type { AbyssEnemyProfile, AbyssHeroClass, AbyssRoomTemplate } from "../content";
-import { ABYSS_ENEMY_TYPE, ABYSS_HERO_TYPE, ABYSS_ROOM_TYPE } from "../content";
+import type {
+  AbyssEnemyProfile,
+  AbyssHeroClass,
+  AbyssRoomTemplate,
+  AbyssWaveProfile
+} from "../content";
+import { ABYSS_ENEMY_TYPE, ABYSS_HERO_TYPE, ABYSS_ROOM_TYPE, ABYSS_WAVE_TYPE } from "../content";
 import type { AbyssRuntimeState } from "../runtime-state";
 
 export function createAbyssRoomModule(state: AbyssRuntimeState) {
@@ -25,7 +30,14 @@ export function createAbyssRoomModule(state: AbyssRuntimeState) {
         "room.bootstrap"
       );
       const hero = state.dataRegistry.getValue<AbyssHeroClass>(ABYSS_HERO_TYPE, room.heroClassId);
+      const wave =
+        room.waveProfileId === undefined
+          ? undefined
+          : state.dataRegistry.getValue<AbyssWaveProfile>(ABYSS_WAVE_TYPE, room.waveProfileId);
       const roomEntity = world.spawn();
+      state.activeRoomId = room.id;
+      state.activeWaveId = wave?.id;
+      state.activeRewardPoolId = room.rewardPoolId;
       state.roomEntity = roomEntity;
       world.add(roomEntity, Room, { roomId: room.id });
 
@@ -59,7 +71,8 @@ export function createAbyssRoomModule(state: AbyssRuntimeState) {
         entityId: player
       });
 
-      room.enemies.forEach((spawn, index) => {
+      const spawns = createSpawnList(wave);
+      spawns.forEach((spawn, index) => {
         const profile = state.dataRegistry.getValue<AbyssEnemyProfile>(
           ABYSS_ENEMY_TYPE,
           spawn.profileId
@@ -101,10 +114,28 @@ export function createAbyssRoomModule(state: AbyssRuntimeState) {
 
       state.eventBus.emit(
         "abyss.room_entered",
-        { roomId: room.id, enemies: room.enemies.length },
+        { roomId: room.id, waveId: wave?.id, enemies: spawns.length },
         "abyss.room"
       );
       state.trace({ kind: "runtime", label: "Entered Forsaken Antechamber" });
     }
   });
+}
+
+function createSpawnList(wave: AbyssWaveProfile | undefined): Array<{
+  profileId: string;
+  x: number;
+  y: number;
+}> {
+  if (!wave) {
+    return [];
+  }
+
+  return wave.spawns.flatMap((spawn) =>
+    Array.from({ length: spawn.count ?? 1 }, (_, index) => ({
+      profileId: spawn.profileId,
+      x: spawn.x + index * 28,
+      y: spawn.y + index * 22
+    }))
+  );
 }

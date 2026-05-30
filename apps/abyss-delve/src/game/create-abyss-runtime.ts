@@ -20,7 +20,9 @@ import type { GameWorld } from "@gamekit/world";
 import {
   abyssDataPack,
   createAbyssDataTypes,
+  ABYSS_REWARD_POOL_TYPE,
   ABYSS_REWARD_TYPE,
+  type AbyssRewardPool,
   type AbyssRewardDefinition
 } from "./content";
 import { ABYSS_SEED } from "./constants";
@@ -172,9 +174,13 @@ export function createAbyssRuntime(options: CreateAbyssRuntimeOptions = {}): Aby
   };
 }
 
-function createRewardChoices(dataRegistry: DataRegistry): AbyssRewardChoice[] {
-  return dataRegistry.list<AbyssRewardDefinition>(ABYSS_REWARD_TYPE).map((document) => ({
-    ...document.data,
+function createRewardChoices(
+  dataRegistry: DataRegistry,
+  poolId = "rewardPool.bootstrap"
+): AbyssRewardChoice[] {
+  const pool = dataRegistry.getValue<AbyssRewardPool>(ABYSS_REWARD_POOL_TYPE, poolId);
+  return pool.rewardIds.map((rewardId) => ({
+    ...dataRegistry.getValue<AbyssRewardDefinition>(ABYSS_REWARD_TYPE, rewardId),
     selected: false
   }));
 }

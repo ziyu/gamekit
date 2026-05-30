@@ -27,10 +27,11 @@
 
 ## 子 Agent 记录
 
-| Agent     | 类型     | 任务                                      | 状态      | 结果                                                          |
-| --------- | -------- | ----------------------------------------- | --------- | ------------------------------------------------------------- |
-| Locke     | explorer | Phase 15 文档职责、一致性和旧示例残留审查 | Completed | 发现 4 个必改边界问题，已进入 P15.0 rework                    |
-| Helmholtz | explorer | P15.1 playable room slice 只读实现审查    | Completed | 建议复用 Driver/App Host 边界，新增长链路和 gameplay 依赖扫描 |
+| Agent       | 类型     | 任务                                      | 状态      | 结果                                                             |
+| ----------- | -------- | ----------------------------------------- | --------- | ---------------------------------------------------------------- |
+| Locke       | explorer | Phase 15 文档职责、一致性和旧示例残留审查 | Completed | 发现 4 个必改边界问题，已进入 P15.0 rework                       |
+| Helmholtz   | explorer | P15.1 playable room slice 只读实现审查    | Completed | 建议复用 Driver/App Host 边界，新增长链路和 gameplay 依赖扫描    |
+| Kierkegaard | explorer | P15.2 内容模型和 DataPack 深化边界审查    | Completed | 确认当前处于中间态，指出内容拆分、引用图、runtime 迁移和测试缺口 |
 
 后续每个实现任务应至少有一个子 Agent 参与实现、审查或验证。子 Agent 的写入范围必须和主线任务错开，避免互相覆盖。
 
@@ -39,8 +40,8 @@
 | ID     | 任务                         | 产出                                                              | 状态      | 提交    |
 | ------ | ---------------------------- | ----------------------------------------------------------------- | --------- | ------- |
 | P15.0  | Phase 15 设计落地与任务拆分  | 应用设计、阶段路线、实现文档                                      | Completed | 5fe749c |
-| P15.1  | Playable Room Vertical Slice | 可玩的第一房间：移动、攻击、敌人、掉落、奖励、HUD、DevTools trace | Completed | 待提交  |
-| P15.2  | 内容模型扩展和 DataPack 深化 | 更多 hero/enemy/room/loot/reward 内容，引用图和内容验证           | Planned   | -       |
+| P15.1  | Playable Room Vertical Slice | 可玩的第一房间：移动、攻击、敌人、掉落、奖励、HUD、DevTools trace | Completed | 4c76049 |
+| P15.2  | 内容模型扩展和 DataPack 深化 | 更多 hero/enemy/room/loot/reward 内容，引用图和内容验证           | Completed | e55ab34 |
 | P15.3  | 战斗和 GAS 深化              | 技能成本、冷却、buff/debuff、更多 cue、actor inspector            | Planned   | -       |
 | P15.4  | 房间推进和 Save checkpoint   | 多房间推进、run checkpoint、meta progression、load 恢复           | Planned   | -       |
 | P15.5  | 表现质量和 Camera            | 更完整复合 RenderObject、camera follow/lookahead/shake            | Planned   | -       |
@@ -156,26 +157,62 @@ Phase 15 不按“先完整战斗、再补数据、最后补工具”的方式�
 
 ### 提交记录
 
-待提交。
+4c76049
 
 ## P15.2：内容模型与首批 DataPack
 
 ### 当前任务实现计划
 
-待 P15.1 完成后补充。预期包括：
+本任务把 P15.1 的单文件内容原型升级成真实项目可维护的内容模型。目标不是扩大玩法复杂度，而是证明 Abyss Delve 可以按业务领域组织内容，同时 DataRegistry 能验证跨类型引用，runtime 仍从 DataPack 消费内容。
 
-- 定义 Abyss 自定义 DataType。
-- 建立内容目录：heroes、enemies、rooms、loot、abilities、effects、visuals、rules。
-- 首批内容至少包含 1 hero、3 enemies、1 elite/boss、2 room templates、3 loot categories。
-- 所有内容通过 `entries[]` DataPack 注册，支持 reference graph。
+实现任务：
+
+1. 拆分内容目录。
+   - 将 `game/content/pack.ts` 中的业务内容拆到 `heroes/`、`enemies/`、`rooms/`、`loot/`、`rewards/`、`abilities/`、`visuals/`、`rules/`。
+   - 每个业务文件可以混合自定义 DataType、GAS、TCA、RenderObject、Asset reference，不按 DataType 大表维护。
+   - `pack.ts` 只负责组合 entries 和导出 `abyssDataPack`。
+2. 深化自定义 DataType。
+   - 保留并完善 `abyss.heroClass`、`abyss.enemyProfile`、`abyss.roomTemplate`、`abyss.lootTable`、`abyss.reward`。
+   - 新增 `abyss.itemBase`、`abyss.itemAffix`、`abyss.waveProfile`、`abyss.rewardPool`。
+   - DataType definitions 必须提供 validate / references / indexes，不能只是 required id。
+3. 扩充首批内容。
+   - 至少 2 个 hero class definition，其中当前 playable hero 继续是默认。
+   - 至少 4 个 enemy profile，其中 1 个 elite/boss-like profile。
+   - 至少 2 个 room template：combat room 和 reward room / exit room placeholder。
+   - 至少 3 类 loot 和 3 个 item base / affix 示例，掉落能引用 item base 或 reward。
+   - 至少 1 个 wave profile 被 room template 引用。
+4. 引用图和内容验证。
+   - hero 引用 GAS actor 和 render object。
+   - enemy 引用 GAS actor、render object、loot table。
+   - room 引用 hero、wave profile 和 reward pool。
+   - wave 引用 enemy profile。
+   - loot table 引用 item base、reward 或 render object。
+   - DataRegistry 缺失引用错误要能在测试中被证明。
+5. Runtime 消费迁移。
+   - `room-module` 不再直接依赖 room.enemies 内联 spawn 列表；改为读取 room -> waveProfile -> enemy entries。
+   - reward choices 从 reward pool 或 reward documents 读取，保持 P15.1 playable room 行为不倒退。
+   - snapshot / DevTools source 至少能展示 contentSummary：types、documents、references、activeRoom、activeWave。
+6. 测试和验收。
+   - 新增 content registry 测试：DataType 注册、DataPack documents、reference graph、custom indexes。
+   - 新增 missing reference 测试，证明内容错误能被 DataRegistry 拦截。
+   - 更新长链路测试，确保拆分内容后 kill -> loot -> pickup -> reward 仍通过。
+   - 边界测试继续禁止 gameplay 直接 import Phaser/React/DOM/Koota/App Host。
 
 ### Review 记录
 
-待实现。
+| 检查项                                                         | 结果   | 记录                                                                    |
+| -------------------------------------------------------------- | ------ | ----------------------------------------------------------------------- |
+| 子 Agent 是否参与                                              | Passed | Kierkegaard 已完成只读审查，缺口已进入本任务实现                        |
+| 内容是否按业务目录拆分                                         | Passed | 内容已拆到 abilities/heroes/enemies/rooms/loot/rewards/visuals/rules    |
+| DataType 是否包含 validate / references / indexes              | Passed | hero/enemy/wave/room/loot/item/reward/rewardPool 均有验证和引用入口     |
+| 首批 hero/enemy/room/loot/reward/wave/item 内容是否足够        | Passed | 2 hero、4 enemy、3 room、2 wave、3 item base、3 affix、2 reward pool    |
+| Runtime 是否通过 DataRegistry 消费 wave/reward/content summary | Passed | room-module 读取 room -> wave，reward choices 读取 rewardPool           |
+| 引用图和缺失引用测试是否覆盖                                   | Passed | `abyss-content-registry.test.ts` 覆盖 references、indexes、missing ref  |
+| 长链路、边界、构建、格式是否通过                               | Passed | `test`、`build`、`lint`、`format` 已通过，Browser smoke 看到 canvas/HUD |
 
 ### 提交记录
 
-待实现。
+e55ab34
 
 ## P15.3：World 组件与基础运行时模块
 

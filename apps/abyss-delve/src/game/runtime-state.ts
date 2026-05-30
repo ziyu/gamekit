@@ -18,6 +18,9 @@ export type AbyssRuntimeState = {
   gasRuntime: () => GasRuntime | undefined;
   gasTraceStore: GasTraceStore;
   tcaTraceStore: TcaTraceStore;
+  activeRoomId?: string | undefined;
+  activeWaveId?: string | undefined;
+  activeRewardPoolId?: string | undefined;
   playerEntity?: EntityId | undefined;
   roomEntity?: EntityId | undefined;
   setGasRuntime(runtime: GasRuntime): void;

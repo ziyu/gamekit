@@ -2,8 +2,10 @@ import type { DataRegistry } from "@gamekit/data";
 import { mergeTcaDefinitionSets, type TcaDefinitionSet } from "@gamekit/tca";
 import { Actor, Combat, Loot, Position, Presentation, Room } from "../components";
 import {
+  ABYSS_ENEMY_TYPE,
   ABYSS_LOOT_TABLE_TYPE,
   ABYSS_REWARD_TYPE,
+  type AbyssEnemyProfile,
   type AbyssLootTable,
   type AbyssRewardDefinition
 } from "../content";
@@ -35,10 +37,12 @@ function createRollLootAction(options: CreateAbyssTcaDefinitionsOptions) {
       const x = readNumber(ctx.event.payload, "x") ?? 0;
       const y = readNumber(ctx.event.payload, "y") ?? 0;
       const profileId = readString(ctx.event.payload, "archetypeId");
-      const table = options.dataRegistry.getValue<AbyssLootTable>(
-        ABYSS_LOOT_TABLE_TYPE,
-        "loot.enemy.basic"
-      );
+      const tableId =
+        profileId === undefined
+          ? "loot.enemy.basic"
+          : options.dataRegistry.getValue<AbyssEnemyProfile>(ABYSS_ENEMY_TYPE, profileId)
+              .lootTableId;
+      const table = options.dataRegistry.getValue<AbyssLootTable>(ABYSS_LOOT_TABLE_TYPE, tableId);
       const drop = weightedDrop(table, enemyId ?? profileId ?? `${x}:${y}`);
       const loot = ctx.game?.world.spawn();
       if (loot === undefined || !ctx.game) {

@@ -13,6 +13,11 @@ describe("Abyss Delve playable room chain", () => {
     expect(snapshot.objective.remainingEnemies).toBeGreaterThanOrEqual(3);
     expect(snapshot.player.health).toBeGreaterThan(0);
     expect(snapshot.skills.map((skill) => skill.key)).toEqual(["LMB", "RMB", "1", "Space"]);
+    expect(snapshot.contentSummary.activeRoomId).toBe("room.bootstrap");
+    expect(snapshot.contentSummary.activeWaveId).toBe("wave.bootstrap");
+    expect(snapshot.contentSummary.activeRewardPoolId).toBe("rewardPool.bootstrap");
+    expect(snapshot.contentSummary.documents).toBeGreaterThan(20);
+    expect(snapshot.contentSummary.references).toBeGreaterThan(20);
   });
 
   it("runs input to damage to death to loot to pickup to reward", () => {

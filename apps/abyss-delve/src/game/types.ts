@@ -70,6 +70,19 @@ export type AbyssEntitySnapshot = {
   lootLabel?: string | undefined;
 };
 
+export type AbyssContentSummary = {
+  types: number;
+  documents: number;
+  references: number;
+  activeRoomId?: string | undefined;
+  activeWaveId?: string | undefined;
+  activeRewardPoolId?: string | undefined;
+  documentsByType: Array<{
+    type: string;
+    count: number;
+  }>;
+};
+
 export type AbyssSnapshot = {
   running: boolean;
   clock: ReturnType<GameRuntime["clock"]["snapshot"]>;
@@ -102,6 +115,7 @@ export type AbyssSnapshot = {
   rewardChoices: AbyssRewardChoice[];
   entities: AbyssEntitySnapshot[];
   recentLoot: string[];
+  contentSummary: AbyssContentSummary;
   timeline: AbyssTraceEntry[];
   events: GameEvent[];
   gasTraces: ReturnType<GasTraceStore["list"]>;
