@@ -1,0 +1,351 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: #07080b;
+  color: #f4efe5;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+button,
+kbd {
+  font: inherit;
+}
+
+.abyss-app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    radial-gradient(circle at 50% 48%, #222030 0, #101016 58%, #07080b 100%);
+  background-size:
+    44px 44px,
+    44px 44px,
+    cover;
+}
+
+.abyss-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.abyss-renderer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.abyss-renderer canvas {
+  width: min(100vw, calc(100vh * 1.5));
+  height: min(100vh, calc(100vw / 1.5));
+  image-rendering: pixelated;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 0 90px rgba(0, 0, 0, 0.7);
+}
+
+.abyss-vignette {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 48%, transparent 0 42%, rgba(0, 0, 0, 0.34) 74%),
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.34),
+      transparent 22%,
+      transparent 68%,
+      rgba(0, 0, 0, 0.48)
+    );
+}
+
+.abyss-objective,
+.abyss-room-status,
+.abyss-hud,
+.abyss-pickup,
+.abyss-window,
+.abyss-rewards__panel {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(9, 10, 13, 0.72);
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(10px);
+}
+
+.abyss-objective {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  display: flex;
+  min-width: 360px;
+  transform: translateX(-50%);
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 12px 18px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.abyss-objective span {
+  color: #fff0d1;
+  font-weight: 800;
+}
+
+.abyss-objective strong,
+.abyss-room-status span {
+  color: #9de6ff;
+  font-size: 13px;
+}
+
+.abyss-room-status {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  text-align: right;
+}
+
+.abyss-pickup {
+  position: absolute;
+  left: 50%;
+  bottom: 168px;
+  transform: translateX(-50%);
+  padding: 10px 16px;
+  color: #fff0d1;
+  font-weight: 800;
+}
+
+.abyss-hud {
+  position: absolute;
+  right: 22px;
+  bottom: 22px;
+  left: 22px;
+  display: grid;
+  grid-template-columns: 330px 1fr;
+  gap: 18px;
+  padding: 14px;
+}
+
+.abyss-bars {
+  display: grid;
+  gap: 8px;
+}
+
+.abyss-meter {
+  display: grid;
+  grid-template-columns: 62px 1fr 72px;
+  align-items: center;
+  gap: 10px;
+  color: #c7c1b6;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.abyss-meter div {
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.abyss-meter i {
+  display: block;
+  height: 100%;
+}
+
+.abyss-meter--life i {
+  background: linear-gradient(90deg, #aa2e3d, #ff636f);
+}
+
+.abyss-meter--energy i {
+  background: linear-gradient(90deg, #176b9d, #65d6ff);
+}
+
+.abyss-gold {
+  color: #ffd76d;
+  font-weight: 900;
+}
+
+.abyss-skills {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.abyss-skill {
+  position: relative;
+  min-height: 62px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.04));
+}
+
+.abyss-skill--cooling {
+  filter: grayscale(0.5);
+  opacity: 0.7;
+}
+
+.abyss-skill kbd {
+  display: inline-grid;
+  min-width: 34px;
+  height: 26px;
+  place-items: center;
+  margin-right: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.35);
+  color: #9de6ff;
+  font-weight: 900;
+}
+
+.abyss-skill span {
+  color: #fff0d1;
+  font-weight: 800;
+}
+
+.abyss-skill em {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  color: #ff7b86;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.abyss-window {
+  position: absolute;
+  top: 96px;
+  left: 24px;
+  width: 320px;
+  padding: 18px;
+}
+
+.abyss-window--pause {
+  top: 50%;
+  left: 50%;
+  width: 300px;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.abyss-window h2,
+.abyss-rewards h2 {
+  margin: 0 0 14px;
+  color: #fff0d1;
+}
+
+.abyss-window dl,
+.abyss-window p {
+  margin: 0;
+}
+
+.abyss-window div {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 14px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.abyss-window dt {
+  color: #9aa0a6;
+}
+
+.abyss-window dd {
+  margin: 0;
+}
+
+.abyss-rewards {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.abyss-rewards__panel {
+  width: min(820px, calc(100vw - 40px));
+  padding: 24px;
+}
+
+.abyss-rewards__panel p {
+  margin: 0 0 6px;
+  color: #9de6ff;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.abyss-reward-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.abyss-reward-card {
+  min-height: 158px;
+  padding: 18px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 215, 109, 0.42);
+  background: linear-gradient(180deg, rgba(255, 215, 109, 0.14), rgba(255, 255, 255, 0.05));
+  color: #f4efe5;
+  text-align: left;
+}
+
+.abyss-reward-card:hover,
+.abyss-reward-card:focus-visible {
+  outline: none;
+  border-color: #ffd76d;
+  transform: translateY(-2px);
+}
+
+.abyss-reward-card strong {
+  display: block;
+  margin-bottom: 10px;
+  color: #fff0d1;
+  font-size: 20px;
+}
+
+.gamekit-devtools-overlay {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  pointer-events: none;
+}
+
+.gamekit-devtools-overlay > * {
+  pointer-events: auto;
+}
+
+@media (max-width: 780px) {
+  .abyss-hud {
+    grid-template-columns: 1fr;
+  }
+
+  .abyss-skills,
+  .abyss-reward-cards {
+    grid-template-columns: 1fr;
+  }
+}

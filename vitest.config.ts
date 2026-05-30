@@ -39,6 +39,8 @@ export default defineConfig({
       "@gamekit/input-dom": new URL("./packages/input-dom/src/index.ts", import.meta.url).pathname,
       "@gamekit/platform-core": new URL("./packages/platform-core/src/index.ts", import.meta.url)
         .pathname,
+      "@gamekit/platform-web": new URL("./packages/platform-web/src/index.ts", import.meta.url)
+        .pathname,
       "@gamekit/renderer-core": new URL("./packages/renderer-core/src/index.ts", import.meta.url)
         .pathname,
       "@gamekit/renderer-phaser": new URL(

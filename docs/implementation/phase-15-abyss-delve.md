@@ -27,30 +27,27 @@
 
 ## 子 Agent 记录
 
-| Agent | 类型     | 任务                                      | 状态      | 结果                                       |
-| ----- | -------- | ----------------------------------------- | --------- | ------------------------------------------ |
-| Locke | explorer | Phase 15 文档职责、一致性和旧示例残留审查 | Completed | 发现 4 个必改边界问题，已进入 P15.0 rework |
+| Agent     | 类型     | 任务                                      | 状态      | 结果                                                          |
+| --------- | -------- | ----------------------------------------- | --------- | ------------------------------------------------------------- |
+| Locke     | explorer | Phase 15 文档职责、一致性和旧示例残留审查 | Completed | 发现 4 个必改边界问题，已进入 P15.0 rework                    |
+| Helmholtz | explorer | P15.1 playable room slice 只读实现审查    | Completed | 建议复用 Driver/App Host 边界，新增长链路和 gameplay 依赖扫描 |
 
 后续每个实现任务应至少有一个子 Agent 参与实现、审查或验证。子 Agent 的写入范围必须和主线任务错开，避免互相覆盖。
 
 ## 任务拆分总览
 
-| ID     | 任务                          | 产出                                                                | 状态        | 提交   |
-| ------ | ----------------------------- | ------------------------------------------------------------------- | ----------- | ------ |
-| P15.0  | Phase 15 设计落地与任务拆分   | 应用设计、阶段路线、实现文档                                        | In Progress | 待提交 |
-| P15.1  | 应用脚手架与 App Host profile | `apps/abyss-delve` 可启动空壳、host/profile/test harness            | Planned     | -      |
-| P15.2  | 内容模型与首批 DataPack       | 自定义 DataType、hero/enemy/room/loot/render/asset/rule 内容        | Planned     | -      |
-| P15.3  | World 组件与基础运行时模块    | actor、movement、combat intent、room、loot、presentation components | Planned     | -      |
-| P15.4  | 玩家控制与相机                | input binding、player movement、aim、dodge、camera follow/lookahead | Planned     | -      |
-| P15.5  | GAS 战斗链路                  | basic attack、两个主动技能、damage/effect/tag/cue                   | Planned     | -      |
-| P15.6  | 怪物 AI 与房间波次            | enemy spawn、AI、hit/death、room completion                         | Planned     | -      |
-| P15.7  | TCA 掉落与奖励循环            | actor.died -> loot roll -> pickup -> reward choice                  | Planned     | -      |
-| P15.8  | Renderer 表现垂直切片         | player/enemy/projectile/loot/room 复合 RenderObject 和 sync         | Planned     | -      |
-| P15.9  | React UI 游戏壳               | HUD、skill bar、loot prompt、reward modal、inventory/run summary    | Planned     | -      |
-| P15.10 | Save / Load 集成              | meta progression、run checkpoint、contributors、restore 测试        | Planned     | -      |
-| P15.11 | DevTools 集成                 | actor/loot/room source、trace chain、performance profiler           | Planned     | -      |
-| P15.12 | 长链路测试与浏览器 smoke      | headless scenarios、browser smoke、边界检查                         | Planned     | -      |
-| P15.13 | 阶段收口审查                  | 完整验证、合理性检查、质量检查、文档状态更新                        | Planned     | -      |
+| ID     | 任务                         | 产出                                                              | 状态      | 提交    |
+| ------ | ---------------------------- | ----------------------------------------------------------------- | --------- | ------- |
+| P15.0  | Phase 15 设计落地与任务拆分  | 应用设计、阶段路线、实现文档                                      | Completed | 5fe749c |
+| P15.1  | Playable Room Vertical Slice | 可玩的第一房间：移动、攻击、敌人、掉落、奖励、HUD、DevTools trace | Completed | 待提交  |
+| P15.2  | 内容模型扩展和 DataPack 深化 | 更多 hero/enemy/room/loot/reward 内容，引用图和内容验证           | Planned   | -       |
+| P15.3  | 战斗和 GAS 深化              | 技能成本、冷却、buff/debuff、更多 cue、actor inspector            | Planned   | -       |
+| P15.4  | 房间推进和 Save checkpoint   | 多房间推进、run checkpoint、meta progression、load 恢复           | Planned   | -       |
+| P15.5  | 表现质量和 Camera            | 更完整复合 RenderObject、camera follow/lookahead/shake            | Planned   | -       |
+| P15.6  | DevTools 和长链路验收        | input -> damage -> death -> loot -> reward trace、browser smoke   | Planned   | -       |
+| P15.7  | 阶段收口审查                 | 完整验证、合理性检查、质量检查、文档状态更新                      | Planned   | -       |
+| P15.12 | 长链路测试与浏览器 smoke     | headless scenarios、browser smoke、边界检查                       | Planned   | -       |
+| P15.13 | 阶段收口审查                 | 完整验证、合理性检查、质量检查、文档状态更新                      | Planned   | -       |
 
 ## 垂直链路执行顺序
 
@@ -107,27 +104,59 @@ Phase 15 不按“先完整战斗、再补数据、最后补工具”的方式�
 
 ### 提交记录
 
-待提交。
+5fe749c
 
-## P15.1：应用脚手架与 App Host profile
+## P15.1：Playable Room Vertical Slice
 
 ### 当前任务实现计划
 
-待 P15.0 提交后补充。预期包括：
+本任务必须让 `apps/abyss-delve` 第一屏成为可玩的俯视角暗黑-like 房间，而不是框架服务面板。
 
-- 新增 `apps/abyss-delve` package、Vite/TS 配置、HTML 入口。
-- 使用 App Host `GameAppDefinition + AppProfile` 启动标准服务。
-- 接入 Phaser Driver、memory/headless test profile、React UI shell、DevTools preset。
-- 建立 `apps/abyss-delve/src/test/abyss-harness.ts`。
-- 添加 app 边界测试：不直接 import Phaser/Koota/DOM/React 到 game modules。
+实现任务：
+
+1. 清理上一版空壳实现。
+   - 删除未提交的 `apps/abyss-delve` 空壳。
+   - 回滚上一版为启动空壳新增的 root config / lockfile / 状态文档改动。
+2. 新增真实游戏 app skeleton。
+   - `apps/abyss-delve` 仍使用 Vite + React + App Host。
+   - 页面主视觉是 Phaser canvas + 游戏 HUD，不展示 service list。
+   - Web profile 通过 Phaser Driver 提供 renderer / asset / input capability。
+3. 建立内容驱动的第一房间。
+   - DataPack 定义 hero、3 类 enemy、room、loot table、reward、render object、GAS actor/effect/ability、TCA rule。
+   - 首屏固定 seed 生成一个 combat room。
+4. 建立 gameplay World components 和 modules。
+   - 组件覆盖 position、velocity、actor、combat、hitbox、projectile、loot、room、presentation、floating text。
+   - 模块覆盖 player control、enemy AI、combat/hit detection、loot/reward、presentation sync、ui bridge。
+5. 完成核心交互。
+   - WASD 移动、鼠标瞄准、左键普攻、右键技能、`1` 技能、`Space` 闪避、`E` 拾取、`I` 背包、`Esc` 暂停。
+   - 奖励面板、背包、暂停、DevTools 聚焦时阻断 gameplay input。
+6. 完成视觉反馈。
+   - 玩家和敌人用复合 RenderObject，不使用圆点。
+   - 攻击预警、投射物、命中、伤害数字、血条、死亡、掉落和拾取提示可见。
+7. 完成 UI 和 DevTools。
+   - HUD 显示生命、能量、金币、房间目标、技能冷却。
+   - 三选一奖励 modal 影响角色状态。
+   - DevTools 默认只 pin Performance，完整 DevTools 可查看 Abyss runtime snapshot 和 trace。
+8. 测试和验收。
+   - Headless harness 能跑一条 kill -> loot -> pickup -> reward 链路。
+   - 浏览器 smoke 验证 3 秒内可见玩家、敌人、HUD、房间目标和 canvas。
+   - 边界测试禁止 gameplay 直接 import Phaser、React、DOM、Koota、App Host 内部。
 
 ### Review 记录
 
-待实现。
+| 检查项                                                   | 结果   | 记录                                                                                                  |
+| -------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------- |
+| 子 Agent 是否参与                                        | Passed | Helmholtz 已完成只读审查                                                                              |
+| 第一屏是否是游戏场景而不是服务面板                       | Passed | Browser smoke 看到 Phaser canvas、HUD、房间目标、DevTools Performance pin                             |
+| 玩家移动/攻击/闪避是否可用                               | Passed | InputRouter 注册 WASD、mouse aim、LMB/RMB、`1`、`Space`、`E`、`I`、`Esc`，headless 链路覆盖攻击和拾取 |
+| 三类敌人和掉落/奖励是否可见                              | Passed | DataPack 定义 melee/ranged/heavy、gold/gear/blessing、三选一 reward                                   |
+| Data/GAS/TCA/Renderer/Input/UI/DevTools 是否进入同一链路 | Passed | `abyss-long-chain.test.ts` 覆盖 kill -> loot -> pickup -> reward，DevTools 注册 Abyss runtime source  |
+| gameplay 依赖边界是否通过扫描                            | Passed | `abyss-boundary.test.ts` 禁止 gameplay import Phaser/React/DOM/Koota/App Host 等外部 runtime          |
+| 测试与浏览器 smoke 是否通过                              | Passed | `corepack pnpm --filter abyss-delve test`、`build` 通过；Browser smoke canvasCount=1                  |
 
 ### 提交记录
 
-待实现。
+待提交。
 
 ## P15.2：内容模型与首批 DataPack
 

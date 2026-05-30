@@ -12,6 +12,7 @@
     { "path": "./packages/driver-phaser" },
     { "path": "./packages/devtools-ui" },
     { "path": "./packages/test-utils" },
-    { "path": "./apps/sandbox" }
+    { "path": "./apps/sandbox" },
+    { "path": "./apps/abyss-delve" }
   ]
 }

@@ -1,0 +1,36 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/app-host" },
+    { "path": "../../packages/asset" },
+    { "path": "../../packages/core" },
+    { "path": "../../packages/data" },
+    { "path": "../../packages/devtools" },
+    { "path": "../../packages/devtools-ui" },
+    { "path": "../../packages/driver-core" },
+    { "path": "../../packages/driver-phaser" },
+    { "path": "../../packages/event-bus" },
+    { "path": "../../packages/game-runtime" },
+    { "path": "../../packages/gas" },
+    { "path": "../../packages/input-core" },
+    { "path": "../../packages/input-dom" },
+    { "path": "../../packages/platform-core" },
+    { "path": "../../packages/platform-web" },
+    { "path": "../../packages/renderer-core" },
+    { "path": "../../packages/renderer-phaser" },
+    { "path": "../../packages/save" },
+    { "path": "../../packages/tca" },
+    { "path": "../../packages/ui-core" },
+    { "path": "../../packages/react-ui" },
+    { "path": "../../packages/test-utils" },
+    { "path": "../../packages/world" },
+    { "path": "../../packages/world-koota" }
+  ]
+}

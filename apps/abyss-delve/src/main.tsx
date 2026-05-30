@@ -1,0 +1,139 @@
+import "@gamekit/devtools-ui/styles.css";
+import "./styles.css";
+import { createConfiguredAppHost } from "@gamekit/app-host";
+import type { InputActionEvent } from "@gamekit/input-core";
+import { createUiRuntime } from "@gamekit/ui-core";
+import { flushSync } from "react-dom";
+import { createRoot } from "react-dom/client";
+import { applyAbyssInputAction } from "./app-input";
+import { abyssAppDefinition } from "./app-definition";
+import { createAbyssWebProfile, type AbyssAppContext } from "./app-profile";
+import { AbyssApp } from "./ui/AbyssApp";
+
+const app = document.querySelector<HTMLDivElement>("#app");
+if (!app) {
+  throw new Error("Missing #app element");
+}
+
+void boot(app).catch((error) => {
+  const message = error instanceof Error ? error.message : String(error);
+  app.textContent = `Abyss Delve failed to boot: ${message}`;
+  throw error;
+});
+
+async function boot(rootElement: HTMLElement): Promise<void> {
+  const reactRoot = createRoot(rootElement);
+  const uiRuntime = createUiRuntime();
+  const rendererRoot = document.createElement("div");
+  rendererRoot.className = "abyss-renderer";
+  rendererRoot.setAttribute("aria-label", "Abyss Delve game viewport");
+  const context: AbyssAppContext = {
+    ui: {
+      rendererRoot
+    },
+    uiRuntime,
+    inputBlocked: false
+  };
+
+  let unsubscribeInput: (() => void) | undefined;
+
+  const render = (sync = false) => {
+    const snapshot = context.abyss?.snapshot();
+    context.inputBlocked =
+      snapshot?.rewardOpen === true ||
+      snapshot?.player.inventoryOpen === true ||
+      snapshot?.player.paused === true;
+    if (context.abyss) {
+      context.abyss.input.gameplayBlocked = context.inputBlocked;
+    }
+
+    const element = (
+      <AbyssApp
+        devtools={context.devtools}
+        onGameFocus={() => uiRuntime.setFocus({ scope: "game", reason: "abyss.viewport" })}
+        onReward={(rewardId) => {
+          if (context.abyss) {
+            context.abyss.input.rewardChoiceRequested = rewardId;
+          }
+        }}
+        rendererRoot={rendererRoot}
+        snapshot={snapshot}
+        uiRuntime={uiRuntime}
+      />
+    );
+    if (sync) {
+      flushSync(() => reactRoot.render(element));
+      return;
+    }
+    reactRoot.render(element);
+  };
+
+  render(true);
+  await waitForRendererRoot(rendererRoot);
+
+  const configured = createConfiguredAppHost({
+    app: abyssAppDefinition,
+    profile: createAbyssWebProfile(),
+    context
+  });
+  const host = configured.host;
+  await host.boot();
+  if (!context.abyss || !context.inputRouter) {
+    throw new Error("Abyss app failed to initialize runtime services");
+  }
+
+  unsubscribeInput = context.inputRouter.onAction((event) =>
+    routeInputAction(context, event, uiRuntime)
+  );
+  await host.start();
+  render();
+
+  let lastTime: number | undefined;
+  const frame = (now: number) => {
+    const delta = lastTime === undefined ? 0 : Math.max(0, Math.min(48, now - lastTime));
+    lastTime = now;
+    host.tick(delta, now);
+    render();
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+
+  window.addEventListener(
+    "beforeunload",
+    () => {
+      unsubscribeInput?.();
+      host.dispose();
+    },
+    { once: true }
+  );
+}
+
+function routeInputAction(
+  context: AbyssAppContext,
+  event: InputActionEvent,
+  uiRuntime: ReturnType<typeof createUiRuntime>
+): void {
+  if (!context.abyss) {
+    return;
+  }
+
+  applyAbyssInputAction(context.abyss.input, event);
+  if (event.input.scope === "game") {
+    uiRuntime.setFocus({ scope: "game", reason: event.actionId });
+  }
+  context.abyss.trace({
+    kind: "input",
+    label: event.actionId,
+    payload: { phase: event.phase }
+  });
+}
+
+async function waitForRendererRoot(rendererRoot: HTMLElement): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (rendererRoot.isConnected) {
+      return;
+    }
+    await new Promise((done) => window.setTimeout(done, 0));
+  }
+  throw new Error("Abyss renderer root was not mounted");
+}
