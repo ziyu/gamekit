@@ -16,10 +16,11 @@ export function createAbyssPresentationModule(options: CreateAbyssPresentationMo
   return defineGameModule<GameInstallContext>({
     id: "abyss.presentation",
     install(ctx) {
+      const activeObjects = new Set<string>();
       ctx.systems.register({
         id: "abyss.presentation.system",
         update(system) {
-          syncPresentation(ctx, options, system.elapsed);
+          syncPresentation(ctx, options, system.elapsed, activeObjects);
         }
       });
     }
@@ -29,7 +30,8 @@ export function createAbyssPresentationModule(options: CreateAbyssPresentationMo
 function syncPresentation(
   ctx: GameInstallContext,
   options: CreateAbyssPresentationModuleOptions,
-  elapsed: number
+  elapsed: number,
+  activeObjects: Set<string>
 ): void {
   const visible = new Set<string>();
   for (const entity of ctx.world.query([Presentation, Position])) {
@@ -85,6 +87,16 @@ function syncPresentation(
     if (floating) {
       updateFloatingText(options.renderer, presentation.objectId, floating.tone);
     }
+  }
+
+  for (const objectId of activeObjects) {
+    if (!visible.has(objectId)) {
+      options.renderer.destroyObject(objectId);
+    }
+  }
+  activeObjects.clear();
+  for (const objectId of visible) {
+    activeObjects.add(objectId);
   }
 }
 

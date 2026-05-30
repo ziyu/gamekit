@@ -11,6 +11,7 @@ import {
 } from "../content";
 import type { AbyssRuntimeState } from "../runtime-state";
 import { livingEnemies, spawnFloatingText } from "./combat-helpers";
+import { capturePlayerCarryState, enterNextAbyssRoom } from "./room-helpers";
 
 export type CreateAbyssTcaDefinitionsOptions = {
   state: AbyssRuntimeState;
@@ -87,6 +88,7 @@ function createCheckRoomClearAction(options: CreateAbyssTcaDefinitionsOptions) {
       }
 
       const roomEntity = game.world.query([Room])[0];
+      const roomId = options.state.activeRoomId ?? "room.bootstrap";
       if (roomEntity !== undefined) {
         const room = game.world.get(roomEntity, Room);
         if (room) {
@@ -94,9 +96,12 @@ function createCheckRoomClearAction(options: CreateAbyssTcaDefinitionsOptions) {
           room.rewardOpen = true;
         }
       }
+      if (!options.state.run.completedRoomIds.includes(roomId)) {
+        options.state.run.completedRoomIds.push(roomId);
+      }
       options.state.run.completed = true;
       options.state.run.rewardOpen = true;
-      ctx.eventBus.emit("abyss.room_cleared", { roomId: "room.bootstrap" }, "abyss.tca");
+      ctx.eventBus.emit("abyss.room_cleared", { roomId }, "abyss.tca");
       options.state.trace({
         kind: "tca",
         label: "room cleared",
@@ -159,6 +164,8 @@ function createApplyRewardAction(options: CreateAbyssTcaDefinitionsOptions) {
         }
       }
 
+      const carry = capturePlayerCarryState(options.state);
+
       const roomEntity = ctx.game.world.query([Room])[0];
       if (roomEntity !== undefined) {
         const room = ctx.game.world.get(roomEntity, Room);
@@ -169,6 +176,9 @@ function createApplyRewardAction(options: CreateAbyssTcaDefinitionsOptions) {
       }
 
       options.state.run.selectedReward = reward.id;
+      if (!options.state.run.selectedRewardIds.includes(reward.id)) {
+        options.state.run.selectedRewardIds.push(reward.id);
+      }
       options.state.run.rewardOpen = false;
       options.state.run.rewardChoices = options.state.run.rewardChoices.map((choice) => ({
         ...choice,
@@ -186,6 +196,7 @@ function createApplyRewardAction(options: CreateAbyssTcaDefinitionsOptions) {
         entityId: player,
         payload: reward
       });
+      enterNextAbyssRoom(options.state, carry);
     }
   } satisfies NonNullable<TcaDefinitionSet["actions"]>[number];
 }

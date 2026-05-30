@@ -5,5 +5,8 @@ export * from "./create-abyss-runtime";
 export * from "./input-state";
 export * from "./math";
 export * from "./runtime-state";
+export * from "./save/checkpoint";
+export * from "./save/checkpoint-types";
+export * from "./save/create-abyss-save-contributor";
 export * from "./snapshot";
 export * from "./types";

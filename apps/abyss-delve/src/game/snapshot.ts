@@ -34,7 +34,9 @@ export function createAbyssSnapshot(state: AbyssRuntimeState): AbyssSnapshot {
     objective: {
       label: room?.completed ? "Claim your reward" : "Clear the chamber",
       remainingEnemies,
-      completed: room?.completed === true
+      completed: room?.completed === true,
+      roomId: state.activeRoomId,
+      roomIndex: state.run.roomIndex
     },
     player: {
       health: playerCombat?.health ?? 0,
@@ -52,6 +54,13 @@ export function createAbyssSnapshot(state: AbyssRuntimeState): AbyssSnapshot {
     recentLoot: state.run.recentLoot,
     contentSummary: createContentSummary(state),
     actorInspectors: createActorInspectors(state),
+    checkpoint: {
+      runId: state.run.runId,
+      version: state.run.checkpointVersion,
+      roomIndex: state.run.roomIndex,
+      completedRooms: state.run.completedRoomIds.length,
+      selectedRewards: state.run.selectedRewardIds.length
+    },
     timeline: [...state.timeline],
     events: [...state.events],
     gasTraces: state.gasTraceStore.list(),

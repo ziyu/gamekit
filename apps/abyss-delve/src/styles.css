@@ -277,6 +277,40 @@ kbd {
   margin: 0;
 }
 
+.abyss-checkpoint-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.abyss-window .abyss-checkpoint-controls {
+  grid-template-columns: 1fr 1fr;
+}
+
+.abyss-checkpoint-controls button {
+  min-height: 38px;
+  cursor: pointer;
+  border: 1px solid rgba(157, 230, 255, 0.4);
+  background: rgba(157, 230, 255, 0.1);
+  color: #f4efe5;
+  font-weight: 800;
+}
+
+.abyss-checkpoint-controls button:hover,
+.abyss-checkpoint-controls button:focus-visible {
+  outline: none;
+  border-color: #9de6ff;
+  background: rgba(157, 230, 255, 0.18);
+}
+
+.abyss-checkpoint-controls span {
+  grid-column: 1 / -1;
+  color: #9de6ff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .abyss-rewards {
   position: absolute;
   inset: 0;

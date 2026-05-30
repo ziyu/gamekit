@@ -28,6 +28,11 @@ import {
 import { ABYSS_SEED } from "./constants";
 import { createAbyssInputState } from "./input-state";
 import { createAbyssRunState, type AbyssRuntimeState } from "./runtime-state";
+import {
+  applyAbyssCheckpoint,
+  captureAbyssCheckpoint,
+  resetAbyssTransientState
+} from "./save/checkpoint";
 import { appendEvent, attachRuntimeSnapshot, createAbyssSnapshot } from "./snapshot";
 import type { AbyssRewardChoice, AbyssRuntime } from "./types";
 import { createAbyssTcaDefinitions } from "./modules/abyss-tca-definitions";
@@ -68,8 +73,10 @@ export function createAbyssRuntime(options: CreateAbyssRuntimeOptions = {}): Aby
   const eventBus = options.eventBus ?? createEventBus({ clock: () => Date.now() });
   const gasTraceStore = options.gasTraceStore ?? createGasTraceStore({ limit: 80 });
   const tcaTraceStore = options.tcaTraceStore ?? createTcaTraceStore({ limit: 80 });
+  const seed = options.seed ?? ABYSS_SEED;
   let gasRuntime: GasRuntime | undefined;
   const state: AbyssRuntimeState = {
+    seed,
     world,
     dataRegistry,
     eventBus,
@@ -154,7 +161,7 @@ export function createAbyssRuntime(options: CreateAbyssRuntimeOptions = {}): Aby
     modules,
     world,
     eventBus,
-    seed: options.seed ?? ABYSS_SEED
+    seed
   });
 
   return {
@@ -165,6 +172,13 @@ export function createAbyssRuntime(options: CreateAbyssRuntimeOptions = {}): Aby
     input: state.input,
     run: state.run,
     trace: state.trace,
+    captureCheckpoint() {
+      return captureAbyssCheckpoint(state);
+    },
+    restoreCheckpoint(checkpoint) {
+      applyAbyssCheckpoint(state, checkpoint);
+      resetAbyssTransientState(state);
+    },
     snapshot() {
       return attachRuntimeSnapshot(
         createAbyssSnapshot(state),

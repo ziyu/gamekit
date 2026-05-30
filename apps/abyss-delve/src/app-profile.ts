@@ -16,6 +16,7 @@ import {
   ABYSS_VIEWPORT,
   createAbyssDataRegistry,
   createAbyssRuntime,
+  createAbyssSaveContributor,
   type AbyssRuntime
 } from "./game";
 
@@ -146,6 +147,9 @@ export function createAbyssWebProfile(): AppProfile<AbyssAppContext> {
         },
         contributorPolicy: {
           excludeScopes: ["presentation", "debug", "cache", "ui"]
+        },
+        contributors({ context }) {
+          return [createAbyssSaveContributor(() => context.abyss)];
         }
       },
       devtools: {

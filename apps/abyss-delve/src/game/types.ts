@@ -46,6 +46,11 @@ export type AbyssRewardChoice = {
 };
 
 export type AbyssRunState = {
+  runId: string;
+  checkpointVersion: number;
+  roomIndex: number;
+  completedRoomIds: string[];
+  selectedRewardIds: string[];
   gold: number;
   recentLoot: string[];
   rewardChoices: AbyssRewardChoice[];
@@ -108,6 +113,8 @@ export type AbyssSnapshot = {
     label: string;
     remainingEnemies: number;
     completed: boolean;
+    roomId?: string | undefined;
+    roomIndex: number;
   };
   player: {
     health: number;
@@ -135,6 +142,13 @@ export type AbyssSnapshot = {
   recentLoot: string[];
   contentSummary: AbyssContentSummary;
   actorInspectors: AbyssActorInspectorSnapshot[];
+  checkpoint: {
+    runId: string;
+    version: number;
+    roomIndex: number;
+    completedRooms: number;
+    selectedRewards: number;
+  };
   timeline: AbyssTraceEntry[];
   events: GameEvent[];
   gasTraces: ReturnType<GasTraceStore["list"]>;
@@ -149,5 +163,7 @@ export type AbyssRuntime = {
   input: AbyssInputState;
   run: AbyssRunState;
   trace(entry: Omit<AbyssTraceEntry, "id" | "time"> & { time?: number }): void;
+  captureCheckpoint(): import("./save/checkpoint-types").AbyssCheckpointData;
+  restoreCheckpoint(checkpoint: import("./save/checkpoint-types").AbyssCheckpointData): void;
   snapshot(): AbyssSnapshot;
 };

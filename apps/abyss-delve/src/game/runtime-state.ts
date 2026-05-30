@@ -7,6 +7,7 @@ import type { EntityId, GameWorld } from "@gamekit/world";
 import type { AbyssInputState, AbyssRewardChoice, AbyssRunState, AbyssTraceEntry } from "./types";
 
 export type AbyssRuntimeState = {
+  seed: string;
   world: GameWorld;
   dataRegistry: DataRegistry;
   eventBus: EventBus;
@@ -30,6 +31,11 @@ export type AbyssRuntimeState = {
 
 export function createAbyssRunState(rewards: AbyssRewardChoice[]): AbyssRunState {
   return {
+    runId: "run.bootstrap",
+    checkpointVersion: 1,
+    roomIndex: 0,
+    completedRoomIds: [],
+    selectedRewardIds: [],
     gold: 0,
     recentLoot: [],
     rewardChoices: rewards,

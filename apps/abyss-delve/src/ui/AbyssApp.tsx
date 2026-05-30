@@ -9,15 +9,21 @@ export type AbyssAppProps = {
   rendererRoot: HTMLElement;
   uiRuntime: UiRuntime;
   devtools?: DevToolsRuntime | undefined;
+  saveStatus?: string | undefined;
   onReward(rewardId: string): void;
+  onSaveCheckpoint(): void;
+  onLoadCheckpoint(): void;
   onGameFocus(): void;
 };
 
 export function AbyssApp({
   devtools,
+  onLoadCheckpoint,
   onGameFocus,
   onReward,
+  onSaveCheckpoint,
   rendererRoot,
+  saveStatus,
   snapshot,
   uiRuntime
 }: AbyssAppProps) {
@@ -69,8 +75,21 @@ export function AbyssApp({
           </div>
           <SkillBar skills={snapshot?.skills ?? []} />
         </footer>
-        {snapshot?.player.inventoryOpen ? <InventoryPanel snapshot={snapshot} /> : null}
-        {snapshot?.player.paused ? <PausePanel /> : null}
+        {snapshot?.player.inventoryOpen ? (
+          <InventoryPanel
+            onLoadCheckpoint={onLoadCheckpoint}
+            onSaveCheckpoint={onSaveCheckpoint}
+            saveStatus={saveStatus}
+            snapshot={snapshot}
+          />
+        ) : null}
+        {snapshot?.player.paused ? (
+          <PausePanel
+            onLoadCheckpoint={onLoadCheckpoint}
+            onSaveCheckpoint={onSaveCheckpoint}
+            saveStatus={saveStatus}
+          />
+        ) : null}
         {snapshot?.rewardOpen ? <RewardPanel onReward={onReward} snapshot={snapshot} /> : null}
       </section>
       {devtools ? (
@@ -126,7 +145,17 @@ function SkillBar({ skills }: { skills: AbyssSnapshot["skills"] }) {
   );
 }
 
-function InventoryPanel({ snapshot }: { snapshot: AbyssSnapshot }) {
+function InventoryPanel({
+  onLoadCheckpoint,
+  onSaveCheckpoint,
+  saveStatus,
+  snapshot
+}: {
+  snapshot: AbyssSnapshot;
+  saveStatus?: string | undefined;
+  onSaveCheckpoint(): void;
+  onLoadCheckpoint(): void;
+}) {
   return (
     <aside className="abyss-window abyss-window--inventory">
       <h2>Inventory</h2>
@@ -146,16 +175,56 @@ function InventoryPanel({ snapshot }: { snapshot: AbyssSnapshot }) {
           </dd>
         </div>
       </dl>
+      <CheckpointControls
+        onLoadCheckpoint={onLoadCheckpoint}
+        onSaveCheckpoint={onSaveCheckpoint}
+        saveStatus={saveStatus}
+      />
     </aside>
   );
 }
 
-function PausePanel() {
+function PausePanel({
+  onLoadCheckpoint,
+  onSaveCheckpoint,
+  saveStatus
+}: {
+  saveStatus?: string | undefined;
+  onSaveCheckpoint(): void;
+  onLoadCheckpoint(): void;
+}) {
   return (
     <aside className="abyss-window abyss-window--pause">
       <h2>Paused</h2>
       <p>Esc resumes the delve.</p>
+      <CheckpointControls
+        onLoadCheckpoint={onLoadCheckpoint}
+        onSaveCheckpoint={onSaveCheckpoint}
+        saveStatus={saveStatus}
+      />
     </aside>
+  );
+}
+
+function CheckpointControls({
+  onLoadCheckpoint,
+  onSaveCheckpoint,
+  saveStatus
+}: {
+  saveStatus?: string | undefined;
+  onSaveCheckpoint(): void;
+  onLoadCheckpoint(): void;
+}) {
+  return (
+    <div className="abyss-checkpoint-controls">
+      <button onClick={onSaveCheckpoint} type="button">
+        Save Checkpoint
+      </button>
+      <button onClick={onLoadCheckpoint} type="button">
+        Load Checkpoint
+      </button>
+      {saveStatus ? <span>{saveStatus}</span> : null}
+    </div>
   );
 }
 

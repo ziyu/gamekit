@@ -47,6 +47,8 @@ describe("Abyss Delve playable room chain", () => {
 
     const snapshot = harness.abyss.snapshot();
     expect(snapshot.rewardOpen).toBe(false);
+    expect(snapshot.objective.roomId).toBe("room.elite-preview");
+    expect(snapshot.objective.remainingEnemies).toBeGreaterThan(0);
     expect(snapshot.rewardChoices.some((choice) => choice.selected)).toBe(true);
     expect(snapshot.tcaTraces.some((trace) => trace.ruleId === "rule.reward.selected")).toBe(true);
   });

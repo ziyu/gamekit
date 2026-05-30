@@ -10,6 +10,8 @@ import { abyssAppDefinition } from "./app-definition";
 import { createAbyssWebProfile, type AbyssAppContext } from "./app-profile";
 import { AbyssApp } from "./ui/AbyssApp";
 
+const CHECKPOINT_SLOT_ID = "checkpoint";
+
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
   throw new Error("Missing #app element");
@@ -36,6 +38,7 @@ async function boot(rootElement: HTMLElement): Promise<void> {
   };
 
   let unsubscribeInput: (() => void) | undefined;
+  let saveStatus: string | undefined;
 
   const render = (sync = false) => {
     const snapshot = context.abyss?.snapshot();
@@ -50,13 +53,26 @@ async function boot(rootElement: HTMLElement): Promise<void> {
     const element = (
       <AbyssApp
         devtools={context.devtools}
+        onLoadCheckpoint={() => {
+          void loadCheckpoint(context, (status) => {
+            saveStatus = status;
+            render();
+          });
+        }}
         onGameFocus={() => uiRuntime.setFocus({ scope: "game", reason: "abyss.viewport" })}
         onReward={(rewardId) => {
           if (context.abyss) {
             context.abyss.input.rewardChoiceRequested = rewardId;
           }
         }}
+        onSaveCheckpoint={() => {
+          void saveCheckpoint(context, (status) => {
+            saveStatus = status;
+            render();
+          });
+        }}
         rendererRoot={rendererRoot}
+        saveStatus={saveStatus}
         snapshot={snapshot}
         uiRuntime={uiRuntime}
       />
@@ -106,6 +122,61 @@ async function boot(rootElement: HTMLElement): Promise<void> {
     },
     { once: true }
   );
+}
+
+async function saveCheckpoint(
+  context: AbyssAppContext,
+  updateStatus: (status: string) => void
+): Promise<void> {
+  if (!context.abyss || !context.saveManager) {
+    updateStatus("Checkpoint unavailable");
+    return;
+  }
+
+  updateStatus("Saving...");
+  try {
+    const clock = context.abyss.runtime.clock.snapshot();
+    await context.saveManager.save(CHECKPOINT_SLOT_ID, {
+      runtime: {
+        seed: context.abyss.captureCheckpoint().seed,
+        clock: {
+          ticks: clock.ticks,
+          elapsed: clock.elapsed
+        }
+      },
+      metadata: {
+        label: "Abyss Delve Checkpoint",
+        description: `Room ${context.abyss.snapshot().objective.roomIndex + 1}`,
+        tags: ["abyss", "checkpoint"]
+      }
+    });
+    updateStatus(`Saved tick ${clock.ticks}`);
+  } catch (error) {
+    updateStatus(error instanceof Error ? error.message : "Save failed");
+  }
+}
+
+async function loadCheckpoint(
+  context: AbyssAppContext,
+  updateStatus: (status: string) => void
+): Promise<void> {
+  if (!context.abyss || !context.saveManager) {
+    updateStatus("Checkpoint unavailable");
+    return;
+  }
+
+  updateStatus("Loading...");
+  try {
+    const result = await context.saveManager.load(CHECKPOINT_SLOT_ID);
+    context.abyss.runtime.clock.restore({
+      elapsed: result.envelope.payload.runtime.clock.elapsed,
+      ticks: result.envelope.payload.runtime.clock.ticks,
+      running: context.abyss.runtime.isRunning()
+    });
+    updateStatus(`Loaded tick ${result.envelope.payload.runtime.clock.ticks}`);
+  } catch (error) {
+    updateStatus(error instanceof Error ? error.message : "Load failed");
+  }
 }
 
 function routeInputAction(

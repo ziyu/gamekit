@@ -33,23 +33,22 @@
 | Helmholtz   | explorer | P15.1 playable room slice 只读实现审查    | Completed | 建议复用 Driver/App Host 边界，新增长链路和 gameplay 依赖扫描       |
 | Kierkegaard | explorer | P15.2 内容模型和 DataPack 深化边界审查    | Completed | 确认当前处于中间态，指出内容拆分、引用图、runtime 迁移和测试缺口    |
 | Aristotle   | explorer | P15.3 战斗和 GAS 深化边界审查             | Completed | 指出 ability 自伤、返回值缺失、cooldown 时间源和 GAS/World 同步风险 |
+| Dalton      | explorer | P15.4 房间推进和 Save checkpoint 边界审查 | Completed | 指出需先抽 room enter/restore helper，并用 app-local contributor    |
 
 后续每个实现任务应至少有一个子 Agent 参与实现、审查或验证。子 Agent 的写入范围必须和主线任务错开，避免互相覆盖。
 
 ## 任务拆分总览
 
-| ID     | 任务                         | 产出                                                              | 状态      | 提交    |
-| ------ | ---------------------------- | ----------------------------------------------------------------- | --------- | ------- |
-| P15.0  | Phase 15 设计落地与任务拆分  | 应用设计、阶段路线、实现文档                                      | Completed | 5fe749c |
-| P15.1  | Playable Room Vertical Slice | 可玩的第一房间：移动、攻击、敌人、掉落、奖励、HUD、DevTools trace | Completed | 4c76049 |
-| P15.2  | 内容模型扩展和 DataPack 深化 | 更多 hero/enemy/room/loot/reward 内容，引用图和内容验证           | Completed | c36da17 |
-| P15.3  | 战斗和 GAS 深化              | 技能成本、冷却、buff/debuff、更多 cue、actor inspector            | Completed | 4872c4a |
-| P15.4  | 房间推进和 Save checkpoint   | 多房间推进、run checkpoint、meta progression、load 恢复           | Planned   | -       |
-| P15.5  | 表现质量和 Camera            | 更完整复合 RenderObject、camera follow/lookahead/shake            | Planned   | -       |
-| P15.6  | DevTools 和长链路验收        | input -> damage -> death -> loot -> reward trace、browser smoke   | Planned   | -       |
-| P15.7  | 阶段收口审查                 | 完整验证、合理性检查、质量检查、文档状态更新                      | Planned   | -       |
-| P15.12 | 长链路测试与浏览器 smoke     | headless scenarios、browser smoke、边界检查                       | Planned   | -       |
-| P15.13 | 阶段收口审查                 | 完整验证、合理性检查、质量检查、文档状态更新                      | Planned   | -       |
+| ID    | 任务                         | 产出                                                              | 状态      | 提交    |
+| ----- | ---------------------------- | ----------------------------------------------------------------- | --------- | ------- |
+| P15.0 | Phase 15 设计落地与任务拆分  | 应用设计、阶段路线、实现文档                                      | Completed | 5fe749c |
+| P15.1 | Playable Room Vertical Slice | 可玩的第一房间：移动、攻击、敌人、掉落、奖励、HUD、DevTools trace | Completed | 4c76049 |
+| P15.2 | 内容模型扩展和 DataPack 深化 | 更多 hero/enemy/room/loot/reward 内容，引用图和内容验证           | Completed | c36da17 |
+| P15.3 | 战斗和 GAS 深化              | 技能成本、冷却、buff/debuff、更多 cue、actor inspector            | Completed | 4872c4a |
+| P15.4 | 房间推进和 Save checkpoint   | 多房间推进、run checkpoint、meta progression、load 恢复           | Completed | 待提交  |
+| P15.5 | 表现质量和 Camera            | 更完整复合 RenderObject、camera follow/lookahead/shake            | Planned   | -       |
+| P15.6 | DevTools 和长链路验收        | input -> damage -> death -> loot -> reward trace、browser smoke   | Planned   | -       |
+| P15.7 | 阶段收口审查                 | 完整验证、合理性检查、质量检查、文档状态更新                      | Planned   | -       |
 
 ## 垂直链路执行顺序
 
@@ -259,7 +258,54 @@ c36da17
 
 实现提交：`4872c4a`。
 
-## P15.4：玩家控制与相机
+## P15.4：房间推进和 Save checkpoint
+
+### 当前任务实现计划
+
+本任务把 P15.1-P15.3 的单房间垂直切片推进成可以保存和恢复的 run checkpoint。目标不是做完整 roguelike 地牢生成，而是验证 room progression、run state、GameRuntime clock、GAS actor state 和 Save contributor 能稳定协作。
+
+实现任务：
+
+1. 梳理 room progression。
+   - 当前 `room.bootstrap` 清理后可以选择奖励。
+   - 奖励选择后进入下一房间占位或下一 combat room placeholder，而不是停在 completed 状态。
+   - `AbyssRunState` 记录 run id、room index、current room id、completed rooms、selected rewards 和 checkpoint version。
+2. 增加 Save contributor。
+   - 保存 `runtime.clock` 的 ticks / elapsed，符合 `docs/modules/save.md` 中普通 progress save 的时间线要求。
+   - 保存 gameplay checkpoint：seed、room index、activeRoomId、run gold、recent loot、selected rewards、player attributes、GAS actor state 的最小可恢复投影。
+   - 不保存 UI 打开状态、input momentary state、DevTools state、renderer handles、floating text、particles 或 presentation handles。
+3. 增加 restore bridge。
+   - load 后能把 checkpoint 应用到新的 Abyss runtime。
+   - 恢复后继续 tick，clock 从保存点继续递增。
+   - 恢复 UI 默认关闭 inventory / pause，不保留 transient modal 状态；reward 是否显示由 gameplay phase 派生，不直接保存 UI flag。
+4. 增加 UI 交互。
+   - 游戏 HUD 或暂停/背包低频区域提供 `Save Checkpoint` 和 `Load Checkpoint`。
+   - 保存/加载状态展示低频结果，不打断 gameplay 主视觉。
+5. 测试和验收。
+   - headless 测试覆盖 save -> recreate runtime -> load -> continue tick。
+   - 验证 ticks/elapsed 被恢复，selected UI state 不恢复。
+   - 验证 contributor policy 不保存 presentation/debug/ui/cache。
+   - Browser smoke 覆盖保存、刷新/新建 runtime 后加载的基础可用性。
+
+### Review 记录
+
+| 检查项                                          | 结果   | 记录                                                                           |
+| ----------------------------------------------- | ------ | ------------------------------------------------------------------------------ |
+| 子 Agent 是否参与                               | Passed | Dalton 已完成只读审查                                                          |
+| room enter / restore 是否集中管理               | Passed | 新增 `room-helpers`，room module 不再硬编码完整 spawn 流程                     |
+| reward selection 是否推进到下一房间             | Passed | `abyss.reward_selected` 应用奖励后进入 `room.elite-preview`                    |
+| Save contributor 是否 app-local 且可组合        | Passed | 新增 `abyss.run_checkpoint` contributor，并在 Abyss web profile 注册           |
+| checkpoint 是否包含 runtime clock 和 gameplay   | Passed | 保存 ticks/elapsed、room/run/player/enemy/loot/GAS 最小投影                    |
+| checkpoint 是否排除 UI/renderer/debug transient | Passed | 测试断言 payload 不包含 objectId、held、paused、inventoryOpen                  |
+| load 后是否可重建 runtime 并继续 tick           | Passed | `abyss-save-checkpoint.test.ts` 覆盖 save -> recreate -> load -> continue tick |
+| Browser smoke 是否通过                          | Passed | 页面可见 canvas，暂停面板可见 Save/Load Checkpoint，点击 save/load 无页面错误  |
+| test/build/lint/format 是否通过                 | Passed | `test`、`build`、`lint`、`format` 均已通过                                     |
+
+### 提交记录
+
+待提交。
+
+## P15.5：表现质量和 Camera
 
 ### 当前任务实现计划
 
@@ -267,15 +313,11 @@ c36da17
 
 预期覆盖：
 
-- WASD movement。
-- mouse aim。
-- left click basic attack。
-- right click secondary skill。
-- number skills。
-- space dodge。
-- E pickup/interact。
-- camera follow player + lookahead + shake。
-- UI/DevTools focus scope gate。
+- 更完整复合 RenderObject。
+- player / monster / loot / room 表现强化。
+- camera follow player + lookahead。
+- hit / heavy attack shake。
+- zoom / screen-world conversion 验证。
 
 ### Review 记录
 
@@ -285,7 +327,7 @@ c36da17
 
 待实现。
 
-## P15.5：GAS 战斗链路
+## P15.6：DevTools 和长链路验收
 
 ### 当前任务实现计划
 
@@ -293,11 +335,10 @@ c36da17
 
 预期覆盖：
 
-- player basic attack。
-- fireball 或等价远程技能。
-- dash slash 或等价位移技能。
-- damage/heal/dot/slow/stun/shield effects。
-- cue trace 和 renderer presentation event。
+- input -> ability -> damage -> death -> loot -> pickup -> reward -> save trace。
+- Actor、Room、Loot、Save、Performance 面板能解释游戏链路。
+- DevTools 默认折叠，只 pin 关键性能指标。
+- headless scenarios 和 browser smoke 都有明确证据。
 
 ### Review 记录
 
@@ -307,175 +348,7 @@ c36da17
 
 待实现。
 
-## P15.6：怪物 AI 与房间波次
-
-### 当前任务实现计划
-
-待实现。
-
-预期覆盖：
-
-- 3 类普通怪物行为差异。
-- 1 个 elite/boss。
-- wave profile spawn。
-- aggro、chase、attack telegraph、death。
-- room completion condition。
-
-### Review 记录
-
-待实现。
-
-### 提交记录
-
-待实现。
-
-## P15.7：TCA 掉落与奖励循环
-
-### 当前任务实现计划
-
-待实现。
-
-预期链路：
-
-- actor.died -> loot roll。
-- loot.picked -> currency/item/equipment state。
-- room.completed -> reward choices。
-- reward.selected -> blessing/effect 应用。
-- DevTools 可解释 loot table、roll、affix、effect。
-
-### Review 记录
-
-待实现。
-
-### 提交记录
-
-待实现。
-
-## P15.8：Renderer 表现垂直切片
-
-### 当前任务实现计划
-
-待实现。
-
-预期表现：
-
-- player body / weapon / shadow / aim indicator / status ring。
-- monster body / health bar / elite outline / telegraph。
-- projectile travel / impact。
-- loot beam / rarity color / pickup pulse。
-- room floor / wall / gate / spawn marker。
-
-### Review 记录
-
-待实现。
-
-### 提交记录
-
-待实现。
-
-## P15.9：React UI 游戏壳
-
-### 当前任务实现计划
-
-待实现。
-
-预期 UI：
-
-- HUD。
-- skill bar。
-- loot pickup prompt。
-- reward choice modal。
-- inventory / equipment panel。
-- run map / room progress。
-- pause menu。
-- run summary。
-
-### Review 记录
-
-待实现。
-
-### 提交记录
-
-待实现。
-
-## P15.10：Save / Load 集成
-
-### 当前任务实现计划
-
-待实现。
-
-预期保存：
-
-- meta progression。
-- run checkpoint。
-- seed、room state、player state、equipment、inventory、blessings。
-
-不保存：
-
-- renderer handles。
-- React component state。
-- transient input state。
-- particles/floating text。
-- DevTools tab/pin state。
-
-### Review 记录
-
-待实现。
-
-### 提交记录
-
-待实现。
-
-## P15.11：DevTools 集成
-
-### 当前任务实现计划
-
-待实现。
-
-预期 source / panel：
-
-- Actor detail。
-- Room state。
-- Loot roll。
-- Inventory/equipment。
-- Run checkpoint。
-- TCA/GAS trace。
-- Performance profiler。
-
-### Review 记录
-
-待实现。
-
-### 提交记录
-
-待实现。
-
-## P15.12：长链路测试与浏览器 smoke
-
-### 当前任务实现计划
-
-待实现。
-
-预期测试：
-
-- boot chain。
-- combat chain。
-- loot chain。
-- room chain。
-- save chain。
-- devtools chain。
-- focus/input boundary。
-- content reference boundary。
-
-### Review 记录
-
-待实现。
-
-### 提交记录
-
-待实现。
-
-## P15.13：阶段收口审查
+## P15.7：阶段收口审查
 
 ### 当前任务实现计划
 
