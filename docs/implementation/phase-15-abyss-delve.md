@@ -41,7 +41,7 @@
 | ------ | ---------------------------- | ----------------------------------------------------------------- | --------- | ------- |
 | P15.0  | Phase 15 设计落地与任务拆分  | 应用设计、阶段路线、实现文档                                      | Completed | 5fe749c |
 | P15.1  | Playable Room Vertical Slice | 可玩的第一房间：移动、攻击、敌人、掉落、奖励、HUD、DevTools trace | Completed | 4c76049 |
-| P15.2  | 内容模型扩展和 DataPack 深化 | 更多 hero/enemy/room/loot/reward 内容，引用图和内容验证           | Completed | e55ab34 |
+| P15.2  | 内容模型扩展和 DataPack 深化 | 更多 hero/enemy/room/loot/reward 内容，引用图和内容验证           | Completed | c36da17 |
 | P15.3  | 战斗和 GAS 深化              | 技能成本、冷却、buff/debuff、更多 cue、actor inspector            | Planned   | -       |
 | P15.4  | 房间推进和 Save checkpoint   | 多房间推进、run checkpoint、meta progression、load 恢复           | Planned   | -       |
 | P15.5  | 表现质量和 Camera            | 更完整复合 RenderObject、camera follow/lookahead/shake            | Planned   | -       |
@@ -212,7 +212,7 @@ Phase 15 不按“先完整战斗、再补数据、最后补工具”的方式�
 
 ### 提交记录
 
-e55ab34
+c36da17
 
 ## P15.3：World 组件与基础运行时模块
 
