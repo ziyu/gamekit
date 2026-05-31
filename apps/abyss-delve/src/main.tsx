@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { ABYSS_ACTION, applyAbyssInputAction } from "./app-input";
 import { abyssAppDefinition } from "./app-definition";
 import { createAbyssWebProfile, type AbyssAppContext } from "./app-profile";
+import { createAbyssDevToolsTraceBridge } from "./devtools/abyss-devtools";
 import { AbyssApp } from "./ui/AbyssApp";
 
 const CHECKPOINT_SLOT_ID = "checkpoint";
@@ -39,9 +40,11 @@ async function boot(rootElement: HTMLElement): Promise<void> {
 
   let unsubscribeInput: (() => void) | undefined;
   let saveStatus: string | undefined;
+  const devtoolsTraceBridge = createAbyssDevToolsTraceBridge(() => context.devtools);
 
   const render = (sync = false) => {
     const snapshot = context.abyss?.snapshot();
+    devtoolsTraceBridge.sync(snapshot);
     context.inputBlocked =
       snapshot?.rewardOpen === true ||
       snapshot?.player.inventoryOpen === true ||
@@ -135,10 +138,11 @@ async function saveCheckpoint(
 
   updateStatus("Saving...");
   try {
+    const checkpoint = context.abyss.captureCheckpoint();
     const clock = context.abyss.runtime.clock.snapshot();
     await context.saveManager.save(CHECKPOINT_SLOT_ID, {
       runtime: {
-        seed: context.abyss.captureCheckpoint().seed,
+        seed: checkpoint.seed,
         clock: {
           ticks: clock.ticks,
           elapsed: clock.elapsed
@@ -148,6 +152,17 @@ async function saveCheckpoint(
         label: "Abyss Delve Checkpoint",
         description: `Room ${context.abyss.snapshot().objective.roomIndex + 1}`,
         tags: ["abyss", "checkpoint"]
+      }
+    });
+    context.abyss.trace({
+      kind: "save",
+      label: "checkpoint saved",
+      payload: {
+        roomId: checkpoint.currentRoomId,
+        roomIndex: checkpoint.roomIndex,
+        gold: checkpoint.gold,
+        ticks: clock.ticks,
+        elapsed: clock.elapsed
       }
     });
     updateStatus(`Saved tick ${clock.ticks}`);
@@ -172,6 +187,14 @@ async function loadCheckpoint(
       elapsed: result.envelope.payload.runtime.clock.elapsed,
       ticks: result.envelope.payload.runtime.clock.ticks,
       running: context.abyss.runtime.isRunning()
+    });
+    context.abyss.trace({
+      kind: "save",
+      label: "checkpoint loaded",
+      payload: {
+        ticks: result.envelope.payload.runtime.clock.ticks,
+        elapsed: result.envelope.payload.runtime.clock.elapsed
+      }
     });
     updateStatus(`Loaded tick ${result.envelope.payload.runtime.clock.ticks}`);
   } catch (error) {

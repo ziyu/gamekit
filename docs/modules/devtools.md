@@ -647,7 +647,7 @@ export type DevToolsPanelDefinition = {
 };
 ```
 
-Core 只定义 panel metadata 和数据源关系；`@gamekit/devtools-ui` 提供默认面板组件。具体游戏或 Editor 可以注册自定义面板，但自定义面板仍应通过 DevToolsRuntime 读取数据，不直接抓模块私有对象。
+Core 只定义 panel metadata 和数据源关系；`@gamekit/devtools-ui` 提供默认面板组件。具体游戏或 Editor 可以注册自定义面板，并在挂载 DevTools UI 时传入自定义 panel renderer；自定义面板仍应通过 DevToolsRuntime snapshot / data source / trace 读取数据，不直接抓模块私有对象。
 
 ## MVP 面板
 
@@ -753,7 +753,7 @@ DevTools UI 由 `@gamekit/devtools-ui` 提供，并复用 `ui-core` / `react-ui`
 - DevTools 面板使用稳定 snapshot 和 selector，不订阅每帧大对象。
 - `@gamekit/react-ui` 只提供通用 UI 基础设施，不内置 DevTools 专用面板。
 - `@gamekit/devtools-ui` 提供默认 DevTools launcher、shell 和标准面板。
-- 具体游戏可以注册自定义 DevTools 面板，但面板仍通过 DevToolsRuntime 读取数据。
+- 具体游戏可以注册自定义 DevTools 面板，并把 app-local renderer 传给 DevTools shell / overlay；面板仍通过 DevToolsRuntime 读取数据，不 import gameplay 私有 runtime 或 native renderer。
 
 DevTools 面板应支持：
 

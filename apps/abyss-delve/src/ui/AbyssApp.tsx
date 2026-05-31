@@ -3,6 +3,7 @@ import type { DevToolsRuntime } from "@gamekit/devtools";
 import type { UiRuntime } from "@gamekit/ui-core";
 import { useCallback } from "react";
 import type { AbyssSnapshot } from "../game";
+import { renderAbyssDevToolsPanel } from "./devtools/AbyssDevToolsPanel";
 
 export type AbyssAppProps = {
   snapshot: AbyssSnapshot | undefined;
@@ -95,6 +96,7 @@ export function AbyssApp({
       {devtools ? (
         <DevToolsOverlay
           pins={{ enabled: true, area: "floating", refreshIntervalMs: 250 }}
+          renderPanel={renderAbyssDevToolsPanel}
           runtime={devtools}
           uiRuntime={uiRuntime}
         />

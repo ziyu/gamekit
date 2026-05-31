@@ -6,6 +6,7 @@ import { createUiRuntime } from "@gamekit/ui-core";
 import {
   createDevToolsUiBridge,
   DevToolsLauncher,
+  DevToolsOverlay,
   DevToolsPinDock,
   DevToolsShell,
   renderStandardPinnedDevToolsPanel,
@@ -80,6 +81,23 @@ describe("@gamekit/devtools-ui", () => {
     expect(html).toContain("Resize DevTools left");
     expect(html).toContain("Resize DevTools top");
     expect(html).toContain("Resize DevTools top-left");
+  });
+
+  it("lets apps provide custom panel rendering through the overlay", () => {
+    const devtools = createDevToolsRuntime();
+    const ui = createUiRuntime();
+    devtools.registerPanel({ id: "app.chain", label: "App Chain" });
+    createDevToolsUiBridge({ devtools, ui }).openShell("app.chain");
+
+    const html = renderToStaticMarkup(
+      createElement(DevToolsOverlay, {
+        runtime: devtools,
+        uiRuntime: ui,
+        renderPanel: () => createElement("section", null, "Custom Chain Panel")
+      })
+    );
+
+    expect(html).toContain("Custom Chain Panel");
   });
 
   it("renders App Host standard panels with matching source snapshots and traces", () => {

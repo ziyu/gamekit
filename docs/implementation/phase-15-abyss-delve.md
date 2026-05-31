@@ -35,6 +35,7 @@
 | Aristotle   | explorer | P15.3 战斗和 GAS 深化边界审查             | Completed | 指出 ability 自伤、返回值缺失、cooldown 时间源和 GAS/World 同步风险 |
 | Dalton      | explorer | P15.4 房间推进和 Save checkpoint 边界审查 | Completed | 指出需先抽 room enter/restore helper，并用 app-local contributor    |
 | Leibniz     | explorer | P15.5 renderer/camera 边界审查            | Completed | 指出 pointer aim、Phaser camera sync、shake/save 边界和测试缺口     |
+| Ptolemy     | explorer | P15.6 DevTools 长链路验收审查             | Completed | 指出 DevTools 缺少 Abyss 专属链路面板、trace bridge 和 save 证据    |
 
 后续每个实现任务应至少有一个子 Agent 参与实现、审查或验证。子 Agent 的写入范围必须和主线任务错开，避免互相覆盖。
 
@@ -48,7 +49,7 @@
 | P15.3 | 战斗和 GAS 深化              | 技能成本、冷却、buff/debuff、更多 cue、actor inspector            | Completed | 4872c4a |
 | P15.4 | 房间推进和 Save checkpoint   | 多房间推进、run checkpoint、meta progression、load 恢复           | Completed | 8e5c56e |
 | P15.5 | 表现质量和 Camera            | 更完整复合 RenderObject、camera follow/lookahead/shake            | Completed | 64108d1 |
-| P15.6 | DevTools 和长链路验收        | input -> damage -> death -> loot -> reward trace、browser smoke   | Planned   | -       |
+| P15.6 | DevTools 和长链路验收        | input -> damage -> death -> loot -> reward trace、browser smoke   | Completed | 待提交  |
 | P15.7 | 阶段收口审查                 | 完整验证、合理性检查、质量检查、文档状态更新                      | Planned   | -       |
 
 ## 垂直链路执行顺序
@@ -363,22 +364,56 @@ Leibniz 只读审查指出：
 
 ### 当前任务实现计划
 
-待实现。
+本任务不继续扩玩法，而是证明 Abyss Delve 作为真实游戏验证应用能被 DevTools 解释：玩家行为、GAS/TCA、World 状态、掉落、奖励和 Save checkpoint 应该能在同一条链路中被测试和观察。
 
-预期覆盖：
+任务拆分：
 
-- input -> ability -> damage -> death -> loot -> pickup -> reward -> save trace。
-- Actor、Room、Loot、Save、Performance 面板能解释游戏链路。
-- DevTools 默认折叠，只 pin 关键性能指标。
-- headless scenarios 和 browser smoke 都有明确证据。
+1. DevTools app bridge
+   - `@gamekit/devtools-ui` 的 overlay 支持 app 传入自定义完整面板 renderer。
+   - Abyss profile 注册 `abyss.chain` 面板和 `abyss` custom source。
+   - Abyss app 层把 `AbyssSnapshot.timeline` 同步成 DevTools traces；game module 不 import DevTools UI。
+
+2. Abyss Chain 面板
+   - 面板从 DevTools source snapshot 读取 `AbyssSnapshot`。
+   - 用结构化视图展示 Input、Ability、Damage、Death、Loot、Reward、Save 七段链路。
+   - 展示 run state、player actor inspector、GAS/TCA trace count、checkpoint/reward 摘要，不使用 JSON dump。
+
+3. Save 链路证据
+   - Save checkpoint 成功后写入 app-local `save` timeline entry。
+   - 长链路测试在选择奖励后保存，并验证 checkpoint section、clock、gold、selected reward 与 transient 排除策略。
+
+4. 验证
+   - Headless DevTools chain test 覆盖 real InputRouter action -> combat -> loot -> reward -> save。
+   - DevTools UI test 覆盖 Overlay custom panel renderer。
+   - Browser smoke 覆盖 canvas、HUD、DevTools pin 和 Abyss chain panel 可打开。
 
 ### Review 记录
 
-待实现。
+Ptolemy 只读审查指出：
+
+- 现有 long-chain test 覆盖 gameplay，但没有证明 DevTools 自己能解释链路。
+- Abyss timeline 没有桥接到 `DevToolsRuntime` traces。
+- `abyss` custom source 已注册，但缺少 app-specific panel metadata 和 renderer。
+- Save 单独测试已存在，但不是同一条 input -> reward -> save 长链路的一部分。
+- DevTools 自定义面板应留在 app/tooling 层，不能让 gameplay import React、DOM、Phaser 或 DevTools UI。
+
+本轮实现已按这些意见调整。
+
+### 验收证据
+
+| 检查项                                   | 状态   | 证据                                                                                               |
+| ---------------------------------------- | ------ | -------------------------------------------------------------------------------------------------- |
+| Abyss 是否注册专属 DevTools panel/source | Passed | Profile 注册 `abyss.chain` panel 和 `abyss` custom source                                          |
+| DevTools UI 是否支持 app 自定义面板      | Passed | `devtools-ui.test.ts` 覆盖 Overlay custom panel renderer                                           |
+| 链路 trace 是否进入 DevToolsRuntime      | Passed | `createAbyssDevToolsTraceBridge` 同步 timeline 到 DevTools traces                                  |
+| Save 是否纳入同一条长链路                | Passed | `abyss-devtools-chain.test.ts` 在 reward 后 save 并验证 checkpoint                                 |
+| 面板是否避免 JSON dump                   | Passed | Abyss Chain 面板使用阶段卡、run state、actor/rule/timeline 结构化 UI                               |
+| gameplay 边界是否保持干净                | Passed | DevTools bridge / panel 位于 `src/devtools` 和 `src/ui`，不在 `src/game`                           |
+| Browser smoke 是否通过                   | Passed | 本地页面可见 HUD / objective / Performance pin；DevTools 可打开 `Abyss Chain` 面板且控制台无 error |
 
 ### 提交记录
 
-待实现。
+待提交。
 
 ## P15.7：阶段收口审查
 

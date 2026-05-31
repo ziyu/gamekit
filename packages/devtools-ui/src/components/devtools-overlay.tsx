@@ -5,14 +5,23 @@ import { createDevToolsUiBridge } from "../runtime/bridge";
 import { DevToolsLauncher } from "./devtools-launcher";
 import { DevToolsPinDock } from "./devtools-pin-dock";
 import { DevToolsShell } from "./devtools-shell";
+import type { DevToolsPanelRenderer, DevToolsPinnedPanelRenderer } from "../panels";
 
 export type DevToolsOverlayProps = {
   runtime: DevToolsRuntime;
   uiRuntime: UiRuntime;
   pins?: DevToolsPinsOptions | undefined;
+  renderPanel?: DevToolsPanelRenderer | undefined;
+  renderPinnedPanel?: DevToolsPinnedPanelRenderer | undefined;
 };
 
-export function DevToolsOverlay({ pins, runtime, uiRuntime }: DevToolsOverlayProps) {
+export function DevToolsOverlay({
+  pins,
+  renderPanel,
+  renderPinnedPanel,
+  runtime,
+  uiRuntime
+}: DevToolsOverlayProps) {
   const [activePanelId, setActivePanelId] = useState<string | undefined>();
   const resolvedPins = pins ?? readDefaultPins(uiRuntime);
   const uiSnapshot = useSyncExternalStore(
@@ -40,6 +49,7 @@ export function DevToolsOverlay({ pins, runtime, uiRuntime }: DevToolsOverlayPro
       <DevToolsPinDock
         onOpenPanel={openPanel}
         pins={resolvedPins}
+        renderPinnedPanel={renderPinnedPanel}
         runtime={runtime}
         uiRuntime={uiRuntime}
       />
@@ -47,6 +57,7 @@ export function DevToolsOverlay({ pins, runtime, uiRuntime }: DevToolsOverlayPro
         <DevToolsShell
           activePanelId={activePanelId ?? readActivePanelId(shellPanel.props)}
           onActivePanelChange={setActivePanelId}
+          renderPanel={renderPanel}
           runtime={runtime}
           uiRuntime={uiRuntime}
         />

@@ -373,13 +373,146 @@ kbd {
   pointer-events: auto;
 }
 
+.abyss-devtools-chain {
+  display: grid;
+  gap: 16px;
+  color: #f4efe5;
+}
+
+.abyss-devtools-chain header,
+.abyss-devtools-chain section,
+.abyss-devtools-chain__stage {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.abyss-devtools-chain header {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+}
+
+.abyss-devtools-chain header span,
+.abyss-devtools-chain h3,
+.abyss-devtools-chain dt,
+.abyss-devtools-chain__stage span,
+.abyss-devtools-chain__timeline li span {
+  color: #9aa0a6;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.abyss-devtools-chain header strong,
+.abyss-devtools-chain__stage strong,
+.abyss-devtools-chain dd,
+.abyss-devtools-chain__timeline li strong {
+  color: #fff0d1;
+  font-weight: 900;
+}
+
+.abyss-devtools-chain header em,
+.abyss-devtools-chain__stage em {
+  color: #9de6ff;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.abyss-devtools-chain__stages {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(100px, 1fr));
+  gap: 8px;
+}
+
+.abyss-devtools-chain__stage {
+  display: grid;
+  min-height: 96px;
+  align-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  opacity: 0.58;
+}
+
+.abyss-devtools-chain__stage.is-complete {
+  border-color: rgba(157, 230, 255, 0.4);
+  background: rgba(157, 230, 255, 0.08);
+  opacity: 1;
+}
+
+.abyss-devtools-chain__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.abyss-devtools-chain section {
+  padding: 14px;
+}
+
+.abyss-devtools-chain h3 {
+  margin: 0 0 10px;
+}
+
+.abyss-devtools-chain dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.abyss-devtools-chain dl div {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+}
+
+.abyss-devtools-chain dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.abyss-devtools-chain__timeline ol {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.abyss-devtools-chain__timeline li {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.abyss-devtools-chain__timeline code {
+  color: #9de6ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.abyss-devtools-muted {
+  margin: 0;
+  color: #9aa0a6;
+}
+
 @media (max-width: 780px) {
   .abyss-hud {
     grid-template-columns: 1fr;
   }
 
   .abyss-skills,
-  .abyss-reward-cards {
+  .abyss-reward-cards,
+  .abyss-devtools-chain__grid,
+  .abyss-devtools-chain__stages {
     grid-template-columns: 1fr;
   }
 }

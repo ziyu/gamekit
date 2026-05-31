@@ -79,6 +79,7 @@ export function createAbyssRuntime(options: CreateAbyssRuntimeOptions = {}): Aby
   const tcaTraceStore = options.tcaTraceStore ?? createTcaTraceStore({ limit: 80 });
   const seed = options.seed ?? ABYSS_SEED;
   let gasRuntime: GasRuntime | undefined;
+  let traceSequence = 0;
   const state: AbyssRuntimeState = {
     seed,
     world,
@@ -99,8 +100,9 @@ export function createAbyssRuntime(options: CreateAbyssRuntimeOptions = {}): Aby
       gasRuntime = runtime;
     },
     trace(entry) {
+      traceSequence += 1;
       state.timeline.unshift({
-        id: `abyss.trace.${state.timeline.length + 1}`,
+        id: `abyss.trace.${traceSequence}`,
         time: entry.time ?? Date.now(),
         ...entry
       });

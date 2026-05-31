@@ -13,6 +13,7 @@ import { createPlatformStorageSaveStore, type SaveManager } from "@gamekit/save"
 import type { UiRuntime } from "@gamekit/ui-core";
 import { createKootaWorld } from "@gamekit/world-koota";
 import { configureAbyssInputRouter } from "./app-input";
+import { ABYSS_SOURCE_ID, createAbyssDevToolsPanel } from "./devtools/abyss-devtools";
 import {
   ABYSS_VIEWPORT,
   createAbyssDataRegistry,
@@ -181,7 +182,7 @@ export function createAbyssWebProfile(): AppProfile<AbyssAppContext> {
         dataSources({ context }) {
           return [
             {
-              id: "abyss",
+              id: ABYSS_SOURCE_ID,
               label: "Abyss Run",
               kind: "custom",
               snapshot() {
@@ -189,6 +190,9 @@ export function createAbyssWebProfile(): AppProfile<AbyssAppContext> {
               }
             }
           ];
+        },
+        panels() {
+          return [createAbyssDevToolsPanel()];
         }
       }
     }

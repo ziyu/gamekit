@@ -39,7 +39,7 @@ export type AbyssCameraAdapter = {
 export type AbyssTraceEntry = {
   id: string;
   time: number;
-  kind: "input" | "combat" | "gas" | "tca" | "loot" | "reward" | "runtime";
+  kind: "input" | "combat" | "gas" | "tca" | "loot" | "reward" | "runtime" | "save";
   label: string;
   actorId?: string | undefined;
   entityId?: EntityId | undefined;
