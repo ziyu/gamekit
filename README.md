@@ -22,4 +22,5 @@ corepack pnpm bench:world
 - [架构设计](./docs/architecture.md)
 - [实现原则](./docs/implementation-principles.md)
 - [最佳实践](./docs/best-practices.md)
-- [阶段路线图](./docs/development-stages.md)
+- [开发文档治理](./docs/development-governance.md)
+- [MVP 归档与常态开发入口](./docs/development-stages.md)

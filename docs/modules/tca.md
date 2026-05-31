@@ -79,14 +79,14 @@ createTcaModule({ dataRegistry, definitions, traceStore });
 createTcaTraceStore({ limit });
 ```
 
-首轮内置：
+基础内置定义：
 
 - `event.type` trigger。
 - `event.emit` action。
 
 `handlers` 是 `definitions` 的兼容命名别名；长期文档和新代码使用 `definitions`。
 
-Value Resolver 是长期能力，首轮暂不实现通用表达式语言，handler 直接解释自己的 `args`。
+Value Resolver 是长期能力。通用表达式语言不是 TCA Core 的前置条件；handler 可以直接解释自己的 `args`，也可以由 app 或工具层注册更完整的 resolver。
 
 ## Runtime / Module 边界
 

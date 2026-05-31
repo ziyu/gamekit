@@ -6,7 +6,9 @@
 
 - 模块最终长期设计放在本目录。
 - 跨模块依赖方向和包边界摘要放在 `../architecture.md`。
-- 阶段状态和完成定义放在 `../development-stages.md`。
+- MVP 完成范围和常态开发入口放在 `../development-stages.md`。
+- 模块相关工作流的当前状态、任务拆分和完成定义放在任务系统、PR 或 `../implementation/`。
+- 开发文档治理规则放在 `../development-governance.md`。
 - 高影响决策的历史背景放在 `../adr/`。
 - 已验证实践和性能经验放在 `../best-practices.md`。
 - 模块专属最佳实践可以放在对应模块文档的“最佳实践”段落；跨模块通用实践仍放在 `../best-practices.md`。

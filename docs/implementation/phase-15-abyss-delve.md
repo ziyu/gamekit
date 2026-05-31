@@ -1,6 +1,8 @@
 # Phase 15 实现文档：Abyss Delve 游戏验证应用
 
-本文件记录 Phase 15 的执行任务、逐任务开发流程、review 记录和验收证据。Abyss Delve 的长期应用设计见 `../apps/abyss-delve.md`；阶段路线和完成定义见 `../development-stages.md`。
+状态：Closed。
+
+本文件记录已关闭的 MVP 阶段执行任务、逐任务开发流程、review 记录和验收证据。它只作为历史执行证据保留，不再作为后续开发状态来源。Abyss Delve 的长期应用设计见 `../apps/abyss-delve.md`；MVP 完成范围和常态开发入口见 `../development-stages.md`；开发文档治理规则见 `../development-governance.md`。
 
 ## 阶段目标
 

@@ -2,7 +2,7 @@
 
 本文档负责 `apps/sandbox` 的长期演示设计。Sandbox 不是模块设计文档，也不是阶段状态文档；它描述这个验证面应该如何呈现 GameKit 各模块的协作关系。
 
-阶段计划、当前实现状态和完成定义放在 `../development-stages.md`。单个模块协议放在 `../modules/`。不要把本文档内容复制到模块文档或阶段文档中。
+MVP 完成范围和常态开发入口放在 `../development-stages.md`。具体 Sandbox 工作流状态放在任务系统、PR 或 `../implementation/`。单个模块协议放在 `../modules/`。不要把本文档内容复制到模块文档或执行记录中。
 
 ## 定位
 
@@ -212,7 +212,7 @@ Renderer Core 仍只暴露通用 RenderObject / RenderNode / RenderCommand 协�
 
 Sandbox 输入必须受 scope 管理。Gameplay 和 Camera 输入只在 game viewport scope 下生效，Inspector、Timeline、文本输入或未来 DevTools 区域不应误触发游戏操作。
 
-首轮交互语义：
+基础交互语义：
 
 - 通过 `scene.click` 选择对象或点击空白取消选中。
 - 切换选中对象。
@@ -292,7 +292,7 @@ Sandbox Save 集成原则：
 
 - SaveManager 由 App Host `services.save` 提供，Sandbox 不直接创建 store、codec 或 migration pipeline。
 - Sandbox 的 gameplay 状态通过 contributor 注册，不能让 SaveManager 直接理解 Tiny Camp 组件。
-- 首轮只保存能证明确定性恢复的长期状态：runtime seed/clock、Tiny Camp objective progress、resource/building/worker/monster 的必要 world 状态、GAS actor 的长期运行态、TCA 低频规则状态、Camera 可选状态。
+- Sandbox 只保存能证明确定性恢复的长期状态：runtime seed/clock、Tiny Camp objective progress、resource/building/worker/monster 的必要 world 状态、GAS actor 的长期运行态、TCA 低频规则状态、Camera 可选状态。
 - 不保存当前选中对象、follow target、confirm 操作上下文、renderer native handle、Phaser object、DOM/UI panel open state、Input held state、Timeline 日志、缓存、pathfinding 临时结果或可由 Data/Asset 重建的内容。
 - 玩家 confirm 产生的临时交互效果只作为当前会话反馈保存到 timeline / trace，不进入普通进度存档；如果未来某个 confirm 结果应成为长期事实，必须由 gameplay system 写入明确的长期组件或 GAS 状态。
 - Contributor 必须声明 `scope` 和 `tags`，例如 `world`、`gameplay`、`gas`、`tca`、`camera`，Sandbox profile 通过 Save contributor policy 决定默认保存范围。

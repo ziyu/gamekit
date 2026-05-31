@@ -77,7 +77,7 @@ Abyss Delve 的最小可玩规格包含：
 - render theme 和 music / ambience 引用。
 - completion condition。
 
-`music / ambience` 在当前设计中只作为资源 metadata 和未来 Audio 模块的预留引用。Phase 15 不实现音频播放系统；若后续引入 Audio，需要补充模块设计或 ADR。
+`music / ambience` 在当前设计中只作为资源 metadata 和 Audio 模块的预留引用。若引入 Audio，需要补充模块设计或 ADR。
 
 房间完成条件默认使用成熟设计：
 
@@ -107,7 +107,7 @@ Actor 长期定义来自 DataPack：
 Abyss Delve 的实时战斗需要命中、投射物、碰撞范围、障碍、攻击预警和 projectile ownership。长期边界是：
 
 - gameplay 不直接依赖 Phaser physics、Phaser Scene、DOM hit-test 或 Koota 私有 API。
-- Phase 15 使用 app-local World component、确定性数学计算和轻量空间查询实现 hit detection / projectile collision / room bounds。
+- Abyss Delve 使用 app-local World component、确定性数学计算和轻量空间查询实现 hit detection / projectile collision / room bounds。
 - collision、hitbox、hurtbox、projectile owner、pierce、lifetime、team/faction 都是 Abyss Delve app-local gameplay 数据，不进入 `@gamekit/world` 或 `@gamekit/renderer-core` 公共协议。
 - Renderer 只表现 telegraph、projectile、impact 和 hit cue，不负责战斗命中判定。
 - 如果未来引入成熟 physics/pathfinding 库，必须通过 app-local adapter、GameKit facade 或 Driver/Adapter 边界接入；影响公共边界时需要 ADR。

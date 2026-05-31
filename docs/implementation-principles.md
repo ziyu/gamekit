@@ -4,7 +4,7 @@
 
 框架核心只维护稳定协议和运行时边界。能通过成熟库完成的底层能力，应放在 adapter 中。
 
-首轮已经验证：
+已经验证的边界：
 
 - Koota 被限制在 `@gamekit/world-koota`。
 - 业务代码通过 `@gamekit/world` 访问 ECS。
@@ -67,9 +67,9 @@
 - 一个文件超过清晰阅读范围时，优先按类型、创建函数、运行时实现、adapter 私有实现拆分。
 - 测试应覆盖行为契约，而不是锁死无意义的内部实现细节。
 
-## 可解释性从第一天开始
+## 可解释性从一开始进入设计
 
-Runtime、EventBus、TCA、GAS、Asset、Save 后续都必须产生可观察信息。第一阶段先通过 sandbox event log 验证低频事件链路。
+Runtime、EventBus、TCA、GAS、Asset、Save 和 DevTools 都必须产生可观察信息。低频事实、规则匹配、能力执行、资源加载、存档操作和性能热点应能被测试或工具解释。
 
 ## 模块拆分
 

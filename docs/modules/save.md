@@ -1,6 +1,6 @@
 # Save 模块设计
 
-本文档只描述 Save / Load / Migration 的长期模块设计，不记录当前实现状态、阶段计划或 TODO。阶段范围和完成定义放在 `../development-stages.md`。
+本文档只描述 Save / Load / Migration 的长期模块设计，不记录当前实现状态、阶段计划或 TODO。具体工作流状态放在任务系统、PR 或 `../implementation/`。
 
 ## 定位
 

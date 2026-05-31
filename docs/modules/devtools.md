@@ -402,7 +402,7 @@ panels/
 - Pinned widget 不显示大型 JSON dump，不展示深层 data source tree，不提供破坏性 debug command。
 - Pinned widget 可以提供“打开 Shell 到此 panel”“暂停采样”“清空 warning”等明确调试操作；这些操作必须走 DevTools command 或 UI command，可诊断、可测试。
 - Pinned widget 的刷新和 Shell 的刷新互相独立；Shell 关闭时不应继续执行完整 panel 的 expensive render。
-- Pin dock 应支持多个 area，但首轮可以只实现 `floating` 或 `bottom-right`，只要 metadata 不锁死长期方向。
+- Pin dock 应支持多个 area；具体 UI 可以只启用部分 area，但 metadata 不能锁死长期方向。
 - Performance frame chart 必须区分 frame time 和 measured work。Frame Window / pin graph 用 `deltaMs` 表示真实帧间隔；runtime / render / ui 数值表示被 profiler 包住的工作耗时。
 
 ## Data Source
@@ -649,9 +649,9 @@ export type DevToolsPanelDefinition = {
 
 Core 只定义 panel metadata 和数据源关系；`@gamekit/devtools-ui` 提供默认面板组件。具体游戏或 Editor 可以注册自定义面板，并在挂载 DevTools UI 时传入自定义 panel renderer；自定义面板仍应通过 DevToolsRuntime snapshot / data source / trace 读取数据，不直接抓模块私有对象。
 
-## MVP 面板
+## 基础面板
 
-首轮 DevTools 应提供这些面板：
+默认 DevTools 应优先覆盖这些基础面板：
 
 - Host Services：App Host phase、services、dependencies、diagnostics。
 - Event Log：EventBus recent events、source、timestamp、payload summary。
