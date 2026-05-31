@@ -6,11 +6,15 @@
   "packageManager": "pnpm@11.1.2+sha512.415a1cc25974731e75455c1468371be74c5aa5fb7621b50d4056d222451609f11412f23fd602e6169f1e060466641f798597e1be961a10688836a67b16569499",
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev --filter=sandbox",
+    "build:game": "turbo run build --filter=abyss-delve",
+    "dev:sandbox": "turbo run dev --filter=sandbox",
+    "dev:game": "turbo run dev --filter=abyss-delve",
     "test": "turbo run test",
+    "test:game": "turbo run test --filter=abyss-delve",
     "test:unit": "turbo run test",
     "test:vitest": "turbo run test",
     "lint": "turbo run lint",
+    "lint:game": "turbo run lint --filter=abyss-delve",
     "format": "oxfmt --check .",
     "format:write": "oxfmt --write .",
     "bench:world": "tsx scripts/world-benchmark.ts"

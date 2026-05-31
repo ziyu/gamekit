@@ -31,19 +31,23 @@ export function configureAbyssInputRouter(router: InputRouter): void {
 
   register(router, ABYSS_ACTION.moveUp, "Move Up", [
     { device: "keyboard", code: "KeyW", phase: "pressed" },
-    { device: "keyboard", code: "KeyW", phase: "held" }
+    { device: "keyboard", code: "KeyW", phase: "held" },
+    { device: "keyboard", code: "KeyW", phase: "released" }
   ]);
   register(router, ABYSS_ACTION.moveDown, "Move Down", [
     { device: "keyboard", code: "KeyS", phase: "pressed" },
-    { device: "keyboard", code: "KeyS", phase: "held" }
+    { device: "keyboard", code: "KeyS", phase: "held" },
+    { device: "keyboard", code: "KeyS", phase: "released" }
   ]);
   register(router, ABYSS_ACTION.moveLeft, "Move Left", [
     { device: "keyboard", code: "KeyA", phase: "pressed" },
-    { device: "keyboard", code: "KeyA", phase: "held" }
+    { device: "keyboard", code: "KeyA", phase: "held" },
+    { device: "keyboard", code: "KeyA", phase: "released" }
   ]);
   register(router, ABYSS_ACTION.moveRight, "Move Right", [
     { device: "keyboard", code: "KeyD", phase: "pressed" },
-    { device: "keyboard", code: "KeyD", phase: "held" }
+    { device: "keyboard", code: "KeyD", phase: "held" },
+    { device: "keyboard", code: "KeyD", phase: "released" }
   ]);
   register(router, ABYSS_ACTION.aim, "Aim", [{ device: "mouse", phase: "moved" }]);
   register(router, ABYSS_ACTION.attack, "Basic Attack", [
@@ -74,7 +78,12 @@ export function configureAbyssInputRouter(router: InputRouter): void {
 }
 
 export function applyAbyssInputAction(state: AbyssInputState, event: InputActionEvent): void {
-  if (state.gameplayBlocked && isGameplayAction(event.actionId)) {
+  if (
+    state.gameplayBlocked &&
+    isGameplayAction(event.actionId) &&
+    event.phase !== "released" &&
+    event.phase !== "cancelled"
+  ) {
     return;
   }
 

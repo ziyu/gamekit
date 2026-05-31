@@ -6,7 +6,8 @@ GameKit 是面向多个独立游戏复用的 TypeScript 游戏框架实验仓库
 
 ```bash
 corepack pnpm install
-corepack pnpm dev
+corepack pnpm dev:sandbox
+corepack pnpm dev:game
 corepack pnpm test
 corepack pnpm build
 corepack pnpm lint
