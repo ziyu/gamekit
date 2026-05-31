@@ -50,7 +50,7 @@
 | P15.4 | 房间推进和 Save checkpoint   | 多房间推进、run checkpoint、meta progression、load 恢复           | Completed | 8e5c56e |
 | P15.5 | 表现质量和 Camera            | 更完整复合 RenderObject、camera follow/lookahead/shake            | Completed | 64108d1 |
 | P15.6 | DevTools 和长链路验收        | input -> damage -> death -> loot -> reward trace、browser smoke   | Completed | 06c3961 |
-| P15.7 | 阶段收口审查                 | 完整验证、合理性检查、质量检查、文档状态更新                      | Completed | 待提交  |
+| P15.7 | 阶段收口审查                 | 完整验证、合理性检查、质量检查、文档状态更新                      | Completed | 3d6ad25 |
 
 ## 垂直链路执行顺序
 
@@ -451,4 +451,4 @@ Ptolemy 只读审查指出：
 
 ### 提交记录
 
-待提交。
+实现提交：`3d6ad25`。
