@@ -47,7 +47,7 @@
 | P15.2 | 内容模型扩展和 DataPack 深化 | 更多 hero/enemy/room/loot/reward 内容，引用图和内容验证           | Completed | c36da17 |
 | P15.3 | 战斗和 GAS 深化              | 技能成本、冷却、buff/debuff、更多 cue、actor inspector            | Completed | 4872c4a |
 | P15.4 | 房间推进和 Save checkpoint   | 多房间推进、run checkpoint、meta progression、load 恢复           | Completed | 8e5c56e |
-| P15.5 | 表现质量和 Camera            | 更完整复合 RenderObject、camera follow/lookahead/shake            | In Review | -       |
+| P15.5 | 表现质量和 Camera            | 更完整复合 RenderObject、camera follow/lookahead/shake            | Completed | 64108d1 |
 | P15.6 | DevTools 和长链路验收        | input -> damage -> death -> loot -> reward trace、browser smoke   | Planned   | -       |
 | P15.7 | 阶段收口审查                 | 完整验证、合理性检查、质量检查、文档状态更新                      | Planned   | -       |
 
@@ -357,7 +357,7 @@ Leibniz 只读审查指出：
 
 ### 提交记录
 
-待提交。
+实现提交：`64108d1`。
 
 ## P15.6：DevTools 和长链路验收
 
