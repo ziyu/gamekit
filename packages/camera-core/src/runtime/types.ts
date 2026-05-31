@@ -35,6 +35,14 @@ export type CameraState2D = {
   targetEntity?: string | number;
 };
 
+export type CameraShakeImpulse = {
+  id?: string | undefined;
+  amplitude: number;
+  durationMs: number;
+  frequency?: number | undefined;
+  elapsedMs?: number | undefined;
+};
+
 export type CreateCameraControllerOptions = {
   state?: Partial<CameraState2D>;
   viewport: CameraViewport;
@@ -47,6 +55,9 @@ export type CameraController = {
   zoom(delta: number, anchor?: PointLike): void;
   follow(entity: string | number): void;
   stopFollow(): void;
+  shake(impulse: CameraShakeImpulse): void;
+  update(deltaMs: number): CameraState2D;
+  getDisplayState(): CameraState2D;
   worldToScreen(point: PointLike): PointLike;
   screenToWorld(point: PointLike): PointLike;
 };

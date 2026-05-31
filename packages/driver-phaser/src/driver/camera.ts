@@ -35,8 +35,8 @@ export function createPhaserDriverCameraAdapter(options: {
   return {
     applyCameraState(nextState) {
       state = { ...nextState };
-      const scrollX = nextState.x - nextState.viewport.width / 2;
-      const scrollY = nextState.y - nextState.viewport.height / 2;
+      const scrollX = nextState.x - nextState.viewport.width / (2 * nextState.zoom);
+      const scrollY = nextState.y - nextState.viewport.height / (2 * nextState.zoom);
 
       options.runtime.setZoom(nextState.zoom);
       options.runtime.setScroll(scrollX, scrollY);

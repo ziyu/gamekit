@@ -9,6 +9,7 @@ import {
   type GasRuntime
 } from "@gamekit/gas";
 import type { RendererAdapter } from "@gamekit/renderer-core";
+import type { CameraController } from "@gamekit/camera-core";
 import {
   createTcaModule,
   createTcaRuleDataType,
@@ -34,8 +35,9 @@ import {
   resetAbyssTransientState
 } from "./save/checkpoint";
 import { appendEvent, attachRuntimeSnapshot, createAbyssSnapshot } from "./snapshot";
-import type { AbyssRewardChoice, AbyssRuntime } from "./types";
+import type { AbyssCameraAdapter, AbyssRewardChoice, AbyssRuntime } from "./types";
 import { createAbyssTcaDefinitions } from "./modules/abyss-tca-definitions";
+import { createAbyssCameraModule } from "./modules/camera-module";
 import { createAbyssCombatModule } from "./modules/combat-module";
 import { createAbyssEnemyAiModule } from "./modules/enemy-ai-module";
 import { createAbyssInputResetModule } from "./modules/input-reset-module";
@@ -46,6 +48,8 @@ import { createAbyssRoomModule } from "./modules/room-module";
 
 export type CreateAbyssRuntimeOptions = {
   renderer?: RendererAdapter | undefined;
+  camera?: CameraController | undefined;
+  cameraAdapter?: AbyssCameraAdapter | undefined;
   dataRegistry?: DataRegistry | undefined;
   world?: GameWorld | undefined;
   eventBus?: EventBus | undefined;
@@ -81,6 +85,8 @@ export function createAbyssRuntime(options: CreateAbyssRuntimeOptions = {}): Aby
     dataRegistry,
     eventBus,
     renderer: options.renderer,
+    camera: options.camera,
+    cameraAdapter: options.cameraAdapter,
     input: createAbyssInputState(),
     run: createAbyssRunState(createRewardChoices(dataRegistry)),
     events: [],
@@ -140,6 +146,7 @@ export function createAbyssRuntime(options: CreateAbyssRuntimeOptions = {}): Aby
         createGasTcaDefinitions({ runtime: () => gasRuntime })
       )
     }),
+    createAbyssCameraModule(state),
     createAbyssRoomModule(state),
     createAbyssPlayerControlModule(state),
     createAbyssEnemyAiModule(state),
@@ -171,6 +178,9 @@ export function createAbyssRuntime(options: CreateAbyssRuntimeOptions = {}): Aby
     gasTraceStore,
     input: state.input,
     run: state.run,
+    screenToWorld(point) {
+      return state.camera?.screenToWorld(point) ?? point;
+    },
     trace: state.trace,
     captureCheckpoint() {
       return captureAbyssCheckpoint(state);

@@ -48,6 +48,9 @@ importers:
       '@gamekit/asset':
         specifier: workspace:*
         version: link:../../packages/asset
+      '@gamekit/camera-core':
+        specifier: workspace:*
+        version: link:../../packages/camera-core
       '@gamekit/core':
         specifier: workspace:*
         version: link:../../packages/core

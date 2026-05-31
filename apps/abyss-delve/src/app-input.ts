@@ -15,6 +15,7 @@ export const ABYSS_ACTION = {
   skillSecondary: "abyss.skill.secondary",
   dodge: "abyss.dodge",
   interact: "abyss.interact",
+  cameraZoom: "abyss.camera.zoom",
   inventory: "abyss.inventory.toggle",
   pause: "abyss.pause.toggle"
 } as const;
@@ -59,6 +60,9 @@ export function configureAbyssInputRouter(router: InputRouter): void {
   ]);
   register(router, ABYSS_ACTION.interact, "Interact", [
     { device: "keyboard", code: "KeyE", phase: "pressed" }
+  ]);
+  register(router, ABYSS_ACTION.cameraZoom, "Camera Zoom", [
+    { device: "mouse", phase: "scrolled" }
   ]);
   register(router, ABYSS_ACTION.inventory, "Inventory", [
     { device: "keyboard", code: "KeyI", phase: "pressed" },
@@ -117,6 +121,12 @@ export function applyAbyssInputAction(state: AbyssInputState, event: InputAction
   }
   if (event.actionId === ABYSS_ACTION.interact) {
     state.interactRequested = true;
+    return;
+  }
+  if (event.actionId === ABYSS_ACTION.cameraZoom) {
+    state.cameraZoomDelta = event.input.wheelDelta ?? 0;
+    state.cameraZoomX = event.input.x;
+    state.cameraZoomY = event.input.y;
     return;
   }
   if (event.actionId === ABYSS_ACTION.inventory) {

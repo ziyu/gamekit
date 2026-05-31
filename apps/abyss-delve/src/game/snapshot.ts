@@ -28,6 +28,7 @@ export function createAbyssSnapshot(state: AbyssRuntimeState): AbyssSnapshot {
     (entity) => state.world.get(entity, Actor)?.alive === true
   ).length;
 
+  const camera = createCameraSnapshot(state);
   const snapshot: AbyssSnapshot = {
     running: false,
     clock: emptyClock(),
@@ -66,11 +67,31 @@ export function createAbyssSnapshot(state: AbyssRuntimeState): AbyssSnapshot {
     gasTraces: state.gasTraceStore.list(),
     tcaTraces: state.tcaTraceStore.list()
   };
+  if (camera) {
+    snapshot.camera = camera;
+  }
   const pickupPrompt = createPickupPrompt(state);
   if (pickupPrompt) {
     snapshot.pickupPrompt = pickupPrompt;
   }
   return snapshot;
+}
+
+function createCameraSnapshot(state: AbyssRuntimeState): AbyssSnapshot["camera"] {
+  const camera = state.camera;
+  if (!camera) {
+    return undefined;
+  }
+  const target = camera.getState();
+  const display = camera.getDisplayState();
+  return {
+    x: target.x,
+    y: target.y,
+    zoom: display.zoom,
+    displayX: display.x,
+    displayY: display.y,
+    mode: target.mode
+  };
 }
 
 function createContentSummary(state: AbyssRuntimeState): AbyssContentSummary {

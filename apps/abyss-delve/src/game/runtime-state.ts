@@ -1,10 +1,17 @@
 import type { DataRegistry } from "@gamekit/data";
 import type { EventBus, GameEvent } from "@gamekit/event-bus";
 import type { GasRuntime, GasTraceStore } from "@gamekit/gas";
+import type { CameraController } from "@gamekit/camera-core";
 import type { RendererAdapter } from "@gamekit/renderer-core";
 import type { TcaTraceStore } from "@gamekit/tca";
 import type { EntityId, GameWorld } from "@gamekit/world";
-import type { AbyssInputState, AbyssRewardChoice, AbyssRunState, AbyssTraceEntry } from "./types";
+import type {
+  AbyssCameraAdapter,
+  AbyssInputState,
+  AbyssRewardChoice,
+  AbyssRunState,
+  AbyssTraceEntry
+} from "./types";
 
 export type AbyssRuntimeState = {
   seed: string;
@@ -12,6 +19,8 @@ export type AbyssRuntimeState = {
   dataRegistry: DataRegistry;
   eventBus: EventBus;
   renderer?: RendererAdapter | undefined;
+  camera?: CameraController | undefined;
+  cameraAdapter?: AbyssCameraAdapter | undefined;
   input: AbyssInputState;
   run: AbyssRunState;
   events: GameEvent[];
@@ -55,6 +64,9 @@ export function consumeMomentaryInput(input: AbyssInputState): void {
   input.inventoryToggleRequested = false;
   input.pauseToggleRequested = false;
   input.rewardChoiceRequested = undefined;
+  input.cameraZoomDelta = undefined;
+  input.cameraZoomX = undefined;
+  input.cameraZoomY = undefined;
 }
 
 export function addRecentLoot(run: AbyssRunState, label: string): void {

@@ -5,7 +5,7 @@ import type { InputActionEvent } from "@gamekit/input-core";
 import { createUiRuntime } from "@gamekit/ui-core";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { applyAbyssInputAction } from "./app-input";
+import { ABYSS_ACTION, applyAbyssInputAction } from "./app-input";
 import { abyssAppDefinition } from "./app-definition";
 import { createAbyssWebProfile, type AbyssAppContext } from "./app-profile";
 import { AbyssApp } from "./ui/AbyssApp";
@@ -188,7 +188,7 @@ function routeInputAction(
     return;
   }
 
-  applyAbyssInputAction(context.abyss.input, event);
+  applyAbyssInputAction(context.abyss.input, toAbyssGameInput(context, event));
   if (event.input.scope === "game") {
     uiRuntime.setFocus({ scope: "game", reason: event.actionId });
   }
@@ -197,6 +197,30 @@ function routeInputAction(
     label: event.actionId,
     payload: { phase: event.phase }
   });
+}
+
+function toAbyssGameInput(context: AbyssAppContext, event: InputActionEvent): InputActionEvent {
+  if (
+    event.actionId !== ABYSS_ACTION.aim ||
+    event.input.x === undefined ||
+    event.input.y === undefined
+  ) {
+    return event;
+  }
+
+  const world = context.abyss?.screenToWorld({ x: event.input.x, y: event.input.y });
+  if (!world) {
+    return event;
+  }
+
+  return {
+    ...event,
+    input: {
+      ...event.input,
+      x: world.x,
+      y: world.y
+    }
+  };
 }
 
 async function waitForRendererRoot(rendererRoot: HTMLElement): Promise<void> {

@@ -1,10 +1,21 @@
 import { createMemoryRenderer } from "@gamekit/test-utils";
+import { createCameraController, type CameraState2D } from "@gamekit/camera-core";
 import type { EntityId } from "@gamekit/world";
 import { createKootaWorld } from "@gamekit/world-koota";
-import { Actor, Combat, Loot, Position, createAbyssRuntime, type AbyssRuntime } from "../game";
+import {
+  ABYSS_VIEWPORT,
+  Actor,
+  Combat,
+  Loot,
+  Position,
+  createAbyssRuntime,
+  type AbyssCameraAdapter,
+  type AbyssRuntime
+} from "../game";
 
 export type AbyssTestHarness = {
   abyss: AbyssRuntime;
+  cameraStates: CameraState2D[];
   tick(delta?: number): void;
   livingEnemies(): EntityId[];
   movePlayerNear(entity: EntityId): void;
@@ -14,14 +25,32 @@ export type AbyssTestHarness = {
 };
 
 export function createAbyssTestHarness(): AbyssTestHarness {
+  const cameraStates: CameraState2D[] = [];
+  const cameraAdapter: AbyssCameraAdapter = {
+    applyCameraState(state) {
+      cameraStates.push({ ...state });
+    }
+  };
   const abyss = createAbyssRuntime({
     renderer: createMemoryRenderer("abyss.test.renderer"),
+    camera: createCameraController({
+      viewport: ABYSS_VIEWPORT,
+      state: {
+        x: ABYSS_VIEWPORT.width / 2,
+        y: ABYSS_VIEWPORT.height / 2,
+        zoom: 1,
+        minZoom: 0.85,
+        maxZoom: 1.65
+      }
+    }),
+    cameraAdapter,
     world: createKootaWorld()
   });
   abyss.runtime.start();
 
   return {
     abyss,
+    cameraStates,
     tick(delta = 500) {
       abyss.runtime.tick(delta);
     },

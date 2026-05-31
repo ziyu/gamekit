@@ -1,5 +1,6 @@
 import { createStandardAppProfile, type AppProfile } from "@gamekit/app-host";
 import { createAssetDataType } from "@gamekit/asset";
+import { createCameraController, type CameraController } from "@gamekit/camera-core";
 import type { DataTypeDefinition } from "@gamekit/data";
 import type { DataRegistry } from "@gamekit/data";
 import type { DevToolsRuntime } from "@gamekit/devtools";
@@ -32,6 +33,7 @@ export type AbyssAppContext = {
   dataRegistry?: DataRegistry | undefined;
   renderer?: RendererAdapter | undefined;
   inputRouter?: InputRouter | undefined;
+  camera?: CameraController | undefined;
   saveManager?: SaveManager | undefined;
   devtools?: DevToolsRuntime | undefined;
   abyss?: AbyssRuntime | undefined;
@@ -45,6 +47,16 @@ export function createAbyssWebProfile(): AppProfile<AbyssAppContext> {
     backgroundColor: "#111113"
   });
   const inputRouter = createInputRouter();
+  const camera = createCameraController({
+    viewport: ABYSS_VIEWPORT,
+    state: {
+      x: ABYSS_VIEWPORT.width / 2,
+      y: ABYSS_VIEWPORT.height / 2,
+      zoom: 1,
+      minZoom: 0.85,
+      maxZoom: 1.65
+    }
+  });
 
   return createStandardAppProfile({
     id: "web",
@@ -56,6 +68,7 @@ export function createAbyssWebProfile(): AppProfile<AbyssAppContext> {
       context.dataRegistry = state.data;
       context.renderer = state.renderer;
       context.inputRouter = state.input;
+      context.camera = camera;
       context.saveManager = state.save;
       context.devtools = state.devtools;
       if (state.ui) {
@@ -126,6 +139,8 @@ export function createAbyssWebProfile(): AppProfile<AbyssAppContext> {
         createRuntime({ context, state }) {
           const runtime = createAbyssRuntime({
             renderer: requireState(state.renderer, "renderer"),
+            camera,
+            cameraAdapter: phaserDriver.adapters().camera,
             dataRegistry: requireState(state.data, "data"),
             world: createKootaWorld()
           });

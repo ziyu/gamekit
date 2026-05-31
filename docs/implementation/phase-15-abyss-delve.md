@@ -34,6 +34,7 @@
 | Kierkegaard | explorer | P15.2 内容模型和 DataPack 深化边界审查    | Completed | 确认当前处于中间态，指出内容拆分、引用图、runtime 迁移和测试缺口    |
 | Aristotle   | explorer | P15.3 战斗和 GAS 深化边界审查             | Completed | 指出 ability 自伤、返回值缺失、cooldown 时间源和 GAS/World 同步风险 |
 | Dalton      | explorer | P15.4 房间推进和 Save checkpoint 边界审查 | Completed | 指出需先抽 room enter/restore helper，并用 app-local contributor    |
+| Leibniz     | explorer | P15.5 renderer/camera 边界审查            | Completed | 指出 pointer aim、Phaser camera sync、shake/save 边界和测试缺口     |
 
 后续每个实现任务应至少有一个子 Agent 参与实现、审查或验证。子 Agent 的写入范围必须和主线任务错开，避免互相覆盖。
 
@@ -46,7 +47,7 @@
 | P15.2 | 内容模型扩展和 DataPack 深化 | 更多 hero/enemy/room/loot/reward 内容，引用图和内容验证           | Completed | c36da17 |
 | P15.3 | 战斗和 GAS 深化              | 技能成本、冷却、buff/debuff、更多 cue、actor inspector            | Completed | 4872c4a |
 | P15.4 | 房间推进和 Save checkpoint   | 多房间推进、run checkpoint、meta progression、load 恢复           | Completed | 8e5c56e |
-| P15.5 | 表现质量和 Camera            | 更完整复合 RenderObject、camera follow/lookahead/shake            | Planned   | -       |
+| P15.5 | 表现质量和 Camera            | 更完整复合 RenderObject、camera follow/lookahead/shake            | In Review | -       |
 | P15.6 | DevTools 和长链路验收        | input -> damage -> death -> loot -> reward trace、browser smoke   | Planned   | -       |
 | P15.7 | 阶段收口审查                 | 完整验证、合理性检查、质量检查、文档状态更新                      | Planned   | -       |
 
@@ -309,23 +310,54 @@ c36da17
 
 ### 当前任务实现计划
 
-待实现。
+本任务把 P15.4 的可保存房间推进切片继续打磨成更像真实游戏的表现链路。核心目标不是扩玩法系统，而是让 renderer、camera、input、GAS cue 和 save 边界在真实游戏场景下成立。
 
-预期覆盖：
+任务拆分：
 
-- 更完整复合 RenderObject。
-- player / monster / loot / room 表现强化。
-- camera follow player + lookahead。
-- hit / heavy attack shake。
-- zoom / screen-world conversion 验证。
+1. Camera 边界收敛
+   - Abyss 本地 GameModule 负责 follow player、aim lookahead、combat shake 和 zoom intent 消费。
+   - App Host profile 只创建 `CameraController` 并把 Phaser Driver 的 camera adapter 作为 sync adapter 注入 runtime。
+   - 不把 camera 做成 App Host service，也不让 renderer 或 driver 直接理解 Abyss gameplay。
+
+2. 坐标和缩放修正
+   - Pointer aim 在 app bridge 中从 viewport coordinate 转为 world coordinate 后再进入 gameplay input state。
+   - 滚轮 zoom 使用 viewport anchor，camera module 在 tick 内消费，避免 UI focused 时误触发。
+   - Phaser driver camera adapter 按 `scroll = center - viewport / (2 * zoom)` 同步，避免 zoom 后右下角偏移。
+
+3. 表现强化
+   - 房间本身作为复合 RenderObject 进入场景，包括地面、墙、出口和刷怪点视觉层。
+   - 现有 player/enemy/loot/projectile/floating text 保持通过 `render.object` DataType 创建，不直接写 Phaser 对象。
+   - GAS damage cue 驱动 transient camera shake，目标 camera state 不被污染。
+
+4. 验证
+   - Camera Core 覆盖 shake display state 衰减。
+   - Driver Phaser 覆盖 zoom 下 center/scroll 映射和 screen/world roundtrip。
+   - Abyss headless 覆盖 follow/lookahead、input zoom、combat shake、save checkpoint 不包含 camera transient。
 
 ### Review 记录
 
-待实现。
+Leibniz 只读审查指出：
+
+- Abyss 原先没有真实 camera follow，pointer aim 也没有随 camera/zoom 做 viewport -> world 转换。
+- Camera 应继续作为 GameModule / toolkit 能力，driver 只提供 camera adapter sync，不应由 renderer 创建或拥有 camera runtime。
+- Combat shake、lookahead 和 follow target resolver 依赖具体游戏上下文，适合在 Abyss 本地 camera module 中组合。
+- Save checkpoint 不应保存 transient camera display state、shake impulse 或 UI/DevTools 状态。
+
+本轮实现已按这些意见调整。
+
+### 验收证据
+
+| 检查项                                 | 状态   | 证据                                                                   |
+| -------------------------------------- | ------ | ---------------------------------------------------------------------- |
+| Camera 是否不作为 App Host service     | Passed | Profile 只创建 controller 和注入 driver camera adapter                 |
+| Phaser camera zoom 映射是否修正        | Passed | `driver-phaser.test.ts` 覆盖 zoom=2 的 center/scroll roundtrip         |
+| Pointer aim 是否通过 camera 坐标转换   | Passed | `main.tsx` app bridge 调用 `abyss.screenToWorld` 后再写 gameplay input |
+| Combat shake 是否只影响 display state  | Passed | `camera-core.test.ts` 和 `abyss-camera-presentation.test.ts` 覆盖      |
+| Save 是否排除 transient camera/UI 状态 | Passed | `abyss-save-checkpoint.test.ts` 断言 checkpoint 不含 camera/UI 字段    |
 
 ### 提交记录
 
-待实现。
+待提交。
 
 ## P15.6：DevTools 和长链路验收
 

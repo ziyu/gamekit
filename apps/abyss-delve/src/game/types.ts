@@ -3,6 +3,7 @@ import type { EntityId } from "@gamekit/world";
 import type { GasRuntime, GasTraceStore } from "@gamekit/gas";
 import type { TcaTraceStore } from "@gamekit/tca";
 import type { GameEvent } from "@gamekit/event-bus";
+import type { CameraState2D, PointLike } from "@gamekit/camera-core";
 
 export type AbyssInputState = {
   moveX: number;
@@ -15,6 +16,9 @@ export type AbyssInputState = {
   };
   aimX: number;
   aimY: number;
+  cameraZoomDelta?: number | undefined;
+  cameraZoomX?: number | undefined;
+  cameraZoomY?: number | undefined;
   attackRequested: boolean;
   skillPrimaryRequested: boolean;
   skillSecondaryRequested: boolean;
@@ -24,6 +28,12 @@ export type AbyssInputState = {
   pauseToggleRequested: boolean;
   rewardChoiceRequested?: string | undefined;
   gameplayBlocked: boolean;
+};
+
+export type AbyssCameraAdapter = {
+  applyCameraState(state: CameraState2D): void;
+  worldToScreen?(point: PointLike): PointLike;
+  screenToWorld?(point: PointLike): PointLike;
 };
 
 export type AbyssTraceEntry = {
@@ -149,6 +159,14 @@ export type AbyssSnapshot = {
     completedRooms: number;
     selectedRewards: number;
   };
+  camera?: {
+    x: number;
+    y: number;
+    zoom: number;
+    displayX: number;
+    displayY: number;
+    mode: string;
+  };
   timeline: AbyssTraceEntry[];
   events: GameEvent[];
   gasTraces: ReturnType<GasTraceStore["list"]>;
@@ -162,6 +180,7 @@ export type AbyssRuntime = {
   gasTraceStore: GasTraceStore;
   input: AbyssInputState;
   run: AbyssRunState;
+  screenToWorld(point: { x: number; y: number }): { x: number; y: number };
   trace(entry: Omit<AbyssTraceEntry, "id" | "time"> & { time?: number }): void;
   captureCheckpoint(): import("./save/checkpoint-types").AbyssCheckpointData;
   restoreCheckpoint(checkpoint: import("./save/checkpoint-types").AbyssCheckpointData): void;

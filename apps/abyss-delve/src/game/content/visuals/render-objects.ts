@@ -4,6 +4,21 @@ const SQUARE = "debug.square";
 
 export const abyssRenderObjects: AbyssRenderObjectDefinition[] = [
   {
+    id: "abyss.render.room.floor",
+    type: "container",
+    children: [
+      node("floor", 1040, 600, 0x16191b, 0, 0, 1),
+      node("north-wall", 1040, 24, 0x2c3138, 0, -300, 1),
+      node("south-wall", 1040, 24, 0x252a31, 0, 300, 1),
+      node("west-wall", 24, 600, 0x252a31, -520, 0, 1),
+      node("east-wall", 24, 600, 0x2f343b, 520, 0, 1),
+      node("exit-gate", 96, 28, 0x75e6ff, 0, -292, 0.42),
+      node("spawn-a", 72, 72, 0x553246, -320, -165, 0.16),
+      node("spawn-b", 72, 72, 0x553246, 330, -145, 0.16),
+      node("spawn-c", 86, 86, 0x5c4227, 250, 180, 0.14)
+    ]
+  },
+  {
     id: "abyss.render.player",
     type: "container",
     children: [

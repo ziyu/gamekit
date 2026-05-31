@@ -972,7 +972,7 @@
 
 应用设计：`docs/apps/abyss-delve.md`
 
-当前状态：P15.1 可玩房间垂直切片已实现。`apps/abyss-delve` 已能通过 App Host 启动 Phaser canvas、HUD、技能栏、房间目标、三类敌人、基础战斗、掉落拾取、清房奖励和 DevTools Performance pin；Save checkpoint、Camera 深化、多房间推进、内容包扩展仍属于后续 Phase 15 子任务。
+当前状态：P15.5 表现质量和 Camera 深化正在实现。`apps/abyss-delve` 已能通过 App Host 启动 Phaser canvas、HUD、技能栏、房间目标、三类敌人、基础战斗、掉落拾取、清房奖励、Save checkpoint 和 DevTools Performance pin；Camera 已按游戏模块方式接入 follow、aim lookahead、combat shake 和 driver camera sync。DevTools 长链路验收和阶段收口仍属于后续 Phase 15 子任务。
 
 预期新增：
 

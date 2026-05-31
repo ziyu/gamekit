@@ -10,6 +10,14 @@ const DEFAULT_MIN_ZOOM = 0.25;
 const DEFAULT_MAX_ZOOM = 4;
 const DEFAULT_ZOOM_FACTOR = 1.2;
 
+type ActiveCameraShakeImpulse = {
+  id: string;
+  amplitude: number;
+  durationMs: number;
+  frequency: number;
+  elapsedMs: number;
+};
+
 export function createCameraController(options: CreateCameraControllerOptions): CameraController {
   let state = normalizeState({
     mode: "free",
@@ -22,12 +30,16 @@ export function createCameraController(options: CreateCameraControllerOptions): 
     maxZoom: DEFAULT_MAX_ZOOM,
     ...options.state
   });
+  let displayState = state;
+  let shakeSequence = 0;
+  const impulses: ActiveCameraShakeImpulse[] = [];
 
   const setState = (patch: Partial<CameraState2D>): void => {
     state = normalizeState({
       ...state,
       ...patch
     });
+    displayState = applyShake(state, impulses);
   };
 
   return {
@@ -75,12 +87,43 @@ export function createCameraController(options: CreateCameraControllerOptions): 
         ...next,
         mode: "free"
       };
+      displayState = applyShake(state, impulses);
+    },
+    shake(impulse) {
+      if (impulse.amplitude <= 0 || impulse.durationMs <= 0) {
+        return;
+      }
+      shakeSequence += 1;
+      impulses.push({
+        id: impulse.id ?? `camera.shake.${shakeSequence}`,
+        amplitude: impulse.amplitude,
+        durationMs: impulse.durationMs,
+        frequency: impulse.frequency ?? 28,
+        elapsedMs: impulse.elapsedMs ?? 0
+      });
+      displayState = applyShake(state, impulses);
+    },
+    update(deltaMs) {
+      const nextImpulses = [];
+      for (const impulse of impulses) {
+        const elapsedMs = impulse.elapsedMs + Math.max(0, deltaMs);
+        if (elapsedMs < impulse.durationMs) {
+          nextImpulses.push({ ...impulse, elapsedMs });
+        }
+      }
+      impulses.length = 0;
+      impulses.push(...nextImpulses);
+      displayState = applyShake(state, impulses);
+      return { ...displayState };
+    },
+    getDisplayState() {
+      return { ...displayState };
     },
     worldToScreen(point: PointLike) {
-      return worldToScreen(state, point);
+      return worldToScreen(displayState, point);
     },
     screenToWorld(point: PointLike) {
-      return screenToWorld(state, point);
+      return screenToWorld(displayState, point);
     }
   };
 }
@@ -96,5 +139,27 @@ function normalizeState(state: CameraState2D): CameraState2D {
     ...state,
     ...clampedCenter,
     zoom
+  };
+}
+
+function applyShake(state: CameraState2D, impulses: ActiveCameraShakeImpulse[]): CameraState2D {
+  if (impulses.length === 0) {
+    return { ...state };
+  }
+
+  let x = state.x;
+  let y = state.y;
+  for (const impulse of impulses) {
+    const progress = Math.min(1, impulse.elapsedMs / impulse.durationMs);
+    const amplitude = impulse.amplitude * (1 - progress);
+    const phase = impulse.elapsedMs * 0.001 * impulse.frequency * Math.PI * 2;
+    x += Math.cos(phase) * amplitude;
+    y += Math.sin(phase * 1.37) * amplitude;
+  }
+
+  return {
+    ...state,
+    x,
+    y
   };
 }

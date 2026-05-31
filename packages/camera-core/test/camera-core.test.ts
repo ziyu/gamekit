@@ -128,4 +128,20 @@ describe("createCameraController", () => {
     });
     expect(camera.getState().targetEntity).toBeUndefined();
   });
+
+  it("applies and decays shake on display state without moving the target state", () => {
+    const camera = createCameraController({
+      viewport: { width: 200, height: 100 },
+      state: { x: 100, y: 50, bounds: { x: 0, y: 0, width: 400, height: 300 } }
+    });
+
+    camera.shake({ amplitude: 12, durationMs: 120, frequency: 4 });
+    const shaken = camera.getDisplayState();
+
+    expect(camera.getState()).toMatchObject({ x: 100, y: 50 });
+    expect(shaken.x).not.toBe(100);
+
+    camera.update(120);
+    expect(camera.getDisplayState()).toMatchObject({ x: 100, y: 50 });
+  });
 });

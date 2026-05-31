@@ -95,6 +95,15 @@ export function enterAbyssRoom(
     rewardOpen: phase === "reward",
     ...(state.run.selectedReward === undefined ? {} : { rewardSelected: state.run.selectedReward })
   });
+  state.world.add(roomEntity, Position, {
+    x: room.bounds.x + room.bounds.width / 2,
+    y: room.bounds.y + room.bounds.height / 2,
+    rotation: 0
+  });
+  state.world.add(roomEntity, Presentation, {
+    renderKey: "abyss.render.room.floor",
+    layer: 0
+  });
 
   spawnPlayer(state, hero, options.player);
 

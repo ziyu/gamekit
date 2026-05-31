@@ -29,6 +29,7 @@ describe("Abyss Delve save checkpoint", () => {
     expect(JSON.stringify(checkpoint)).not.toContain("inventoryOpen");
     expect(JSON.stringify(checkpoint)).not.toContain("paused");
     expect(JSON.stringify(checkpoint)).not.toContain("held");
+    expect(JSON.stringify(checkpoint)).not.toContain("camera");
 
     const second = createSavedHarness(store);
     const load = await second.manager.load(SLOT_ID);
