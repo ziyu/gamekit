@@ -972,7 +972,7 @@
 
 应用设计：`docs/apps/abyss-delve.md`
 
-当前状态：P15.6 DevTools 和长链路验收已实现。`apps/abyss-delve` 已能通过 App Host 启动 Phaser canvas、HUD、技能栏、房间目标、三类敌人、基础战斗、掉落拾取、清房奖励、Save checkpoint 和 DevTools Performance pin；Camera 已按游戏模块方式接入 follow、aim lookahead、combat shake 和 driver camera sync。DevTools 已接入 Abyss 专属 chain panel，用于解释 input -> ability -> damage -> death -> loot -> pickup -> reward -> save 链路。阶段收口仍属于后续 Phase 15 子任务。
+当前状态：Phase 15 已完成首个真实游戏验证切片。`apps/abyss-delve` 已能通过 App Host 启动 Phaser canvas、HUD、技能栏、房间目标、三类敌人、基础战斗、掉落拾取、清房奖励、Save checkpoint 和 DevTools Performance pin；Camera 已按游戏模块方式接入 follow、aim lookahead、combat shake 和 driver camera sync。DevTools 已接入 Abyss 专属 chain panel，用于解释 input -> ability -> damage -> death -> loot -> pickup -> reward -> save 链路。后续阶段应基于这个游戏验证应用继续扩展 Editor、内容管线和更完整的生产工具。
 
 预期新增：
 

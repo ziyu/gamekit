@@ -49,8 +49,8 @@
 | P15.3 | 战斗和 GAS 深化              | 技能成本、冷却、buff/debuff、更多 cue、actor inspector            | Completed | 4872c4a |
 | P15.4 | 房间推进和 Save checkpoint   | 多房间推进、run checkpoint、meta progression、load 恢复           | Completed | 8e5c56e |
 | P15.5 | 表现质量和 Camera            | 更完整复合 RenderObject、camera follow/lookahead/shake            | Completed | 64108d1 |
-| P15.6 | DevTools 和长链路验收        | input -> damage -> death -> loot -> reward trace、browser smoke   | Completed | 待提交  |
-| P15.7 | 阶段收口审查                 | 完整验证、合理性检查、质量检查、文档状态更新                      | Planned   | -       |
+| P15.6 | DevTools 和长链路验收        | input -> damage -> death -> loot -> reward trace、browser smoke   | Completed | 06c3961 |
+| P15.7 | 阶段收口审查                 | 完整验证、合理性检查、质量检查、文档状态更新                      | Completed | 待提交  |
 
 ## 垂直链路执行顺序
 
@@ -413,15 +413,15 @@ Ptolemy 只读审查指出：
 
 ### 提交记录
 
-待提交。
+实现提交：`06c3961`。
 
 ## P15.7：阶段收口审查
 
 ### 当前任务实现计划
 
-待实现。
+本任务不新增玩法和框架 API，只做 Phase 15 的最终收口。检查范围包括实现目标、边界、测试、浏览器验收和文档状态，确保 Abyss Delve 作为真实游戏验证应用可以进入后续阶段继续迭代。
 
-阶段完成前必须检查：
+阶段完成前检查：
 
 - Phase 15 完成定义逐条有证据。
 - 所有 P15.x 任务达到 `Committed`。
@@ -436,8 +436,19 @@ Ptolemy 只读审查指出：
 
 ### Review 记录
 
-待实现。
+| 检查项                          | 状态   | 记录                                                                                        |
+| ------------------------------- | ------ | ------------------------------------------------------------------------------------------- |
+| P15.x 是否均完成并提交          | Passed | P15.0-P15.6 均已提交，P15.7 仅包含阶段收口文档                                              |
+| Phase 15 完成定义是否有实现证据 | Passed | Abyss Delve 已覆盖 DataPack 启动、战斗、GAS、TCA、掉落、奖励、Save、Camera、DevTools 链路   |
+| gameplay 依赖边界是否保持       | Passed | `abyss-boundary.test.ts` 持续扫描 Phaser/React/DOM/Koota/App Host 内部依赖                  |
+| 长链路测试是否覆盖真实游戏流程  | Passed | `abyss-long-chain.test.ts` 和 `abyss-devtools-chain.test.ts` 覆盖 combat -> reward -> save  |
+| 文档状态是否与实现阶段一致      | Passed | `docs/development-stages.md` 与本实现文档已更新                                             |
+| Browser smoke 是否完成          | Passed | 本地页面可见 HUD/objective/Performance pin，DevTools 可打开 `Abyss Chain`，console 无 error |
+| `corepack pnpm test` 是否通过   | Passed | 53 个 turbo task 成功                                                                       |
+| `corepack pnpm build` 是否通过  | Passed | 28 个 turbo task 成功；Vite 仅保留 Phaser bundle chunk size warning                         |
+| `corepack pnpm lint` 是否通过   | Passed | 53 个 turbo task 成功，oxlint 无错误                                                        |
+| `corepack pnpm format` 是否通过 | Passed | oxfmt check 通过                                                                            |
 
 ### 提交记录
 
-待实现。
+待提交。
