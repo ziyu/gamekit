@@ -2,7 +2,7 @@
 
 本文档负责 `apps/sandbox` 的长期演示设计。Sandbox 不是模块设计文档，也不是阶段状态文档；它描述这个验证面应该如何呈现 GameKit 各模块的协作关系。
 
-MVP 完成范围和常态开发入口放在 `../development-stages.md`。具体 Sandbox 工作流状态放在任务系统、PR 或 `../implementation/`。单个模块协议放在 `../modules/`。不要把本文档内容复制到模块文档或执行记录中。
+具体 Sandbox 工作流状态放在任务系统、PR 或 `../implementation/`。单个模块协议放在 `../modules/`。不要把本文档内容复制到模块文档或执行记录中。
 
 ## 定位
 

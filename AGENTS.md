@@ -12,7 +12,6 @@
 - `docs/implementation-principles.md`：确认实现原则和代码质量要求。
 - `docs/best-practices.md`：确认测试、性能、模块拆分实践。
 - `docs/development-governance.md`：确认常态开发阶段如何记录状态、关闭工作流，并避免短期状态污染长期文档。
-- `docs/development-stages.md`：确认 MVP 完成范围和常态开发入口；不要把它当作实时开发状态看板。
 
 涉及重大技术选择、包边界变化、第三方库引入、公共 API 调整时，必须新增或更新 `docs/adr/`。
 
@@ -25,14 +24,13 @@
 - 单个模块的最终长期职责、公共协议、adapter 边界、扩展点：写入 `docs/modules/<module>.md`。
 - 代码质量、实现约束、可测试性、可解释性：写入 `docs/implementation-principles.md`。
 - 已验证的开发实践、性能经验、测试策略、反模式：写入 `docs/best-practices.md`。
-- MVP 完成范围、常态开发入口、候选工作方向：写入 `docs/development-stages.md`。
 - 常态开发中的具体状态、任务拆分、review、测试证据：写入任务系统、PR，或按需写入 `docs/implementation/` 下的短期工作流记录。
 - 开发文档治理、状态记录和关闭规则：写入 `docs/development-governance.md`。
 - 重大决策的背景、候选方案、取舍和后果：写入 `docs/adr/`。
 
 如果一个改动看起来需要更新多个文档，先判断它是不是由两类不同事实组成。不要复制粘贴同一内容；在次要文档中只保留一句引用。
 
-`docs/modules/` 只能写最终长期设计，不写当前实现状态、临时方案、阶段计划、下一步计划、完成定义、TODO、backlog 或 milestone。这些内容分别放入任务系统、PR、`docs/implementation/` 短期工作流记录、`docs/development-stages.md` 的 MVP 归档或 `docs/adr/`。
+`docs/modules/` 只能写最终长期设计，不写当前实现状态、临时方案、阶段计划、下一步计划、完成定义、TODO、backlog 或 milestone。这些内容分别放入任务系统、PR、`docs/implementation/` 短期工作流记录或 `docs/adr/`。
 
 ## 核心设计约束
 
@@ -80,7 +78,6 @@
 - 实现约束、代码质量标准变化：更新 `docs/implementation-principles.md`。
 - 新形成的实践、反模式、性能经验：更新 `docs/best-practices.md`。
 - 模块专属最佳实践：更新对应 `docs/modules/<module>.md` 的“最佳实践”段落；跨模块通用实践仍写入 `docs/best-practices.md`。
-- MVP 归档或常态开发入口变化：更新 `docs/development-stages.md`。
 - 具体工作流的状态、任务拆分、review、验证和提交：更新任务系统、PR，或 `docs/implementation/` 下对应工作流文档。
 - 开发文档治理规则变化：更新 `docs/development-governance.md`。
 - 高影响决策：新增 ADR，文件名格式为 `docs/adr/000X-short-title.md`。

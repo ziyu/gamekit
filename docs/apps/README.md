@@ -9,7 +9,6 @@
 - 应用或 demo 的长期设计放在本目录。
 - 通用包边界和依赖方向放在 `../architecture.md`。
 - 单个模块的最终长期协议放在 `../modules/`。
-- MVP 完成范围和常态开发入口放在 `../development-stages.md`。
 - 应用相关工作流的任务拆分、当前状态和验收证据放在任务系统、PR 或 `../implementation/`。
 - 高影响决策背景放在 `../adr/`。
 

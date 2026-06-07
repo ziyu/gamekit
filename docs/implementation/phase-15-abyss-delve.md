@@ -2,7 +2,7 @@
 
 状态：Closed。
 
-本文件记录已关闭的 MVP 阶段执行任务、逐任务开发流程、review 记录和验收证据。它只作为历史执行证据保留，不再作为后续开发状态来源。Abyss Delve 的长期应用设计见 `../apps/abyss-delve.md`；MVP 完成范围和常态开发入口见 `../development-stages.md`；开发文档治理规则见 `../development-governance.md`。
+本文件记录已关闭的 MVP 阶段执行任务、逐任务开发流程、review 记录和验收证据。它只作为历史执行证据保留，不再作为后续开发状态来源。Abyss Delve 的长期应用设计见 `../apps/abyss-delve.md`；开发文档治理规则见 `../development-governance.md`。
 
 ## 阶段目标
 
@@ -97,7 +97,7 @@ Phase 15 不按“先完整战斗、再补数据、最后补工具”的方式�
 | ------------------------------------------ | ------ | ---------------------------------------------------------- |
 | 应用长期设计是否放在 `docs/apps/`          | Passed | `docs/apps/abyss-delve.md` 已新增                          |
 | app 玩法是否从模块文档移除                 | Passed | 旧 app 设计文档已从 `docs/modules/` 移除                   |
-| Phase 15 路线是否更新                      | Passed | `docs/development-stages.md` 已改为 Abyss Delve            |
+| Phase 15 路线是否更新                      | Passed | 阶段路线已改为 Abyss Delve                                 |
 | 旧示例文档引用是否清理                     | Passed | 子 Agent 反馈后已清理实现文档措辞                          |
 | `renderer-phaser` 归属是否一致             | Passed | 子 Agent 指出 architecture 缺少包结构归属，已补充          |
 | app 文档是否混入阶段措辞                   | Passed | 子 Agent 指出“首个/首轮/一开始”等措辞，已改为长期规格      |
@@ -444,7 +444,7 @@ Ptolemy 只读审查指出：
 | Phase 15 完成定义是否有实现证据 | Passed | Abyss Delve 已覆盖 DataPack 启动、战斗、GAS、TCA、掉落、奖励、Save、Camera、DevTools 链路   |
 | gameplay 依赖边界是否保持       | Passed | `abyss-boundary.test.ts` 持续扫描 Phaser/React/DOM/Koota/App Host 内部依赖                  |
 | 长链路测试是否覆盖真实游戏流程  | Passed | `abyss-long-chain.test.ts` 和 `abyss-devtools-chain.test.ts` 覆盖 combat -> reward -> save  |
-| 文档状态是否与实现阶段一致      | Passed | `docs/development-stages.md` 与本实现文档已更新                                             |
+| 文档状态是否与实现阶段一致      | Passed | 本实现文档已完成收口并标记为 Closed                                                         |
 | Browser smoke 是否完成          | Passed | 本地页面可见 HUD/objective/Performance pin，DevTools 可打开 `Abyss Chain`，console 无 error |
 | `corepack pnpm test` 是否通过   | Passed | 53 个 turbo task 成功                                                                       |
 | `corepack pnpm build` 是否通过  | Passed | 28 个 turbo task 成功；Vite 仅保留 Phaser bundle chunk size warning                         |

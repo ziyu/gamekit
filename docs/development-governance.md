@@ -23,7 +23,6 @@ GameKit 的文档分为三类：
 | 最佳实践 | `best-practices.md`               | 跨模块通用实践、性能经验、测试策略、反模式                    | 单次任务状态、不可变项目目标                |
 | 实现原则 | `implementation-principles.md`    | 代码质量、可测试性、可解释性、工程约束                        | 某次实现计划、历史决策过程                  |
 | ADR      | `adr/`                            | 高影响决策的背景、候选方案、取舍和后果                        | 持续更新的开发状态、普通任务列表            |
-| MVP 归档 | `development-stages.md`           | MVP 完成范围归档、常态开发入口、候选工作方向                  | 实时开发状态、并行工作流详情                |
 | 执行记录 | `implementation/` 或任务系统 / PR | 某次工作流的拆分、review、测试证据、提交记录                  | 长期协议的唯一来源、模块最终设计            |
 
 ## 常态开发记录规则
@@ -82,17 +81,17 @@ GameKit 的文档分为三类：
 
 ## 状态信息放置规则
 
-| 信息                   | 放置位置                                    |
-| ---------------------- | ------------------------------------------- |
-| 当前 bug 是否修复      | issue / PR / commit                         |
-| 一个并行功能的任务拆分 | `docs/implementation/<topic>.md` 或任务系统 |
-| 某模块的长期 API       | `docs/modules/<module>.md`                  |
-| 某 app 的长期交互设计  | `docs/apps/<app>.md`                        |
-| 某技术取舍为什么成立   | `docs/adr/`                                 |
-| 多模块依赖边界         | `docs/architecture.md`                      |
-| 跨模块最佳实践         | `docs/best-practices.md`                    |
-| MVP 已完成了什么       | `docs/development-stages.md`                |
-| 常态开发文档怎么维护   | 本文档                                      |
+| 信息                   | 放置位置                                                 |
+| ---------------------- | -------------------------------------------------------- |
+| 当前 bug 是否修复      | issue / PR / commit                                      |
+| 一个并行功能的任务拆分 | `docs/implementation/<topic>.md` 或任务系统              |
+| 某模块的长期 API       | `docs/modules/<module>.md`                               |
+| 某 app 的长期交互设计  | `docs/apps/<app>.md`                                     |
+| 某技术取舍为什么成立   | `docs/adr/`                                              |
+| 多模块依赖边界         | `docs/architecture.md`                                   |
+| 跨模块最佳实践         | `docs/best-practices.md`                                 |
+| 常态开发文档怎么维护   | 本文档                                                   |
+| 已关闭 MVP 的执行证据  | `docs/implementation/phase-15-abyss-delve.md` 和提交历史 |
 
 ## 冲突处理
 
@@ -115,3 +114,9 @@ Implementation 文档命名应使用工作目标，而不是线性阶段编号�
 - 不推荐：`implementation/phase-16.md`
 
 历史阶段文档可以保留原名，但必须标记为 `Closed` 或 `Archived`。
+
+## MVP 之后
+
+MVP 结束后不再维护单独的阶段路线或归档文档。已经关闭的大型阶段可以作为 implementation 历史记录保留；如果历史记录中的结论仍然有效，应迁移到稳定维护文档。
+
+后续候选方向不放进单一“下一阶段”文档。它们应进入任务系统、路线规划工具、PR 或独立 implementation 工作流。任何候选方向一旦改变长期设计，必须同步更新 `project-design.md`、`architecture.md`、`modules/`、`apps/` 或 ADR。

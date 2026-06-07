@@ -80,7 +80,7 @@ packages/
 
 `apps/sandbox` 是框架验证面，不是长期玩法仓库，也不是模块协议的来源。它可以实现一个有真实运行循环的小 demo，但 demo 专用的 entity role、production recipe、threat、objective 和 presentation 组件必须留在 Sandbox 内部。
 
-Sandbox 的长期演示设计见 `docs/apps/sandbox.md`。阶段任务和当前实现状态仍放在 `docs/development-stages.md`。
+Sandbox 的长期演示设计见 `docs/apps/sandbox.md`。具体工作流状态、任务拆分和验收证据放在任务系统、PR 或 `docs/implementation/`。
 
 真实游戏验证应用放在 `docs/apps/` 下维护长期设计。Abyss Delve 是当前计划的真实游戏验证应用，用常见肉鸽暗黑-like 设计验证完整框架组合，但它的职业、怪物、掉落、房间和 UI 概念不作为核心协议来源。
 

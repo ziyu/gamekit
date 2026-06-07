@@ -10,7 +10,6 @@
 - `best-practices.md`：模块拆分、测试、数据驱动、adapter、UI 等实践规则。
 - `apps/`：`apps/*` 下应用、demo、editor 和验证面的长期设计。
 - `development-governance.md`：常态开发阶段的文档治理、状态记录和关闭规则。
-- `development-stages.md`：MVP 阶段归档和常态开发入口，不再维护实时开发状态。
 - `modules/`：各模块最终长期设计，按模块独立维护。
 - `implementation/`：已关闭或短期存在的工作流执行记录。
 - `adr/`：Architecture Decision Record，记录重要技术决策和取舍。
@@ -27,7 +26,6 @@
 | `best-practices.md`            | 已验证的实践做法、性能经验、测试策略、反模式         | 不可变的项目目标、临时 TODO、阶段进度        |
 | `apps/`                        | 应用、demo、editor、验证面的长期设计                 | 阶段状态、模块协议、包边界                   |
 | `development-governance.md`    | 常态开发的文档分类、状态记录、关闭规则和冲突处理     | 具体工作流状态、模块协议、项目目标           |
-| `development-stages.md`        | MVP 完成范围归档、常态开发入口、候选工作方向         | 实时开发状态、并行工作流详情、长期设计信条   |
 | `implementation/`              | 短期工作流的任务拆分、review、测试证据和提交记录     | 长期协议的唯一来源、模块最终设计             |
 | `modules/`                     | 单个模块的最终长期职责、协议、adapter、扩展点        | 阶段状态、临时计划、TODO、完成定义、决策历史 |
 | `adr/`                         | 高影响决策的背景、取舍、后果                         | 持续更新的状态列表、通用最佳实践             |
@@ -41,8 +39,8 @@
 - “某个模块现在做到哪、下一步怎么做”不要放 `modules/`；小任务放 issue/PR，大工作流放 `implementation/`。
 - “代码应该怎么写”放 `implementation-principles.md`。
 - “做过后证明有效的方式”放 `best-practices.md`。
-- “MVP 已经完成了什么”放 `development-stages.md`。
 - “常态开发如何记录状态、如何关闭工作流”放 `development-governance.md`。
+- “MVP 已经完成了什么”看已关闭的 `implementation/phase-15-abyss-delve.md` 和提交历史，不再维护单独归档文档。
 - “当时为什么这样决策”放 `adr/`。
 
 ## 更新规则

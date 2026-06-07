@@ -10,7 +10,6 @@ MVP 阶段已经关闭，历史阶段文档只作为归档证据保留。常态�
 - 跨模块架构边界仍放在 `../architecture.md`。
 - 单个模块长期设计仍放在 `../modules/`。
 - 应用长期设计仍放在 `../apps/`。
-- MVP 完成范围和常态开发入口放在 `../development-stages.md`。
 - 文档治理、状态记录和关闭规则放在 `../development-governance.md`。
 - 本目录只记录某个工作流执行层面的任务拆分、任务状态、review 记录、测试证据和返工记录。
 
