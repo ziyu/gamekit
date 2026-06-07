@@ -73,6 +73,10 @@ const wave2PackageSlugs = [
   "app-host"
 ];
 
+const wave3SupportPackageSlugs = ["core", "devtools", "ui-core"];
+
+const wave3PackageSlugs = ["react-ui", "devtools-ui"];
+
 const releaseWave = process.env.GAMEKITS_RELEASE_WAVE ?? "1";
 const installOffline = process.env.GAMEKITS_RELEASE_OFFLINE === "1";
 
@@ -268,6 +272,89 @@ if (app.id !== "wave2-smoke" || profile.id !== "wave2-profile" || host.snapshot(
 console.log("gamekits wave 2 smoke ok");
 `;
 
+const wave3SmokeSource = `
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createUiRuntime } from "@gamekits/ui-core";
+import {
+  createGameKitUiAnimator,
+  GameKitUiShell,
+  UiPanelHost,
+  UiTip
+} from "@gamekits/react-ui";
+import { createDevToolsRuntime } from "@gamekits/devtools";
+import {
+  createDevToolsUiBridge,
+  DevToolsLauncher,
+  DevToolsOverlay
+} from "@gamekits/devtools-ui";
+
+function assertCssExport(specifier) {
+  const resolved = import.meta.resolve(specifier);
+  if (!resolved.endsWith("/dist/styles.css")) {
+    throw new Error(\`Unexpected CSS export for \${specifier}: \${resolved}\`);
+  }
+}
+
+assertCssExport("@gamekits/react-ui/styles.css");
+assertCssExport("@gamekits/devtools-ui/styles.css");
+
+const ui = createUiRuntime();
+ui.registerPanel({ id: "actor", title: "Actor", kind: "panel" });
+ui.open("actor", { actorId: "a" });
+
+const shellHtml = renderToStaticMarkup(
+  createElement(
+    GameKitUiShell,
+    { runtime: ui },
+    createElement(UiPanelHost, {
+      renderPanel: (panel) => createElement("span", null, String(panel.props))
+    })
+  )
+);
+
+if (!shellHtml.includes('data-ui-panel="actor"') || !shellHtml.includes("Actor")) {
+  throw new Error("react-ui shell smoke failed");
+}
+
+const tipHtml = renderToStaticMarkup(
+  createElement(UiTip, { content: "Runtime focus scope" }, createElement("button", null, "?"))
+);
+if (!tipHtml.includes('role="tooltip"')) throw new Error("react-ui tip smoke failed");
+
+const animator = createGameKitUiAnimator({ reducedMotion: true });
+if (typeof animator.enter !== "function" || typeof animator.exit !== "function") {
+  throw new Error("react-ui animator smoke failed");
+}
+
+const devtools = createDevToolsRuntime();
+const devtoolsUi = createUiRuntime();
+const bridge = createDevToolsUiBridge({ devtools, ui: devtoolsUi });
+bridge.openShell();
+if (!bridge.snapshot().shell.open) throw new Error("devtools-ui bridge smoke failed");
+
+const launcherHtml = renderToStaticMarkup(
+  createElement(DevToolsLauncher, { runtime: devtools, uiRuntime: devtoolsUi, label: "Inspect" })
+);
+if (!launcherHtml.includes("gamekit-devtools-launcher")) {
+  throw new Error("devtools-ui launcher smoke failed");
+}
+
+devtools.registerPanel({ id: "app.chain", label: "App Chain" });
+const overlayHtml = renderToStaticMarkup(
+  createElement(DevToolsOverlay, {
+    runtime: devtools,
+    uiRuntime: devtoolsUi,
+    renderPanel: () => createElement("section", null, "Custom Chain Panel")
+  })
+);
+if (!overlayHtml.includes("Custom Chain Panel")) {
+  throw new Error("devtools-ui overlay smoke failed");
+}
+
+console.log("gamekits wave 3 smoke ok");
+`;
+
 function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
@@ -287,6 +374,10 @@ function resolvePackageSlugs(): string[] {
     return unique([...wave2SupportPackageSlugs, ...wave2PackageSlugs]);
   }
 
+  if (releaseWave === "3") {
+    return unique([...wave3SupportPackageSlugs, ...wave3PackageSlugs]);
+  }
+
   if (releaseWave !== "1") {
     throw new Error(`Unknown GAMEKITS_RELEASE_WAVE: ${releaseWave}`);
   }
@@ -297,6 +388,10 @@ function resolvePackageSlugs(): string[] {
 function resolveSmokeSource(): string {
   if (releaseWave === "2") {
     return `${wave2BaseSmokeSource}\n${wave2SmokeSource}`;
+  }
+
+  if (releaseWave === "3") {
+    return wave3SmokeSource;
   }
 
   return smokeSource;
@@ -526,6 +621,7 @@ try {
     type: "module",
     dependencies: {
       ...localTarballDependencies,
+      ...(releaseWave === "3" ? { react: "^18.3.1", "react-dom": "^18.3.1" } : {}),
       ...(runTestUtilsSmoke ? { vitest: "^3.1.3" } : {})
     }
   });

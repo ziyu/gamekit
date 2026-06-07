@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 const packageRoot = process.cwd();
 const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
 const shouldBundleDts = manifest.gamekitBuild?.bundleDts !== false;
+const copyEntries = manifest.gamekitBuild?.copy ?? [];
 
 function removeBuildInfo(path) {
   try {
@@ -23,6 +24,18 @@ function removeBuildInfo(path) {
     if (error?.code !== "ENOENT") {
       throw error;
     }
+  }
+}
+
+function copyConfiguredFiles() {
+  for (const entry of copyEntries) {
+    if (!entry?.from || !entry?.to) {
+      throw new Error("gamekitBuild.copy entries must include from and to.");
+    }
+
+    const target = join(packageRoot, entry.to);
+    mkdirSync(dirname(target), { recursive: true });
+    cpSync(join(packageRoot, entry.from), target, { recursive: true });
   }
 }
 
@@ -74,3 +87,4 @@ execFileSync(
 );
 
 removeBuildInfo(packageRoot);
+copyConfiguredFiles();

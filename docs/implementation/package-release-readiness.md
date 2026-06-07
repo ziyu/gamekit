@@ -36,7 +36,7 @@ Status: Active
 - `tsc -b` 直接输出的 ESM 在 Node 原生 import 下会因无扩展名目录导入失败。
 - `workspace:*` 在 `pnpm pack` 中会落成具体版本号。
 - `@gamekit/platform-tauri` 已使用 optional peer dependency 表达 Tauri 插件。
-- React UI 相关包仍需要校正 React peer dependency 和 CSS 发布入口。
+- React UI 相关包已校正 React peer dependency 和 CSS 发布入口。
 - npm organization/scope 已创建为 `gamekits`。发布到该 scope 的实际包名必须使用 `@gamekits/*`；当前仓库内部长期包名仍是 `@gamekit/*`，Wave 1 前需要决定是整体迁移 scope，还是继续使用临时 publish metadata 映射。
 
 ## Toolchain Direction
@@ -224,7 +224,7 @@ Status: Active
 | Wave 0：构建与 manifest 基础       | Verified | 已用 `@gamekit/core` 跑通 tsdown、manifest、dry-run 和外部 Node ESM smoke test。                                                                    |
 | Wave 1：Headless core packages     | Verified | 已完成 core/event-bus/world/platform-core/renderer-core/world-koota/game-runtime/data/tca/gas/test-utils 的 npm alpha 发布、registry 安装和 smoke。 |
 | Wave 2：Web App Host + Phaser path | Verified | 已完成 Web/App Host/Phaser 路径新增包的 npm alpha 发布、registry 安装和 smoke。                                                                     |
-| Wave 3：React UI + DevTools UI     | Planned  | 处理 React peer dependency、CSS exports 和 React app smoke test。                                                                                   |
+| Wave 3：React UI + DevTools UI     | Verified | 已完成 React UI/DevTools UI 的 npm alpha 发布、registry 安装、React peer 和 CSS export smoke。                                                      |
 | Wave 4：Tauri optional platform    | Planned  | 第一批核心验证后再发布 platform-tauri。                                                                                                             |
 | 接入 Changesets                    | Planned  | 初期采用 lockstep version，首发 alpha tag。                                                                                                         |
 | 更新 README 安装示例               | Planned  | 面向 Web + Phaser、headless test、Tauri app 三类消费路径。                                                                                          |
@@ -258,10 +258,14 @@ Status: Active
 - 2026-06-07：Wave 2 smoke 修正。Save smoke 按 `SaveStore` 协议写入 `Uint8Array` 和 slot summary；UI smoke 使用 `ui.open()` / `ui.openPanels()`；`@gamekit/test-utils` 将 Vitest peer 标为 optional，避免普通 consumer 自动安装测试运行时。
 - 2026-06-07：Wave 2 npm alpha 发布成功。通过 `corepack pnpm publish:release:gamekits` 所用的 registry HTTP API 发布脚本，从 `/private/tmp/gamekits-wave2-release` 发布 `@gamekits/input-core`、`@gamekits/camera-core`、`@gamekits/driver-core`、`@gamekits/devtools`、`@gamekits/ui-core`、`@gamekits/asset`、`@gamekits/save`、`@gamekits/platform-web`、`@gamekits/input-dom`、`@gamekits/renderer-phaser`、`@gamekits/driver-phaser`、`@gamekits/app-host` 的 `0.1.0-alpha.0`。
 - 2026-06-07：Wave 2 registry smoke 通过。在 `/private/tmp/gamekits-wave2-registry-consumer-gzqzGF` 中通过 `corepack pnpm add @gamekits/...@alpha --ignore-scripts --registry https://registry.npmjs.org/` 从 npm registry 安装 Wave 2 闭包，`node smoke.mjs` 输出 `gamekits wave 2 smoke ok`。安装期间 `@gamekits/ui-core` 一度出现 registry metadata 404/缺 `time` 字段警告，但最终安装和 smoke 均通过。
+- 2026-06-07：Wave 3 本地 tarball 闭环通过。`GAMEKITS_RELEASE_WAVE=3 GAMEKITS_RELEASE_DIR=/private/tmp/gamekits-wave3-release corepack pnpm verify:release:gamekits` 构建并生成 `@gamekits/core`、`@gamekits/devtools`、`@gamekits/ui-core`、`@gamekits/react-ui`、`@gamekits/devtools-ui` 的临时发布目录和 tarball；临时外部项目显式安装 React/ReactDOM 后，SSR smoke、DevTools UI bridge smoke 和 `./styles.css` 子路径解析均通过。
+- 2026-06-07：Wave 3 npm alpha 发布成功。通过 `corepack pnpm publish:release:gamekits` 所用的 registry HTTP API 发布脚本，从 `/private/tmp/gamekits-wave3-release` 发布 `@gamekits/react-ui` 和 `@gamekits/devtools-ui` 的 `0.1.0-alpha.0`。
+- 2026-06-07：Wave 3 registry smoke 通过。在 `/private/tmp/gamekits-wave3-registry-consumer-B8xBGB` 中通过 `corepack pnpm add @gamekits/core@alpha @gamekits/devtools@alpha @gamekits/ui-core@alpha @gamekits/react-ui@alpha @gamekits/devtools-ui@alpha react@^18.3.1 react-dom@^18.3.1 --ignore-scripts --registry https://registry.npmjs.org/` 从 npm registry 安装 UI 闭包；`corepack pnpm list react react-dom --depth 10` 显示 UI 包复用 consumer 顶层 React peer；`node smoke.mjs` 输出 `gamekits wave 3 smoke ok`。
+- 2026-06-07：Wave 3 收口验证通过。`corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 均通过；首次 format check 发现本文档换行问题，已用 `corepack pnpm exec oxfmt .` 修复后复跑通过。
 
 ## Next Implementation Entry
 
-下一步进入 Wave 3：发布 React UI 和 DevTools UI。重点处理 React/ReactDOM peer dependency、CSS `dist/styles.css` 导出、UI 包 `sideEffects`、外部 Vite React app smoke，以及 DevTools UI 是否需要拆分 browser-only 入口。
+下一步进入发布流程产品化：补 README 安装示例，接入 Changesets 或等价 changelog/version automation，并把 `@gamekit/platform-tauri` 作为 Wave 4 单独验证。Tauri 发布前需要真实 Tauri app import smoke，确认 optional peer 在普通 Node/Vite consumer 中不会变成硬依赖。
 
 ## Closure Notes
 
