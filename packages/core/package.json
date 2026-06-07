@@ -1,8 +1,11 @@
 {
   "name": "@gamekit/core",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -11,8 +14,12 @@
       "import": "./dist/index.js"
     }
   },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc -b",
+    "build": "node ../../scripts/build-library-package.mjs",
     "test": "vitest run --root ../.. --config vitest.config.ts packages/core/test --passWithNoTests",
     "lint": "oxlint ."
   }

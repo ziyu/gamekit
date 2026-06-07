@@ -1,7 +1,7 @@
 {
   "name": "@gamekit/gas",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "node ../../scripts/build-library-package.mjs",
     "test": "vitest run --root ../.. --config vitest.config.ts packages/gas/test --passWithNoTests",
     "lint": "oxlint ."
   },
@@ -23,5 +23,12 @@
     "@gamekit/game-runtime": "workspace:*",
     "@gamekit/tca": "workspace:*",
     "@gamekit/world": "workspace:*"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -17,7 +17,10 @@
     "lint:game": "turbo run lint --filter=abyss-delve",
     "format": "oxfmt --check .",
     "format:write": "oxfmt --write .",
-    "bench:world": "tsx scripts/world-benchmark.ts"
+    "bench:world": "tsx scripts/world-benchmark.ts",
+    "verify:release:core": "tsx scripts/verify-core-release.ts",
+    "verify:release:gamekits": "node scripts/verify-gamekits-release.ts",
+    "publish:release:gamekits": "node scripts/publish-gamekits-release.mjs"
   },
   "dependencies": {
     "@gamekit/world": "workspace:*",
@@ -27,6 +30,7 @@
     "@types/node": "^22.15.17",
     "oxfmt": "0.48.0",
     "oxlint": "1.63.0",
+    "tsdown": "^0.22.2",
     "tsx": "^4.19.4",
     "turbo": "^2.6.1",
     "typescript": "^5.8.3",
