@@ -77,6 +77,8 @@ const wave3SupportPackageSlugs = ["core", "devtools", "ui-core"];
 
 const wave3PackageSlugs = ["react-ui", "devtools-ui"];
 
+const allPackageSlugs = unique([...wave1PackageSlugs, ...wave2PackageSlugs, ...wave3PackageSlugs]);
+
 const releaseWave = process.env.GAMEKITS_RELEASE_WAVE ?? "1";
 const installOffline = process.env.GAMEKITS_RELEASE_OFFLINE === "1";
 
@@ -191,7 +193,7 @@ import { createCameraController } from "@gamekits/camera-core";
 import { createAssetManager } from "@gamekits/asset";
 import { createMemorySaveStore } from "@gamekits/save";
 import { createDevToolsRuntime } from "@gamekits/devtools";
-import { createUiRuntime } from "@gamekits/ui-core";
+import { createUiRuntime as createWave3UiRuntime } from "@gamekits/ui-core";
 import { createHeadlessHost, createStandardAppProfile, defineGameApp } from "@gamekits/app-host";
 
 const platform = createWebPlatform({ appName: "GameKits Wave 2 Smoke" });
@@ -282,13 +284,14 @@ import {
   UiPanelHost,
   UiTip
 } from "@gamekits/react-ui";
-import { createDevToolsRuntime } from "@gamekits/devtools";
+import { createDevToolsRuntime as createWave3DevToolsRuntime } from "@gamekits/devtools";
 import {
   createDevToolsUiBridge,
   DevToolsLauncher,
   DevToolsOverlay
 } from "@gamekits/devtools-ui";
 
+{
 function assertCssExport(specifier) {
   const resolved = import.meta.resolve(specifier);
   if (!resolved.endsWith("/dist/styles.css")) {
@@ -299,7 +302,7 @@ function assertCssExport(specifier) {
 assertCssExport("@gamekits/react-ui/styles.css");
 assertCssExport("@gamekits/devtools-ui/styles.css");
 
-const ui = createUiRuntime();
+const ui = createWave3UiRuntime();
 ui.registerPanel({ id: "actor", title: "Actor", kind: "panel" });
 ui.open("actor", { actorId: "a" });
 
@@ -327,8 +330,8 @@ if (typeof animator.enter !== "function" || typeof animator.exit !== "function")
   throw new Error("react-ui animator smoke failed");
 }
 
-const devtools = createDevToolsRuntime();
-const devtoolsUi = createUiRuntime();
+const devtools = createWave3DevToolsRuntime();
+const devtoolsUi = createWave3UiRuntime();
 const bridge = createDevToolsUiBridge({ devtools, ui: devtoolsUi });
 bridge.openShell();
 if (!bridge.snapshot().shell.open) throw new Error("devtools-ui bridge smoke failed");
@@ -353,6 +356,7 @@ if (!overlayHtml.includes("Custom Chain Panel")) {
 }
 
 console.log("gamekits wave 3 smoke ok");
+}
 `;
 
 function unique(values: string[]): string[] {
@@ -378,6 +382,10 @@ function resolvePackageSlugs(): string[] {
     return unique([...wave3SupportPackageSlugs, ...wave3PackageSlugs]);
   }
 
+  if (releaseWave === "all") {
+    return allPackageSlugs;
+  }
+
   if (releaseWave !== "1") {
     throw new Error(`Unknown GAMEKITS_RELEASE_WAVE: ${releaseWave}`);
   }
@@ -394,6 +402,10 @@ function resolveSmokeSource(): string {
     return wave3SmokeSource;
   }
 
+  if (releaseWave === "all") {
+    return `${wave2BaseSmokeSource}\n${wave2SmokeSource}\n${wave3SmokeSource}`;
+  }
+
   return smokeSource;
 }
 
@@ -402,7 +414,11 @@ function shouldRunTestUtilsSmoke(packageSlugs: string[]): boolean {
     return false;
   }
 
-  return process.env.GAMEKITS_RUN_TEST_UTILS_SMOKE === "1" || releaseWave === "1";
+  return (
+    process.env.GAMEKITS_RUN_TEST_UTILS_SMOKE === "1" ||
+    releaseWave === "1" ||
+    releaseWave === "all"
+  );
 }
 
 function run(command: string, args: string[], cwd = root): string {
@@ -621,7 +637,9 @@ try {
     type: "module",
     dependencies: {
       ...localTarballDependencies,
-      ...(releaseWave === "3" ? { react: "^18.3.1", "react-dom": "^18.3.1" } : {}),
+      ...(releaseWave === "3" || releaseWave === "all"
+        ? { react: "^18.3.1", "react-dom": "^18.3.1" }
+        : {}),
       ...(runTestUtilsSmoke ? { vitest: "^3.1.3" } : {})
     }
   });

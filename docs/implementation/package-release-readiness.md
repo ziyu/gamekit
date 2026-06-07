@@ -226,7 +226,8 @@ Status: Active
 | Wave 2：Web App Host + Phaser path | Verified | 已完成 Web/App Host/Phaser 路径新增包的 npm alpha 发布、registry 安装和 smoke。                                                                     |
 | Wave 3：React UI + DevTools UI     | Verified | 已完成 React UI/DevTools UI 的 npm alpha 发布、registry 安装、React peer 和 CSS export smoke。                                                      |
 | Wave 4：Tauri optional platform    | Planned  | 第一批核心验证后再发布 platform-tauri。                                                                                                             |
-| 接入 Changesets                    | Planned  | 初期采用 lockstep version，首发 alpha tag。                                                                                                         |
+| 接入 Changesets                    | Verified | 已接入 Changesets lockstep 固定包组、alpha pre mode 和 GitHub Actions version PR/publish workflow。                                                 |
+| GitHub Actions 发布流水线          | Verified | 已新增 CI、Release Verify、Release、Registry Smoke workflows；release workflow 用参数控制 dist-tag，不把 alpha 固化为 workflow 身份。               |
 | 更新 README 安装示例               | Planned  | 面向 Web + Phaser、headless test、Tauri app 三类消费路径。                                                                                          |
 
 ## Acceptance Criteria
@@ -262,10 +263,11 @@ Status: Active
 - 2026-06-07：Wave 3 npm alpha 发布成功。通过 `corepack pnpm publish:release:gamekits` 所用的 registry HTTP API 发布脚本，从 `/private/tmp/gamekits-wave3-release` 发布 `@gamekits/react-ui` 和 `@gamekits/devtools-ui` 的 `0.1.0-alpha.0`。
 - 2026-06-07：Wave 3 registry smoke 通过。在 `/private/tmp/gamekits-wave3-registry-consumer-B8xBGB` 中通过 `corepack pnpm add @gamekits/core@alpha @gamekits/devtools@alpha @gamekits/ui-core@alpha @gamekits/react-ui@alpha @gamekits/devtools-ui@alpha react@^18.3.1 react-dom@^18.3.1 --ignore-scripts --registry https://registry.npmjs.org/` 从 npm registry 安装 UI 闭包；`corepack pnpm list react react-dom --depth 10` 显示 UI 包复用 consumer 顶层 React peer；`node smoke.mjs` 输出 `gamekits wave 3 smoke ok`。
 - 2026-06-07：Wave 3 收口验证通过。`corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 均通过；首次 format check 发现本文档换行问题，已用 `corepack pnpm exec oxfmt .` 修复后复跑通过。
+- 2026-06-07：GitHub Actions 和 Changesets 发布自动化接入。新增 `.github/workflows/ci.yml`、`release-verify.yml`、`release.yml`、`registry-smoke.yml`；`release.yml` 在 push main 时通过 Changesets Action 创建 version PR 或发布，在手动触发时通过 `dist-tag` 输入支持 `alpha`、`beta`、`rc`、`latest`。新增 `.changeset/config.json`，将当前可发布包纳入 fixed lockstep group，并进入 `alpha` pre mode；包版本同步为已发布的 `0.1.0-alpha.0`。
 
 ## Next Implementation Entry
 
-下一步进入发布流程产品化：补 README 安装示例，接入 Changesets 或等价 changelog/version automation，并把 `@gamekit/platform-tauri` 作为 Wave 4 单独验证。Tauri 发布前需要真实 Tauri app import smoke，确认 optional peer 在普通 Node/Vite consumer 中不会变成硬依赖。
+下一步进入发布体验产品化：补 README 安装示例，补 GitHub Environment/Secrets 配置说明，并把 `@gamekit/platform-tauri` 作为 Wave 4 单独验证。Tauri 发布前需要真实 Tauri app import smoke，确认 optional peer 在普通 Node/Vite consumer 中不会变成硬依赖。
 
 ## Closure Notes
 

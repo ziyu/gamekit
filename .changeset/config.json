@@ -1,0 +1,43 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
+  "access": "public",
+  "baseBranch": "main",
+  "changelog": ["@changesets/cli/changelog", { "repo": "ziyu/gamekit" }],
+  "commit": false,
+  "fixed": [
+    [
+      "@gamekit/core",
+      "@gamekit/event-bus",
+      "@gamekit/world",
+      "@gamekit/platform-core",
+      "@gamekit/renderer-core",
+      "@gamekit/world-koota",
+      "@gamekit/game-runtime",
+      "@gamekit/data",
+      "@gamekit/tca",
+      "@gamekit/gas",
+      "@gamekit/test-utils",
+      "@gamekit/input-core",
+      "@gamekit/camera-core",
+      "@gamekit/driver-core",
+      "@gamekit/devtools",
+      "@gamekit/ui-core",
+      "@gamekit/asset",
+      "@gamekit/save",
+      "@gamekit/platform-web",
+      "@gamekit/input-dom",
+      "@gamekit/renderer-phaser",
+      "@gamekit/driver-phaser",
+      "@gamekit/app-host",
+      "@gamekit/react-ui",
+      "@gamekit/devtools-ui"
+    ]
+  ],
+  "ignore": ["@gamekit/platform-tauri", "abyss-delve", "sandbox"],
+  "linked": [],
+  "privatePackages": {
+    "tag": false,
+    "version": false
+  },
+  "updateInternalDependencies": "patch"
+}

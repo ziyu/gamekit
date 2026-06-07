@@ -1,24 +1,30 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const token = readFileSync(0, "utf8").trim();
+const token = process.env.NPM_TOKEN ?? readFileSync(0, "utf8").trim();
 if (!token) {
-  throw new Error("Missing npm token on stdin.");
+  throw new Error("Missing npm token. Set NPM_TOKEN or pass the token on stdin.");
 }
 
 const version = process.env.GAMEKITS_RELEASE_VERSION ?? "0.1.0-alpha.0";
 const releaseDir = process.env.GAMEKITS_RELEASE_DIR ?? "/private/tmp/gamekits-wave2-release";
 const registry = process.env.GAMEKITS_NPM_REGISTRY ?? "https://registry.npmjs.org";
-const packages = (process.env.GAMEKITS_PUBLISH_PACKAGES ?? "")
-  .split(",")
-  .map((slug) => slug.trim())
-  .filter(Boolean);
+const distTag = process.env.GAMEKITS_NPM_TAG ?? "alpha";
+const packages = resolvePackages();
 
 if (packages.length === 0) {
-  throw new Error("Set GAMEKITS_PUBLISH_PACKAGES to a comma-separated package slug list.");
+  throw new Error("No packages to publish.");
 }
 
 const workDir = mkdtempSync(join(tmpdir(), "gamekits-publish-"));
@@ -42,7 +48,7 @@ function publish(slug) {
     name,
     access: "public",
     "dist-tags": {
-      alpha: version
+      [distTag]: version
     },
     versions: {
       [version]: {
@@ -106,9 +112,30 @@ function publish(slug) {
 }
 
 try {
+  console.log(`Publishing ${packages.length} package(s) to npm dist-tag "${distTag}".`);
   for (const slug of packages) {
     publish(slug);
   }
 } finally {
   rmSync(workDir, { recursive: true, force: true });
+}
+
+function resolvePackages() {
+  const explicitPackages = process.env.GAMEKITS_PUBLISH_PACKAGES;
+  if (explicitPackages) {
+    return explicitPackages
+      .split(",")
+      .map((slug) => slug.trim())
+      .filter(Boolean);
+  }
+
+  const packagesDir = join(releaseDir, "packages");
+  if (!existsSync(packagesDir)) {
+    return [];
+  }
+
+  return readdirSync(packagesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
 }

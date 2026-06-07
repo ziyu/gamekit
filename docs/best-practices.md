@@ -110,6 +110,8 @@
 - React UI 类包应把 `react` 和 `react-dom` 声明为 peer dependency，并在本仓库保留 dev dependency 用于构建和测试；发布 smoke 必须确认 consumer 复用顶层 React。
 - 纯 TypeScript 包、React TSX 包、adapter/driver 包都必须通过外部安装 smoke test，验证它们离开 workspace alias 后仍能被消费。
 - 初期版本采用 lockstep 发布，先走 alpha tag 验证 tarball、Node ESM、Vite、peer dependency 和真实 app dogfood，再进入 latest。
+- Release workflow 应以通用 `release` 命名，`alpha`、`beta`、`rc`、`latest` 只是 dist-tag 参数；不要把当前阶段固化为 workflow 身份。
+- Changesets 自动化应先创建 version PR，再由合并后的 main 发布。alpha 阶段使用 Changesets pre mode，正式发布前显式 `pre exit`。
 
 依赖实践：
 
@@ -135,6 +137,7 @@
 - 自动化发布脚本不得把 token 写入仓库、日志或命令错误栈。若调用 curl，应通过临时 config/header 文件传递 Authorization，并在结束后删除临时目录。
 - 未发布前验证一组相互依赖的 tarball 时，临时消费者必须把内部包解析到本地 tarball，例如通过 pnpmfile hook 或 overrides；否则包内的明确版本号会让安装器去 registry 查找尚未发布的相邻包。
 - registry 网络不稳定时可以重试安装步骤，但不能跳过 registry smoke；至少一次需要从 npm registry 安装已发布包并运行外部 consumer smoke。
+- GitHub Actions 发布 job 必须绑定受保护 Environment，并通过 secret 或 Trusted Publishing 提供 npm 凭据；发布脚本只能从环境变量或 stdin 读取 token，不能把 token 写入日志、仓库或命令参数。
 
 ## TypeScript
 

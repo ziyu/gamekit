@@ -1,0 +1,71 @@
+name: Release Verify
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version. Defaults to packages/core version.
+        required: false
+        type: string
+      wave:
+        description: Package release wave to verify.
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - "1"
+          - "2"
+          - "3"
+      packages:
+        description: Optional comma-separated package slugs.
+        required: false
+        type: string
+
+concurrency:
+  group: release-verify-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Build Tarballs And Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Resolve Release Version
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "GAMEKITS_RELEASE_VERSION=${{ inputs.version }}" >> "$GITHUB_ENV"
+          else
+            VERSION="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("packages/core/package.json", "utf8")).version)')"
+            echo "GAMEKITS_RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          fi
+          echo "GAMEKITS_RELEASE_DIR=${{ runner.temp }}/gamekits-release" >> "$GITHUB_ENV"
+          echo "GAMEKITS_RELEASE_WAVE=${{ inputs.wave }}" >> "$GITHUB_ENV"
+          if [ -n "${{ inputs.packages }}" ]; then
+            echo "GAMEKITS_RELEASE_PACKAGES=${{ inputs.packages }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Verify Release Artifacts
+        run: corepack pnpm verify:release:gamekits
+
+      - name: Upload Release Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gamekits-release-${{ env.GAMEKITS_RELEASE_VERSION }}
+          path: ${{ env.GAMEKITS_RELEASE_DIR }}
+          if-no-files-found: error
