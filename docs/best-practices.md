@@ -97,6 +97,50 @@
 - 使用 oxlint 进行 lint，使用 oxfmt 进行格式检查和写入。
 - 根目录命令应面向日常开发，包内命令应面向 Turbo 和局部验证。
 
+## Package Release
+
+发布实践：
+
+- GameKit 采用多包发布。下游项目按需安装 facade、adapter、driver、App Host、UI 和 DevTools 包，不通过一个巨型包默认引入所有能力。
+- `apps/*` 是验证应用和示例源码，不作为 npm package 发布。
+- 可发布包必须只通过公共入口导出稳定 API；`src/index.ts` 继续只做 re-export，不承载主要实现。
+- 发布产物必须来自 library build 输出的 `dist`，不能把 `src`、`test`、`.turbo`、`tsconfig.tsbuildinfo`、缓存、日志或 app 构建产物打入 tarball。
+- package manifest 必须用 `files` 白名单限定发布内容，并声明 `exports`、`types`、`main` 和 `publishConfig.access`。
+- CSS 入口只能从发布产物导出，例如 `./dist/styles.css`；有 CSS 或必要副作用的包不能盲目声明 `sideEffects: false`。
+- React UI 类包应把 `react` 和 `react-dom` 声明为 peer dependency，并在本仓库保留 dev dependency 用于构建和测试；发布 smoke 必须确认 consumer 复用顶层 React。
+- 纯 TypeScript 包、React TSX 包、adapter/driver 包都必须通过外部安装 smoke test，验证它们离开 workspace alias 后仍能被消费。
+- 初期版本采用 lockstep 发布，先走 alpha tag 验证 tarball、Node ESM、Vite、peer dependency 和真实 app dogfood，再进入 latest。
+- Release workflow 应以通用 `release` 命名，`alpha`、`beta`、`rc`、`latest` 只是 dist-tag 参数；不要把当前阶段固化为 workflow 身份。
+- Changesets 自动化应先创建 version PR，再由合并后的 main 发布。alpha 阶段使用 Changesets pre mode，正式发布前显式 `pre exit`。
+- 普通开发者不手写 changeset；PR automation 根据可发布包的实际源码、README 或非 version-only manifest 改动生成 changeset。需要覆盖默认 bump 时使用 `changeset:major`、`changeset:minor` 或 `changeset:patch` label。
+- 自动 publish 只接受 Changesets version PR 合并后的版本提交；普通功能 PR 合并到 main 后先生成或消费 changeset，再开 version PR。
+
+依赖实践：
+
+- `@gamekit/*` 包之间在 workspace 内使用 workspace dependency，发布产物必须落成明确版本号。
+- Driver 或 adapter 明确拥有的底层 runtime 可以作为该包 dependency，例如 Phaser driver 依赖 Phaser、Koota adapter 依赖 Koota。
+- 宿主应用必须共享的 runtime 使用 peer dependency，例如 React 和 ReactDOM。
+- 测试工具包如果导出 Vitest conformance helper，应把 Vitest 作为 peer dependency，并在 Vitest 进程中做 smoke test；普通 Node ESM smoke 不应直接 import 这类测试入口。
+- 可选平台插件使用 optional peer dependency，例如 Tauri 插件。
+- 核心 facade、DataType、GameModule 公共 API 和 gameplay 包不得暴露第三方 runtime 类型。
+
+构建实践：
+
+- `tsc -b` 继续作为项目引用和类型检查门禁。
+- 发布用 library bundler 输出可被 Node ESM 和主流 bundler 消费的 JS、类型声明和 CSS 产物。
+- Rolldown 系工具链优先通过 `tsdown` 试点和接入；若不能满足 package dry-run、d.ts、external、CSS 和 smoke test 门禁，再回退到直接 Rolldown 配置或其他成熟 library bundler。
+- 所有内部 `@gamekit/*` 依赖和大型第三方 runtime 在 library build 中保持 external，不把相邻包或 Phaser、React、Tauri 等 runtime 打进 facade 包。
+- package build helper 复制 CSS 或其他静态发布入口时，应在 bundler clean 和 JS/d.ts 输出完成后执行，避免 `dist` 被后续 clean 步骤清空。
+- 单包发布构建不能递归 emit project references，否则后构建的聚合包可能覆盖前序包已经 bundler 处理过的 `dist`。包内 build helper 应只检查或生成当前包产物；全仓库 `tsc -b` 留给根级 build/test 门禁。
+- declaration bundler 遇到复杂类型递归时，可以为该包显式保留 tsc declaration tree，同时用 bundler 只输出入口 JS；这种例外要通过包级 build metadata 标记，并继续经过 tarball 和外部安装 smoke。
+- 发布 staging 目录每轮必须先清理目标包目录，再复制当前 `dist`，并在 staging 侧再次清理 `.tsbuildinfo`，避免固定 release 目录带入旧文件。
+- 发布验证中的 npm cache/logs 应隔离到 release 目录，避免用户级 `~/.npm` 权限或缓存状态影响 `npm pack`。
+- scoped package 通过 registry HTTP API 发布时，payload 需要顶层 `access: "public"`；仅保留 manifest `publishConfig.access` 可能会被 registry 当作 private scoped package。
+- 自动化发布脚本不得把 token 写入仓库、日志或命令错误栈。若调用 curl，应通过临时 config/header 文件传递 Authorization，并在结束后删除临时目录。
+- 未发布前验证一组相互依赖的 tarball 时，临时消费者必须把内部包解析到本地 tarball，例如通过 pnpmfile hook 或 overrides；否则包内的明确版本号会让安装器去 registry 查找尚未发布的相邻包。
+- registry 网络不稳定时可以重试安装步骤，但不能跳过 registry smoke；至少一次需要从 npm registry 安装已发布包并运行外部 consumer smoke。
+- GitHub Actions 发布 job 必须绑定受保护 Environment，并通过 secret 或 Trusted Publishing 提供 npm 凭据；发布脚本只能从环境变量或 stdin 读取 token，不能把 token 写入日志、仓库或命令参数。
+
 ## TypeScript
 
 - 包统一 ESM。

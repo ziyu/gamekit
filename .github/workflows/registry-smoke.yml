@@ -1,0 +1,219 @@
+name: Registry Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      dist-tag:
+        description: npm dist-tag to install.
+        required: true
+        default: alpha
+        type: choice
+        options:
+          - alpha
+          - beta
+          - rc
+          - latest
+
+concurrency:
+  group: registry-smoke-${{ inputs.dist-tag }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Install From npm Registry
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Create Consumer
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/gamekits-registry-smoke"
+          cd "$RUNNER_TEMP/gamekits-registry-smoke"
+          corepack pnpm init
+          node -e 'const fs=require("fs"); const pkg=JSON.parse(fs.readFileSync("package.json", "utf8")); delete pkg.devEngines; pkg.type="module"; fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2)+"\n");'
+          cat > smoke.mjs <<'EOF'
+          import { createElement } from "react";
+          import { renderToStaticMarkup } from "react-dom/server";
+          import { Clock } from "@gamekits/core";
+          import { createEventBus } from "@gamekits/event-bus";
+          import { defineComponent } from "@gamekits/world";
+          import { createKootaWorld } from "@gamekits/world-koota";
+          import { createGame } from "@gamekits/game-runtime";
+          import { createDataRegistry } from "@gamekits/data";
+          import { createCoreTcaDefinitions, createTcaRuleDataType } from "@gamekits/tca";
+          import { GasActor, createGasDataTypes } from "@gamekits/gas";
+          import { createWebPlatform } from "@gamekits/platform-web";
+          import { createDriverRegistry } from "@gamekits/driver-core";
+          import { createPhaserDriver } from "@gamekits/driver-phaser";
+          import { createInputRouter } from "@gamekits/input-core";
+          import { createDomInputAdapter } from "@gamekits/input-dom";
+          import { createCameraController } from "@gamekits/camera-core";
+          import { createAssetManager } from "@gamekits/asset";
+          import { createMemorySaveStore } from "@gamekits/save";
+          import { createDevToolsRuntime } from "@gamekits/devtools";
+          import { createUiRuntime } from "@gamekits/ui-core";
+          import { createHeadlessHost, createStandardAppProfile, defineGameApp } from "@gamekits/app-host";
+          import { GameKitUiShell, UiPanelHost } from "@gamekits/react-ui";
+          import { createDevToolsUiBridge, DevToolsLauncher } from "@gamekits/devtools-ui";
+
+          const clock = new Clock();
+          clock.start();
+          clock.tick(16);
+          if (clock.snapshot().ticks !== 1) throw new Error("clock smoke failed");
+
+          const bus = createEventBus({ now: () => 1 });
+          const events = [];
+          bus.onAny((event) => events.push(event));
+          bus.emit("registry.smoke", { ok: true }, "verify");
+          if (events[0]?.type !== "registry.smoke") throw new Error("event smoke failed");
+
+          const Position = defineComponent({ id: "position", create: () => ({ x: 0, y: 0 }) });
+          const world = createKootaWorld();
+          const entity = world.spawn();
+          world.add(entity, Position, { x: 1 });
+          world.add(entity, GasActor, { id: "actor.registry-smoke" });
+          const game = createGame({ modules: [], world, eventBus: bus, seed: "registry-smoke" });
+          game.start();
+          game.tick(16);
+          game.dispose();
+          if (world.count() !== 1) throw new Error("world smoke failed");
+
+          const data = createDataRegistry();
+          data.registerType(createTcaRuleDataType());
+          for (const type of createGasDataTypes()) data.registerType(type);
+          createCoreTcaDefinitions();
+
+          const platform = createWebPlatform({ appName: "GameKits Registry Smoke" });
+          if ((await platform.services.app.name()) !== "GameKits Registry Smoke") {
+            throw new Error("platform smoke failed");
+          }
+
+          const phaserDriver = createPhaserDriver({ id: "phaser-smoke" });
+          const drivers = createDriverRegistry([phaserDriver]);
+          if (!drivers.has("phaser-smoke")) throw new Error("driver smoke failed");
+
+          const inputRouter = createInputRouter();
+          let inputCount = 0;
+          const domInput = createDomInputAdapter({
+            target: {
+              addEventListener() {
+                inputCount += 1;
+              },
+              removeEventListener() {
+                inputCount -= 1;
+              }
+            },
+            onInput(input) {
+              inputRouter.handle(input);
+            },
+            scope: "game",
+            clock: () => 1
+          });
+          domInput.start();
+          domInput.stop();
+          if (inputCount !== 0) throw new Error("dom input smoke failed");
+
+          const camera = createCameraController({ viewport: { width: 800, height: 600 } });
+          camera.pan(10, 20);
+          if (camera.getState().x <= 400) throw new Error("camera smoke failed");
+
+          const assets = createAssetManager({
+            adapter: {
+              id: "registry-memory-assets",
+              supports() {
+                return true;
+              },
+              async load() {
+                return undefined;
+              }
+            }
+          });
+          assets.register({ id: "debug-square", type: "image", source: { uri: "debug-square.png" } });
+          await assets.load("debug-square");
+
+          const saveStore = createMemorySaveStore();
+          await saveStore.write("slot-1", new Uint8Array([1, 2, 3]), { id: "slot-1", label: "Smoke" });
+          if ((await saveStore.read("slot-1"))[2] !== 3) throw new Error("save smoke failed");
+
+          const devtools = createDevToolsRuntime();
+          const ui = createUiRuntime();
+          ui.registerPanel({ id: "panel.smoke", kind: "panel", title: "Smoke" });
+          ui.open("panel.smoke");
+          const bridge = createDevToolsUiBridge({ devtools, ui });
+          bridge.openShell();
+
+          const shellHtml = renderToStaticMarkup(
+            createElement(
+              GameKitUiShell,
+              { runtime: ui },
+              createElement(UiPanelHost, {
+                renderPanel: (panel) => createElement("span", null, String(panel.props))
+              })
+            )
+          );
+          const launcherHtml = renderToStaticMarkup(
+            createElement(DevToolsLauncher, { runtime: devtools, uiRuntime: ui, label: "Inspect" })
+          );
+          if (!shellHtml.includes("Smoke") || !launcherHtml.includes("gamekit-devtools-launcher")) {
+            throw new Error("react/devtools-ui smoke failed");
+          }
+
+          const app = defineGameApp({ id: "registry-smoke", services: [] });
+          const profile = createStandardAppProfile({ id: "registry-profile" });
+          const host = createHeadlessHost({ id: "registry-headless" });
+          if (app.id !== "registry-smoke" || profile.id !== "registry-profile" || host.snapshot().phase !== "registered") {
+            throw new Error("app-host smoke failed");
+          }
+
+          console.log("gamekits registry smoke ok");
+          EOF
+
+      - name: Install Packages
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/gamekits-registry-smoke"
+          TAG="${{ inputs.dist-tag }}"
+          corepack pnpm add \
+            "@gamekits/core@$TAG" \
+            "@gamekits/event-bus@$TAG" \
+            "@gamekits/world@$TAG" \
+            "@gamekits/world-koota@$TAG" \
+            "@gamekits/game-runtime@$TAG" \
+            "@gamekits/data@$TAG" \
+            "@gamekits/tca@$TAG" \
+            "@gamekits/gas@$TAG" \
+            "@gamekits/platform-core@$TAG" \
+            "@gamekits/platform-web@$TAG" \
+            "@gamekits/renderer-core@$TAG" \
+            "@gamekits/renderer-phaser@$TAG" \
+            "@gamekits/input-core@$TAG" \
+            "@gamekits/input-dom@$TAG" \
+            "@gamekits/camera-core@$TAG" \
+            "@gamekits/driver-core@$TAG" \
+            "@gamekits/driver-phaser@$TAG" \
+            "@gamekits/asset@$TAG" \
+            "@gamekits/save@$TAG" \
+            "@gamekits/devtools@$TAG" \
+            "@gamekits/ui-core@$TAG" \
+            "@gamekits/app-host@$TAG" \
+            "@gamekits/react-ui@$TAG" \
+            "@gamekits/devtools-ui@$TAG" \
+            "react@^18.3.1" \
+            "react-dom@^18.3.1" \
+            --ignore-scripts \
+            --registry https://registry.npmjs.org/
+
+      - name: Check React Peer Reuse
+        run: corepack pnpm list react react-dom --depth 10
+        working-directory: ${{ runner.temp }}/gamekits-registry-smoke
+
+      - name: Run Smoke
+        run: node smoke.mjs
+        working-directory: ${{ runner.temp }}/gamekits-registry-smoke

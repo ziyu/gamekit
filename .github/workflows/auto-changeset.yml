@@ -1,0 +1,60 @@
+name: Auto Changeset
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+      - labeled
+      - unlabeled
+      - ready_for_review
+
+concurrency:
+  group: auto-changeset-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  create:
+    name: Create Changeset
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !startsWith(github.event.pull_request.title, 'Version GameKit packages')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR Branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Fetch Base Branch
+        run: git fetch origin ${{ github.base_ref }} --depth=1
+
+      - name: Generate Changeset
+        run: node scripts/create-auto-changeset.mjs
+        env:
+          AUTO_CHANGESET_BASE_REF: origin/${{ github.base_ref }}
+          AUTO_CHANGESET_PR_NUMBER: ${{ github.event.pull_request.number }}
+          AUTO_CHANGESET_TITLE: ${{ github.event.pull_request.title }}
+          AUTO_CHANGESET_BODY: ${{ github.event.pull_request.body }}
+          AUTO_CHANGESET_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+
+      - name: Commit Changeset
+        shell: bash
+        run: |
+          if [ -z "$(git status --porcelain -- .changeset)" ]; then
+            echo "No changeset changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A .changeset
+          git commit -m "Add automatic changeset"
+          git push

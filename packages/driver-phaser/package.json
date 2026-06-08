@@ -1,7 +1,7 @@
 {
   "name": "@gamekit/driver-phaser",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.0-alpha.0",
+  "private": false,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "node ../../scripts/build-library-package.mjs",
     "test": "vitest run --root ../.. --config vitest.config.ts packages/driver-phaser/test --passWithNoTests",
     "lint": "oxlint ."
   },
@@ -25,5 +25,12 @@
     "@gamekit/renderer-core": "workspace:*",
     "@gamekit/renderer-phaser": "workspace:*",
     "phaser": "4.1.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
   }
 }
