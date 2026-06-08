@@ -58,6 +58,25 @@ jobs:
       - name: Install
         run: corepack pnpm install --frozen-lockfile
 
+      - name: Generate Missing Changeset
+        shell: bash
+        run: |
+          node scripts/create-auto-changeset.mjs
+          if [ -z "$(git status --porcelain -- .changeset)" ]; then
+            echo "No generated changeset to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A .changeset
+          git commit -m "Add automatic changeset"
+          git push
+        env:
+          AUTO_CHANGESET_BASE_REF: HEAD^
+          AUTO_CHANGESET_TITLE: ${{ github.event.head_commit.message }}
+          AUTO_CHANGESET_BODY: ${{ github.event.head_commit.message }}
+
       - name: Create Version PR
         id: changesets
         uses: changesets/action@v1
@@ -84,7 +103,8 @@ jobs:
         id: version-changes
         shell: bash
         run: |
-          if git diff-tree --no-commit-id --name-only -r HEAD | grep -E '^packages/[^/]+/package\.json$' >/dev/null; then
+          if git log -1 --pretty=%s | grep -E '^Version GameKit packages\b' >/dev/null &&
+            git diff-tree --no-commit-id --name-only -r HEAD | grep -E '^packages/[^/]+/package\.json$' >/dev/null; then
             echo "should-publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "should-publish=false" >> "$GITHUB_OUTPUT"

@@ -217,18 +217,18 @@ Status: Active
 
 ## Tasks
 
-| Task                               | Status   | Notes                                                                                                                                               |
-| ---------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 新增发布 ADR                       | Verified | 已创建 `docs/adr/0008-package-publication-and-build-toolchain.md`。                                                                                 |
-| 补充长期发布最佳实践               | Verified | 发布实践写入 `docs/best-practices.md`。                                                                                                             |
-| Wave 0：构建与 manifest 基础       | Verified | 已用 `@gamekit/core` 跑通 tsdown、manifest、dry-run 和外部 Node ESM smoke test。                                                                    |
-| Wave 1：Headless core packages     | Verified | 已完成 core/event-bus/world/platform-core/renderer-core/world-koota/game-runtime/data/tca/gas/test-utils 的 npm alpha 发布、registry 安装和 smoke。 |
-| Wave 2：Web App Host + Phaser path | Verified | 已完成 Web/App Host/Phaser 路径新增包的 npm alpha 发布、registry 安装和 smoke。                                                                     |
-| Wave 3：React UI + DevTools UI     | Verified | 已完成 React UI/DevTools UI 的 npm alpha 发布、registry 安装、React peer 和 CSS export smoke。                                                      |
-| Wave 4：Tauri optional platform    | Planned  | 第一批核心验证后再发布 platform-tauri。                                                                                                             |
-| 接入 Changesets                    | Verified | 已接入 Changesets lockstep 固定包组、alpha pre mode 和 GitHub Actions version PR/publish workflow。                                                 |
-| GitHub Actions 发布流水线          | Verified | 已新增 CI、Release Verify、Release、Registry Smoke workflows；release workflow 用参数控制 dist-tag，不把 alpha 固化为 workflow 身份。               |
-| 更新 README 安装示例               | Planned  | 面向 Web + Phaser、headless test、Tauri app 三类消费路径。                                                                                          |
+| Task                               | Status   | Notes                                                                                                                                                 |
+| ---------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 新增发布 ADR                       | Verified | 已创建 `docs/adr/0008-package-publication-and-build-toolchain.md`。                                                                                   |
+| 补充长期发布最佳实践               | Verified | 发布实践写入 `docs/best-practices.md`。                                                                                                               |
+| Wave 0：构建与 manifest 基础       | Verified | 已用 `@gamekit/core` 跑通 tsdown、manifest、dry-run 和外部 Node ESM smoke test。                                                                      |
+| Wave 1：Headless core packages     | Verified | 已完成 core/event-bus/world/platform-core/renderer-core/world-koota/game-runtime/data/tca/gas/test-utils 的 npm alpha 发布、registry 安装和 smoke。   |
+| Wave 2：Web App Host + Phaser path | Verified | 已完成 Web/App Host/Phaser 路径新增包的 npm alpha 发布、registry 安装和 smoke。                                                                       |
+| Wave 3：React UI + DevTools UI     | Verified | 已完成 React UI/DevTools UI 的 npm alpha 发布、registry 安装、React peer 和 CSS export smoke。                                                        |
+| Wave 4：Tauri optional platform    | Planned  | 第一批核心验证后再发布 platform-tauri。                                                                                                               |
+| 接入 Changesets                    | Verified | 已接入 Changesets lockstep 固定包组、alpha pre mode、自动 changeset 生成和 GitHub Actions version PR/publish workflow。                               |
+| GitHub Actions 发布流水线          | Verified | 已新增 CI、Auto Changeset、Release Verify、Release、Registry Smoke workflows；release workflow 用参数控制 dist-tag，不把 alpha 固化为 workflow 身份。 |
+| 更新 README 安装示例               | Planned  | 面向 Web + Phaser、headless test、Tauri app 三类消费路径。                                                                                            |
 
 ## Acceptance Criteria
 
@@ -264,6 +264,7 @@ Status: Active
 - 2026-06-07：Wave 3 registry smoke 通过。在 `/private/tmp/gamekits-wave3-registry-consumer-B8xBGB` 中通过 `corepack pnpm add @gamekits/core@alpha @gamekits/devtools@alpha @gamekits/ui-core@alpha @gamekits/react-ui@alpha @gamekits/devtools-ui@alpha react@^18.3.1 react-dom@^18.3.1 --ignore-scripts --registry https://registry.npmjs.org/` 从 npm registry 安装 UI 闭包；`corepack pnpm list react react-dom --depth 10` 显示 UI 包复用 consumer 顶层 React peer；`node smoke.mjs` 输出 `gamekits wave 3 smoke ok`。
 - 2026-06-07：Wave 3 收口验证通过。`corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format` 均通过；首次 format check 发现本文档换行问题，已用 `corepack pnpm exec oxfmt .` 修复后复跑通过。
 - 2026-06-07：GitHub Actions 和 Changesets 发布自动化接入。新增 `.github/workflows/ci.yml`、`release-verify.yml`、`release.yml`、`registry-smoke.yml`；`release.yml` 在 push main 时通过 Changesets Action 创建 version PR 或发布，在手动触发时通过 `dist-tag` 输入支持 `alpha`、`beta`、`rc`、`latest`。新增 `.changeset/config.json`，将当前可发布包纳入 fixed lockstep group，并进入 `alpha` pre mode；包版本同步为已发布的 `0.1.0-alpha.0`。
+- 2026-06-08：自动 changeset 闭环接入。新增 `.github/workflows/auto-changeset.yml` 和 `scripts/create-auto-changeset.mjs`；同仓库 PR 会根据可发布包的源码、README 或非 version-only manifest 改动自动提交 changeset，main push release job 也会在缺失 changeset 时兜底生成。自动 publish 闸门收紧为只接受 `Version GameKit packages` 版本提交，避免普通 PR 合并后绕过 version PR 直接发布。
 
 ## Next Implementation Entry
 

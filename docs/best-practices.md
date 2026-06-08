@@ -112,6 +112,8 @@
 - 初期版本采用 lockstep 发布，先走 alpha tag 验证 tarball、Node ESM、Vite、peer dependency 和真实 app dogfood，再进入 latest。
 - Release workflow 应以通用 `release` 命名，`alpha`、`beta`、`rc`、`latest` 只是 dist-tag 参数；不要把当前阶段固化为 workflow 身份。
 - Changesets 自动化应先创建 version PR，再由合并后的 main 发布。alpha 阶段使用 Changesets pre mode，正式发布前显式 `pre exit`。
+- 普通开发者不手写 changeset；PR automation 根据可发布包的实际源码、README 或非 version-only manifest 改动生成 changeset。需要覆盖默认 bump 时使用 `changeset:major`、`changeset:minor` 或 `changeset:patch` label。
+- 自动 publish 只接受 Changesets version PR 合并后的版本提交；普通功能 PR 合并到 main 后先生成或消费 changeset，再开 version PR。
 
 依赖实践：
 

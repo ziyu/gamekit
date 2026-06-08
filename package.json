@@ -19,6 +19,7 @@
     "format:write": "oxfmt --write .",
     "bench:world": "tsx scripts/world-benchmark.ts",
     "changeset": "changeset",
+    "changeset:auto": "node scripts/create-auto-changeset.mjs",
     "release:publish": "node scripts/release-gamekits.mjs",
     "release:version": "changeset version && corepack pnpm install --lockfile-only",
     "verify:release:core": "tsx scripts/verify-core-release.ts",
