@@ -40,7 +40,7 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
-      has-changesets: ${{ steps.changesets.outputs.hasChangesets }}
+      has-changesets: ${{ steps.check-changesets.outputs.has-changesets }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -77,8 +77,19 @@ jobs:
           AUTO_CHANGESET_TITLE: ${{ github.event.head_commit.message }}
           AUTO_CHANGESET_BODY: ${{ github.event.head_commit.message }}
 
+      - name: Check Changesets
+        id: check-changesets
+        shell: bash
+        run: |
+          if find .changeset -maxdepth 1 -type f -name '*.md' ! -name 'README.md' | grep -q .; then
+            echo "has-changesets=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-changesets=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create Version PR
         id: changesets
+        if: steps.check-changesets.outputs.has-changesets == 'true'
         uses: changesets/action@v1
         with:
           title: Version GameKit packages
