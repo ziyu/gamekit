@@ -21,7 +21,7 @@
     "changeset": "changeset",
     "changeset:auto": "node scripts/create-auto-changeset.mjs",
     "release:publish": "node scripts/release-gamekits.mjs",
-    "release:version": "changeset version && corepack pnpm install --lockfile-only",
+    "release:version": "changeset version && corepack pnpm install --lockfile-only && corepack pnpm exec oxfmt .",
     "verify:release:core": "tsx scripts/verify-core-release.ts",
     "verify:release:gamekits": "node scripts/verify-gamekits-release.ts",
     "publish:release:gamekits": "node scripts/publish-gamekits-release.mjs"
