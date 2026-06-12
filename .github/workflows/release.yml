@@ -114,8 +114,9 @@ jobs:
         id: version-changes
         shell: bash
         run: |
-          if git log -1 --pretty=%s | grep -E '^Version GameKit packages\b' >/dev/null &&
-            git diff-tree --no-commit-id --name-only -r HEAD | grep -E '^packages/[^/]+/package\.json$' >/dev/null; then
+          changed_files="$(git diff-tree -m --no-commit-id --name-only -r HEAD)"
+          if echo "$changed_files" | grep -E '^packages/[^/]+/package\.json$' >/dev/null &&
+            echo "$changed_files" | grep -E '^\.changeset/pre\.json$|^packages/[^/]+/CHANGELOG\.md$' >/dev/null; then
             echo "should-publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "should-publish=false" >> "$GITHUB_OUTPUT"
