@@ -110,23 +110,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check Version Changes
-        id: version-changes
-        shell: bash
-        run: |
-          changed_files="$(git diff-tree -m --no-commit-id --name-only -r HEAD)"
-          if echo "$changed_files" | grep -E '^packages/[^/]+/package\.json$' >/dev/null &&
-            echo "$changed_files" | grep -E '^\.changeset/pre\.json$|^packages/[^/]+/CHANGELOG\.md$' >/dev/null; then
-            echo "should-publish=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should-publish=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Setup Node
-        if: steps.version-changes.outputs.should-publish == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      - name: Check Release Needed
+        id: version-changes
+        run: node scripts/check-release-needed.mjs
 
       - name: Enable Corepack
         if: steps.version-changes.outputs.should-publish == 'true'
