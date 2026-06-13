@@ -110,11 +110,13 @@
 - React UI 类包应把 `react` 和 `react-dom` 声明为 peer dependency，并在本仓库保留 dev dependency 用于构建和测试；发布 smoke 必须确认 consumer 复用顶层 React。
 - 纯 TypeScript 包、React TSX 包、adapter/driver 包都必须通过外部安装 smoke test，验证它们离开 workspace alias 后仍能被消费。
 - 初期版本采用 lockstep 发布，先走 alpha tag 验证 tarball、Node ESM、Vite、peer dependency 和真实 app dogfood，再进入 latest。
+- alpha-only bootstrap 阶段可以把 `latest` 同步到当前 alpha，避免 npm 默认包页和默认安装入口停在旧 alpha；一旦 `latest` 指向正式版本，后续 prerelease 只能更新 `alpha`、`beta` 或 `rc`，不能覆盖稳定 `latest`。
 - Release workflow 应以通用 `release` 命名，`alpha`、`beta`、`rc`、`latest` 只是 dist-tag 参数；不要把当前阶段固化为 workflow 身份。
 - Changesets 自动化应先创建 version PR，再由合并后的 main 发布。alpha 阶段使用 Changesets pre mode，正式发布前显式 `pre exit`。
 - 普通开发者不手写 changeset；PR automation 根据可发布包的实际源码、README 或非 version-only manifest 改动生成 changeset。需要覆盖默认 bump 时使用 `changeset:major`、`changeset:minor` 或 `changeset:patch` label。
 - Changesets pre mode 会在 `.changeset/pre.json` 记录已消费 changeset；判断是否存在待发布 changeset 时必须排除这些已消费 id，不能只看 `.changeset/*.md` 文件是否存在。
 - 自动 publish 只在没有待消费 changeset 且当前包版本尚未发布到 registry 时运行；检测应基于 registry 中的实际发布状态，不依赖 merge commit 标题或单次 push 的文件列表。
+- 自动 publish 还必须检测 npm dist-tag 是否指向当前版本；若版本已存在但 tag 仍停在旧版本，发布脚本应走幂等 retag 路径而不是重新上传 tarball。
 - npm package 发布成功后必须创建 `v<version>` Git tag 和 GitHub Release；`alpha`、`beta`、`rc` 等预发布版本在 GitHub Release 中标记为 prerelease。tag/release 创建逻辑必须幂等，不能移动已经存在且指向不同 commit 的版本 tag。
 
 依赖实践：
