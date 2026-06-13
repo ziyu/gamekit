@@ -114,6 +114,11 @@ GameKit 采用多包发布，而不是单包发布。
 - `0.1.0-alpha.N`：验证包形态、外部安装、Node ESM、Vite、React peer 和 app dogfood。
 - `0.1.x` latest：alpha 验证通过后发布，作为早期稳定 API 起点。
 
+2026-06-13 补充：实际 npm scope 在首个 alpha 发布后已经存在 `latest` tag。如果 `latest`
+仍指向旧 alpha，npm 默认包页和默认安装入口会误导下游使用旧包。因此在尚无稳定版本的
+alpha-only bootstrap 阶段，发布自动化允许把 `latest` 同步到当前 alpha；一旦 `latest`
+指向不带 prerelease 后缀的稳定版本，后续 alpha/beta/rc 发布不得覆盖稳定 `latest`。
+
 每次发布必须经过：
 
 - lint / test / build / format。

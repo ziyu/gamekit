@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { inferDistTag } from "./release-dist-tags.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageVersion = JSON.parse(
@@ -12,15 +13,6 @@ const releaseVersion = process.env.GAMEKITS_RELEASE_VERSION ?? packageVersion;
 const releaseDir =
   process.env.GAMEKITS_RELEASE_DIR ?? mkdtempSync(join(tmpdir(), "gamekits-release-"));
 const distTag = process.env.GAMEKITS_NPM_TAG ?? inferDistTag(releaseVersion);
-
-function inferDistTag(version) {
-  const prerelease = version.split("-")[1]?.split(".")[0];
-  if (prerelease === "alpha" || prerelease === "beta" || prerelease === "rc") {
-    return prerelease;
-  }
-
-  return "latest";
-}
 
 function run(command, args, options = {}) {
   execFileSync(command, args, {
