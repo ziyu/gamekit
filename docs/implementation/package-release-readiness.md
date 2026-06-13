@@ -1,6 +1,9 @@
 # Package Release Readiness
 
-Status: Active
+Status: Closed
+
+当前发布操作流程已经迁移到 `docs/release.md`。本文档只作为发布准备工作的历史执行记录保留，
+不要把这里的阶段计划或旧排障记录作为当前发布 runbook。
 
 ## Goal
 
@@ -266,14 +269,15 @@ Status: Active
 - 2026-06-07：GitHub Actions 和 Changesets 发布自动化接入。新增 `.github/workflows/ci.yml`、`release-verify.yml`、`release.yml`、`registry-smoke.yml`；`release.yml` 在 push main 时通过 Changesets Action 创建 version PR 或发布，在手动触发时通过 `dist-tag` 输入支持 `alpha`、`beta`、`rc`、`latest`。新增 `.changeset/config.json`，将当前可发布包纳入 fixed lockstep group，并进入 `alpha` pre mode；包版本同步为已发布的 `0.1.0-alpha.0`。
 - 2026-06-08：自动 changeset 闭环接入。新增 `.github/workflows/auto-changeset.yml` 和 `scripts/create-auto-changeset.mjs`；同仓库 PR 会根据可发布包的源码、README 或非 version-only manifest 改动自动提交 changeset，main push release job 也会在缺失 changeset 时兜底生成。自动 publish 闸门收紧为只接受 `Version GameKit packages` 版本提交，避免普通 PR 合并后绕过 version PR 直接发布。
 
-## Next Implementation Entry
+## Archived Follow-ups
 
-下一步进入发布体验产品化：补 README 安装示例，补 GitHub Environment/Secrets 配置说明，并把 `@gamekit/platform-tauri` 作为 Wave 4 单独验证。Tauri 发布前需要真实 Tauri app import smoke，确认 optional peer 在普通 Node/Vite consumer 中不会变成硬依赖。
+后续仍有价值的工作应重新进入独立 issue、PR 或新的 implementation 工作流：
+
+- 补 README 安装示例，覆盖 Web + Phaser、headless test、Tauri app 三类消费路径。
+- 将 `@gamekit/platform-tauri` 作为单独发布验证工作流处理；Tauri 发布前需要真实 Tauri app import smoke，确认 optional peer 在普通 Node/Vite consumer 中不会变成硬依赖。
 
 ## Closure Notes
 
-关闭本工作流前必须：
-
-- 把最终发布实践迁移到 `docs/best-practices.md`。
-- 若 Rolldown 系工具链选择发生变化，更新或 supersede ADR 0008。
-- 记录最终验证命令、结果和提交号或 PR。
+本工作流关闭时已经把稳定发布实践迁移到 `docs/best-practices.md`，把当前操作流程迁移到
+`docs/release.md`。Rolldown 系工具链决策仍由 ADR 0008 维护；若未来发布工具链变化，应新增
+ADR 或 supersede ADR 0008。
