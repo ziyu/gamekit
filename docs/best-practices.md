@@ -99,6 +99,9 @@
 
 ## Package Release
 
+当前发布操作流程、Version PR 合并顺序、手动触发方式和故障排查见
+`docs/release.md`。本节只维护长期发布原则和反模式。
+
 发布实践：
 
 - GameKit 采用多包发布。下游项目按需安装 facade、adapter、driver、App Host、UI 和 DevTools 包，不通过一个巨型包默认引入所有能力。
@@ -144,6 +147,7 @@
 - 未发布前验证一组相互依赖的 tarball 时，临时消费者必须把内部包解析到本地 tarball，例如通过 pnpmfile hook 或 overrides；否则包内的明确版本号会让安装器去 registry 查找尚未发布的相邻包。
 - registry 网络不稳定时可以重试安装步骤，但不能跳过 registry smoke；至少一次需要从 npm registry 安装已发布包并运行外部 consumer smoke。
 - GitHub Actions 发布 job 必须绑定受保护 Environment，并通过 secret 或 Trusted Publishing 提供 npm 凭据；发布脚本只能从环境变量或 stdin 读取 token，不能把 token 写入日志、仓库或命令参数。
+- 具体发布步骤必须维护在 `docs/release.md`，不要把一次发布的临时状态、失败日志或人工补救命令写入长期最佳实践。
 
 ## TypeScript
 

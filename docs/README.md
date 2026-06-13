@@ -8,6 +8,7 @@
 - `architecture.md`：稳定架构边界、包职责、依赖方向。
 - `implementation-principles.md`：写代码时必须遵守的工程原则。
 - `best-practices.md`：模块拆分、测试、数据驱动、adapter、UI 等实践规则。
+- `release.md`：发布触发、Version PR、npm dist-tag、GitHub Release 和故障排查 runbook。
 - `apps/`：`apps/*` 下应用、demo、editor 和验证面的长期设计。
 - `development-governance.md`：常态开发阶段的文档治理、状态记录和关闭规则。
 - `modules/`：各模块最终长期设计，按模块独立维护。
@@ -24,6 +25,7 @@
 | `architecture.md`              | 包边界、依赖方向、分层关系、公共架构约束             | 为什么做这个项目、阶段完成情况、模块详细协议 |
 | `implementation-principles.md` | 写代码时必须遵守的原则、代码质量、可测试性、可解释性 | 具体阶段计划、某次技术决策的历史原因         |
 | `best-practices.md`            | 已验证的实践做法、性能经验、测试策略、反模式         | 不可变的项目目标、临时 TODO、阶段进度        |
+| `release.md`                   | 当前发布操作流程、触发条件、环境要求、故障排查       | 发布工具链取舍、历史执行记录、包长期边界     |
 | `apps/`                        | 应用、demo、editor、验证面的长期设计                 | 阶段状态、模块协议、包边界                   |
 | `development-governance.md`    | 常态开发的文档分类、状态记录、关闭规则和冲突处理     | 具体工作流状态、模块协议、项目目标           |
 | `implementation/`              | 短期工作流的任务拆分、review、测试证据和提交记录     | 长期协议的唯一来源、模块最终设计             |
@@ -39,6 +41,7 @@
 - “某个模块现在做到哪、下一步怎么做”不要放 `modules/`；小任务放 issue/PR，大工作流放 `implementation/`。
 - “代码应该怎么写”放 `implementation-principles.md`。
 - “做过后证明有效的方式”放 `best-practices.md`。
+- “如何触发发布、如何判断发布是否完成、发布失败怎么排查”放 `release.md`。
 - “常态开发如何记录状态、如何关闭工作流”放 `development-governance.md`。
 - “MVP 已经完成了什么”看已关闭的 `implementation/phase-15-abyss-delve.md` 和提交历史，不再维护单独归档文档。
 - “当时为什么这样决策”放 `adr/`。

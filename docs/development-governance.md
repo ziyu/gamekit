@@ -21,6 +21,7 @@ GameKit 的文档分为三类：
 | 模块设计 | `modules/<module>.md`             | 模块长期职责、公共协议、adapter/driver 边界、扩展点、长期实践 | 当前实现状态、临时 TODO、阶段计划、完成定义 |
 | 应用设计 | `apps/<app>.md`                   | app/demo/editor 的长期体验、内容结构、交互方式和模块协作      | 阶段状态、任务拆分、临时验收记录            |
 | 最佳实践 | `best-practices.md`               | 跨模块通用实践、性能经验、测试策略、反模式                    | 单次任务状态、不可变项目目标                |
+| 发布手册 | `release.md`                      | 当前发布触发条件、Version PR、npm/GitHub Release 操作与排障   | 发布工具链取舍、历史执行记录、包长期边界    |
 | 实现原则 | `implementation-principles.md`    | 代码质量、可测试性、可解释性、工程约束                        | 某次实现计划、历史决策过程                  |
 | ADR      | `adr/`                            | 高影响决策的背景、候选方案、取舍和后果                        | 持续更新的开发状态、普通任务列表            |
 | 执行记录 | `implementation/` 或任务系统 / PR | 某次工作流的拆分、review、测试证据、提交记录                  | 长期协议的唯一来源、模块最终设计            |
@@ -90,6 +91,7 @@ GameKit 的文档分为三类：
 | 某技术取舍为什么成立   | `docs/adr/`                                              |
 | 多模块依赖边界         | `docs/architecture.md`                                   |
 | 跨模块最佳实践         | `docs/best-practices.md`                                 |
+| 当前发布操作流程       | `docs/release.md`                                        |
 | 常态开发文档怎么维护   | 本文档                                                   |
 | 已关闭 MVP 的执行证据  | `docs/implementation/phase-15-abyss-delve.md` 和提交历史 |
 

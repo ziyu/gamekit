@@ -12,6 +12,7 @@
 - `docs/implementation-principles.md`：确认实现原则和代码质量要求。
 - `docs/best-practices.md`：确认测试、性能、模块拆分实践。
 - `docs/development-governance.md`：确认常态开发阶段如何记录状态、关闭工作流，并避免短期状态污染长期文档。
+- `docs/release.md`：涉及发布、版本、Changesets、npm、GitHub Actions 或包消费流程时，确认当前发布触发和排障规则。
 
 涉及重大技术选择、包边界变化、第三方库引入、公共 API 调整时，必须新增或更新 `docs/adr/`。
 
@@ -26,6 +27,7 @@
 - 已验证的开发实践、性能经验、测试策略、反模式：写入 `docs/best-practices.md`。
 - 常态开发中的具体状态、任务拆分、review、测试证据：写入任务系统、PR，或按需写入 `docs/implementation/` 下的短期工作流记录。
 - 开发文档治理、状态记录和关闭规则：写入 `docs/development-governance.md`。
+- 发布触发、Version PR、npm dist-tag、GitHub Release 和发布故障排查：写入 `docs/release.md`。
 - 重大决策的背景、候选方案、取舍和后果：写入 `docs/adr/`。
 
 如果一个改动看起来需要更新多个文档，先判断它是不是由两类不同事实组成。不要复制粘贴同一内容；在次要文档中只保留一句引用。
