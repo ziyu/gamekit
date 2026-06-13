@@ -78,9 +78,16 @@ function resolvePackageNames() {
     .filter((entry) => entry.isDirectory())
     .map((entry) => join(packagesDir, entry.name, "package.json"))
     .filter((manifestPath) => existsSync(manifestPath))
-    .map((manifestPath) => JSON.parse(readFileSync(manifestPath, "utf8")).name)
-    .filter((name) => typeof name === "string" && name.startsWith("@gamekits/"))
+    .map((manifestPath) => JSON.parse(readFileSync(manifestPath, "utf8")))
+    .filter((manifest) => manifest.private !== true)
+    .map((manifest) => manifest.name)
+    .filter((name) => typeof name === "string" && name.startsWith("@gamekit/"))
+    .map(publicPackageName)
     .sort();
+}
+
+function publicPackageName(name) {
+  return name.replace(/^@gamekit\//, "@gamekits/");
 }
 
 function writeOutput(name, value) {

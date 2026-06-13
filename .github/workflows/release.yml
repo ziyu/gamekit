@@ -134,6 +134,13 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           GAMEKITS_RELEASE_DIR: ${{ runner.temp }}/gamekits-release
 
+      - name: Create GitHub Release
+        run: node scripts/create-github-release.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GAMEKITS_RELEASE_VERSION: ${{ steps.version-changes.outputs.release-version }}
+          GAMEKITS_RELEASE_DIR: ${{ runner.temp }}/gamekits-release
+
   manual-release:
     name: Manual Release
     if: github.event_name == 'workflow_dispatch'
@@ -172,3 +179,8 @@ jobs:
         run: corepack pnpm release:publish
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        run: node scripts/create-github-release.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

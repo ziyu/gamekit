@@ -114,6 +114,7 @@
 - Changesets 自动化应先创建 version PR，再由合并后的 main 发布。alpha 阶段使用 Changesets pre mode，正式发布前显式 `pre exit`。
 - 普通开发者不手写 changeset；PR automation 根据可发布包的实际源码、README 或非 version-only manifest 改动生成 changeset。需要覆盖默认 bump 时使用 `changeset:major`、`changeset:minor` 或 `changeset:patch` label。
 - 自动 publish 只在没有待消费 changeset 且当前包版本尚未发布到 registry 时运行；检测应基于 registry 中的实际发布状态，不依赖 merge commit 标题或单次 push 的文件列表。
+- npm package 发布成功后必须创建 `v<version>` Git tag 和 GitHub Release；`alpha`、`beta`、`rc` 等预发布版本在 GitHub Release 中标记为 prerelease。tag/release 创建逻辑必须幂等，不能移动已经存在且指向不同 commit 的版本 tag。
 
 依赖实践：
 
