@@ -110,7 +110,7 @@ async function publish(slug) {
   );
   const body = readFileSync(responsePath, "utf8");
   if (!["200", "201"].includes(status)) {
-    if (status === "409" && body.includes("cannot modify pre-existing version")) {
+    if (isAlreadyPublishedResponse(status, body)) {
       console.log(`${name}@${version} already exists`);
       await syncDistTags(name);
       return;
@@ -120,6 +120,13 @@ async function publish(slug) {
 
   console.log(`published ${name}@${version}`);
   await syncDistTags(name);
+}
+
+function isAlreadyPublishedResponse(status, body) {
+  return (
+    (status === "409" && body.includes("cannot modify pre-existing version")) ||
+    (status === "403" && body.includes("previously published versions"))
+  );
 }
 
 try {
