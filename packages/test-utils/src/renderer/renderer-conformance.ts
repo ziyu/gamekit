@@ -18,7 +18,7 @@ export function defineRendererConformanceTests(
   createRenderer: () => RendererAdapter
 ): void {
   describe(`${name} RendererAdapter conformance`, () => {
-    it("boots, exposes a view, reports capabilities, and resizes", async () => {
+    it("boots, exposes a view and native bridge, and resizes", async () => {
       const renderer = createRenderer();
       const container = createTestContainer();
       const diagnostics: string[] = [];
@@ -32,12 +32,12 @@ export function defineRendererConformanceTests(
       renderer.resize(640, 480);
 
       expect(renderer.getView()).toBeTruthy();
-      expect(renderer.capabilities().objectTypes).toContain("debug.square");
+      expect(renderer.native()).toBeTruthy();
       expect(diagnostics).toContain("renderer.booted");
       renderer.destroy();
     });
 
-    it("creates, updates, commands, updates nodes, and destroys render objects", async () => {
+    it("creates, resolves handles, commands, resolves nodes, and destroys render objects", async () => {
       const renderer = createRenderer();
       const container = createTestContainer();
 
@@ -56,20 +56,13 @@ export function defineRendererConformanceTests(
       });
 
       expect(objectId).toBeTruthy();
-      expect(() =>
-        renderer.updateObject(objectId, { transform: { position: { x: 24, y: 32 } } })
-      ).not.toThrow();
-      expect(() =>
-        renderer.updateNode?.(objectId, "body", { transform: { position: { x: 3, y: 4 } } })
-      ).not.toThrow();
+      expect(renderer.getObjectHandle?.(objectId)).toMatchObject({ id: objectId });
+      expect(renderer.getNodeHandle?.(objectId, "body")).toMatchObject({ id: objectId });
       expect(() =>
         renderer.command?.(objectId, { type: "animation.play", args: { animationId: "idle" } })
       ).not.toThrow();
-      expect(renderer.getObjectHandle?.(objectId)).toMatchObject({ id: objectId });
       expect(() => renderer.destroyObject(objectId)).not.toThrow();
-      expect(() =>
-        renderer.updateObject(objectId, { transform: { position: { x: 0 } } })
-      ).toThrow();
+      expect(() => renderer.getObjectHandle?.(objectId)).toThrow();
       renderer.destroy();
     });
 
@@ -98,9 +91,7 @@ export function defineRendererConformanceTests(
         children: [{ id: "body", type: "debug.square" }]
       });
 
-      expect(() =>
-        renderer.updateNode?.(objectId, "missing", { transform: { position: { x: 1 } } })
-      ).toThrow();
+      expect(() => renderer.getNodeHandle?.(objectId, "missing")).toThrow();
       expect(() => renderer.command?.(objectId, { type: "unknown.command" })).toThrow();
       renderer.destroy();
     });

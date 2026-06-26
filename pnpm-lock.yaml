@@ -99,6 +99,9 @@ importers:
       '@gamekit/renderer-core':
         specifier: workspace:*
         version: link:../../packages/renderer-core
+      '@gamekit/renderer-phaser':
+        specifier: workspace:*
+        version: link:../../packages/renderer-phaser
       '@gamekit/save':
         specifier: workspace:*
         version: link:../../packages/save
@@ -187,6 +190,9 @@ importers:
       '@gamekit/renderer-core':
         specifier: workspace:*
         version: link:../../packages/renderer-core
+      '@gamekit/renderer-phaser':
+        specifier: workspace:*
+        version: link:../../packages/renderer-phaser
       '@gamekit/save':
         specifier: workspace:*
         version: link:../../packages/save

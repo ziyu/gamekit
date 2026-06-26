@@ -917,27 +917,24 @@ function createFakeDriver(id: string, calls: string[]): GameDriver {
       calls.push(`${id}.dispose`);
       phase = "disposed";
     },
-    capabilities() {
-      return { renderer: true, assets: true, input: true, camera: true };
-    },
     adapters() {
       return {
         renderer: {
           id: `${id}.renderer`,
+          kind: "fake",
           async boot() {},
           destroy() {},
           getView() {
             return {} as HTMLElement;
           },
           resize() {},
-          capabilities() {
-            return { objectTypes: [] };
-          },
           createObject() {
             return "object";
           },
-          updateObject() {},
-          destroyObject() {}
+          destroyObject() {},
+          native() {
+            return {};
+          }
         }
       };
     },
@@ -946,7 +943,6 @@ function createFakeDriver(id: string, calls: string[]): GameDriver {
         id,
         kind: "fake",
         phase,
-        capabilities: this.capabilities(),
         adapters: ["renderer"]
       };
     }

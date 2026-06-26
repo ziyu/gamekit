@@ -2,13 +2,10 @@ import { createAssetManager, type AssetDefinition, type AssetLoaderAdapter } fro
 import { createDataRegistry, type DataPack, type DataTypeDefinition } from "@gamekit/data";
 import type {
   RenderNodePath,
-  RenderNodePatch,
   RenderObjectDefinition,
   RenderObjectId,
-  RenderObjectPatch,
   RendererAdapter,
-  RendererBootContext,
-  RendererCapabilities
+  RendererBootContext
 } from "@gamekit/renderer-core";
 import type { SaveStore } from "@gamekit/save";
 import { createConfiguredAppHost } from "../definition/create-configured-app-host";
@@ -110,16 +107,10 @@ function createMemoryAssetAdapter(): AssetLoaderAdapter {
 function createHeadlessRenderer(): RendererAdapter {
   let nextId = 0;
   const objects = new Map<string, RenderObjectDefinition>();
-  const capabilities: RendererCapabilities = {
-    objectTypes: ["debug.square", "sprite", "container"],
-    supportsObjectTree: true,
-    supportsNodeUpdates: true,
-    commandTypes: ["animation.play"],
-    supportsNativeHandles: true
-  };
 
   return {
     id: "headless-renderer",
+    kind: "headless",
     async boot(_ctx: RendererBootContext) {
       return undefined;
     },
@@ -128,9 +119,6 @@ function createHeadlessRenderer(): RendererAdapter {
     },
     getView() {
       return { dataset: { renderer: "headless" } } as unknown as HTMLElement;
-    },
-    capabilities() {
-      return capabilities;
     },
     resize() {
       return undefined;
@@ -141,22 +129,11 @@ function createHeadlessRenderer(): RendererAdapter {
       objects.set(id, { ...definition, id });
       return id;
     },
-    updateObject(id: RenderObjectId, patch: RenderObjectPatch) {
-      const object = objects.get(id);
-      if (!object) {
-        throw new Error(`Missing render object: ${id}`);
-      }
-      objects.set(id, {
-        ...object,
-        ...patch,
-        props: { ...object.props, ...patch.props }
-      });
-    },
     destroyObject(id: RenderObjectId) {
       objects.delete(id);
     },
-    updateNode(_objectId: RenderObjectId, _nodePath: RenderNodePath, _patch: RenderNodePatch) {
-      return undefined;
+    native() {
+      return { objects };
     },
     command() {
       return undefined;
@@ -172,6 +149,42 @@ function createHeadlessRenderer(): RendererAdapter {
         native: object,
         escaped: true
       };
+    },
+    getNodeHandle(id: RenderObjectId, nodePath: RenderNodePath) {
+      const object = objects.get(id);
+      if (!object) {
+        throw new Error(`Missing render object: ${id}`);
+      }
+      const node = findNode(object.children ?? [], nodePath);
+      if (!node) {
+        throw new Error(
+          `Missing render node: ${Array.isArray(nodePath) ? nodePath.join("/") : nodePath}`
+        );
+      }
+      return {
+        id,
+        type: node.type,
+        native: node,
+        escaped: true
+      };
     }
   };
+}
+
+function findNode(
+  children: NonNullable<RenderObjectDefinition["children"]>,
+  nodePath: RenderNodePath
+): NonNullable<RenderObjectDefinition["children"]>[number] | undefined {
+  const [head, ...tail] = Array.isArray(nodePath) ? nodePath : nodePath.split("/");
+  for (const child of children) {
+    const childId = child.id ?? child.type;
+    if (childId !== head) {
+      continue;
+    }
+    if (tail.length === 0) {
+      return child;
+    }
+    return findNode(child.children ?? [], tail);
+  }
+  return undefined;
 }

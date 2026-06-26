@@ -218,7 +218,7 @@ describe("createPhaserRenderer", () => {
       type: "container",
       children: [{ id: "body", type: "debug.square" }]
     });
-    renderer.updateNode(objectId, "body", {
+    renderer.native().applyNodeState(objectId, "body", {
       transform: { position: { x: 12, y: 18 } },
       props: { tint: 0xff0000, tintMode: "fill" }
     });
@@ -229,7 +229,7 @@ describe("createPhaserRenderer", () => {
     });
 
     const root = renderer.getObjectHandle(objectId).native as FakeNativeObject;
-    const body = root.children[0];
+    const body = renderer.native().node(objectId, "body") as FakeNativeObject;
     expect(root.type).toBe("container");
     expect(body?.x).toBe(12);
     expect(body?.y).toBe(18);

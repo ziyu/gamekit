@@ -27,6 +27,7 @@
     "@gamekit/platform-web": "workspace:*",
     "@gamekit/react-ui": "workspace:*",
     "@gamekit/renderer-core": "workspace:*",
+    "@gamekit/renderer-phaser": "workspace:*",
     "@gamekit/save": "workspace:*",
     "@gamekit/tca": "workspace:*",
     "@gamekit/ui-core": "workspace:*",

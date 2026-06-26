@@ -20,6 +20,8 @@
 
 若答案不清晰，先不要把库暴露到公共接口。
 
+具体 adapter / driver 包可以导出 typed native control path 给 app-specific presentation、Editor 后端专属面板或 DevTools plugin 使用。这个类型泄漏必须停留在具体实现包和显式选择该后端的 app/tooling 代码中，不能进入 core facade、Data、Save、TCA/GAS 或可复用 gameplay module。
+
 ## 扩展/逃生口
 
 通用架构不能接管一切。热点路径、复杂表现、平台能力和第三方生态接入需要受控 escape hatch。

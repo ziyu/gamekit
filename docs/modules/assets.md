@@ -125,7 +125,7 @@ preload plan 的输出应包含：
 - group / tags / priority。
 - source pack metadata where available。
 - content package metadata where available。
-- 预计使用的 adapter capability。
+- 预计使用的 asset adapter 或 driver adapter。
 
 AssetManager 可以按 group 加载资源，例如：
 
@@ -179,7 +179,7 @@ Asset 负责：
 - 根据 AssetDefinition 加载资源。
 - 根据 preload / group / lazy 策略生成加载计划。
 - 记录加载状态。
-- 报告加载失败、重试、卸载和 adapter capability。
+- 报告加载失败、重试、卸载和 adapter 状态。
 
 App Host 可以编排 Data pipeline 与 Asset preload 的顺序，但 Asset 模块本身仍不读取 DataPack、不解释 gameplay data。
 

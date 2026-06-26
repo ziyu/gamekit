@@ -73,7 +73,7 @@ packages/
 
 - `@gamekit/fx` 不作为独立业务包规划；Effect 可作为 Asset/Data/Save/Platform/Editor 等基础设施包内部实现选择。
 - `@gamekit/animation` 不作为早期独立包规划；动画主要归入 RenderObject、Renderer Adapter、Cue/Presentation、UI、Camera。
-- `driver-phaser` 是 Phaser 的长期默认集成边界；Phaser 的 asset/input/camera 能力收敛为 driver 内部 capability，不再以独立单协议 package 暴露。
+- `driver-phaser` 是 Phaser 的长期默认集成边界；Phaser 的 asset/input/camera 能力收敛为 driver 内部 adapter，不再以独立单协议 package 暴露。
 - 模块长期设计见 `docs/modules/`。
 
 ## 应用与验证面
@@ -116,7 +116,8 @@ save → core / platform-core
 - `@gamekit/driver-core` 依赖 Phaser、Three.js、DOM-heavy implementation 或具体 renderer/input/camera/asset adapter 实现。
 - Phaser/Three 等外部 runtime 由对应 driver package 创建和持有；renderer/input/camera/asset adapter package 不得各自创建同一 runtime。
 - `@gamekit/platform-core` 依赖 Tauri 或浏览器私有 API。
-- 业务模块直接导入 Koota、Phaser、Three.js、GSAP、Tauri、shadcn/ui 等第三方库。
+- 可复用 gameplay module、core facade、DataType、TCA/GAS rule、Save payload 不得直接导入 Koota、Phaser、Three.js、GSAP、Tauri、shadcn/ui 等第三方库。
+- 具体 app presentation、Editor 后端专属面板或 DevTools renderer plugin 可以显式依赖对应 adapter / driver 包，并通过 typed native path 使用 Phaser、Three.js 等后端 API；这些依赖不得进入可复用 gameplay 或 core public API。
 - Runtime 包直接依赖具体游戏 app。
 - GameRuntime 直接拥有 driver、renderer、input、camera、platform、asset、data 等应用级服务。
 
@@ -148,7 +149,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 判断一个包更像 Driver：
 
 - 统一持有外部 runtime，例如 Phaser Game / Scene 或 Three renderer / scene。
-- 同时为 renderer、asset、input、camera 等多个 core protocol 提供 adapter capability。
+- 同时为 renderer、asset、input、camera 等多个 core protocol 提供 adapter。
 - 负责外部 runtime boot/resize/stop/dispose、共享资源 cache、输入来源和低频 diagnostics。
 - 不承载 gameplay state，不读取 world，不注册 GameRuntime system。
 
@@ -164,7 +165,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 | `@gamekit/app-host`                                              | App Service / composition                    | 应用组合、service lifecycle、config、diagnostics。                                   |
 | `@gamekit/platform-core`                                         | App Service facade                           | 平台能力协议。                                                                       |
 | `@gamekit/platform-web` / `@gamekit/platform-tauri`              | App Service adapter                          | Web/Tauri 平台能力实现。                                                             |
-| `@gamekit/driver-core`                                           | App Service facade                           | 外部 runtime 统一集成协议、capability、adapter map、snapshot。                       |
+| `@gamekit/driver-core`                                           | App Service facade                           | 外部 runtime 统一集成协议、adapter map、native boundary、snapshot。                  |
 | `@gamekit/driver-phaser` / `@gamekit/driver-three`               | App Service driver                           | 统一持有 Phaser / Three runtime，并暴露 renderer、asset、input、camera adapter。     |
 | `@gamekit/data`                                                  | App Service                                  | 全局内容数据注册、校验、来源追踪。                                                   |
 | `@gamekit/asset`                                                 | App Service                                  | 资源声明读取、加载状态、adapter 委托。                                               |
@@ -214,15 +215,17 @@ GameRuntime 继续保持薄内核，不直接拥有应用级 adapter 和服务�
 
 ### Renderer
 
-Renderer 公共协议以通用 render object 为中心，不以 Sprite API 为中心。Render type 由 adapter 声明和解释，复合对象是一等能力。
+Renderer 公共协议以通用 render object lifecycle、object id 和可追踪 native handle 为中心，不以 Sprite API 为中心。Render type 由 adapter 解释，复合对象是一等能力。
 
-详细设计见 `docs/modules/renderer.md`，决策背景见 `docs/adr/0003-general-render-objects-and-input-decoupling.md`。
+Renderer Core 不维护 `RendererCapabilities` 这类后端能力目录，也不持续包装 Phaser / Three 的专属 API。复杂表现、后端专属材质/管线/粒子/mesh 控制和热点路径通过具体 adapter / driver 包暴露的 typed native path 完成；可复用 gameplay、Data、Save 和 core facade 不依赖这些原生类型。
+
+详细设计见 `docs/modules/renderer.md`，决策背景见 `docs/adr/0003-general-render-objects-and-input-decoupling.md` 和 `docs/adr/0009-renderer-native-control-and-minimal-core.md`。
 
 ### Driver
 
 Driver 是外部运行时的统一集成层。Phaser、Three.js 这类同时拥有 scene、renderer、loader、input、camera 和资源 cache 的库，应通过 Driver 统一持有，并从中暴露 RendererAdapter、InputSource、AssetLoaderAdapter 和 RendererCameraAdapter。
 
-Adapter 是单协议实现；Driver 是跨协议外部 runtime owner。App Host 管理 Driver lifecycle，GameRuntime 不直接拥有 Driver。
+Adapter 是单协议实现；Driver 是跨协议外部 runtime owner。App Host 管理 Driver lifecycle，GameRuntime 不直接拥有 Driver。Driver / Adapter 的具体包可以导出 typed native bridge 给显式选择该 renderer 的 app presentation 或 tooling 使用，但 App Host、driver-core 和 renderer-core 不理解 Phaser / Three 原生类型。
 
 详细设计见 `docs/modules/driver.md`，决策背景见 `docs/adr/0007-driver-integration-layer.md`。
 

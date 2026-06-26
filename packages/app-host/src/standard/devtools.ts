@@ -141,7 +141,8 @@ export function createStandardDevToolsDataSources<TContext>(
       snapshot() {
         return {
           id: renderer.id,
-          capabilities: renderer.capabilities()
+          kind: renderer.kind,
+          nativeHandles: renderer.getObjectHandle !== undefined
         };
       }
     });

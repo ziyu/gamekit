@@ -199,9 +199,9 @@ platform
 
 ## Driver 启动边界
 
-Driver 是 App Host 管理的应用级服务，用于统一持有 Phaser、Three.js 等外部运行时。Driver 可以从同一个外部 runtime 暴露 renderer、asset loader、input source、camera sync 等 adapter capability。
+Driver 是 App Host 管理的应用级服务，用于统一持有 Phaser、Three.js 等外部运行时。Driver 可以从同一个外部 runtime 暴露 renderer、asset loader、input source、camera sync 等 GameKit adapter。
 
-App Host profile 负责选择标准服务使用哪个 driver capability：
+App Host profile 负责选择标准服务使用哪个 driver adapter：
 
 ```txt
 driver.phaser
@@ -216,7 +216,8 @@ driver.phaser
 - App Host 管理 Driver lifecycle，但不理解 Phaser / Three 原生类型。
 - Renderer、Input、Asset、Camera 仍通过各自 core protocol 交互。
 - Camera/TCA/GAS 等 gameplay 会话能力仍通过标准 GameModule helper 安装，不因为 Driver 暴露 camera adapter 就变成 Host service。
-- 多 Driver 同时存在时，profile 必须显式选择每个标准服务使用的 driver capability。
+- 多 Driver 同时存在时，profile 必须显式选择每个标准服务使用的 driver adapter。
+- App Host 不理解 Phaser / Three 原生类型；具体 app presentation、Editor 后端专属面板或 DevTools renderer plugin 需要 native control path 时，应显式依赖对应 Driver / Adapter 包。
 
 ## 配置系统
 

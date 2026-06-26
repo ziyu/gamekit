@@ -1,15 +1,34 @@
 import { defineGameModule } from "@gamekit/core";
 import type { DataRegistry } from "@gamekit/data";
 import type { GameInstallContext } from "@gamekit/game-runtime";
-import type { RenderObjectDefinition, RendererAdapter } from "@gamekit/renderer-core";
+import type {
+  RenderNodePath,
+  RenderObjectDefinition,
+  RendererAdapter,
+  RenderTransform
+} from "@gamekit/renderer-core";
 import { Actor, Combat, FloatingText, Lifetime, Position, Presentation } from "../components";
 import { RENDER_OBJECT_TYPE } from "../content";
 import type { AbyssRuntimeState } from "../runtime-state";
+
+export type AbyssPresentationTargetState = {
+  transform?: RenderTransform;
+  visible?: boolean | undefined;
+  alpha?: number | undefined;
+  layer?: string | undefined;
+  props?: Record<string, unknown> | undefined;
+};
+
+export type AbyssRenderTargetWriter = (
+  native: unknown,
+  state: AbyssPresentationTargetState
+) => void;
 
 export type CreateAbyssPresentationModuleOptions = {
   renderer: RendererAdapter;
   dataRegistry: DataRegistry;
   state: AbyssRuntimeState;
+  applyRenderTargetState?: AbyssRenderTargetWriter | undefined;
 };
 
 export function createAbyssPresentationModule(options: CreateAbyssPresentationModuleOptions) {
@@ -68,7 +87,7 @@ function syncPresentation(
         ? Math.max(0, 1 - lifetime.ageMs / lifetime.lifetimeMs)
         : 1;
 
-    options.renderer.updateObject(presentation.objectId, {
+    applyObjectState(options.renderer, options.applyRenderTargetState, presentation.objectId, {
       alpha,
       transform: {
         position: { x: position.x, y: position.y },
@@ -77,15 +96,21 @@ function syncPresentation(
     });
 
     if (combat && actor?.faction === "enemy") {
-      updateHealthBar(options.renderer, presentation.objectId, combat);
+      updateHealthBar(options, presentation.objectId, combat);
     }
     if (combat && elapsed < combat.hitFlashUntil) {
-      options.renderer.updateNode?.(presentation.objectId, "body", {
-        props: { tint: 0xffffff }
-      });
+      applyNodeState(
+        options.renderer,
+        options.applyRenderTargetState,
+        presentation.objectId,
+        "body",
+        {
+          props: { tint: 0xffffff }
+        }
+      );
     }
     if (floating) {
-      updateFloatingText(options.renderer, presentation.objectId, floating.tone);
+      updateFloatingText(options, presentation.objectId, floating.tone);
     }
   }
 
@@ -116,12 +141,12 @@ function cloneRenderObject(
 }
 
 function updateHealthBar(
-  renderer: RendererAdapter,
+  options: CreateAbyssPresentationModuleOptions,
   objectId: string,
   combat: { health: number; maxHealth: number }
 ): void {
   const ratio = Math.max(0, Math.min(1, combat.health / Math.max(1, combat.maxHealth)));
-  renderer.updateNode?.(objectId, "hp-fill", {
+  applyNodeState(options.renderer, options.applyRenderTargetState, objectId, "hp-fill", {
     props: {
       width: Math.max(2, 34 * ratio),
       tint: ratio < 0.35 ? 0xff3848 : 0x7cff92
@@ -132,10 +157,47 @@ function updateHealthBar(
   });
 }
 
-function updateFloatingText(renderer: RendererAdapter, objectId: string, tone: string): void {
-  renderer.updateNode?.(objectId, "text", {
+function updateFloatingText(
+  options: CreateAbyssPresentationModuleOptions,
+  objectId: string,
+  tone: string
+): void {
+  applyNodeState(options.renderer, options.applyRenderTargetState, objectId, "text", {
     props: {
       tint: tone === "damage" ? 0xff4f59 : tone === "reward" ? 0xb7ff73 : 0xffd76d
     }
   });
+}
+
+function applyObjectState(
+  renderer: RendererAdapter,
+  writer: AbyssRenderTargetWriter | undefined,
+  objectId: string,
+  state: AbyssPresentationTargetState
+): void {
+  if (!writer) {
+    return;
+  }
+  const handle = renderer.getObjectHandle?.(objectId);
+  if (!handle) {
+    return;
+  }
+  writer(handle.native, state);
+}
+
+function applyNodeState(
+  renderer: RendererAdapter,
+  writer: AbyssRenderTargetWriter | undefined,
+  objectId: string,
+  nodePath: RenderNodePath,
+  state: AbyssPresentationTargetState
+): void {
+  if (!writer) {
+    return;
+  }
+  const handle = renderer.getNodeHandle?.(objectId, nodePath);
+  if (!handle) {
+    return;
+  }
+  writer(handle.native, state);
 }
