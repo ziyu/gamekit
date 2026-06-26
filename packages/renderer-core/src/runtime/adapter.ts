@@ -1,20 +1,7 @@
 import type { RenderCommand } from "./command";
 import type { RendererDiagnosticListener } from "./diagnostics";
-import type { RenderNodePath, RenderObjectId, RenderObjectType } from "./ids";
-import type {
-  RenderNodePatch,
-  RenderObjectDefinition,
-  RenderObjectHandle,
-  RenderObjectPatch
-} from "./object";
-
-export type RendererCapabilities = {
-  objectTypes: RenderObjectType[];
-  supportsObjectTree: boolean;
-  supportsNodeUpdates?: boolean;
-  commandTypes?: string[];
-  supportsNativeHandles?: boolean;
-};
+import type { RenderNodePath, RenderObjectId } from "./ids";
+import type { RenderObjectDefinition, RenderObjectHandle } from "./object";
 
 export type RendererBootContext = {
   container: HTMLElement;
@@ -24,17 +11,20 @@ export type RendererBootContext = {
   debug?: boolean;
 };
 
-export type RendererAdapter = {
+export type RendererAdapter<TNative = unknown, TObjectNative = unknown> = {
   id: string;
+  kind?: string;
   boot(ctx: RendererBootContext): Promise<void>;
   destroy(): void;
   getView(): HTMLElement | HTMLCanvasElement;
-  capabilities(): RendererCapabilities;
   resize(width: number, height: number): void;
   createObject(definition: RenderObjectDefinition): RenderObjectId;
-  updateObject(id: RenderObjectId, patch: RenderObjectPatch): void;
   destroyObject(id: RenderObjectId): void;
-  updateNode?(objectId: RenderObjectId, nodePath: RenderNodePath, patch: RenderNodePatch): void;
+  native(): TNative;
   command?(objectId: RenderObjectId, command: RenderCommand): void;
-  getObjectHandle?(objectId: RenderObjectId): RenderObjectHandle<unknown, unknown>;
+  getObjectHandle?(objectId: RenderObjectId): RenderObjectHandle<TObjectNative, unknown>;
+  getNodeHandle?(
+    objectId: RenderObjectId,
+    nodePath: RenderNodePath
+  ): RenderObjectHandle<TObjectNative, unknown>;
 };

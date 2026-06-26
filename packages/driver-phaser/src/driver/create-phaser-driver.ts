@@ -1,5 +1,5 @@
 import { GameError } from "@gamekit/core";
-import type { DriverCapabilities, DriverLifecyclePhase } from "@gamekit/driver-core";
+import type { DriverLifecyclePhase } from "@gamekit/driver-core";
 import type { InputSourceAdapter } from "@gamekit/input-core";
 import type { RendererBootContext } from "@gamekit/renderer-core";
 import { createPhaserRenderer } from "@gamekit/renderer-phaser";
@@ -69,34 +69,21 @@ export function createPhaserDriver(options: PhaserDriverOptions = {}): PhaserGam
       runtime = undefined;
       phase = "disposed";
     },
-    capabilities(): DriverCapabilities {
-      return {
-        renderer: true,
-        assets: true,
-        input: true,
-        camera: true,
-        scenes: true,
-        particles: true,
-        custom: {
-          renderObjectTree: true,
-          nativeHandles: true
-        }
-      };
-    },
     adapters() {
       return adapters;
+    },
+    native() {
+      return runtime;
     },
     snapshot() {
       return {
         id: driverId,
         kind: "phaser",
         phase,
-        capabilities: this.capabilities(),
         adapters: ["renderer", "assetLoader", "camera", "inputSource"],
         details: {
           rendererId: renderer.id,
-          runtimeReady: runtime !== undefined,
-          rendererCapabilities: renderer.capabilities()
+          runtimeReady: runtime !== undefined
         }
       };
     }

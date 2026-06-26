@@ -4,6 +4,10 @@
 
 Accepted
 
+Superseded in part by `docs/adr/0009-renderer-native-control-and-minimal-core.md`:
+Renderer 继续使用通用 RenderObject，Input 继续独立；但 adapter patch 字段和能力不再通过
+core capability/schema 目录扩展，后端专属表现能力走显式 typed native control path。
+
 ## Context
 
 Phase 2 第一版实现把 renderer facade 做成了 `createSprite/updateSprite/onInput`。这能快速验证 Phaser adapter 和 sandbox canvas，但它把两个长期变化点写窄了：

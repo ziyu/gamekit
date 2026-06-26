@@ -1,12 +1,9 @@
 import type {
   RenderCommand,
-  RenderNodePatch,
   RenderNodePath,
   RenderObjectDefinition,
-  RenderObjectPatch,
   RendererAdapter,
   RendererBootContext,
-  RendererCapabilities,
   RenderTransform
 } from "@gamekit/renderer-core";
 
@@ -20,12 +17,25 @@ export type MemoryRenderNode = {
   id: string;
   type: string;
   transform?: RenderTransform;
+  visible?: boolean;
+  alpha?: number;
+  layer?: string;
   props?: Record<string, unknown>;
 };
 
-export type MemoryRendererAdapter = RendererAdapter & {
+export type MemoryRendererNative = {
+  object(id: string): MemoryRenderObject;
+  node(objectId: string, nodePath: RenderNodePath): MemoryRenderNode;
+};
+
+export type MemoryRendererAdapter = RendererAdapter<
+  MemoryRendererNative,
+  MemoryRenderObject | MemoryRenderNode
+> & {
   objects(): MemoryRenderObject[];
 };
+
+const SUPPORTED_OBJECT_TYPES = ["debug.square", "sprite", "container"] as const;
 
 function createRendererView(rendererId: string): HTMLElement {
   if (typeof document !== "undefined") {
@@ -49,14 +59,6 @@ export function createMemoryRenderer(id = "memory-renderer"): MemoryRendererAdap
   let height = 0;
   const objects = new Map<string, MemoryRenderObject>();
   let onDiagnostic: RendererBootContext["onDiagnostic"];
-  const capabilities: RendererCapabilities = {
-    objectTypes: ["debug.square", "sprite", "container"],
-    supportsObjectTree: true,
-    supportsNodeUpdates: true,
-    commandTypes: ["animation.play"],
-    supportsNativeHandles: true
-  };
-
   const requireObject = (objectId: string): MemoryRenderObject => {
     const object = objects.get(objectId);
     if (!object) {
@@ -68,6 +70,7 @@ export function createMemoryRenderer(id = "memory-renderer"): MemoryRendererAdap
 
   return {
     id,
+    kind: "memory",
     async boot(ctx: RendererBootContext) {
       view = createRendererView(id);
       width = ctx.width;
@@ -94,9 +97,6 @@ export function createMemoryRenderer(id = "memory-renderer"): MemoryRendererAdap
 
       return view;
     },
-    capabilities() {
-      return capabilities;
-    },
     resize(nextWidth, nextHeight) {
       width = nextWidth;
       height = nextHeight;
@@ -107,7 +107,9 @@ export function createMemoryRenderer(id = "memory-renderer"): MemoryRendererAdap
       });
     },
     createObject(definition) {
-      if (!capabilities.objectTypes.includes(definition.type)) {
+      if (
+        !SUPPORTED_OBJECT_TYPES.includes(definition.type as (typeof SUPPORTED_OBJECT_TYPES)[number])
+      ) {
         throw new Error(`Unsupported render object type: ${definition.type}`);
       }
 
@@ -130,44 +132,6 @@ export function createMemoryRenderer(id = "memory-renderer"): MemoryRendererAdap
       });
       return objectId;
     },
-    updateObject(objectId, patch: RenderObjectPatch) {
-      const object = requireObject(objectId);
-      const nextObject: MemoryRenderObject = {
-        ...object,
-        ...patch,
-        props: { ...object.props, ...patch.props }
-      };
-      const transform = mergeTransform(object.transform, patch.transform);
-      if (transform) {
-        nextObject.transform = transform;
-      } else {
-        delete nextObject.transform;
-      }
-
-      objects.set(objectId, nextObject);
-    },
-    updateNode(objectId, nodePath: RenderNodePath, patch: RenderNodePatch) {
-      const object = requireObject(objectId);
-      const path = resolveNodePath(nodePath);
-      const node = object.nodes.get(path);
-      if (!node) {
-        throw new Error(`Missing render node: ${path}`);
-      }
-
-      const nextNode: MemoryRenderNode = {
-        ...node,
-        ...patch,
-        props: { ...node.props, ...patch.props }
-      };
-      const transform = mergeTransform(node.transform, patch.transform);
-      if (transform) {
-        nextNode.transform = transform;
-      } else {
-        delete nextNode.transform;
-      }
-
-      object.nodes.set(path, nextNode);
-    },
     destroyObject(objectId) {
       if (!objects.delete(objectId)) {
         throw new Error(`Missing render object: ${objectId}`);
@@ -177,6 +141,14 @@ export function createMemoryRenderer(id = "memory-renderer"): MemoryRendererAdap
         payload: { rendererId: id, objectId },
         source: id
       });
+    },
+    native() {
+      return {
+        object: requireObject,
+        node(objectId, nodePath) {
+          return requireNode(requireObject(objectId), nodePath);
+        }
+      };
     },
     command(objectId, command) {
       const object = requireObject(objectId);
@@ -192,6 +164,15 @@ export function createMemoryRenderer(id = "memory-renderer"): MemoryRendererAdap
         id: objectId,
         type: object.type,
         native: object,
+        escaped: true
+      };
+    },
+    getNodeHandle(objectId, nodePath) {
+      const node = requireNode(requireObject(objectId), nodePath);
+      return {
+        id: objectId,
+        type: node.type,
+        native: node,
         escaped: true
       };
     },
@@ -216,6 +197,15 @@ function createNodeMap(
     if (child.transform) {
       node.transform = child.transform;
     }
+    if (child.visible !== undefined) {
+      node.visible = child.visible;
+    }
+    if (child.alpha !== undefined) {
+      node.alpha = child.alpha;
+    }
+    if (child.layer !== undefined) {
+      node.layer = child.layer;
+    }
     if (child.props) {
       node.props = child.props;
     }
@@ -233,20 +223,12 @@ function resolveNodePath(nodePath: RenderNodePath): string {
   return Array.isArray(nodePath) ? nodePath.join("/") : nodePath;
 }
 
-function mergeTransform(
-  current: RenderTransform | undefined,
-  patch: RenderTransform | undefined
-): RenderTransform | undefined {
-  if (!patch) {
-    return current;
+function requireNode(object: MemoryRenderObject, nodePath: RenderNodePath): MemoryRenderNode {
+  const path = resolveNodePath(nodePath);
+  const node = object.nodes.get(path);
+  if (!node) {
+    throw new Error(`Missing render node: ${path}`);
   }
 
-  return {
-    ...current,
-    ...patch,
-    position: { ...current?.position, ...patch.position },
-    rotation: { ...current?.rotation, ...patch.rotation },
-    scale: { ...current?.scale, ...patch.scale },
-    origin: { ...current?.origin, ...patch.origin }
-  };
+  return node;
 }

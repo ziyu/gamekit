@@ -1,6 +1,6 @@
 import type { RenderNodeDefinition, RenderObjectDefinition } from "@gamekit/renderer-core";
-import { applyObjectPatch } from "./patch-handlers";
 import type { PhaserRenderRecord } from "./object-registry";
+import { applyObjectDefinition } from "./target-state";
 
 export const SUPPORTED_OBJECT_TYPES = ["debug.square", "sprite", "container"] as const;
 
@@ -26,7 +26,7 @@ export function createPhaserRenderRecord(
 ): PhaserRenderRecord {
   const native = createPhaserObject(scene, definition, debugTextureId);
   native.setData?.("renderObjectId", id);
-  applyObjectPatch(native, definition);
+  applyObjectDefinition(native, definition);
 
   const record: PhaserRenderRecord = {
     id,
@@ -54,7 +54,7 @@ function attachChildNode(
   const nodePath = [...pathPrefix, nodeId].join("/");
   const native = createPhaserObject(scene, definition, debugTextureId);
   native.setData?.("renderNodePath", nodePath);
-  applyObjectPatch(native, definition);
+  applyObjectDefinition(native, definition);
   parent.add?.(native);
   record.nodes.set(nodePath, native);
 

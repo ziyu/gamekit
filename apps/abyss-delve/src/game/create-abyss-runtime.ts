@@ -43,11 +43,15 @@ import { createAbyssEnemyAiModule } from "./modules/enemy-ai-module";
 import { createAbyssInputResetModule } from "./modules/input-reset-module";
 import { createAbyssLootModule } from "./modules/loot-module";
 import { createAbyssPlayerControlModule } from "./modules/player-control-module";
-import { createAbyssPresentationModule } from "./modules/presentation-module";
+import {
+  createAbyssPresentationModule,
+  type AbyssRenderTargetWriter
+} from "./modules/presentation-module";
 import { createAbyssRoomModule } from "./modules/room-module";
 
 export type CreateAbyssRuntimeOptions = {
   renderer?: RendererAdapter | undefined;
+  applyRenderTargetState?: AbyssRenderTargetWriter | undefined;
   camera?: CameraController | undefined;
   cameraAdapter?: AbyssCameraAdapter | undefined;
   dataRegistry?: DataRegistry | undefined;
@@ -159,7 +163,8 @@ export function createAbyssRuntime(options: CreateAbyssRuntimeOptions = {}): Aby
           createAbyssPresentationModule({
             renderer: options.renderer,
             dataRegistry,
-            state
+            state,
+            applyRenderTargetState: options.applyRenderTargetState
           })
         ]
       : []),

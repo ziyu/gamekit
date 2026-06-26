@@ -35,8 +35,9 @@
 集成实践：
 
 - 先判断能力归属：管理外部 runtime、平台能力、资源句柄、输入来源、UI shell、存储和诊断的能力通常是 App Service；需要 world、tick、actor、rule、ability、camera rig 或 gameplay context 的能力通常是 GameModule。
-- 第三方库进入 Driver、Adapter 或 app/profile 层，不进入核心 facade、DataType、GameModule 公共 API 或 gameplay 包。
+- 第三方库进入 Driver、Adapter、app/profile 或 app-specific presentation/tooling 层，不进入核心 facade、DataType、可复用 GameModule 公共 API 或 gameplay 包。
 - Driver 持有跨多个协议的外部 runtime，例如 Phaser Game 或 Three renderer/scene；Adapter 只把单个 GameKit 协议映射到 Driver 暴露的 runtime slice。
+- 具体 app presentation、Editor 后端专属面板和 DevTools renderer plugin 可以通过 typed native handle 使用底层 renderer API；这些依赖不能进入 Data、Save、core facade 或可复用 gameplay module。
 - GameRuntime 只负责模块安装、clock、system tick 和 lifecycle，不直接拥有 Platform、Driver、Renderer、Input、Camera、Data、Asset、UI 或 Save store。
 
 使用实践：
@@ -50,7 +51,7 @@
 
 - App Host 统一推进 App Service lifecycle：boot、start、stop、dispose、snapshot。底层服务对象不需要为了 Host 继承私有基类，生命周期通过 binding 描述。
 - GameModule 的订阅、system、trace store、controller runtime 和 cleanup 跟随 GameRuntime lifecycle；`stop()` 停 tick，`dispose()` 释放订阅和长期句柄。
-- Driver 先 boot，再派生 renderer/asset/input/camera adapter capability；adapter 不单独创建同一套外部 runtime。
+- Driver 先 boot，再派生 renderer/asset/input/camera adapter；adapter 不单独创建同一套外部 runtime。
 - Save/load、asset preload、data registration 和 renderer boot 应由 App Host 或 app profile 编排顺序，不藏在 GameRuntime 内部。
 - Headless 测试应能用 memory platform、memory renderer、memory save store、deterministic clock 和 fake asset loader 启动主要组合路径。
 
@@ -188,7 +189,7 @@
 - 大规模集合更新优先批处理，避免在循环里触发 UI 或外部副作用。
 - renderer sync 只做状态镜像：创建/销毁 renderer object 时可以发低频事件，逐帧 transform/visibility/layer patch 不进入 EventBus。
 - Phaser 等大型 adapter 依赖应隔离在 adapter 包中；app bundle 体积告警先记录，等 Asset/加载阶段再做 code splitting 或 chunk 策略。
-- 海量 tile、particle、instanced mesh、复杂骨骼/挂点等热点路径应使用 adapter 提供的受控 handle 或 batch API，不强迫每帧走通用 patch。
+- 海量 tile、particle、instanced mesh、复杂骨骼/挂点等热点路径应使用 adapter 提供的受控 native handle 或 batch API，不强迫每帧走通用 patch，也不要求 renderer-core 包装对应后端 API。
 
 测量：
 

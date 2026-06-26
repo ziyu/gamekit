@@ -19,18 +19,6 @@ export type DriverBootContext = DriverViewportSize & {
   onDiagnostic?: (event: DriverDiagnosticEvent) => void;
 };
 
-export type DriverCapabilities = {
-  renderer?: boolean;
-  input?: boolean;
-  assets?: boolean;
-  camera?: boolean;
-  audio?: boolean;
-  particles?: boolean;
-  physics?: boolean;
-  scenes?: boolean;
-  custom?: Record<string, boolean | string | number>;
-};
-
 export type DriverAdapterMap = {
   renderer?: unknown;
   inputSource?: unknown;
@@ -43,7 +31,6 @@ export type DriverSnapshot = {
   id: DriverId;
   kind: string;
   phase: DriverLifecyclePhase;
-  capabilities: DriverCapabilities;
   adapters: string[];
   details?: Record<string, unknown>;
 };
@@ -56,8 +43,8 @@ export type GameDriver<TAdapters extends DriverAdapterMap = DriverAdapterMap> = 
   stop?(): Promise<void> | void;
   resize?(size: DriverViewportSize): void;
   dispose(): Promise<void> | void;
-  capabilities(): DriverCapabilities;
   adapters(): TAdapters;
+  native?(): unknown;
   snapshot(): DriverSnapshot;
 };
 

@@ -2,7 +2,9 @@
 
 ## 定位
 
-Renderer 是表现层 facade。Gameplay、ECS、DataPack 不直接依赖 Phaser Sprite、Three Mesh 或任何具体渲染对象。
+Renderer 是表现层 facade。可复用 gameplay、ECS、DataPack 和 core package 不直接依赖 Phaser Sprite、Three Mesh 或任何具体渲染对象。
+
+具体游戏的 app presentation 层、Editor 后端专属面板和 DevTools renderer plugin 可以显式选择某个 renderer adapter / driver，并通过 typed native handle 直接调用底层 renderer API。这是受控的表现层逃生口，不是 renderer-core 的通用协议。
 
 相关包：
 
@@ -13,11 +15,12 @@ Renderer 是表现层 facade。Gameplay、ECS、DataPack 不直接依赖 Phaser 
 
 ## 核心原则
 
-- Renderer Core 只定义通用 render object protocol。
-- Render type 是开放字符串，由 adapter 声明和解释。
+- Renderer Core 只定义最小 render object lifecycle、id 映射和观察协议。
+- Render type 是开放字符串，由 adapter 解释；core 不维护类型能力目录。
 - 复合渲染对象是一等能力。
 - Renderer 不拥有 gameplay input 语义。
-- 复杂对象和热点路径必须允许受控 escape hatch。
+- Renderer Core 不包装 Phaser、Three.js 等后端的完整 API。
+- 复杂对象、热点路径和后端专属表现能力必须允许 typed native control path。
 
 ## Render Object
 
@@ -76,27 +79,85 @@ export type RenderTransform = {
 RendererAdapter 长期方向：
 
 ```ts
-export type RendererAdapter = {
+export type RendererAdapter<TNative = unknown, TObjectNative = unknown> = {
   id: string;
+  kind?: string;
+
   boot(ctx: RendererBootContext): Promise<void>;
   destroy(): void;
   getView(): HTMLElement | HTMLCanvasElement;
   resize(width: number, height: number): void;
 
-  capabilities(): RendererCapabilities;
   createObject(definition: RenderObjectDefinition): RenderObjectId;
-  updateObject(id: RenderObjectId, patch: RenderObjectPatch): void;
   destroyObject(id: RenderObjectId): void;
-  updateNode?(objectId: RenderObjectId, nodePath: string | string[], patch: RenderNodePatch): void;
+
+  native(): TNative;
+  getObjectHandle?(objectId: RenderObjectId): RenderObjectHandle<TObjectNative>;
+  getNodeHandle?(
+    objectId: RenderObjectId,
+    nodePath: string | string[]
+  ): RenderObjectHandle<TObjectNative>;
+
   command?(objectId: RenderObjectId, command: RenderCommand): void;
 };
 ```
 
 Renderer Core 不定义 `createSprite`、`updateSprite`、`onInput` 作为长期公共协议。
+Renderer Core 也不定义 `RendererCapabilities` 这类后端能力目录，不用中央 union 枚举所有 renderer-specific update。
+
+`RenderObjectPatch` / `RenderNodePatch` 这类宽泛 partial patch 不应继续作为长期扩展方向。通用工具确实需要的 transform、visibility、selection、inspect 等能力，应保持为少量明确的 core/tooling 协议；Phaser tint、Three material、shader uniform、pipeline、post-processing、particle emitter 等后端能力走 native control path。
+
+## Native Control Path
+
+GameKit 不包装完整 Phaser / Three.js API。具体 renderer adapter 或 driver 包负责导出带真实后端类型的 specialized adapter：
+
+```ts
+export type PhaserRendererNative = {
+  scene: Phaser.Scene;
+  gameObject(id: RenderObjectId): Phaser.GameObjects.GameObject;
+  node(objectId: RenderObjectId, path: RenderNodePath): Phaser.GameObjects.GameObject;
+  applyObjectState?(id: RenderObjectId, state: PhaserRenderTargetState): void;
+  applyNodeState?(
+    objectId: RenderObjectId,
+    path: RenderNodePath,
+    state: PhaserRenderTargetState
+  ): void;
+};
+
+export type PhaserRendererAdapter = RendererAdapter<
+  PhaserRendererNative,
+  Phaser.GameObjects.GameObject
+>;
+```
+
+具体游戏如果已经选择 Phaser renderer，可以在 app presentation 层直接使用：
+
+```ts
+const phaser = renderer.native();
+const body = phaser.node(actorObjectId, "body") as Phaser.GameObjects.Sprite;
+
+body.setTint(0xff0000);
+body.setPipeline("Outline");
+```
+
+Adapter / Driver 包也可以导出 renderer-specific state writer，例如 Phaser 的
+`PhaserRenderTargetState` / `applyPhaserRenderTargetState`。这类 writer 属于具体后端包，
+用于复用“如何把有限 app presentation state 写到 Phaser object”的实现；它不是
+renderer-core 的通用 patch/update 协议，也不要求 Three.js、Pixi 或其他 renderer 实现同名接口。
+
+Three.js adapter / driver 同理可以暴露 Three scene、renderer、camera、object 或 mesh handle。Renderer Core 只要求这些 native 入口保持显式、可追踪，并默认以 `unknown` 存在；具体类型只在具体 adapter / driver 包中出现。
+
+边界：
+
+- 对象仍由 RendererAdapter / Driver 创建和销毁。
+- GameKit object id 和 node path 到 native object 的映射由 adapter 私有维护。
+- Native mutation 只用于 app presentation、renderer-specific tooling 或性能热点路径。
+- 可复用 gameplay module、DataType、TCA/GAS rule、Save payload 不保存 native handle。
+- 进入 native path 后，调用方负责避免和通用 render sync 争写同一底层状态。
 
 ## Render Command
 
-复杂表现使用命令扩展，不在 core 上预设所有方法。
+复杂表现可以使用命令扩展，但 core 不预设所有方法，也不把 command 变成后端 API 目录。
 
 ```ts
 export type RenderCommand = {
@@ -106,12 +167,14 @@ export type RenderCommand = {
 };
 ```
 
-示例：
+常见示例：
 
 - `animation.play`
 - `particles.emit`
 - `shader.set_uniform`
 - `camera.shake`
+
+这些 command 类型由具体 adapter、driver 或 app presentation 约定。Renderer Core 只定义 envelope，不声明 Phaser / Three 支持清单。
 
 ## Driver 提供的 Renderer Adapter
 
@@ -122,24 +185,24 @@ Renderer adapter 不负责创建整套外部 runtime。对 Phaser 来说，`Phas
 Phaser Driver 暴露的 RendererAdapter：
 
 - 面向 Phaser Scene / DisplayList API，但不创建或拥有 Phaser runtime。
-- 不导出 Phaser 类型作为公共 API。
+- 不把 Phaser 类型导出到 renderer-core；可以在 `@gamekit/renderer-phaser` 或 `@gamekit/driver-phaser` 中导出 typed native bridge。
 - 内部维护 render type registry。
 - 映射 `debug.square`、`sprite`、`container` 等类型到 Phaser object。
 - 可以提供 debug texture。
-- 支持 adapter-specific `props`，例如 Phaser 4 的 `tintMode`；使用白色 mask 纹理做纯色填充时应显式使用 `fill`，避免默认 multiply tint 把对象压暗。
+- `props` 可作为对象创建参数或简单 adapter hint；复杂运行时控制应直接使用 Phaser native API。
 - 不承担 gameplay input；input 归 `input-*` 模块。
-- 不创建 `Phaser.Game`，不读取 Phaser input，不同步 Phaser camera，不加载 gameplay asset；这些能力由同一个 Phaser Driver 的独立 capability 提供。
+- 不创建 `Phaser.Game`，不读取 Phaser input，不同步 Phaser camera，不加载 gameplay asset；这些能力由同一个 Phaser Driver 的独立 adapter 或 native bridge 提供。
 
 Three Driver 暴露的 RendererAdapter：
 
 - 依赖 Three.js。
-- 不导出 Three 原生类型作为 gameplay 公共 API。
+- 不把 Three 原生类型导出到 renderer-core；可以在 `@gamekit/driver-three` 中导出 typed native bridge。
 - 映射 `mesh`、`model`、`group`、`light`、`particle-emitter` 等 render type。
 - 与同一个 Three Driver 内部的 asset loader、raycaster 和 camera adapter 共享 scene / renderer / resource cache。
 
 ## Escape Hatch
 
-通用 API 负责默认路径。复杂对象和热点路径需要受控逃生口：
+通用 API 负责生命周期和可追踪对象映射。复杂对象和热点路径需要受控逃生口：
 
 ```ts
 export type RenderObjectHandle<TNative = unknown, TApi = unknown> = {
@@ -155,7 +218,7 @@ export type RenderObjectHandle<TNative = unknown, TApi = unknown> = {
 
 - 对象仍由 RendererAdapter 创建和销毁。
 - Runtime 仍持有 objectId 和生命周期。
-- 直接控制 API 只用于表现层，不写 gameplay 状态。
+- 直接控制 API 只用于表现层或工具层，不写 gameplay 状态。
 - DevTools 需要能标记 escaped/native/direct/custom path。
 
 ## 与 DataPack 的关系
@@ -175,6 +238,7 @@ Animation 不作为默认独立业务模块。动画主要归入：
 - RenderObjectDefinition animations。
 - Renderer Adapter 内部执行。
 - Cue / Presentation 把 gameplay event 转成 render command。
+- App-specific presentation layer 使用 typed native control path。
 - UI 动画在 react-ui 内部处理。
 
 ## 最佳实践
@@ -182,14 +246,16 @@ Animation 不作为默认独立业务模块。动画主要归入：
 ### 模块集成
 
 - RendererAdapter 由 Driver runtime slice 创建或绑定；不要在 renderer adapter 内部创建 Phaser.Game、Three renderer、input plugin、asset loader 或 gameplay camera。
-- Renderer 测试应覆盖 object tree、nested node update、unknown object type、missing object、command dispatch、diagnostics callback 和 adapter capability。
+- Renderer 测试应覆盖 object tree、native handle resolution、unknown object type、missing object、command dispatch、diagnostics callback 和 lifecycle cleanup。
 - App Host/profile 负责 renderer boot、surface/container 注入、diagnostics bridge 和 resize；GameRuntime 不拥有 renderer lifecycle。
+- Adapter / Driver 包可以导出具体 native bridge 类型；renderer-core 只能使用 generic `unknown` 边界。
+- Adapter-specific state writer 应放在对应 adapter / driver 包中，并让对象创建和运行时表现状态复用同一套后端映射逻辑；app module 不应重复维护 Phaser / Three object duck type。
 
 ### 模块使用
 
-- Renderer Core 只暴露 RenderObject、RenderNode、RenderTransform、RenderCommand、RendererAdapter 和 diagnostics，不暴露 sprite-first API、Phaser Scene、Three Mesh 或 gameplay input。
+- Renderer Core 只暴露 RenderObject、RenderNode、RenderTransform、RenderCommand、RendererAdapter、native handle envelope 和 diagnostics，不暴露 sprite-first API、Phaser Scene、Three Mesh 或 gameplay input。
 - RenderObjectDefinition 应描述可重建的表现结构；运行时 native handle 由 adapter 私有维护，不进入 Data、World component 或 Save payload。
-- Adapter-specific props 必须表达底层后端的真实语义。以 Phaser 为例，`tint` 和 `tintMode` 是两个独立概念；mask-style sprite 需要 `tintMode: "fill"`，真实贴图调色才使用 multiply 类模式。
-- 复杂对象优先通过 object tree、node patch 和 command 表达。不要因为某个后端支持 sprite/mesh/particle 就把这些类型升成 core 方法。
+- `props` 只适合作为创建定义或简单 adapter hint；不要把运行时后端 API 塞进 `RenderObjectPatch` 或 renderer-core 字段。
+- 可复用模块优先通过 object tree、少量通用状态和 command 表达。具体游戏表现层可以显式拿 native handle 调用 Phaser / Three API，或调用对应 adapter 包导出的 renderer-specific state writer。
 - 高频 render sync 只同步必要变更，不通过 EventBus 发每帧 patch。object create/destroy、unsupported type、adapter lifecycle 可以发低频 diagnostics。
-- Escape hatch 只用于表现层热点路径、DevTools 或 adapter extension。使用 direct/native path 时必须保持 GameKit object lifecycle 可追踪。
+- Escape hatch 只用于表现层热点路径、DevTools、Editor 后端专属面板或 adapter extension。使用 direct/native path 时必须保持 GameKit object lifecycle 可追踪。

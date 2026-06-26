@@ -8,12 +8,6 @@ describe("createPhaserDriver", () => {
     const adapters = driver.adapters();
 
     expect(driver.id).toBe("test.phaser");
-    expect(driver.capabilities()).toMatchObject({
-      renderer: true,
-      assets: true,
-      input: true,
-      camera: true
-    });
     expect(adapters.renderer.id).toBe("test.phaser.renderer");
     expect(adapters.assetLoader.id).toBe("test.phaser.asset-loader");
     expect(driver.snapshot()).toMatchObject({

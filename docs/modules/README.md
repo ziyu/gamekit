@@ -52,7 +52,7 @@
 
 - `core-runtime.md`：Core、EventBus、GameRuntime、GameModule。
 - `app-host.md`：应用组合层、Service Registry、统一生命周期、配置和诊断。
-- `driver.md`：外部运行时统一集成层、Driver lifecycle、adapter capability。
+- `driver.md`：外部运行时统一集成层、Driver lifecycle、adapter map 和 native boundary。
 - `world.md`：World facade、ECS adapter、系统边界。
 - `renderer.md`：RenderObject、RenderNode、RenderCommand、Renderer Adapter。
 - `input.md`：Input Core、DOM/Phaser/Tauri input adapter、Action Mapping。
