@@ -1,5 +1,14 @@
 # @gamekit/devtools-ui
 
+## 0.1.0-alpha.2
+
+### Patch Changes
+
+- 3469457: [codex] Make renderer native control explicit
+  - @gamekit/devtools@0.1.0-alpha.2
+  - @gamekit/ui-core@0.1.0-alpha.2
+  - @gamekit/react-ui@0.1.0-alpha.2
+
 ## 0.1.0-alpha.1
 
 ### Patch Changes
