@@ -1,5 +1,16 @@
 # @gamekit/test-utils
 
+## 0.1.0-alpha.2
+
+### Patch Changes
+
+- 3469457: [codex] Make renderer native control explicit
+- Updated dependencies [3469457]
+  - @gamekit/renderer-core@0.1.0-alpha.2
+  - @gamekit/event-bus@0.1.0-alpha.2
+  - @gamekit/world@0.1.0-alpha.2
+  - @gamekit/platform-core@0.1.0-alpha.2
+
 ## 0.1.0-alpha.1
 
 ### Patch Changes
