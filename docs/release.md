@@ -79,8 +79,15 @@ Version PR 是唯一应该把 package version 推进到下一版的 PR。合并�
 
 ## Release Verify
 
-发布前或发布脚本变更后，可以手动运行 `Release Verify` workflow。它只构建 tarball 和跑外部
-consumer smoke，不写 npm registry。
+`Release Verify` workflow 只构建 tarball 并运行外部 consumer smoke，不写 npm registry。
+
+修改可发布包源码、包 manifest、lockfile、发布构建脚本或 Release Verify workflow 的 PR 会自动运行
+`Release Verify`，默认验证 `GAMEKITS_RELEASE_WAVE=all`。这条检查用于在合并前发现 workspace
+测试发现不了的发布产物问题，例如 scope 重写、tarball 内容、外部安装、peer dependency 和公共 API
+消费路径不一致。
+
+发布前排障、受控 backfill 或只验证指定 wave/package 时，也可以手动运行 `Release Verify`
+workflow。
 
 本地等价命令：
 

@@ -1,6 +1,16 @@
 name: Release Verify
 
 on:
+  pull_request:
+    paths:
+      - "packages/**/src/**"
+      - "packages/**/README.md"
+      - "packages/**/package.json"
+      - "scripts/build-library-package.mjs"
+      - "scripts/*release*.mjs"
+      - "scripts/verify-gamekits-release.ts"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/release-verify.yml"
   workflow_dispatch:
     inputs:
       version:
@@ -55,7 +65,11 @@ jobs:
             echo "GAMEKITS_RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
           fi
           echo "GAMEKITS_RELEASE_DIR=${{ runner.temp }}/gamekits-release" >> "$GITHUB_ENV"
-          echo "GAMEKITS_RELEASE_WAVE=${{ inputs.wave }}" >> "$GITHUB_ENV"
+          if [ -n "${{ inputs.wave }}" ]; then
+            echo "GAMEKITS_RELEASE_WAVE=${{ inputs.wave }}" >> "$GITHUB_ENV"
+          else
+            echo "GAMEKITS_RELEASE_WAVE=all" >> "$GITHUB_ENV"
+          fi
           if [ -n "${{ inputs.packages }}" ]; then
             echo "GAMEKITS_RELEASE_PACKAGES=${{ inputs.packages }}" >> "$GITHUB_ENV"
           fi
