@@ -1,5 +1,12 @@
 # @gamekit/driver-core
 
+## 0.1.0-alpha.3
+
+### Patch Changes
+
+- 544f137: [codex] Restore driver capabilities release guard
+  - @gamekit/core@0.1.0-alpha.3
+
 ## 0.1.0-alpha.2
 
 ### Patch Changes

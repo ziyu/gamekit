@@ -1,5 +1,25 @@
 # @gamekit/app-host
 
+## 0.1.0-alpha.3
+
+### Patch Changes
+
+- Updated dependencies [544f137]
+  - @gamekit/driver-core@0.1.0-alpha.3
+  - @gamekit/core@0.1.0-alpha.3
+  - @gamekit/platform-core@0.1.0-alpha.3
+  - @gamekit/renderer-core@0.1.0-alpha.3
+  - @gamekit/game-runtime@0.1.0-alpha.3
+  - @gamekit/data@0.1.0-alpha.3
+  - @gamekit/tca@0.1.0-alpha.3
+  - @gamekit/gas@0.1.0-alpha.3
+  - @gamekit/input-core@0.1.0-alpha.3
+  - @gamekit/camera-core@0.1.0-alpha.3
+  - @gamekit/devtools@0.1.0-alpha.3
+  - @gamekit/ui-core@0.1.0-alpha.3
+  - @gamekit/asset@0.1.0-alpha.3
+  - @gamekit/save@0.1.0-alpha.3
+
 ## 0.1.0-alpha.2
 
 ### Patch Changes
