@@ -917,6 +917,9 @@ function createFakeDriver(id: string, calls: string[]): GameDriver {
       calls.push(`${id}.dispose`);
       phase = "disposed";
     },
+    capabilities() {
+      return { renderer: true };
+    },
     adapters() {
       return {
         renderer: {
@@ -943,6 +946,7 @@ function createFakeDriver(id: string, calls: string[]): GameDriver {
         id,
         kind: "fake",
         phase,
+        capabilities: this.capabilities(),
         adapters: ["renderer"]
       };
     }

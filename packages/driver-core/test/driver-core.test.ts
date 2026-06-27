@@ -34,6 +34,9 @@ function createFakeDriver(id: string): GameDriver {
     kind: "fake",
     boot() {},
     dispose() {},
+    capabilities() {
+      return { renderer: true };
+    },
     adapters() {
       return { renderer: {} };
     },
@@ -42,6 +45,7 @@ function createFakeDriver(id: string): GameDriver {
         id,
         kind: "fake",
         phase: "registered",
+        capabilities: this.capabilities(),
         adapters: ["renderer"]
       };
     }
