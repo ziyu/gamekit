@@ -22,6 +22,8 @@ export default defineConfig({
         .pathname,
       "@gamekit/driver-phaser": new URL("./packages/driver-phaser/src/index.ts", import.meta.url)
         .pathname,
+      "@gamekit/driver-three": new URL("./packages/driver-three/src/index.ts", import.meta.url)
+        .pathname,
       "@gamekit/asset": new URL("./packages/asset/src/index.ts", import.meta.url).pathname,
       "@gamekit/app-host": new URL("./packages/app-host/src/index.ts", import.meta.url).pathname,
       "@gamekit/tca": new URL("./packages/tca/src/index.ts", import.meta.url).pathname,

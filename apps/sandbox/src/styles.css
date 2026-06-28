@@ -254,6 +254,61 @@ h2 {
   display: block;
 }
 
+.three-preview {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 4;
+  width: min(260px, calc(100% - 28px));
+  border: 1px solid rgba(241, 238, 231, 0.16);
+  background: rgba(14, 17, 16, 0.84);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+}
+
+.three-preview__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(241, 238, 231, 0.12);
+}
+
+.three-preview__bar span {
+  color: #a8afa7;
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.three-preview__bar strong {
+  overflow: hidden;
+  color: #f1eee7;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.three-preview__viewport {
+  position: relative;
+  height: 160px;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(140, 214, 163, 0.08) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(rgba(217, 179, 95, 0.06) 1px, transparent 1px) 0 0 / 22px 22px,
+    radial-gradient(circle at 28% 24%, rgba(140, 214, 163, 0.14), transparent 44%),
+    #101312;
+}
+
+.three-preview__viewport canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .stage-hint {
   position: absolute;
   right: 14px;
@@ -734,6 +789,17 @@ h2 {
 
   .camp-strip {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .three-preview {
+    top: auto;
+    right: 10px;
+    bottom: 50px;
+    width: 210px;
+  }
+
+  .three-preview__viewport {
+    height: 120px;
   }
 
   .timeline {

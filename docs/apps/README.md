@@ -18,3 +18,4 @@
 
 - `sandbox.md`：Sandbox / Tiny Camp 框架验证面。
 - `abyss-delve.md`：Abyss Delve 真实游戏验证应用。
+- `three-demo.md`：Three Driver 独立能力实验台。

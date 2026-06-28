@@ -17,6 +17,7 @@
     { "path": "../../packages/devtools-ui" },
     { "path": "../../packages/driver-core" },
     { "path": "../../packages/driver-phaser" },
+    { "path": "../../packages/driver-three" },
     { "path": "../../packages/event-bus" },
     { "path": "../../packages/gas" },
     { "path": "../../packages/game-runtime" },
