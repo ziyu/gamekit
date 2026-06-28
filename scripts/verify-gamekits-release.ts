@@ -70,6 +70,7 @@ const wave2PackageSlugs = [
   "input-dom",
   "renderer-phaser",
   "driver-phaser",
+  "driver-three",
   "app-host"
 ];
 
@@ -187,6 +188,7 @@ const wave2SmokeSource = `
 import { createWebPlatform } from "@gamekits/platform-web";
 import { createDriverRegistry } from "@gamekits/driver-core";
 import { createPhaserDriver } from "@gamekits/driver-phaser";
+import { createThreeDriver } from "@gamekits/driver-three";
 import { createInputRouter } from "@gamekits/input-core";
 import { createDomInputAdapter } from "@gamekits/input-dom";
 import { createCameraController } from "@gamekits/camera-core";
@@ -202,9 +204,13 @@ if ((await platform.services.app.name()) !== "GameKits Wave 2 Smoke") {
 }
 
 const phaserDriver = createPhaserDriver({ id: "phaser-smoke" });
-const drivers = createDriverRegistry([phaserDriver]);
+const threeDriver = createThreeDriver({ id: "three-smoke" });
+const drivers = createDriverRegistry([phaserDriver, threeDriver]);
 if (!drivers.has("phaser-smoke") || drivers.require("phaser-smoke").capabilities().renderer !== true) {
   throw new Error("driver smoke failed");
+}
+if (!drivers.has("three-smoke") || drivers.require("three-smoke").capabilities().assets !== true) {
+  throw new Error("three driver smoke failed");
 }
 
 const inputRouter = createInputRouter();

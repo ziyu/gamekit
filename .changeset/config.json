@@ -28,6 +28,7 @@
       "@gamekit/input-dom",
       "@gamekit/renderer-phaser",
       "@gamekit/driver-phaser",
+      "@gamekit/driver-three",
       "@gamekit/app-host",
       "@gamekit/react-ui",
       "@gamekit/devtools-ui"

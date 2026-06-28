@@ -52,6 +52,7 @@ jobs:
           import { createWebPlatform } from "@gamekits/platform-web";
           import { createDriverRegistry } from "@gamekits/driver-core";
           import { createPhaserDriver } from "@gamekits/driver-phaser";
+          import { createThreeDriver } from "@gamekits/driver-three";
           import { createInputRouter } from "@gamekits/input-core";
           import { createDomInputAdapter } from "@gamekits/input-dom";
           import { createCameraController } from "@gamekits/camera-core";
@@ -96,8 +97,12 @@ jobs:
           }
 
           const phaserDriver = createPhaserDriver({ id: "phaser-smoke" });
-          const drivers = createDriverRegistry([phaserDriver]);
+          const threeDriver = createThreeDriver({ id: "three-smoke" });
+          const drivers = createDriverRegistry([phaserDriver, threeDriver]);
           if (!drivers.has("phaser-smoke")) throw new Error("driver smoke failed");
+          if (!drivers.has("three-smoke") || !drivers.require("three-smoke").capabilities().assets) {
+            throw new Error("three driver smoke failed");
+          }
 
           const inputRouter = createInputRouter();
           let inputCount = 0;
@@ -198,6 +203,7 @@ jobs:
             "@gamekits/camera-core@$TAG" \
             "@gamekits/driver-core@$TAG" \
             "@gamekits/driver-phaser@$TAG" \
+            "@gamekits/driver-three@$TAG" \
             "@gamekits/asset@$TAG" \
             "@gamekits/save@$TAG" \
             "@gamekits/devtools@$TAG" \
