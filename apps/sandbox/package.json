@@ -18,6 +18,7 @@
     "@gamekit/devtools": "workspace:*",
     "@gamekit/devtools-ui": "workspace:*",
     "@gamekit/driver-phaser": "workspace:*",
+    "@gamekit/driver-three": "workspace:*",
     "@gamekit/event-bus": "workspace:*",
     "@gamekit/game-runtime": "workspace:*",
     "@gamekit/gas": "workspace:*",

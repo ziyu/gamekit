@@ -58,6 +58,7 @@ function createFakeUi(): SandboxUiHandles {
       focus: () => undefined,
       getBoundingClientRect: () => ({ width: 100, height: 100, left: 0, top: 0 })
     } as unknown as SandboxUiHandles["rendererRoot"],
+    threePreviewRoot: element as HTMLDivElement,
     sceneOverlay: element,
     status: divElement,
     objectiveLabel: element,

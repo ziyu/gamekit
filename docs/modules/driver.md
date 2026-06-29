@@ -156,11 +156,11 @@ Three Driver 统一持有：
 
 Three Driver 可以暴露：
 
-- RendererAdapter：创建 mesh、model、light、group、particle 等 RenderObject。
-- AssetLoaderAdapter：加载 texture、GLB/glTF、material、environment map。
+- RendererAdapter：创建和追踪基础 mesh、asset-backed model、light、group 等 RenderObject，并维护 object id / node path 到 Three native object 的映射。
+- AssetLoaderAdapter：加载 texture、GLB/glTF 等资源进入共享 Three runtime cache。
 - InputSource：把 canvas pointer / raycast 结果归一化为 input event 或 picking fact。
 - RendererCameraAdapter：同步 2D/3D CameraState 到 Three camera。
-- Typed native bridge：供 app presentation、Editor 后端专属面板或 DevTools renderer plugin 直接访问 Three renderer、scene、camera、object、mesh 或 material。
+- Typed native bridge：供 app presentation、Editor 后端专属面板或 DevTools renderer plugin 直接访问 Three renderer、scene、camera、object、mesh、material、AnimationMixer、post-processing 或 particle 等原生能力。
 
 ## 与 App Host 的关系
 
@@ -250,5 +250,6 @@ Driver diagnostic 是低频应用事实，进入 App Host diagnostics 或 DevToo
 ### 模块使用
 
 - Driver / Adapter 的具体包可以导出 Phaser、Three 等原生类型给 app presentation、Editor 后端专属面板和 DevTools plugin；这些类型不能进入 core facade、Data、Save 或可复用 gameplay module。
+- Driver 的 typed native bridge 应优先暴露真实后端类型；内部测试夹具或 helper 需要结构化目标时，只使用按能力命名的窄 internal target，不维护 `*Like` 形式的后端 shadow API。
 - Driver diagnostics 只发低频事实，例如 runtime phase、adapter map、surface size、asset cache summary；不要把每帧 render patch 或 raw input 打进 diagnostics。
 - 可复用 GameModule 和非表现层业务代码只消费 Driver 派生的 RendererAdapter、AssetLoaderAdapter、InputSource 或 camera sync adapter，不直接拿 Phaser Scene 或 Three Scene 写玩法。

@@ -14,6 +14,7 @@ import { sandboxAppDefinition } from "./app-definition";
 import { createSandboxWebProfile, type SandboxAppContext } from "./app-profile";
 import { SANDBOX_SAVE_SLOT_ID } from "./game";
 import { resolveSandboxSceneClickTarget } from "./scene-hit-test";
+import { createSandboxThreePreview, type SandboxThreePreview } from "./three-preview";
 import {
   applySandboxSceneClickSelection,
   bindSandboxWorkbenchControls,
@@ -100,6 +101,7 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
 
   updateHostStatus(ui, host);
   await host.boot();
+  const threePreview = createSandboxThreePreview(requireSandboxContext(context.drivers, "drivers"));
   updateHostStatus(ui, host);
   if (context.devtools) {
     mountSandboxDevToolsOverlay(ui, context.devtools);
@@ -128,6 +130,7 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
     const delta = lastTime === undefined ? 0 : Math.max(0, Math.min(now - lastTime, 64));
     lastTime = now;
     host.tick(delta, now);
+    threePreview.update(delta);
     updateSandboxHud(ui, sandbox, workbench);
     updateAssetStatus(ui, assetManager);
     updateHostStatus(ui, host);
@@ -136,7 +139,14 @@ async function bootSandbox(root: HTMLElement): Promise<void> {
 
   updateSandboxHud(ui, requireSandboxContext(context.sandbox, "sandbox"), workbench);
   requestAnimationFrame(frame);
-  window.addEventListener("beforeunload", unsubscribeScenePick, { once: true });
+  window.addEventListener(
+    "beforeunload",
+    () => {
+      unsubscribeScenePick();
+      disposeThreePreview(threePreview);
+    },
+    { once: true }
+  );
 }
 
 function requireSandboxContext<TValue>(value: TValue | undefined, name: string): TValue {
@@ -228,6 +238,14 @@ async function loadSandbox(
 
 function readErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function disposeThreePreview(preview: SandboxThreePreview): void {
+  try {
+    preview.destroy();
+  } catch {
+    // The App Host may already be tearing down the underlying driver.
+  }
 }
 
 function resolveSceneClickSelection(

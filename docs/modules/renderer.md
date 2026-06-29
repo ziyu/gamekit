@@ -197,7 +197,7 @@ Three Driver 暴露的 RendererAdapter：
 
 - 依赖 Three.js。
 - 不把 Three 原生类型导出到 renderer-core；可以在 `@gamekit/driver-three` 中导出 typed native bridge。
-- 映射 `mesh`、`model`、`group`、`light`、`particle-emitter` 等 render type。
+- 映射基础 `mesh`、asset-backed `model`、`group`、`light` 等 render type；复杂材质、粒子、后处理、shader、controls 和 AnimationMixer 控制通过 Three native control path 实现。
 - 与同一个 Three Driver 内部的 asset loader、raycaster 和 camera adapter 共享 scene / renderer / resource cache。
 
 ## Escape Hatch
@@ -249,7 +249,9 @@ Animation 不作为默认独立业务模块。动画主要归入：
 - Renderer 测试应覆盖 object tree、native handle resolution、unknown object type、missing object、command dispatch、diagnostics callback 和 lifecycle cleanup。
 - App Host/profile 负责 renderer boot、surface/container 注入、diagnostics bridge 和 resize；GameRuntime 不拥有 renderer lifecycle。
 - Adapter / Driver 包可以导出具体 native bridge 类型；renderer-core 只能使用 generic `unknown` 边界。
+- 具体 renderer 的 native bridge 应使用真实后端类型；若 adapter 内部需要测试或跨真实/假 runtime 的结构化 helper，类型必须保持 internal、窄能力命名，并且不能演变成完整后端 API 的 `*Like` 镜像。
 - Adapter-specific state writer 应放在对应 adapter / driver 包中，并让对象创建和运行时表现状态复用同一套后端映射逻辑；app module 不应重复维护 Phaser / Three object duck type。
+- Adapter-specific inspect API 应返回稳定摘要，例如 object/node type、asset id、mesh/material counts 和 bounds；DevTools 或 demo snapshot 不应持有 Phaser / Three native handle。
 
 ### 模块使用
 

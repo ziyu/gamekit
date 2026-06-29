@@ -36,6 +36,7 @@
       "@gamekit/data": ["packages/data/src/index.ts"],
       "@gamekit/driver-core": ["packages/driver-core/src/index.ts"],
       "@gamekit/driver-phaser": ["packages/driver-phaser/src/index.ts"],
+      "@gamekit/driver-three": ["packages/driver-three/src/index.ts"],
       "@gamekit/asset": ["packages/asset/src/index.ts"],
       "@gamekit/app-host": ["packages/app-host/src/index.ts"],
       "@gamekit/tca": ["packages/tca/src/index.ts"],

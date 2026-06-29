@@ -10,9 +10,11 @@
     { "path": "./packages/renderer-phaser" },
     { "path": "./packages/driver-core" },
     { "path": "./packages/driver-phaser" },
+    { "path": "./packages/driver-three" },
     { "path": "./packages/devtools-ui" },
     { "path": "./packages/test-utils" },
     { "path": "./apps/sandbox" },
-    { "path": "./apps/abyss-delve" }
+    { "path": "./apps/abyss-delve" },
+    { "path": "./apps/three-demo" }
   ]
 }

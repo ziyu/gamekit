@@ -7,10 +7,13 @@
   "scripts": {
     "build": "turbo run build",
     "build:game": "turbo run build --filter=abyss-delve",
+    "build:three": "turbo run build --filter=three-demo",
     "dev:sandbox": "turbo run dev --filter=sandbox",
     "dev:game": "turbo run dev --filter=abyss-delve",
+    "dev:three": "turbo run dev --filter=three-demo",
     "test": "turbo run test",
     "test:game": "turbo run test --filter=abyss-delve",
+    "test:three": "turbo run test --filter=three-demo",
     "test:unit": "turbo run test",
     "test:vitest": "turbo run test",
     "lint": "turbo run lint",

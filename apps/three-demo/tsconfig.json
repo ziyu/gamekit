@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": true
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/app-host" },
+    { "path": "../../packages/asset" },
+    { "path": "../../packages/data" },
+    { "path": "../../packages/driver-core" },
+    { "path": "../../packages/driver-three" },
+    { "path": "../../packages/platform-core" },
+    { "path": "../../packages/platform-web" },
+    { "path": "../../packages/renderer-core" }
+  ]
+}
