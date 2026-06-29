@@ -1,5 +1,19 @@
 # @gamekit/driver-phaser
 
+## 0.1.0-alpha.3
+
+### Patch Changes
+
+- 544f137: [codex] Restore driver capabilities release guard
+- Updated dependencies [544f137]
+  - @gamekit/driver-core@0.1.0-alpha.3
+  - @gamekit/core@0.1.0-alpha.3
+  - @gamekit/renderer-core@0.1.0-alpha.3
+  - @gamekit/input-core@0.1.0-alpha.3
+  - @gamekit/camera-core@0.1.0-alpha.3
+  - @gamekit/asset@0.1.0-alpha.3
+  - @gamekit/renderer-phaser@0.1.0-alpha.3
+
 ## 0.1.0-alpha.2
 
 ### Patch Changes
