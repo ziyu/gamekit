@@ -17,11 +17,6 @@ import {
   shouldSyncPrereleaseLatest
 } from "./release-dist-tags.mjs";
 
-const token = process.env.NPM_TOKEN ?? readFileSync(0, "utf8").trim();
-if (!token) {
-  throw new Error("Missing npm token. Set NPM_TOKEN or pass the token on stdin.");
-}
-
 const version = process.env.GAMEKITS_RELEASE_VERSION ?? "0.1.0-alpha.0";
 const releaseDir = process.env.GAMEKITS_RELEASE_DIR ?? "/private/tmp/gamekits-wave2-release";
 const registry = process.env.GAMEKITS_NPM_REGISTRY ?? "https://registry.npmjs.org";
@@ -31,14 +26,83 @@ const syncPrereleaseLatest = shouldSyncPrereleaseLatest(
   process.env.GAMEKITS_NPM_SYNC_PRERELEASE_LATEST
 );
 const packages = resolvePackages();
+const trustedPublisher = hasTrustedPublisherEnvironment();
+const token = resolveToken();
 
 if (packages.length === 0) {
   throw new Error("No packages to publish.");
 }
 
+if (!trustedPublisher && !token) {
+  throw new Error(
+    "Missing npm authorization. Configure npm Trusted Publisher/OIDC for this workflow, or set NPM_TOKEN/pass a token on stdin."
+  );
+}
+
 const workDir = mkdtempSync(join(tmpdir(), "gamekits-publish-"));
 
 async function publish(slug) {
+  if (trustedPublisher) {
+    try {
+      await publishWithTrustedPublisher(slug);
+      return;
+    } catch (error) {
+      if (!token || !isNpmAuthFailure(error)) {
+        throw error;
+      }
+
+      console.warn(
+        `Trusted Publisher publish for @gamekits/${slug}@${version} was not authorized; falling back to NPM_TOKEN.`
+      );
+    }
+  }
+
+  await publishWithToken(slug);
+}
+
+async function publishWithTrustedPublisher(slug) {
+  const name = `@gamekits/${slug}`;
+  const tarballPath = join(releaseDir, "tarballs", `gamekits-${slug}-${version}.tgz`);
+
+  try {
+    execFileSync(
+      "npm",
+      [
+        "publish",
+        tarballPath,
+        "--tag",
+        distTag,
+        "--access",
+        "public",
+        "--registry",
+        registry,
+        "--loglevel",
+        "warn"
+      ],
+      {
+        encoding: "utf8",
+        stdio: "pipe"
+      }
+    );
+    console.log(`published ${name}@${version} via Trusted Publisher`);
+  } catch (error) {
+    if (isNpmAlreadyPublished(error)) {
+      console.log(`${name}@${version} already exists`);
+    } else {
+      throw error;
+    }
+  }
+
+  await syncDistTags(name, "trusted");
+}
+
+async function publishWithToken(slug) {
+  if (!token) {
+    throw new Error(
+      `Cannot publish @gamekits/${slug}@${version}: Trusted Publisher is unavailable and NPM_TOKEN is not set.`
+    );
+  }
+
   const name = `@gamekits/${slug}`;
   const encodedName = encodeURIComponent(name).replace("%40", "@");
   const tarballName = `gamekits-${slug}-${version}.tgz`;
@@ -112,14 +176,14 @@ async function publish(slug) {
   if (!["200", "201"].includes(status)) {
     if (isAlreadyPublishedResponse(status, body)) {
       console.log(`${name}@${version} already exists`);
-      await syncDistTags(name);
+      await syncDistTags(name, "token");
       return;
     }
     throw new Error(`${name}@${version} publish failed with HTTP ${status}: ${body}`);
   }
 
   console.log(`published ${name}@${version}`);
-  await syncDistTags(name);
+  await syncDistTags(name, "token");
 }
 
 function isAlreadyPublishedResponse(status, body) {
@@ -131,6 +195,11 @@ function isAlreadyPublishedResponse(status, body) {
 
 try {
   console.log(`Publishing ${packages.length} package(s) to npm dist-tag "${distTag}".`);
+  if (trustedPublisher) {
+    console.log("Trusted Publisher/OIDC environment detected; trying npm CLI publish first.");
+  } else {
+    console.log("Trusted Publisher/OIDC environment not detected; using NPM_TOKEN publish.");
+  }
   for (const slug of packages) {
     await publish(slug);
   }
@@ -138,7 +207,7 @@ try {
   rmSync(workDir, { recursive: true, force: true });
 }
 
-async function syncDistTags(name) {
+async function syncDistTags(name, authMode) {
   const metadata = await fetchPackageMetadata(name);
   const tags = resolveRequiredDistTags({
     additionalDistTags,
@@ -149,7 +218,22 @@ async function syncDistTags(name) {
   });
 
   for (const tag of tags) {
-    setDistTag(name, tag);
+    if (authMode === "trusted") {
+      try {
+        setDistTagWithTrustedPublisher(name, tag);
+        continue;
+      } catch (error) {
+        if (!token || !isNpmAuthFailure(error)) {
+          throw error;
+        }
+
+        console.warn(
+          `Trusted Publisher dist-tag sync for ${name}@${version} was not authorized; falling back to NPM_TOKEN.`
+        );
+      }
+    }
+
+    setDistTagWithToken(name, tag);
   }
 }
 
@@ -172,7 +256,25 @@ async function fetchPackageMetadata(name) {
   throw new Error(`Unable to read ${name} metadata: HTTP ${response.status}: ${body}`);
 }
 
-function setDistTag(name, tag) {
+function setDistTagWithTrustedPublisher(name, tag) {
+  execFileSync(
+    "npm",
+    ["dist-tag", "add", `${name}@${version}`, tag, "--registry", registry, "--loglevel", "warn"],
+    {
+      encoding: "utf8",
+      stdio: "pipe"
+    }
+  );
+  console.log(`tagged ${name}@${version} as ${tag} via Trusted Publisher`);
+}
+
+function setDistTagWithToken(name, tag) {
+  if (!token) {
+    throw new Error(
+      `Cannot set ${name}@${version} dist-tag "${tag}": Trusted Publisher is unavailable and NPM_TOKEN is not set.`
+    );
+  }
+
   const payloadPath = join(workDir, `${nameToSlug(name)}-${tag}.dist-tag.json`);
   const responsePath = join(workDir, `${nameToSlug(name)}-${tag}.dist-tag.response.json`);
   const authConfigPath = join(workDir, `${nameToSlug(name)}-${tag}.dist-tag.curlrc`);
@@ -228,6 +330,63 @@ function registryDistTagUrl(name, tag) {
 
 function nameToSlug(name) {
   return name.replace(/^@/, "").replace(/\W+/g, "-");
+}
+
+function hasTrustedPublisherEnvironment() {
+  return Boolean(
+    process.env.ACTIONS_ID_TOKEN_REQUEST_URL && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN
+  );
+}
+
+function resolveToken() {
+  const envToken = process.env.NPM_TOKEN?.trim();
+  if (envToken) {
+    return envToken;
+  }
+
+  if (process.stdin.isTTY) {
+    return undefined;
+  }
+
+  try {
+    return readFileSync(0, "utf8").trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isNpmAlreadyPublished(error) {
+  const output = commandOutput(error).toLowerCase();
+  return (
+    output.includes("cannot modify pre-existing version") ||
+    output.includes("cannot publish over") ||
+    output.includes("previously published versions") ||
+    output.includes("epublishconflict")
+  );
+}
+
+function isNpmAuthFailure(error) {
+  const output = commandOutput(error).toLowerCase();
+  const status = String(error.status ?? "");
+  return (
+    ["401", "403", "404"].includes(status) ||
+    output.includes("e401") ||
+    output.includes("e403") ||
+    output.includes("e404") ||
+    output.includes("eneedauth") ||
+    output.includes("not authorized") ||
+    output.includes("not found") ||
+    output.includes("you must be logged in") ||
+    output.includes("trusted publishing") ||
+    output.includes("oidc")
+  );
+}
+
+function commandOutput(error) {
+  return [error?.stdout, error?.stderr, error?.message]
+    .filter(Boolean)
+    .map((value) => (Buffer.isBuffer(value) ? value.toString("utf8") : String(value)))
+    .join("\n");
 }
 
 function resolvePackages() {

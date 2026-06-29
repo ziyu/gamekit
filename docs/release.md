@@ -117,16 +117,21 @@ GitHub repository 设置：
 
 - Actions 必须允许 workflow 创建 pull request，否则 Changesets action 无法创建 Version PR。
 - `Release` workflow 使用受保护 Environment：`npm-release`。
-- `npm-release` 环境需要 `NPM_TOKEN` secret。
+- `Release` workflow 需要 `id-token: write`，用于 npm Trusted Publishing/OIDC。
+- 每个要发布的 `@gamekits/*` 包都应在 npm package settings 中配置 Trusted Publisher：
+  `ziyu/gamekit` + `release.yml`。
+- `npm-release` 环境可以配置 `NPM_TOKEN` secret 作为 fallback；没有 Trusted Publisher 或
+  OIDC 授权失败时才使用 token。
 
-npm token 要求：
+npm token fallback 要求：
 
 - 对 `@gamekits` scope 有 publish 权限。
 - 可以发布 public scoped package。
 - 如果 npm 账号启用了 2FA，token 必须能 bypass 2FA；否则 CI 会报 OTP 相关错误。
 
-当前发布脚本通过 registry HTTP API 发布和 retag。不要把 npm token 写入仓库、日志、命令参数、
-PR 描述或 issue。
+当前发布脚本优先通过 npm CLI 使用 Trusted Publishing/OIDC 发布和 retag；若 OIDC 环境不存在、
+包没有对应 Trusted Publisher、或 npm CLI 返回认证失败，并且存在 `NPM_TOKEN`，才回退到 registry
+HTTP API。不要把 npm token 写入仓库、日志、命令参数、PR 描述或 issue。
 
 ## dist-tag 策略
 
@@ -170,10 +175,15 @@ npm 页面显示旧版本：
 - 检查 `https://registry.npmjs.org/-/package/%40gamekits%2Fcore/dist-tags`。
 - 若 `alpha` 已更新但 `latest` 仍旧，重新运行 Release workflow 或合并 retag 修复 PR。
 
-Publish job 报 OTP 或 401：
+Publish job 报 OTP、401、403 或 404：
 
-- 更新 GitHub Environment `npm-release` 的 `NPM_TOKEN`。
-- 确认 token 有 publish 权限，并能 bypass 2FA。
+- 先确认失败日志是否出现 `Trusted Publisher ... falling back to NPM_TOKEN`。
+- 若期望走 Trusted Publishing，确认失败包也配置了 Trusted Publisher，且 workflow filename 是
+  `release.yml`。
+- 若期望走 token fallback，更新 GitHub Environment `npm-release` 的 `NPM_TOKEN`，确认 token
+  有 publish 权限，并能 bypass 2FA。
+- npm 对 scoped package 的未授权 publish 可能返回 `404 {"error":"Not found"}`；这通常仍是认证或
+  package access 问题，不代表 tarball 构建失败。
 
 Publish job 报版本已经发布：
 
