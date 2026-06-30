@@ -115,9 +115,13 @@ GameKit 采用多包发布，而不是单包发布。
 - `0.1.x` latest：alpha 验证通过后发布，作为早期稳定 API 起点。
 
 2026-06-13 补充：实际 npm scope 在首个 alpha 发布后已经存在 `latest` tag。如果 `latest`
-仍指向旧 alpha，npm 默认包页和默认安装入口会误导下游使用旧包。因此在尚无稳定版本的
-alpha-only bootstrap 阶段，发布自动化允许把 `latest` 同步到当前 alpha；一旦 `latest`
-指向不带 prerelease 后缀的稳定版本，后续 alpha/beta/rc 发布不得覆盖稳定 `latest`。
+仍指向旧 alpha，npm 默认包页和默认安装入口会误导下游使用旧包。因此曾允许在尚无稳定版本的
+alpha-only bootstrap 阶段把 `latest` 同步到当前 alpha。
+
+2026-06-30 修订：npm Trusted Publisher/OIDC 覆盖 publish / staged publish，不适合作为已发布
+版本的后置 dist-tag 修改授权；后置同步 `latest` 需要传统 npm 写认证，容易让 package publish
+成功后在 retag 阶段失败。发布自动化不再允许 prerelease 同步或附加 `latest`。稳定版进入默认安装
+入口时，直接发布不带 prerelease 后缀的版本并使用 `dist-tag=latest`。
 
 每次发布必须经过：
 

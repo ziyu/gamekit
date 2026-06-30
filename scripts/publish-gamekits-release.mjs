@@ -14,7 +14,7 @@ import { join } from "node:path";
 import {
   parseAdditionalDistTags,
   resolveRequiredDistTags,
-  shouldSyncPrereleaseLatest
+  validateDistTagPolicy
 } from "./release-dist-tags.mjs";
 
 const version = process.env.GAMEKITS_RELEASE_VERSION ?? "0.1.0-alpha.0";
@@ -22,9 +22,7 @@ const releaseDir = process.env.GAMEKITS_RELEASE_DIR ?? "/private/tmp/gamekits-wa
 const registry = process.env.GAMEKITS_NPM_REGISTRY ?? "https://registry.npmjs.org";
 const distTag = process.env.GAMEKITS_NPM_TAG ?? "alpha";
 const additionalDistTags = parseAdditionalDistTags(process.env.GAMEKITS_NPM_ADDITIONAL_TAGS);
-const syncPrereleaseLatest = shouldSyncPrereleaseLatest(
-  process.env.GAMEKITS_NPM_SYNC_PRERELEASE_LATEST
-);
+validateDistTagPolicy({ additionalDistTags, distTag, version });
 const packages = resolvePackages();
 const trustedPublisher = hasTrustedPublisherEnvironment();
 const token = resolveToken();
@@ -222,9 +220,7 @@ async function syncDeferredDistTags() {
     const metadata = await fetchPackageMetadata(name);
     const tags = resolveRequiredDistTags({
       additionalDistTags,
-      currentDistTags: metadata?.["dist-tags"],
       distTag,
-      syncPrereleaseLatest,
       version
     }).filter((tag) => tag !== distTag && metadata?.["dist-tags"]?.[tag] !== version);
 

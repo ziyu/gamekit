@@ -24,11 +24,6 @@ on:
         description: Optional comma-separated package slugs.
         required: false
         type: string
-      sync-prerelease-latest:
-        description: Mirror a prerelease version to latest after all packages publish.
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   group: release-${{ github.ref }}
@@ -172,9 +167,6 @@ jobs:
           echo "GAMEKITS_RELEASE_DIR=${{ runner.temp }}/gamekits-release" >> "$GITHUB_ENV"
           if [ -n "${{ inputs.packages }}" ]; then
             echo "GAMEKITS_PUBLISH_PACKAGES=${{ inputs.packages }}" >> "$GITHUB_ENV"
-          fi
-          if [ "${{ inputs.sync-prerelease-latest }}" = "true" ]; then
-            echo "GAMEKITS_NPM_SYNC_PRERELEASE_LATEST=true" >> "$GITHUB_ENV"
           fi
 
       - name: Publish Release

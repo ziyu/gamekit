@@ -73,8 +73,6 @@ Version PR 是唯一应该把 package version 推进到下一版的 PR。合并�
 - `version`：默认读取 `packages/core/package.json` 的版本。backfill 时显式填写。
 - `dist-tag`：`alpha`、`beta`、`rc` 或 `latest`。
 - `packages`：可选的逗号分隔 slug，例如 `core,event-bus`。空值表示当前可发布包集合。
-- `sync-prerelease-latest`：仅在确实需要把 prerelease 镜像到 `latest` 时打开；同步会在所有
-  package publish / primary dist-tag 完成后统一执行。
 
 手动触发后仍必须检查 npm registry、GitHub Release 和 workflow 日志。不要用手动 workflow
 绕过 Version PR 来做日常版本推进。
@@ -131,9 +129,11 @@ npm token fallback 要求：
 - 可以发布 public scoped package。
 - 如果 npm 账号启用了 2FA，token 必须能 bypass 2FA；否则 CI 会报 OTP 相关错误。
 
-当前发布脚本优先通过 npm CLI 使用 Trusted Publishing/OIDC 发布和 retag；若 OIDC 环境不存在、
+当前发布脚本优先通过 npm CLI 使用 Trusted Publishing/OIDC 发布 package。若 OIDC 环境不存在、
 包没有对应 Trusted Publisher、或 npm CLI 返回认证失败，并且存在 `NPM_TOKEN`，才回退到 registry
-HTTP API。不要把 npm token 写入仓库、日志、命令参数、PR 描述或 issue。
+HTTP API 发布。已经发布版本的后置 dist-tag 修改可能需要传统 npm 写认证；prerelease 不再通过
+自动化同步 `latest`，稳定默认入口应直接发布不带 prerelease 后缀的版本并使用 `dist-tag=latest`。
+不要把 npm token 写入仓库、日志、命令参数、PR 描述或 issue。
 
 Trusted Publishing 会校验 npm provenance。发布 staging 生成的 package manifest 必须包含
 `repository.url: "https://github.com/ziyu/gamekit"`；否则 npm 会因为 provenance 中的仓库来源和
@@ -148,10 +148,10 @@ package metadata 不匹配拒绝发布。
 - `0.1.0-rc.N` -> `rc`
 - 无 prerelease 后缀 -> `latest`
 
-`alpha`、`beta`、`rc` 发布默认只更新对应 prerelease tag，不自动覆盖 `latest`。确需在
-alpha-only bootstrap 阶段把 `latest` 镜像到当前 alpha 时，手动触发 Release workflow 并开启
-`sync-prerelease-latest`；发布脚本会先完成所有 package publish / primary dist-tag，再统一同步
-`latest`。一旦 `latest` 指向正式版本，后续 `alpha`、`beta`、`rc` 发布不得覆盖稳定 `latest`。
+`alpha`、`beta`、`rc` 发布只更新对应 prerelease tag，不覆盖 `latest`。发布脚本会拒绝把
+prerelease 版本标记为 `latest`，也会拒绝通过 additional dist-tag 把 `latest` 附加到
+prerelease。稳定版进入默认安装入口时，发布不带 prerelease 后缀的版本，并直接使用
+`dist-tag=latest`。
 
 Release workflow 会把“版本已存在但 dist-tag 过期”视为需要发布，并走幂等 retag 路径。重复
 发布同一版本时，npm 可能返回 `409 cannot modify pre-existing version` 或
@@ -181,8 +181,8 @@ npm 页面显示旧版本：
 
 - npm 页面默认看 `latest` dist-tag。
 - 检查 `https://registry.npmjs.org/-/package/%40gamekits%2Fcore/dist-tags`。
-- 若 `alpha` 已更新但 `latest` 仍旧，这是默认 prerelease 策略；只有确认需要 bootstrap
-  默认安装入口时，才手动运行 Release workflow 并开启 `sync-prerelease-latest`。
+- 若 `alpha` 已更新但 `latest` 仍旧，这是 prerelease 策略；不要为 prerelease 补同步
+  `latest`。需要更新默认安装入口时，发布稳定版本并使用 `dist-tag=latest`。
 
 Publish job 报 OTP、401、403 或 404：
 
