@@ -73,6 +73,8 @@ Version PR 是唯一应该把 package version 推进到下一版的 PR。合并�
 - `version`：默认读取 `packages/core/package.json` 的版本。backfill 时显式填写。
 - `dist-tag`：`alpha`、`beta`、`rc` 或 `latest`。
 - `packages`：可选的逗号分隔 slug，例如 `core,event-bus`。空值表示当前可发布包集合。
+- `sync-prerelease-latest`：仅在确实需要把 prerelease 镜像到 `latest` 时打开；同步会在所有
+  package publish / primary dist-tag 完成后统一执行。
 
 手动触发后仍必须检查 npm registry、GitHub Release 和 workflow 日志。不要用手动 workflow
 绕过 Version PR 来做日常版本推进。
@@ -146,8 +148,10 @@ package metadata 不匹配拒绝发布。
 - `0.1.0-rc.N` -> `rc`
 - 无 prerelease 后缀 -> `latest`
 
-alpha-only bootstrap 阶段允许把 `latest` 同步到当前 alpha，避免 npm 默认包页停在旧 alpha。
-一旦 `latest` 指向正式版本，后续 `alpha`、`beta`、`rc` 发布不得覆盖稳定 `latest`。
+`alpha`、`beta`、`rc` 发布默认只更新对应 prerelease tag，不自动覆盖 `latest`。确需在
+alpha-only bootstrap 阶段把 `latest` 镜像到当前 alpha 时，手动触发 Release workflow 并开启
+`sync-prerelease-latest`；发布脚本会先完成所有 package publish / primary dist-tag，再统一同步
+`latest`。一旦 `latest` 指向正式版本，后续 `alpha`、`beta`、`rc` 发布不得覆盖稳定 `latest`。
 
 Release workflow 会把“版本已存在但 dist-tag 过期”视为需要发布，并走幂等 retag 路径。重复
 发布同一版本时，npm 可能返回 `409 cannot modify pre-existing version` 或
@@ -177,7 +181,8 @@ npm 页面显示旧版本：
 
 - npm 页面默认看 `latest` dist-tag。
 - 检查 `https://registry.npmjs.org/-/package/%40gamekits%2Fcore/dist-tags`。
-- 若 `alpha` 已更新但 `latest` 仍旧，重新运行 Release workflow 或合并 retag 修复 PR。
+- 若 `alpha` 已更新但 `latest` 仍旧，这是默认 prerelease 策略；只有确认需要 bootstrap
+  默认安装入口时，才手动运行 Release workflow 并开启 `sync-prerelease-latest`。
 
 Publish job 报 OTP、401、403 或 404：
 

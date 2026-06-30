@@ -28,6 +28,7 @@ const syncPrereleaseLatest = shouldSyncPrereleaseLatest(
 const packages = resolvePackages();
 const trustedPublisher = hasTrustedPublisherEnvironment();
 const token = resolveToken();
+const publishedNames = [];
 
 if (packages.length === 0) {
   throw new Error("No packages to publish.");
@@ -42,10 +43,13 @@ if (!trustedPublisher && !token) {
 const workDir = mkdtempSync(join(tmpdir(), "gamekits-publish-"));
 
 async function publish(slug) {
+  const name = `@gamekits/${slug}`;
+  let authMode;
+
   if (trustedPublisher) {
     try {
       await publishWithTrustedPublisher(slug);
-      return;
+      authMode = "trusted";
     } catch (error) {
       if (!token || !isNpmAuthFailure(error)) {
         throw error;
@@ -57,7 +61,13 @@ async function publish(slug) {
     }
   }
 
-  await publishWithToken(slug);
+  if (!authMode) {
+    await publishWithToken(slug);
+    authMode = "token";
+  }
+
+  await syncPrimaryDistTag(name, authMode);
+  publishedNames.push(name);
 }
 
 async function publishWithTrustedPublisher(slug) {
@@ -92,8 +102,6 @@ async function publishWithTrustedPublisher(slug) {
       throw error;
     }
   }
-
-  await syncDistTags(name, "trusted");
 }
 
 async function publishWithToken(slug) {
@@ -176,14 +184,12 @@ async function publishWithToken(slug) {
   if (!["200", "201"].includes(status)) {
     if (isAlreadyPublishedResponse(status, body)) {
       console.log(`${name}@${version} already exists`);
-      await syncDistTags(name, "token");
       return;
     }
     throw new Error(`${name}@${version} publish failed with HTTP ${status}: ${body}`);
   }
 
   console.log(`published ${name}@${version}`);
-  await syncDistTags(name, "token");
 }
 
 function isAlreadyPublishedResponse(status, body) {
@@ -203,20 +209,44 @@ try {
   for (const slug of packages) {
     await publish(slug);
   }
+  await syncDeferredDistTags();
 } finally {
   rmSync(workDir, { recursive: true, force: true });
 }
 
-async function syncDistTags(name, authMode) {
-  const metadata = await fetchPackageMetadata(name);
-  const tags = resolveRequiredDistTags({
-    additionalDistTags,
-    currentDistTags: metadata?.["dist-tags"],
-    distTag,
-    syncPrereleaseLatest,
-    version
-  });
+async function syncDeferredDistTags() {
+  const uniqueNames = [...new Set(publishedNames)].sort();
+  const preferredAuthMode = trustedPublisher ? "trusted" : "token";
 
+  for (const name of uniqueNames) {
+    const metadata = await fetchPackageMetadata(name);
+    const tags = resolveRequiredDistTags({
+      additionalDistTags,
+      currentDistTags: metadata?.["dist-tags"],
+      distTag,
+      syncPrereleaseLatest,
+      version
+    }).filter((tag) => tag !== distTag && metadata?.["dist-tags"]?.[tag] !== version);
+
+    if (tags.length === 0) {
+      continue;
+    }
+
+    console.log(`Synchronizing deferred dist-tag(s) ${tags.join(", ")} for ${name}@${version}.`);
+    await syncDistTags(name, tags, preferredAuthMode);
+  }
+}
+
+async function syncPrimaryDistTag(name, authMode) {
+  const metadata = await fetchPackageMetadata(name);
+  if (metadata?.["dist-tags"]?.[distTag] === version) {
+    return;
+  }
+
+  await syncDistTags(name, [distTag], authMode);
+}
+
+async function syncDistTags(name, tags, authMode) {
   for (const tag of tags) {
     if (authMode === "trusted") {
       try {
