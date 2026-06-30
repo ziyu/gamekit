@@ -201,7 +201,7 @@ import { createCameraController } from "@gamekits/camera-core";
 import { createAssetManager } from "@gamekits/asset";
 import { createMemorySaveStore } from "@gamekits/save";
 import { createDevToolsRuntime } from "@gamekits/devtools";
-import { createUiRuntime } from "@gamekits/ui-core";
+import { createUiRuntime as createWave2UiRuntime } from "@gamekits/ui-core";
 import { createHeadlessHost, createStandardAppProfile, defineGameApp } from "@gamekits/app-host";
 
 const platform = createWebPlatform({ appName: "GameKits Wave 2 Smoke" });
@@ -271,7 +271,7 @@ const devtools = createDevToolsRuntime();
 devtools.pushTrace({ kind: "runtime", label: "wave2.smoke", source: "verify" });
 if (devtools.snapshot().traces.length !== 1) throw new Error("devtools smoke failed");
 
-const ui = createUiRuntime();
+const ui = createWave2UiRuntime();
 ui.registerPanel({ id: "panel.smoke", kind: "panel", title: "Smoke" });
 ui.open("panel.smoke");
 if (ui.openPanels().length !== 1) throw new Error("ui smoke failed");
@@ -289,7 +289,7 @@ console.log("gamekits wave 2 smoke ok");
 const wave3SmokeSource = `
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createUiRuntime } from "@gamekits/ui-core";
+import { createUiRuntime as createWave3UiRuntime } from "@gamekits/ui-core";
 import {
   createGameKitUiAnimator,
   GameKitUiShell,
