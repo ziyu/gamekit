@@ -30,7 +30,8 @@
     "@gamekit/test-utils": "0.1.0-alpha.0",
     "@gamekit/ui-core": "0.1.0-alpha.0",
     "@gamekit/world": "0.1.0-alpha.0",
-    "@gamekit/world-koota": "0.1.0-alpha.0"
+    "@gamekit/world-koota": "0.1.0-alpha.0",
+    "three-demo": "0.1.0"
   },
-  "changesets": ["auto-4124991c", "auto-pr-12", "auto-pr-14"]
+  "changesets": ["auto-4124991c", "auto-pr-12", "auto-pr-14", "three-driver"]
 }
