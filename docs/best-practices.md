@@ -109,7 +109,7 @@
 - `apps/*` 是验证应用和示例源码，不作为 npm package 发布。
 - 可发布包必须只通过公共入口导出稳定 API；`src/index.ts` 继续只做 re-export，不承载主要实现。
 - 发布产物必须来自 library build 输出的 `dist`，不能把 `src`、`test`、`.turbo`、`tsconfig.tsbuildinfo`、缓存、日志或 app 构建产物打入 tarball。
-- package manifest 必须用 `files` 白名单限定发布内容，并声明 `exports`、`types`、`main` 和 `publishConfig.access`。
+- package manifest 必须用 `files` 白名单限定发布内容，并声明 `exports`、`types`、`main`、`repository` 和 `publishConfig.access`。
 - CSS 入口只能从发布产物导出，例如 `./dist/styles.css`；有 CSS 或必要副作用的包不能盲目声明 `sideEffects: false`。
 - React UI 类包应把 `react` 和 `react-dom` 声明为 peer dependency，并在本仓库保留 dev dependency 用于构建和测试；发布 smoke 必须确认 consumer 复用顶层 React。
 - 纯 TypeScript 包、React TSX 包、adapter/driver 包都必须通过外部安装 smoke test，验证它们离开 workspace alias 后仍能被消费。
@@ -148,6 +148,7 @@
 - 未发布前验证一组相互依赖的 tarball 时，临时消费者必须把内部包解析到本地 tarball，例如通过 pnpmfile hook 或 overrides；否则包内的明确版本号会让安装器去 registry 查找尚未发布的相邻包。
 - registry 网络不稳定时可以重试安装步骤，但不能跳过 registry smoke；至少一次需要从 npm registry 安装已发布包并运行外部 consumer smoke。
 - GitHub Actions 发布 job 必须绑定受保护 Environment，并优先通过 npm Trusted Publishing/OIDC 发布；`NPM_TOKEN` 只作为 fallback。发布脚本只能从环境变量或 stdin 读取 token，不能把 token 写入日志、仓库或命令参数。
+- Trusted Publishing 会校验 npm provenance，发布产物的 `package.json.repository.url` 必须匹配 GitHub Actions 来源仓库。
 - 具体发布步骤必须维护在 `docs/release.md`，不要把一次发布的临时状态、失败日志或人工补救命令写入长期最佳实践。
 
 ## TypeScript
