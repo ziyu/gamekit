@@ -133,6 +133,10 @@ npm token fallback 要求：
 包没有对应 Trusted Publisher、或 npm CLI 返回认证失败，并且存在 `NPM_TOKEN`，才回退到 registry
 HTTP API。不要把 npm token 写入仓库、日志、命令参数、PR 描述或 issue。
 
+Trusted Publishing 会校验 npm provenance。发布 staging 生成的 package manifest 必须包含
+`repository.url: "https://github.com/ziyu/gamekit"`；否则 npm 会因为 provenance 中的仓库来源和
+package metadata 不匹配拒绝发布。
+
 ## dist-tag 策略
 
 默认 dist-tag 由版本号推断：
@@ -184,6 +188,14 @@ Publish job 报 OTP、401、403 或 404：
   有 publish 权限，并能 bypass 2FA。
 - npm 对 scoped package 的未授权 publish 可能返回 `404 {"error":"Not found"}`；这通常仍是认证或
   package access 问题，不代表 tarball 构建失败。
+
+Publish job 报 E422 provenance / repository mismatch：
+
+- 这是 Trusted Publishing 的 provenance 校验失败，不是 npm token 或 Trusted Publisher 授权缺失。
+- 检查 release staging 生成的 package manifest，确认 `repository.url` 是
+  `https://github.com/ziyu/gamekit`。
+- 修复 `scripts/verify-gamekits-release.ts` 的 publish manifest 生成逻辑后重新运行 Release
+  workflow；不要把这类错误降级为 token fallback。
 
 Publish job 报版本已经发布：
 

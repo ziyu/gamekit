@@ -21,6 +21,11 @@ type PackageManifest = {
   main?: string;
   types?: string;
   exports?: unknown;
+  repository?: {
+    type: "git";
+    url: string;
+    directory?: string;
+  };
   sideEffects?: boolean | string[];
   dependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
@@ -30,6 +35,7 @@ type PackageManifest = {
 };
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const releaseRepositoryUrl = "https://github.com/ziyu/gamekit";
 const releaseVersion = process.env.GAMEKITS_RELEASE_VERSION ?? "0.1.0-alpha.0";
 const releaseDir =
   process.env.GAMEKITS_RELEASE_DIR ?? mkdtempSync(join(tmpdir(), "gamekits-release-"));
@@ -195,7 +201,7 @@ import { createCameraController } from "@gamekits/camera-core";
 import { createAssetManager } from "@gamekits/asset";
 import { createMemorySaveStore } from "@gamekits/save";
 import { createDevToolsRuntime } from "@gamekits/devtools";
-import { createUiRuntime as createWave3UiRuntime } from "@gamekits/ui-core";
+import { createUiRuntime as createWave2UiRuntime } from "@gamekits/ui-core";
 import { createHeadlessHost, createStandardAppProfile, defineGameApp } from "@gamekits/app-host";
 
 const platform = createWebPlatform({ appName: "GameKits Wave 2 Smoke" });
@@ -265,7 +271,7 @@ const devtools = createDevToolsRuntime();
 devtools.pushTrace({ kind: "runtime", label: "wave2.smoke", source: "verify" });
 if (devtools.snapshot().traces.length !== 1) throw new Error("devtools smoke failed");
 
-const ui = createUiRuntime();
+const ui = createWave2UiRuntime();
 ui.registerPanel({ id: "panel.smoke", kind: "panel", title: "Smoke" });
 ui.open("panel.smoke");
 if (ui.openPanels().length !== 1) throw new Error("ui smoke failed");
@@ -283,7 +289,7 @@ console.log("gamekits wave 2 smoke ok");
 const wave3SmokeSource = `
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createUiRuntime } from "@gamekits/ui-core";
+import { createUiRuntime as createWave3UiRuntime } from "@gamekits/ui-core";
 import {
   createGameKitUiAnimator,
   GameKitUiShell,
@@ -553,6 +559,20 @@ function assertTarballContents(tarball: string): void {
   }
 }
 
+function assertPublishManifest(manifest: PackageManifest, slug: string): void {
+  if (manifest.repository?.url !== releaseRepositoryUrl) {
+    throw new Error(
+      `${manifest.name} publish manifest repository.url must be ${releaseRepositoryUrl} for npm provenance.`
+    );
+  }
+
+  if (manifest.repository.directory !== `packages/${slug}`) {
+    throw new Error(
+      `${manifest.name} publish manifest repository.directory must be packages/${slug}.`
+    );
+  }
+}
+
 function preparePackage(slug: string, packagesDir: string): string {
   const sourceDir = join(root, "packages", slug);
   const manifestPath = join(sourceDir, "package.json");
@@ -581,6 +601,11 @@ function preparePackage(slug: string, packagesDir: string): string {
     main: manifest.main,
     types: manifest.types,
     exports: manifest.exports,
+    repository: {
+      type: "git",
+      url: releaseRepositoryUrl,
+      directory: `packages/${slug}`
+    },
     files: ["dist"],
     sideEffects: manifest.sideEffects ?? false,
     publishConfig: { access: "public" },
@@ -603,6 +628,7 @@ function preparePackage(slug: string, packagesDir: string): string {
     }
   }
 
+  assertPublishManifest(publishManifest, slug);
   writeJson(join(targetDir, "package.json"), publishManifest);
   assertNoInternalScope(targetDir);
 
