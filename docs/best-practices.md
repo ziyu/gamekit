@@ -114,7 +114,7 @@
 - React UI 类包应把 `react` 和 `react-dom` 声明为 peer dependency，并在本仓库保留 dev dependency 用于构建和测试；发布 smoke 必须确认 consumer 复用顶层 React。
 - 纯 TypeScript 包、React TSX 包、adapter/driver 包都必须通过外部安装 smoke test，验证它们离开 workspace alias 后仍能被消费。
 - 初期版本采用 lockstep 发布，先走 alpha tag 验证 tarball、Node ESM、Vite、peer dependency 和真实 app dogfood，再进入 latest。
-- alpha-only bootstrap 阶段可以把 `latest` 同步到当前 alpha，避免 npm 默认包页和默认安装入口停在旧 alpha；一旦 `latest` 指向正式版本，后续 prerelease 只能更新 `alpha`、`beta` 或 `rc`，不能覆盖稳定 `latest`。
+- prerelease 默认只更新 `alpha`、`beta` 或 `rc`。alpha-only bootstrap 若确实需要把 `latest` 镜像到当前 alpha，必须显式开启发布 workflow 的同步开关，并在所有 package publish 和 primary dist-tag 完成后统一 retag；一旦 `latest` 指向正式版本，后续 prerelease 不能覆盖稳定 `latest`。
 - Release workflow 应以通用 `release` 命名，`alpha`、`beta`、`rc`、`latest` 只是 dist-tag 参数；不要把当前阶段固化为 workflow 身份。
 - Changesets 自动化应先创建 version PR，再由合并后的 main 发布。alpha 阶段使用 Changesets pre mode，正式发布前显式 `pre exit`。
 - 普通开发者不手写 changeset；PR automation 根据可发布包的实际源码、README 或非 version-only manifest 改动生成 changeset。需要覆盖默认 bump 时使用 `changeset:major`、`changeset:minor` 或 `changeset:patch` label。

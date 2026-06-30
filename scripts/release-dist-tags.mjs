@@ -18,7 +18,7 @@ export function resolveRequiredDistTags({
   additionalDistTags = [],
   currentDistTags = {},
   distTag,
-  syncPrereleaseLatest = true,
+  syncPrereleaseLatest = false,
   version
 }) {
   const tags = new Set([distTag, ...additionalDistTags]);
@@ -32,10 +32,10 @@ export function resolveRequiredDistTags({
 
 export function shouldSyncPrereleaseLatest(value) {
   if (value === undefined) {
-    return true;
+    return false;
   }
 
-  return !["0", "false", "no"].includes(value.toLowerCase());
+  return ["1", "true", "yes"].includes(value.trim().toLowerCase());
 }
 
 export function prereleaseChannel(version) {
