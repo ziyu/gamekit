@@ -26,6 +26,7 @@
     "@gamekit/gas": "workspace:*",
     "@gamekit/game-runtime": "workspace:*",
     "@gamekit/input-core": "workspace:*",
+    "@gamekit/multiplayer-core": "workspace:*",
     "@gamekit/platform-core": "workspace:*",
     "@gamekit/renderer-core": "workspace:*",
     "@gamekit/save": "workspace:*",

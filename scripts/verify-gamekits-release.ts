@@ -57,6 +57,9 @@ const wave1PackageSlugs = [
   "data",
   "tca",
   "gas",
+  "multiplayer-core",
+  "multiplayer-memory",
+  "multiplayer-colyseus",
   "test-utils"
 ];
 
@@ -99,6 +102,10 @@ import { createDataRegistry } from "@gamekits/data";
 import { createCoreTcaDefinitions, createTcaRuleDataType, createTcaTraceStore } from "@gamekits/tca";
 import { GasActor, createGasDataTypes, createGasTraceStore } from "@gamekits/gas";
 import { createPlatformServiceRegistry } from "@gamekits/platform-core";
+import { createMultiplayerRuntime } from "@gamekits/multiplayer-core";
+import { createMemoryMultiplayerBackend } from "@gamekits/multiplayer-memory";
+import { createColyseusMultiplayerBackend } from "@gamekits/multiplayer-colyseus";
+import { GameKitColyseusRoom } from "@gamekits/multiplayer-colyseus/server";
 
 const clock = new Clock();
 clock.start();
@@ -131,9 +138,50 @@ createTcaTraceStore();
 createGasTraceStore();
 createPlatformServiceRegistry();
 
+const multiplayerBackend = createMemoryMultiplayerBackend();
+const colyseusBackend = createColyseusMultiplayerBackend({
+  endpoint: "ws://127.0.0.1:1",
+  roomName: "release_smoke"
+});
+if (colyseusBackend.kind !== "colyseus" || typeof GameKitColyseusRoom !== "function") {
+  throw new Error("colyseus multiplayer smoke failed");
+}
+const multiplayerHost = createMultiplayerRuntime({
+  id: "release.host",
+  backend: multiplayerBackend,
+  clock: () => 1
+});
+const multiplayerClient = createMultiplayerRuntime({
+  id: "release.client",
+  backend: multiplayerBackend,
+  clock: () => 1
+});
+const multiplayerMessages = [];
+multiplayerClient.subscribe((message) => {
+  if (message.kind === "game.command") {
+    multiplayerMessages.push(message);
+  }
+});
+await multiplayerHost.createSession({
+  id: "release.session",
+  localPeer: { id: "host" }
+});
+await multiplayerClient.joinSession({
+  sessionId: "release.session",
+  localPeer: { id: "client" }
+});
+await multiplayerHost.send({
+  channel: "reliable",
+  kind: "game.command",
+  payload: { action: "release-smoke" }
+});
+await multiplayerHost.dispose();
+await multiplayerClient.dispose();
+
 if (clock.snapshot().ticks !== 1) throw new Error("clock smoke failed");
 if (world.count() !== 1) throw new Error("world smoke failed");
 if (events[0]?.type !== "release.smoke") throw new Error("event smoke failed");
+if (multiplayerMessages[0]?.kind !== "game.command") throw new Error("multiplayer smoke failed");
 console.log("gamekits wave 1 smoke ok");
 `;
 

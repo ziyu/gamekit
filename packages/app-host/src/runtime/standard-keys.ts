@@ -4,6 +4,7 @@ import type { DevToolsRuntime } from "@gamekit/devtools";
 import type { DriverRegistry } from "@gamekit/driver-core";
 import type { GameRuntime } from "@gamekit/game-runtime";
 import type { InputRouter } from "@gamekit/input-core";
+import type { MultiplayerRuntime } from "@gamekit/multiplayer-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
 import type { RendererAdapter } from "@gamekit/renderer-core";
 import type { SaveManager } from "@gamekit/save";
@@ -38,6 +39,11 @@ export const RENDERER_SERVICE: AppServiceKey<RendererAdapter> = {
 export const INPUT_SERVICE: AppServiceKey<InputRouter> = {
   id: "input",
   description: "Input router"
+};
+
+export const MULTIPLAYER_SERVICE: AppServiceKey<MultiplayerRuntime> = {
+  id: "multiplayer",
+  description: "Multiplayer runtime"
 };
 
 export const GAME_SERVICE: AppServiceKey<GameRuntime> = {

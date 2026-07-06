@@ -14,6 +14,10 @@ import type { DriverBootContext, DriverRegistry, GameDriver } from "@gamekit/dri
 import type { GasRuntime, GasTraceStore } from "@gamekit/gas";
 import type { GameInstallContext, GameRuntime } from "@gamekit/game-runtime";
 import type { InputDevice, InputRouter, InputSourceAdapter } from "@gamekit/input-core";
+import type {
+  CreateMultiplayerBridgeModuleOptions,
+  MultiplayerRuntime
+} from "@gamekit/multiplayer-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
 import type { RendererAdapter, RendererBootContext } from "@gamekit/renderer-core";
 import type {
@@ -42,6 +46,7 @@ export type StandardAppServiceState = {
   assets?: AssetManager;
   renderer?: RendererAdapter;
   input?: InputRouter;
+  multiplayer?: MultiplayerRuntime;
   game?: GameRuntime;
   ui?: UiRuntime;
   save?: SaveManager;
@@ -73,6 +78,7 @@ export type StandardAppProfileOptions<TContext> = {
   renderer?: StandardRendererOptions<TContext> | undefined;
   assets?: StandardAssetOptions<TContext> | undefined;
   input?: StandardInputOptions<TContext> | undefined;
+  multiplayer?: StandardMultiplayerOptions<TContext> | undefined;
   game?: StandardGameOptions<TContext> | undefined;
   ui?: StandardUiOptions<TContext> | undefined;
   save?: StandardSaveOptions<TContext> | undefined;
@@ -128,6 +134,11 @@ export type StandardInputDriverSourceOptions = {
   source?: string | undefined;
   scope?: string | undefined;
   devices?: InputDevice[] | undefined;
+};
+
+export type StandardMultiplayerOptions<TContext> = {
+  runtime: StandardValue<MultiplayerRuntime, TContext>;
+  dispose?: boolean | undefined;
 };
 
 export type StandardUiOptions<TContext> = {
@@ -196,6 +207,7 @@ export type StandardDevToolsSourceId =
   | "assets"
   | "renderer"
   | "input"
+  | "multiplayer"
   | "game"
   | "ui"
   | "save";
@@ -214,6 +226,15 @@ export type StandardGameModuleOptions<TContext> = {
   camera?: StandardCameraGameModuleOptions<TContext> | undefined;
   tca?: StandardTcaGameModuleOptions<TContext> | undefined;
   gas?: StandardGasGameModuleOptions<TContext> | undefined;
+  multiplayer?: StandardMultiplayerGameModuleOptions<TContext> | undefined;
+};
+
+export type StandardMultiplayerGameModuleOptions<TContext> = {
+  id?: string | undefined;
+  runtime?: StandardValue<MultiplayerRuntime, TContext> | undefined;
+  commandKinds?: string[] | undefined;
+  authority?: CreateMultiplayerBridgeModuleOptions<GameInstallContext>["authority"] | undefined;
+  handleCommand: CreateMultiplayerBridgeModuleOptions<GameInstallContext>["handleCommand"];
 };
 
 export type StandardCameraGameModuleOptions<TContext> = {

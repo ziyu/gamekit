@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": true
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/event-bus" },
+    { "path": "../../packages/game-runtime" },
+    { "path": "../../packages/multiplayer-core" },
+    { "path": "../../packages/multiplayer-colyseus" },
+    { "path": "../../packages/world-koota" }
+  ]
+}

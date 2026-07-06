@@ -11,7 +11,7 @@
 
 ## 模块最佳实践索引
 
-已实现模块的专属实践入口：
+模块专属实践入口：
 
 - Core / EventBus / GameRuntime：`docs/modules/core-runtime.md`
 - World / ECS Adapter：`docs/modules/world.md`
@@ -24,6 +24,7 @@
 - Camera：`docs/modules/camera.md`
 - TCA：`docs/modules/tca.md`
 - GAS：`docs/modules/gas.md`
+- Multiplayer：`docs/modules/multiplayer.md`
 - UI Core / React UI：`docs/modules/ui.md`
 - App Host：`docs/modules/app-host.md`
 - Save：`docs/modules/save.md`
@@ -37,13 +38,14 @@
 - 先判断能力归属：管理外部 runtime、平台能力、资源句柄、输入来源、UI shell、存储和诊断的能力通常是 App Service；需要 world、tick、actor、rule、ability、camera rig 或 gameplay context 的能力通常是 GameModule。
 - 第三方库进入 Driver、Adapter、app/profile 或 app-specific presentation/tooling 层，不进入核心 facade、DataType、可复用 GameModule 公共 API 或 gameplay 包。
 - Driver 持有跨多个协议的外部 runtime，例如 Phaser Game 或 Three renderer/scene；Adapter 只把单个 GameKit 协议映射到 Driver 暴露的 runtime slice。
+- Multiplayer backend adapter 应优先接入成熟多人方案，例如 Colyseus、Nakama、PartyKit 或平台联机 SDK，并持有网络 SDK、room、matchmaker、state sync 或平台联机 runtime；App Host 管理连接 lifecycle，GameModule bridge 只消费归一化 session/message/authority 事实。
 - 具体 app presentation、Editor 后端专属面板和 DevTools renderer plugin 可以通过 typed native handle 使用底层 renderer API；这些依赖不能进入 Data、Save、core facade 或可复用 gameplay module。
-- GameRuntime 只负责模块安装、clock、system tick 和 lifecycle，不直接拥有 Platform、Driver、Renderer、Input、Camera、Data、Asset、UI 或 Save store。
+- GameRuntime 只负责模块安装、clock、system tick 和 lifecycle，不直接拥有 Platform、Driver、Renderer、Input、Camera、Data、Asset、UI、Save store 或 multiplayer connection。
 
 使用实践：
 
 - EventBus 只承载低频事实。高频 position、camera target、render patch、held input、UI hover 等状态留在对应 runtime state 或 system 内。
-- Renderer、Input、Camera、UI、TCA、GAS 和 Save 都需要 trace/diagnostic 入口，但诊断不能反向成为业务逻辑依赖。
+- Renderer、Input、Camera、UI、TCA、GAS、Save 和 Multiplayer 都需要 trace/diagnostic 入口，但诊断不能反向成为业务逻辑依赖。
 
 ## 生命周期
 
@@ -53,6 +55,7 @@
 - GameModule 的订阅、system、trace store、controller runtime 和 cleanup 跟随 GameRuntime lifecycle；`stop()` 停 tick，`dispose()` 释放订阅和长期句柄。
 - Driver 先 boot，再派生 renderer/asset/input/camera adapter；adapter 不单独创建同一套外部 runtime。
 - Save/load、asset preload、data registration 和 renderer boot 应由 App Host 或 app profile 编排顺序，不藏在 GameRuntime 内部。
+- Multiplayer create/join/reconnect/leave 应由 App Host、lobby UI、server host 或测试夹具显式触发；GameModule 不隐式创建 socket、Colyseus Room、Nakama match 或 provider room。
 - Headless 测试应能用 memory platform、memory renderer、memory save store、deterministic clock 和 fake asset loader 启动主要组合路径。
 
 ## 数据驱动
@@ -88,6 +91,7 @@
 - Facade 要有契约测试；Adapter 先跑 facade conformance，再补底层库专属行为测试。
 - 数据驱动模块必须覆盖 duplicate、unknown type、missing reference、schema/path error、trace/diagnostic。
 - GameRuntime、Camera、Input、TCA、GAS、Save 等有顺序语义的模块必须覆盖顺序、幂等、stop/dispose 和 cleanup。
+- Multiplayer backend adapter 必须覆盖 provider facade 的 connect、create-or-join/leave、message routing、peer summary、disconnect、reconnect 降级、payload validation、dispose cleanup 和 diagnostics；provider 自己拥有的 room/matchmaker/state sync 逻辑不要在 GameKit core 中重写。
 - Sandbox、demo 或 headless host 的集成测试应覆盖长链路：Data → Asset → App Host → GameRuntime → World → TCA/GAS → Renderer/Input/Camera → Snapshot/Timeline。
 - 固定 seed 测试只比较稳定 snapshot，不比较 DOM、native handle、绝对时间或底层库对象。
 

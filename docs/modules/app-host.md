@@ -2,7 +2,7 @@
 
 ## 定位
 
-App Host 是 GameKit 的应用组合层。它负责把 Platform、Driver、Data、Asset、Renderer、Input、GameRuntime、UI、DevTools 等应用服务装配成一个可启动、可停止、可观察、可扩展的游戏应用实例。
+App Host 是 GameKit 的应用组合层。它负责把 Platform、Driver、Data、Asset、Renderer、Input、Multiplayer、GameRuntime、UI、Save、DevTools 等应用服务装配成一个可启动、可停止、可观察、可扩展的游戏应用实例。
 
 App Host 不是 gameplay runtime，也不是具体平台 adapter。它解决的是“上层如何无痛启动游戏应用，只关心具体游戏逻辑”的问题。
 
@@ -51,14 +51,15 @@ App Host 管理应用级 lifecycle：
 - AssetManager 创建和 preload pipeline
 - Renderer boot / resize / destroy
 - Input adapter start / stop
+- Multiplayer facade / backend lifecycle / diagnostics
 - UI / DevTools mount
 - GameRuntime 创建和挂载
 
-GameRuntime 不直接拥有 driver、renderer、input、platform、asset、data。App Host 可以把这些能力作为 services 组合给 app、GameModule factory 或 bridge module 使用。
+GameRuntime 不直接拥有 driver、renderer、input、platform、asset、data、multiplayer connection。App Host 可以把这些能力作为 services 组合给 app、GameModule factory 或 bridge module 使用。
 
-Camera、TCA、GAS、gameplay save capture 等能力更接近游戏会话模块：它们通常需要读写 world、监听 EventBus、注册 system、理解 actor/rule/rig 等玩法上下文。App Host 可以提供 renderer/input/data/save manager 等依赖，但不应该把这些 gameplay runtime 直接做成默认标准服务。
+Camera、TCA、GAS、multiplayer command bridge、gameplay save capture 等能力更接近游戏会话模块：它们通常需要读写 world、监听 EventBus、注册 system、理解 actor/rule/rig/command 等玩法上下文。App Host 可以提供 renderer/input/data/save manager/multiplayer facade 等依赖，但不应该把这些 gameplay runtime 直接做成默认标准服务。
 
-App Host 可以提供标准 GameModule helper 来减少装配代码，例如 camera、TCA、GAS 的标准启动方式。这些 helper 属于应用组合便利层：它们可以读取 profile 参数、接入 services、注册 GameRuntime module，并把 renderer/input/data bridge 注入进去；但它们不把 gameplay 能力提升为 Host service。以 camera 为例，标准 helper 可以提供输入映射、平滑、renderer sync 和 follow target resolver，resolver 仍由 app/game context 提供，Host 不直接理解业务 entity 位置。
+App Host 可以提供标准 GameModule helper 来减少装配代码，例如 camera、TCA、GAS 和 multiplayer command bridge 的标准启动方式。这些 helper 属于应用组合便利层：它们可以读取 profile 参数、接入 services、注册 GameRuntime module，并把 renderer/input/data/multiplayer bridge 注入进去；但它们不把 gameplay 能力提升为 Host service。以 camera 为例，标准 helper 可以提供输入映射、平滑、renderer sync 和 follow target resolver，resolver 仍由 app/game context 提供，Host 不直接理解业务 entity 位置。
 
 ## Host Runtime
 
@@ -106,7 +107,11 @@ export type AppServiceRegistry = {
   assets?: AssetManager;
   renderer?: RendererAdapter;
   input?: InputRouter;
+  multiplayer?: MultiplayerFacade;
   game?: GameRuntime;
+  ui?: UiRuntime;
+  save?: SaveManager;
+  devtools?: DevToolsRuntime;
 
   has<TService>(key: AppServiceKey<TService>): boolean;
   get<TService>(key: AppServiceKey<TService>): TService | undefined;
@@ -157,6 +162,7 @@ export type AppServiceLifecycle = {
   boot?(ctx: AppHostContext): Promise<void> | void;
   start?(ctx: AppHostContext): Promise<void> | void;
   stop?(ctx: AppHostContext): Promise<void> | void;
+  tick?(ctx: AppHostContext, frame: AppFrame): void;
   dispose?(ctx: AppHostContext): Promise<void> | void;
   snapshot?(): unknown;
 };
@@ -516,6 +522,7 @@ Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务�
 - `camera` 标准游戏模块负责把已经归一化的 input action fact 转成 CameraController 目标状态，可选平滑插值显示状态，并通过 app/profile 提供的 sync hook 同步 renderer camera adapter 或 UI。
 - `tca` 标准游戏模块负责从 DataRegistry 读取 `tca.rule`、编译规则、桥接 EventBus、写入 trace，并在 GameRuntime dispose 时清理订阅。
 - `gas` 标准游戏模块负责从 DataRegistry 读取 GAS 定义、创建 ECS-backed GAS runtime、注册 effect tick system、写入 trace，并在 GameRuntime dispose 时释放。
+- `multiplayer` 标准游戏模块负责从 `services.multiplayer` 或显式 facade 订阅归一化消息，把 command 入站队列放到 tick 边界处理，并在 GameRuntime dispose 时释放订阅。
 - 标准游戏模块只能依赖稳定 facade、App Host services 和 profile 注入的定义，不能直接依赖 Phaser、DOM、Tauri 或具体 app 入口。
 
 ## Test Host
@@ -548,7 +555,7 @@ Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务�
 
 - App 应优先通过 GameAppDefinition + AppProfile 启动。Definition 描述需要什么能力，Profile 描述当前运行环境提供哪些 adapter、driver 和少量参数。
 - 标准 service binding 由 App Host 内部定义表创建，profile 不应手写一大坨 service factory。扩展 service 使用同一套 registry/lifecycle，不走特殊分支。
-- `services.xxx` 只暴露 App Service，例如 platform、data、assets、drivers、renderer、input、ui、save、devtools；Camera/TCA/GAS 等玩法会话能力通过标准 GameModule helper 注入 GameRuntime。
+- `services.xxx` 只暴露 App Service，例如 platform、data、assets、drivers、renderer、input、multiplayer、ui、save、devtools；Camera/TCA/GAS/Multiplayer command bridge 等玩法会话能力通过标准 GameModule helper 注入 GameRuntime。
 - Driver 由 App Host 管 lifecycle，Renderer/Input/Asset/Camera adapter 通过 Driver capability 选择；多个 Driver 并存时 profile 必须显式选择。
 - Save service context 默认保持最小，只给 contributor 暴露必要服务；renderer/input/ui/platform 等对象必须显式 opt-in。
 - Headless Host 是标准组合路径的测试入口。新增标准 service 或标准 game module helper 时，必须能在不启动浏览器/Tauri 的情况下测试生命周期和依赖顺序。

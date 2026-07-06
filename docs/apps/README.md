@@ -17,5 +17,6 @@
 ## 应用索引
 
 - `sandbox.md`：Sandbox / Tiny Camp 框架验证面。
+- `multiplayer-demo.md`：Multiplayer Colyseus Loopback 独立 demo app。
 - `abyss-delve.md`：Abyss Delve 真实游戏验证应用。
 - `three-demo.md`：Three Driver 独立能力实验台。

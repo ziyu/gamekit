@@ -29,6 +29,7 @@ const STANDARD_DEVTOOLS_SOURCES: StandardDevToolsSourceId[] = [
   "assets",
   "renderer",
   "input",
+  "multiplayer",
   "game",
   "ui",
   "save"
@@ -179,6 +180,18 @@ export function createStandardDevToolsDataSources<TContext>(
     });
   }
 
+  if (sourceIds.has("multiplayer") && ctx.state.multiplayer) {
+    const multiplayer = ctx.state.multiplayer;
+    sources.push({
+      id: "multiplayer",
+      label: "Multiplayer",
+      kind: "multiplayer",
+      snapshot() {
+        return multiplayer.snapshot();
+      }
+    });
+  }
+
   if (sourceIds.has("ui") && ctx.state.ui) {
     const ui = ctx.state.ui;
     sources.push({
@@ -229,24 +242,31 @@ export function createStandardDevToolsPanels<TContext>(
       sourceKinds: ["runtime", "event-bus", "tca", "gas"]
     },
     {
+      id: "devtools.multiplayer",
+      label: "Multiplayer",
+      area: "dock",
+      order: 3,
+      sourceKinds: ["multiplayer"]
+    },
+    {
       id: "devtools.content",
       label: "Content",
       area: "dock",
-      order: 3,
+      order: 4,
       sourceKinds: ["data", "asset"]
     },
     {
       id: "devtools.presentation",
       label: "Presentation",
       area: "dock",
-      order: 4,
+      order: 5,
       sourceKinds: ["renderer", "input", "camera", "ui"]
     },
     {
       id: "devtools.performance",
       label: "Performance",
       area: "dock",
-      order: 5,
+      order: 6,
       sourceKinds: ["host", "runtime", "renderer", "asset", "ui"],
       pin: {
         enabled: true,
@@ -263,7 +283,7 @@ export function createStandardDevToolsPanels<TContext>(
       id: "devtools.save",
       label: "Save",
       area: "dock",
-      order: 6,
+      order: 7,
       sourceKinds: ["save"]
     }
   ];
