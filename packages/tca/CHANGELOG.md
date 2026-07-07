@@ -1,5 +1,14 @@
 # @gamekit/tca
 
+## 0.1.0-alpha.4
+
+### Patch Changes
+
+- @gamekit/core@0.1.0-alpha.4
+- @gamekit/event-bus@0.1.0-alpha.4
+- @gamekit/game-runtime@0.1.0-alpha.4
+- @gamekit/data@0.1.0-alpha.4
+
 ## 0.1.0-alpha.3
 
 ### Patch Changes
