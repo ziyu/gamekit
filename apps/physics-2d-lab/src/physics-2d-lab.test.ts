@@ -61,6 +61,7 @@ describe("Physics 2D Lab runtime", () => {
 
   it("runs through the standard Physics GameModule helper", () => {
     const harness = createPhysics2dModuleHarness(backend);
+    expect(harness.physics.isBound()).toBe(true);
 
     harness.runtime.start();
     harness.runtime.tick(1000 / 60);
@@ -73,8 +74,24 @@ describe("Physics 2D Lab runtime", () => {
       entityB: harness.trigger
     });
     expect(harness.traceStore.list().map((entry) => entry.kind)).toContain("step");
+    expect(harness.physics.snapshot()).toMatchObject({
+      backend: "physics-2d-lab.test",
+      dimension: "2d",
+      bodyCount: 2,
+      colliderCount: 2
+    });
+    expect(
+      harness.physics
+        .overlapShape(
+          { type: "circle", radius: 0.25 },
+          { x: 0, y: 0 },
+          { triggerInteraction: "only" }
+        )
+        .map((hit) => hit.colliderId)
+    ).toContain(harness.contacts[0]?.colliderB);
 
     harness.runtime.dispose();
+    expect(harness.physics.isBound()).toBe(false);
   });
 });
 

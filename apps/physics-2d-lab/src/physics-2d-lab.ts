@@ -5,6 +5,7 @@ import {
   PhysicsColliderComponent,
   PhysicsTransformComponent,
   PhysicsVelocityComponent,
+  createPhysicsHandle,
   createPhysicsModule,
   createPhysicsTraceStore,
   type PhysicsBackendAdapter,
@@ -12,6 +13,7 @@ import {
   type PhysicsColliderId,
   type PhysicsCollisionFilter,
   type PhysicsContactEvent,
+  type PhysicsHandle,
   type PhysicsQuery,
   type PhysicsQueryResult,
   type PhysicsScene,
@@ -467,6 +469,7 @@ export function createPhysics2dModuleHarness(
 ): {
   runtime: GameRuntime;
   traceStore: PhysicsTraceStore;
+  physics: PhysicsHandle;
   contacts: PhysicsContactEvent[];
   mover: string | number;
   trigger: string | number;
@@ -512,6 +515,7 @@ export function createPhysics2dModuleHarness(
     contacts.push(event.payload);
   });
   const traceStore = createPhysicsTraceStore();
+  const physics = createPhysicsHandle({ id: "physics-2d-lab.module" });
   const runtime = createGame({
     modules: [
       createPhysicsModule({
@@ -522,7 +526,8 @@ export function createPhysics2dModuleHarness(
           dimension: "2d",
           gravity: { x: 0, y: 0 }
         },
-        traceStore
+        traceStore,
+        handle: physics
       })
     ],
     world,
@@ -533,6 +538,7 @@ export function createPhysics2dModuleHarness(
   return {
     runtime,
     traceStore,
+    physics,
     contacts,
     mover,
     trigger
