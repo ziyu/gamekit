@@ -1,5 +1,24 @@
 # @gamekit/app-host
 
+## 0.1.0-alpha.4
+
+### Patch Changes
+
+- @gamekit/core@0.1.0-alpha.4
+- @gamekit/platform-core@0.1.0-alpha.4
+- @gamekit/renderer-core@0.1.0-alpha.4
+- @gamekit/game-runtime@0.1.0-alpha.4
+- @gamekit/data@0.1.0-alpha.4
+- @gamekit/tca@0.1.0-alpha.4
+- @gamekit/gas@0.1.0-alpha.4
+- @gamekit/input-core@0.1.0-alpha.4
+- @gamekit/camera-core@0.1.0-alpha.4
+- @gamekit/driver-core@0.1.0-alpha.4
+- @gamekit/devtools@0.1.0-alpha.4
+- @gamekit/ui-core@0.1.0-alpha.4
+- @gamekit/asset@0.1.0-alpha.4
+- @gamekit/save@0.1.0-alpha.4
+
 ## 0.1.0-alpha.3
 
 ### Patch Changes

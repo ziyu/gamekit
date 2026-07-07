@@ -1,5 +1,11 @@
 # @gamekit/input-dom
 
+## 0.1.0-alpha.4
+
+### Patch Changes
+
+- @gamekit/input-core@0.1.0-alpha.4
+
 ## 0.1.0-alpha.3
 
 ### Patch Changes
