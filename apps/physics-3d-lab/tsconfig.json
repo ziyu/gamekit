@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": true
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/app-host" },
+    { "path": "../../packages/driver-core" },
+    { "path": "../../packages/driver-three" },
+    { "path": "../../packages/event-bus" },
+    { "path": "../../packages/game-runtime" },
+    { "path": "../../packages/physics-core" },
+    { "path": "../../packages/physics-rapier3d" },
+    { "path": "../../packages/platform-core" },
+    { "path": "../../packages/platform-web" },
+    { "path": "../../packages/renderer-core" },
+    { "path": "../../packages/world" }
+  ]
+}

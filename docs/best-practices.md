@@ -22,6 +22,7 @@
 - Renderer：`docs/modules/renderer.md`
 - Input：`docs/modules/input.md`
 - Camera：`docs/modules/camera.md`
+- Physics：`docs/modules/physics.md`
 - TCA：`docs/modules/tca.md`
 - GAS：`docs/modules/gas.md`
 - UI Core / React UI：`docs/modules/ui.md`
@@ -34,16 +35,16 @@
 
 集成实践：
 
-- 先判断能力归属：管理外部 runtime、平台能力、资源句柄、输入来源、UI shell、存储和诊断的能力通常是 App Service；需要 world、tick、actor、rule、ability、camera rig 或 gameplay context 的能力通常是 GameModule。
+- 先判断能力归属：管理外部 runtime、平台能力、资源句柄、输入来源、UI shell、存储和诊断的能力通常是 App Service；需要 world、tick、actor、rule、ability、camera rig、physics scene 或 gameplay context 的能力通常是 GameModule。
 - 第三方库进入 Driver、Adapter、app/profile 或 app-specific presentation/tooling 层，不进入核心 facade、DataType、可复用 GameModule 公共 API 或 gameplay 包。
 - Driver 持有跨多个协议的外部 runtime，例如 Phaser Game 或 Three renderer/scene；Adapter 只把单个 GameKit 协议映射到 Driver 暴露的 runtime slice。
 - 具体 app presentation、Editor 后端专属面板和 DevTools renderer plugin 可以通过 typed native handle 使用底层 renderer API；这些依赖不能进入 Data、Save、core facade 或可复用 gameplay module。
-- GameRuntime 只负责模块安装、clock、system tick 和 lifecycle，不直接拥有 Platform、Driver、Renderer、Input、Camera、Data、Asset、UI 或 Save store。
+- GameRuntime 只负责模块安装、clock、system tick 和 lifecycle，不直接拥有 Platform、Driver、Renderer、Input、Camera、Physics backend provider、Data、Asset、UI 或 Save store。
 
 使用实践：
 
-- EventBus 只承载低频事实。高频 position、camera target、render patch、held input、UI hover 等状态留在对应 runtime state 或 system 内。
-- Renderer、Input、Camera、UI、TCA、GAS 和 Save 都需要 trace/diagnostic 入口，但诊断不能反向成为业务逻辑依赖。
+- EventBus 只承载低频事实。高频 position、camera target、physics contact manifold、render patch、held input、UI hover 等状态留在对应 runtime state 或 system 内。
+- Renderer、Input、Camera、Physics、UI、TCA、GAS 和 Save 都需要 trace/diagnostic 入口，但诊断不能反向成为业务逻辑依赖。
 
 ## 生命周期
 
@@ -51,22 +52,22 @@
 
 - App Host 统一推进 App Service lifecycle：boot、start、stop、dispose、snapshot。底层服务对象不需要为了 Host 继承私有基类，生命周期通过 binding 描述。
 - GameModule 的订阅、system、trace store、controller runtime 和 cleanup 跟随 GameRuntime lifecycle；`stop()` 停 tick，`dispose()` 释放订阅和长期句柄。
-- Driver 先 boot，再派生 renderer/asset/input/camera adapter；adapter 不单独创建同一套外部 runtime。
+- Driver 先 boot，再派生 renderer/asset/input/camera/physics adapter；adapter 不单独创建同一套外部 runtime。
 - Save/load、asset preload、data registration 和 renderer boot 应由 App Host 或 app profile 编排顺序，不藏在 GameRuntime 内部。
-- Headless 测试应能用 memory platform、memory renderer、memory save store、deterministic clock 和 fake asset loader 启动主要组合路径。
+- Headless 测试应能用 memory platform、memory renderer、memory save store、deterministic clock、fake asset loader 和 fake physics backend 启动主要组合路径。
 
 ## 数据驱动
 
 集成实践：
 
-- DataTypeDefinition、AssetDefinition、TCA/GAS definitions 和 render object definitions 应由 app/profile/content package 在启动时注册或物化，业务系统日常只读取稳定 registry。
+- DataTypeDefinition、AssetDefinition、TCA/GAS definitions、physics definitions 和 render object definitions 应由 app/profile/content package 在启动时注册或物化，业务系统日常只读取稳定 registry。
 - Content Package、编辑器导入器或 profile 负责把用户文件转成 DataPack；DataRegistry 不直接理解资源 payload、脚本、权限或包挂载。
 
 使用实践：
 
 - DataType 设计应给游戏开发者自由度。框架只要求稳定 `type + id`、可校验、可引用、可诊断，不强迫所有项目套固定 hero/monster/building 模板。
 - DataPack 是数据集合，不是内容包系统。真实 Content Package 未来可以包含 DataPack、资源 payload、脚本、localization、地图、patch 和权限声明。
-- Runtime state 不写回 DataRegistry。Data 是定义和来源追踪，World/GAS/TCA/Save 承载运行时状态。
+- Runtime state 不写回 DataRegistry。Data 是定义和来源追踪，World/Physics/GAS/TCA/Save 承载运行时状态。
 - 引用关系通过 DataRef / AssetRef / 自定义 references 提取进入 reference graph，错误必须能定位 source pack、entry type、entry id、field path 和 target key。
 - 游戏内容文件应优先按真实业务概念组织，同一个业务文件可以混合内置 DataType 和用户自定义 DataType。
 
@@ -87,8 +88,8 @@
 
 - Facade 要有契约测试；Adapter 先跑 facade conformance，再补底层库专属行为测试。
 - 数据驱动模块必须覆盖 duplicate、unknown type、missing reference、schema/path error、trace/diagnostic。
-- GameRuntime、Camera、Input、TCA、GAS、Save 等有顺序语义的模块必须覆盖顺序、幂等、stop/dispose 和 cleanup。
-- Sandbox、demo 或 headless host 的集成测试应覆盖长链路：Data → Asset → App Host → GameRuntime → World → TCA/GAS → Renderer/Input/Camera → Snapshot/Timeline。
+- GameRuntime、Camera、Input、Physics、TCA、GAS、Save 等有顺序语义的模块必须覆盖顺序、幂等、stop/dispose 和 cleanup。
+- Sandbox、demo 或 headless host 的集成测试应覆盖长链路：Data → Asset → App Host → GameRuntime → World → Physics → TCA/GAS → Renderer/Input/Camera → Snapshot/Timeline。
 - 固定 seed 测试只比较稳定 snapshot，不比较 DOM、native handle、绝对时间或底层库对象。
 
 ## Monorepo
@@ -181,7 +182,7 @@
 - 不在高频路径里做 JSON path 解析、动态字符串匹配、深拷贝或复杂 schema 校验。
 - 高频状态留在 ECS/world 内，React/UI 只消费低频快照。
 - EventBus 只用于低频事实，不用于每帧 position、render object patch、pointer move 广播。
-- TCA/GAS 不用于每帧高频微逻辑；输入、镜头、渲染同步等高频路径走 system 或专用 runtime state。
+- TCA/GAS 不用于每帧高频微逻辑；输入、镜头、物理、渲染同步等高频路径走 system 或专用 runtime state。
 
 数据结构：
 
@@ -231,6 +232,6 @@ Sandbox 是架构验证场，不是最终 demo。
 - `@gamekit/react-ui` 使用 Tailwind CSS 作为默认样式基础，样式应通过组件、recipe、CSS variables 和语义 props 组织，而不是把 class 字符串散落在业务页面中。
 - GSAP 只用于低频 UI 动效，例如 window/modal/toast/timeline/inspector 的进入、退出、强调和布局过渡；不要把 GSAP 用作 gameplay timing、renderer object patch 或 world tick 驱动。
 - shadcn/ui 是推荐的组件 recipe 最佳实践。采用时应复制并封装到 `@gamekit/react-ui` 或具体游戏 UI 包，保持代码可拥有、可改造、可测试。
-- 不要让业务 gameplay package、GameRuntime、World、TCA、GAS、DataType 或 renderer adapter 直接依赖 Tailwind、GSAP、shadcn/ui、Radix 或 Base UI。
+- 不要让业务 gameplay package、GameRuntime、World、Physics、TCA、GAS、DataType 或 renderer adapter 直接依赖 Tailwind、GSAP、shadcn/ui、Radix 或 Base UI。
 - 游戏应优先沉淀自己的 UI 组件库，例如 `AbilityButton`、`ResourceMeter`、`ActorPortrait`、`BuildSlot`，再由这些组件消费 Tailwind、CSS variables 或 shadcn recipe。
 - 所有 UI 动效必须尊重 reduced motion；动画失败不能阻塞 UI command 或 gameplay tick。

@@ -106,11 +106,11 @@ Actor 长期定义来自 DataPack：
 
 Abyss Delve 的实时战斗需要命中、投射物、碰撞范围、障碍、攻击预警和 projectile ownership。长期边界是：
 
-- gameplay 不直接依赖 Phaser physics、Phaser Scene、DOM hit-test 或 Koota 私有 API。
-- Abyss Delve 使用 app-local World component、确定性数学计算和轻量空间查询实现 hit detection / projectile collision / room bounds。
-- collision、hitbox、hurtbox、projectile owner、pierce、lifetime、team/faction 都是 Abyss Delve app-local gameplay 数据，不进入 `@gamekit/world` 或 `@gamekit/renderer-core` 公共协议。
+- gameplay 不直接依赖 Phaser physics、Phaser Scene、DOM hit-test、Rapier、Matter.js 或 Koota 私有 API。
+- 可复用碰撞体、触发器、空间查询和接触事件通过 `@gamekit/physics-core` 及其 backend adapter 接入；不用统一物理模块的轻量场景仍可以保留 app-local World component 和数学查询。
+- hitbox、hurtbox、projectile owner、pierce、lifetime、team/faction、damage channel 都是 Abyss Delve app-local gameplay 数据，最多引用 physics body/collider，不进入 `@gamekit/world`、`@gamekit/renderer-core` 或 `@gamekit/physics-core` 公共玩法语义。
 - Renderer 只表现 telegraph、projectile、impact 和 hit cue，不负责战斗命中判定。
-- 如果未来引入成熟 physics/pathfinding 库，必须通过 app-local adapter、GameKit facade 或 Driver/Adapter 边界接入；影响公共边界时需要 ADR。
+- 如果引入 pathfinding、navmesh 或 AI avoidance，必须另行判断模块边界；这些能力不随 Physics package 自动进入核心。
 
 ### Loot
 
@@ -165,7 +165,7 @@ Abyss Delve 玩法应拆成多个 GameModule，不堆到一个大模块中：
 - `ui-bridge-module`：低频 UI snapshot 和 command bridge。
 - `save-contributor-module`：run checkpoint、meta progression、inventory contributor。
 
-Camera、TCA、GAS 使用 App Host 标准 GameModule helper 注入，不作为 app service。
+Camera、Physics、TCA、GAS 使用 App Host 标准 GameModule helper 注入，不作为 app service。
 
 ### Data
 

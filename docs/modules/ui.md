@@ -14,7 +14,7 @@ UI 是应用层能力，不是 GameRuntime 的一部分。它负责低频 HUD、
 
 核心原则：
 
-- `@gamekit/ui-core` 不依赖 React、DOM、Renderer、World、TCA、GAS 或具体 app。
+- `@gamekit/ui-core` 不依赖 React、DOM、Renderer、World、Physics、TCA、GAS 或具体 app。
 - `@gamekit/react-ui` 是 UI adapter / implementation，不能成为 gameplay 公共 API。
 - React 不进入主循环，不订阅每帧 ECS position，不直接驱动 renderer object patch。
 - UI 通过低频 snapshot、selector、command 和 EventBus fact 理解游戏状态。
@@ -102,7 +102,7 @@ UI Core 可以提供常见 manager 概念，但不要先把 `WindowManager`、`M
 - GSAP 是默认 UI 动效基础，用于窗口、modal、toast、tooltip、timeline highlight、inspector transition 等低频 UI 动画。
 - shadcn/ui 是推荐最佳实践：优先把 shadcn 风格的组件 recipe 复制、封装和维护在 GameKit 或具体游戏的 React UI 层，而不是让业务 app 到处直接依赖第三方 primitive。
 
-这些技术选择只属于 React UI / app UI 层。`ui-core` 不依赖 Tailwind、GSAP、shadcn/ui、Radix、Base UI 或 DOM 类型。GameRuntime、World、TCA、GAS、Renderer sync 和 gameplay module 也不能依赖这些 UI 实现细节。
+这些技术选择只属于 React UI / app UI 层。`ui-core` 不依赖 Tailwind、GSAP、shadcn/ui、Radix、Base UI 或 DOM 类型。GameRuntime、World、Physics、TCA、GAS、Renderer sync 和 gameplay module 也不能依赖这些 UI 实现细节。
 
 Tailwind 和 GSAP 应被当作实现基础，而不是业务协议：
 

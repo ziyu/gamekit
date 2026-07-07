@@ -200,7 +200,7 @@ Profiler 接入规则：
 
 ### 模块使用
 
-- `@gamekit/core` 只放低层通用工具，例如 Registry、Clock、Result、GameError、seeded rng 和 GameModule 类型；不要把 renderer、input、asset、platform、TCA、GAS 或具体游戏概念塞进 Core。
+- `@gamekit/core` 只放低层通用工具，例如 Registry、Clock、Result、GameError、seeded rng 和 GameModule 类型；不要把 renderer、input、asset、platform、Physics、TCA、GAS 或具体游戏概念塞进 Core。
 - Registry、Clock、GameError 等基础工具的错误消息要稳定、可测试、可定位，避免为了方便返回 `undefined` 后让调用方在更远处失败。
 - EventBus 事件应表达已经发生的低频事实，事件 payload 保持小而可序列化；不要用 EventBus 广播每帧 transform、raw pointer move、held input 或 render patch。
 - `start()`、`stop()`、`tick()`、`dispose()` 的边界要清楚：`stop()` 不释放模块，`dispose()` 释放长期句柄，`tick()` 不应该悄悄 boot app service。

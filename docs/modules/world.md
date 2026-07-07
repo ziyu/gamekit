@@ -91,7 +91,7 @@ ECS runtime state 需要可序列化，但序列化不应由 `@gamekit/world` �
 ### 模块使用
 
 - 业务和游戏模块只依赖 `@gamekit/world` facade，不直接导入 Koota、bitecs 或其他 ECS 后端类型。
-- ComponentDef 应表达运行时状态，不要把 DataRegistry document、AssetDefinition 或 renderer native handle 直接塞进 component。
+- ComponentDef 应表达运行时状态，不要把 DataRegistry document、AssetDefinition、renderer native handle 或 physics backend body/collider handle 直接塞进 component。
 - 高频系统中优先复用 query 结果和临时对象；不要在每个 entity 更新中深拷贝、JSON 序列化、动态解析路径或触发 UI 更新。
 - EntityId 是否长期稳定由游戏和 Save contributor 决定。跨 save/load、场景切换或网络同步时，用稳定业务 id 或 Save entity mapping，不依赖 ECS adapter 私有 id 语义。
 - System 只处理高频状态推进；actor died、ability activated、resource delivered 等低频事实再发 EventBus，方便 TCA、UI、DevTools 和 Save 观察。

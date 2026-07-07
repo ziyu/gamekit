@@ -14,7 +14,7 @@ Data 是游戏内容定义的统一注册、校验、索引、引用追踪和来
 - Data 只提供弱约束：进入 DataRegistry 的数据必须能声明 `type` 和 `id`，并能被对应 DataTypeDefinition 理解。
 - DataType 可以由 GameKit 内置，也可以由游戏项目、插件、mod、编辑器工具自由定义。
 - DataPack 是数据交付单元，不是内容包模型，也不是内容分类模型。用户可以按英雄、怪物、建筑、关卡、章节、DLC、mod 或任意业务方式组织文件。
-- 内置类型是可引用的能力积木，不是必须继承的数据模板。游戏可以定义自己的 `game.hero`，再选择性引用 `gas.actor`、`gas.ability`、`render.object`、`tca.rule` 等内置类型。
+- 内置类型是可引用的能力积木，不是必须继承的数据模板。游戏可以定义自己的 `game.hero`，再选择性引用 `gas.actor`、`gas.ability`、`render.object`、`physics.body`、`tca.rule` 等内置类型。
 - 资源引用可以作为数据字段存在，但资源加载和状态管理属于 Asset 模块。
 
 ## 自由数据模型
@@ -44,6 +44,7 @@ export const emberKnightEntries = [
   { type: "gas.actor", id: "actor.ember_knight", data: { ... } },
   { type: "gas.ability", id: "ability.flame_guard", data: { ... } },
   { type: "render.object", id: "render.hero.ember_knight", data: { ... } },
+  { type: "physics.body", id: "physics.hero.ember_knight", data: { ... } },
   { type: "tca.rule", id: "rule.ember_knight.low_health_guard", data: { ... } },
 ];
 ```
@@ -75,7 +76,7 @@ export type DataTypeDefinition<TData> = {
 
 类型命名应使用命名空间，避免不同游戏、mod 或插件冲突：
 
-- GameKit 内置类型：`asset.definition`、`render.object`、`tca.rule`、`gas.actor`、`gas.ability`、`gas.effect`。
+- GameKit 内置类型：`asset.definition`、`render.object`、`physics.material`、`physics.body`、`physics.collider`、`tca.rule`、`gas.actor`、`gas.ability`、`gas.effect`。
 - 游戏自定义类型：`game.hero`、`game.monster`、`game.building`、`game.quest`、`game.biome`。
 - 工具或插件类型：`editor.brush`、`mod.manifest`、`localization.bundle`。
 
@@ -259,7 +260,7 @@ App Host、DevTools 和编辑器可以消费这些诊断并组织 UI，但诊断
 
 ## 与内置模块的关系
 
-TCA、GAS、Renderer、Asset 都可以提供内置 DataTypeDefinition，但它们不限制游戏数据模型。
+TCA、GAS、Renderer、Physics、Asset 都可以提供内置 DataTypeDefinition，但它们不限制游戏数据模型。
 
 例如游戏可以定义 `game.hero`，其中引用 `gas.actor`、`gas.ability` 和 `tca.rule`；也可以完全不定义 hero 类型，而直接用 GAS actor 数据驱动生成实体。
 
@@ -268,6 +269,7 @@ TCA、GAS、Renderer、Asset 都可以提供内置 DataTypeDefinition，但它�
 - TCA 读取 `tca.rule`。
 - GAS 读取 `gas.actor`、`gas.ability`、`gas.effect`。
 - Renderer sync 读取 `render.object` 或游戏自定义 presentation 类型。
+- Physics module 读取 `physics.material`、`physics.body`、`physics.collider` 或游戏自定义 spawn/archetype 类型。
 - AssetManager 读取 `asset.definition` 或外部注册的同形资源定义。
 
 ## 校验重点
