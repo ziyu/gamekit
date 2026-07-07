@@ -73,6 +73,14 @@ Backend ownership 规则：
 - 如果 physics backend 是完整外部 runtime 的一部分，例如 Phaser Scene 内的 Arcade / Matter Physics，则由对应 Driver 持有外部 runtime，再暴露 Physics adapter。
 - Driver 只拥有外部 runtime，不读写 gameplay state；Physics module 仍通过 GameRuntime lifecycle 运行。
 
+Physics Core 可以提供 `PhysicsHandle` / `PhysicsQueries` 作为依赖注入入口：
+
+- 组合层为每个 live PhysicsScene 创建一个具名 handle，并把同一个 handle 传给 `createPhysicsModule(...)` 和需要查询的 gameplay module。
+- `createPhysicsModule(...)` 是唯一绑定 live scene 的 owner；它在 install 时把 handle 绑定到自己创建的 scene，在 dispose 时解绑。
+- Handle 只暴露 query、cast、overlap、check 和 snapshot 等窄接口，不 boot backend、不创建 fallback scene，也不持有 native handle。
+- App Host/profile 可以持有 handle、backend factory、layer registry 和 DataRegistry 用于组合 GameModule，但不直接拥有 gameplay PhysicsScene。
+- 业务模块通过 DI 接收 `PhysicsQueries`，测试中可以注入 fake queries；可复用 gameplay module 不直接依赖 Rapier、Matter、Phaser Physics 或具体 adapter。
+
 ## Consequences
 
 收益：
@@ -80,6 +88,7 @@ Backend ownership 规则：
 - 多个游戏可以复用 body/collider/query/contact/save/devtools 边界。
 - Gameplay 不直接绑定 Rapier、Matter、Phaser Physics 或 renderer hit-test。
 - World 继续作为 runtime state 的稳定集成面，Physics backend 只负责模拟和空间查询。
+- Targeting、AI、Combat 和 placement 等 gameplay module 可以通过窄 query facade 使用同一个 module-owned scene，而不复制 scene 或依赖 backend。
 - Phaser 内置 physics 与 Phaser renderer/input/camera/asset 共享同一 Driver ownership，不会重复创建 Scene runtime。
 - DevTools 可以统一观察 physics scene、contacts、queries 和 performance。
 - Save 可以明确保存稳定 physics state，排除 backend cache。
