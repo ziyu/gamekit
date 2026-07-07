@@ -72,6 +72,7 @@ export function createMultiplayerRuntime(
     id: options.id,
     backendId: options.backend.id,
     phase() {
+      refreshFromConnectionSnapshot();
       return phase;
     },
     async createSession(request: CreateSessionRequest = {}) {

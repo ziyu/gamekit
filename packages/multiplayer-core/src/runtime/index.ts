@@ -1,3 +1,7 @@
+export * from "./authority-binding";
+export * from "./authority-loop";
+export * from "./authority-receiver";
+export * from "./authority-types";
 export * from "./bridge";
 export * from "./conformance";
 export * from "./errors";

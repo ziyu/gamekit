@@ -13,8 +13,11 @@ import {
   estimatePayloadBytes,
   isMultiplayerMessageEnvelope
 } from "../adapter/messages";
+import { createColyseusNativeCapabilitySummary } from "../adapter/native-state";
 import type { ColyseusMessageType } from "../adapter/types";
 import type { GameKitColyseusRoomOptions } from "./types";
+
+const HOST_AUTHORITY_LEFT_CLOSE_CODE = 4001;
 
 type GameKitColyseusClient = Client<{
   userData: {
@@ -47,10 +50,12 @@ export class GameKitColyseusRoom extends Room<{ client: GameKitColyseusClient }>
     this.sessionMetadata = cloneRecord(options.metadata);
     this.maxPayloadBytes = options.maxPayloadBytes ?? this.maxPayloadBytes;
     this.maxClients = options.maxClients ?? this.maxClients;
+    const nativeCapabilities = createColyseusNativeCapabilitySummary(options.nativeCapabilities);
     this.metadata = {
       gamekit: {
         kind: this.sessionKind,
-        authority: this.authority
+        authority: this.authority,
+        nativeCapabilities
       }
     };
 
@@ -86,6 +91,10 @@ export class GameKitColyseusRoom extends Room<{ client: GameKitColyseusClient }>
     this.peers.set(leftPeer.id, leftPeer);
     client.userData = { peer: leftPeer };
     this.broadcastPresence(leftPeer, "left", code === undefined ? undefined : String(code));
+
+    if (this.authority === "host-authoritative" && leftPeer.role === "host") {
+      void this.disconnect(code ?? HOST_AUTHORITY_LEFT_CLOSE_CODE);
+    }
   }
 
   snapshot(): MultiplayerSession {

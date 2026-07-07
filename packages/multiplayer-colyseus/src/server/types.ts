@@ -2,7 +2,11 @@ import type { Room, Server, ServerOptions } from "@colyseus/core";
 import type { TransportOptions, WebSocketTransport } from "@colyseus/ws-transport";
 import type { MultiplayerAuthorityMode, MultiplayerSessionKind } from "@gamekit/multiplayer-core";
 
-import type { ColyseusMessageType, GameKitColyseusRoomJoinOptions } from "../adapter/types";
+import type {
+  ColyseusMessageType,
+  ColyseusNativeCapabilityInput,
+  GameKitColyseusRoomJoinOptions
+} from "../adapter";
 
 export type GameKitColyseusRoomOptions = GameKitColyseusRoomJoinOptions & {
   messageType?: ColyseusMessageType;
@@ -11,6 +15,7 @@ export type GameKitColyseusRoomOptions = GameKitColyseusRoomJoinOptions & {
   authority?: MultiplayerAuthorityMode;
   maxPayloadBytes?: number;
   maxClients?: number;
+  nativeCapabilities?: ColyseusNativeCapabilityInput;
 };
 
 export type ColyseusRoomClass = new () => Room;

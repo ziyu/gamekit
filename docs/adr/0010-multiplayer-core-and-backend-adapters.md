@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, updated by ADR 0012
+Accepted, updated by ADR 0012 and ADR 0013
 
 ## Context
 

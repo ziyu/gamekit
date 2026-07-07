@@ -1,6 +1,13 @@
 import { createGameKitColyseusServer } from "@gamekit/multiplayer-colyseus/server";
 import { describe, expect, it } from "vitest";
 import { createMultiplayerDemoClient, type MultiplayerDemoClient } from "./client";
+import type { RealtimeArenaSnapshot } from "./realtime/domain";
+import {
+  REALTIME_ARENA_ACTION_KIND,
+  REALTIME_ARENA_CHANNEL,
+  REALTIME_ARENA_INPUT_KIND,
+  REALTIME_ARENA_SNAPSHOT_KIND
+} from "./realtime/protocol";
 import type { LocalMultiplayerDemoHost } from "./server/create-local-demo-server";
 import {
   createLocalMultiplayerDemoHost,
@@ -79,8 +86,10 @@ describe("multiplayer-demo", () => {
       await harness.server.disposeHost();
       const before = harness.server.app.snapshot();
 
-      await harness.sendClientCommand({ type: "confirm", objectId: "relay-alpha" });
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      await waitFor(() => harness.client.runtime.phase() !== "in-session");
+      await expect(
+        harness.sendClientCommand({ type: "confirm", objectId: "relay-alpha" })
+      ).rejects.toBeTruthy();
       harness.tickHost();
 
       expect(harness.server.app.snapshot().state.confirmations).toBe(before.state.confirmations);
@@ -195,6 +204,131 @@ describe("multiplayer-demo", () => {
       await colyseus.dispose();
     }
   });
+
+  it("synchronizes the realtime arena through the host authoritative room", async () => {
+    const colyseus = await createGameKitColyseusServer({
+      roomName: `${MULTIPLAYER_DEMO_ROOM_NAME}_realtime_${Date.now()}_${Math.floor(
+        Math.random() * 10000
+      )}`
+    });
+    const host = await createLocalMultiplayerDemoHost({
+      endpoint: colyseus.endpoint,
+      roomName: colyseus.roomNames[0] ?? MULTIPLAYER_DEMO_ROOM_NAME,
+      sessionId: "realtime-room"
+    });
+    const clientA = createClient(host, "client-a");
+    const clientB = createClient(host, "client-b");
+
+    try {
+      await clientA.connect();
+      await clientB.connect();
+      host.tick(50);
+
+      await waitFor(() => host.realtime.snapshot().snapshot.players.length === 2);
+      await waitFor(
+        () =>
+          clientA.latestRealtimeSnapshot()?.snapshot.players.length === 2 &&
+          clientB.latestRealtimeSnapshot()?.snapshot.players.length === 2
+      );
+      const hostSnapshotBeforeSpoof = clientA.latestRealtimeSnapshot();
+      await clientB.runtime.send({
+        channel: REALTIME_ARENA_CHANNEL,
+        kind: REALTIME_ARENA_SNAPSHOT_KIND,
+        payload: {}
+      });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(clientA.latestRealtimeSnapshot()).toBe(hostSnapshotBeforeSpoof);
+
+      await clientA.sendRealtimeAction({ type: "start" });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_ACTION_KIND, 1);
+      host.tick(50);
+      await waitFor(
+        () => findSnapshotPlayer(host.realtime.snapshot().snapshot, "client-a").ready === true
+      );
+      expect(host.realtime.snapshot().snapshot.phase).toBe("lobby");
+      expect(findSnapshotPlayer(host.realtime.snapshot().snapshot, "client-b").ready).toBe(false);
+
+      await clientA.sendRealtimeAction({ type: "ready", ready: true });
+      await clientB.sendRealtimeAction({ type: "ready", ready: true });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_ACTION_KIND, 3);
+      host.tick(50);
+      await waitFor(() =>
+        host.realtime.snapshot().snapshot.players.every((player) => player.ready)
+      );
+      host.tick(50);
+      await waitFor(
+        () =>
+          clientA.latestRealtimeSnapshot()?.snapshot.players.every((player) => player.ready) ===
+            true &&
+          clientB.latestRealtimeSnapshot()?.snapshot.players.every((player) => player.ready) ===
+            true
+      );
+
+      await clientA.sendRealtimeAction({ type: "start" });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_ACTION_KIND, 4);
+      host.tick(50);
+      await waitFor(() => host.realtime.snapshot().snapshot.phase === "countdown");
+      host.tick(1800);
+      await waitFor(
+        () =>
+          clientA.latestRealtimeSnapshot()?.snapshot.phase === "running" &&
+          clientB.latestRealtimeSnapshot()?.snapshot.phase === "running"
+      );
+
+      const playerAId = clientA.latestRealtimeSnapshot()?.playersByPeerId[clientA.peerId];
+      expect(playerAId).toBe("client-a");
+      const beforeX = findSnapshotPlayer(host.realtime.snapshot().snapshot, playerAId).position.x;
+      await clientA.sendRealtimeInput({
+        sequence: 1,
+        clientTime: 0,
+        moveX: 1,
+        moveY: 0,
+        sprint: false,
+        interact: false
+      });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_INPUT_KIND, 1);
+      host.tick(50);
+      await waitFor(
+        () =>
+          findSnapshotPlayer(host.realtime.snapshot().snapshot, playerAId).lastInputSequence === 1
+      );
+
+      host.tick(50);
+      await waitFor(() => {
+        const snapshotA = clientA.latestRealtimeSnapshot();
+        const snapshotB = clientB.latestRealtimeSnapshot();
+        if (!snapshotA || !snapshotB) {
+          return false;
+        }
+
+        const playerAOnA = findSnapshotPlayer(snapshotA.snapshot, playerAId);
+        const playerAOnB = findSnapshotPlayer(snapshotB.snapshot, playerAId);
+        return (
+          playerAOnA.position.x > beforeX &&
+          playerAOnA.position.x === playerAOnB.position.x &&
+          playerAOnA.position.y === playerAOnB.position.y
+        );
+      });
+
+      await clientB.dispose();
+      await waitFor(() => countActivePeers(host) === 2);
+      host.tick(50);
+      await waitFor(() => {
+        const hostSnapshot = host.realtime.snapshot();
+        const clientSnapshot = clientA.latestRealtimeSnapshot();
+        return (
+          hostSnapshot.snapshot.players.map((player) => player.id).join(",") === "client-a" &&
+          clientSnapshot?.snapshot.players.map((player) => player.id).join(",") === "client-a" &&
+          clientSnapshot.playersByPeerId[clientB.peerId] === undefined
+        );
+      });
+    } finally {
+      await clientA.dispose();
+      await clientB.dispose();
+      await host.dispose();
+      await colyseus.dispose();
+    }
+  });
 });
 
 function createClient(host: LocalMultiplayerDemoHost, peerId: string): MultiplayerDemoClient {
@@ -214,4 +348,27 @@ function countActivePeers(host: LocalMultiplayerDemoHost): number {
     .filter(
       (peer) => peer.status === "joining" || peer.status === "connected" || peer.status === "ready"
     ).length;
+}
+
+async function waitForHostRealtimeMessages(
+  host: LocalMultiplayerDemoHost,
+  kind: string,
+  count: number
+): Promise<void> {
+  await waitFor(
+    () =>
+      host.hostMessages.filter(
+        (message) => message.kind === kind && message.sourcePeerId !== host.hostPeerId
+      ).length >= count
+  );
+}
+
+function findSnapshotPlayer(
+  snapshot: RealtimeArenaSnapshot,
+  playerId: string | undefined
+): RealtimeArenaSnapshot["players"][number] {
+  expect(playerId).toBeDefined();
+  const player = snapshot.players.find((candidate) => candidate.id === playerId);
+  expect(player).toBeDefined();
+  return player as RealtimeArenaSnapshot["players"][number];
 }

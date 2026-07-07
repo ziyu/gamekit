@@ -17,6 +17,7 @@ This package is responsible for:
 - Creating a GameKit `MultiplayerBackendAdapter` backed by a Colyseus client.
 - Mapping Colyseus room lifecycle to GameKit session, peer, phase, and diagnostics snapshots.
 - Sending and receiving GameKit semantic message envelopes through Colyseus room messages.
+- Providing opt-in provider-native capability bridges for Colyseus Schema state sync, room metadata, reconnect / seat reservation summaries, and provider diagnostics.
 - Providing server-only helpers for local Colyseus test/demo servers.
 - Providing a typed native bridge for app-specific tooling that explicitly opts into Colyseus types.
 - Keeping Colyseus Room, Client, Schema, matchmaker, reconnection token, socket, and server objects out of `@gamekit/multiplayer-core`, gameplay modules, DataType, Save payloads, and reusable GameModule public APIs.
@@ -65,6 +66,24 @@ const server = await createGameKitColyseusServer({
 
 The root entry must not re-export `Room`, `Client`, `Schema`, server transports, or test server helpers. Server-side exports must stay behind `@gamekit/multiplayer-colyseus/server` or app-specific server packages.
 
+## Capability Lanes
+
+Colyseus should not be reduced to a generic message transport. The adapter supports two complementary lanes:
+
+| Lane             | Purpose                                                                                                                                |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| GameKit envelope | Cross-backend baseline for `game.action`, `game.input`, `game.snapshot`, `game.patch`, results, authority source gate and conformance. |
+| Colyseus native  | Opt-in use of Colyseus Schema / state sync, room metadata, reconnect / seat reservation, matchmaker and provider diagnostics.          |
+
+An app may choose either lane as the authoritative state writer for a room, but it must not let both lanes write the same gameplay state. The active lane must be reflected in GameKit authority binding / diagnostics so UI and DevTools can explain the current source of truth.
+
+Provider-native bridge rules:
+
+- Colyseus Schema, Room, Client and server runtime types may appear only in this package, its server subpath, or app-specific server/tooling code that explicitly imports the native bridge.
+- Native state sync must map back to provider-neutral authority diagnostics such as source, tick/version, snapshot age, resync reason, rejected source and state size.
+- Browser gameplay and reusable GameModules should consume app-local snapshots or view models, not raw Colyseus Schema instances.
+- Reconnect / seat reservation tokens and room secrets must stay inside provider-specific code and must not enter Save payloads or public diagnostics.
+
 ## Dependency Policy
 
 Expected dependency ownership:
@@ -103,6 +122,8 @@ Current `multiplayer-core` exposes `createSession()` and `joinSession()`. A Coly
 | `snapshot()`                      | Return GameKit-safe summaries only.                                                  |
 
 When `multiplayer-core` converges on a `createOrJoinSession()` facade, this package should collapse the create/join distinction at the adapter boundary without changing gameplay command contracts.
+
+For `host-authoritative` rooms, the peer with `role: "host"` is the authority owner. When that peer leaves, the server room closes and remaining clients are disconnected instead of leaving an orphan room that can still accept late clients. Ordinary client leave only updates presence and leaves the room open.
 
 ## Message Mapping
 
@@ -187,6 +208,50 @@ Native bridge usage rules:
 - It can expose Colyseus client/server handles only from this adapter package or a server-only subpath.
 - It must never enter Save payloads, DataType definitions, reusable GameModule public APIs, or provider-neutral DevTools sources.
 - DevTools must label native/provider-specific details as Colyseus-specific.
+
+The root adapter exposes a typed native bridge from `createColyseusMultiplayerBackend()`:
+
+```ts
+import { createColyseusMultiplayerBackend } from "@gamekit/multiplayer-colyseus";
+import { createMultiplayerAuthorityBindingStore } from "@gamekit/multiplayer-core";
+
+const backend = createColyseusMultiplayerBackend({
+  endpoint: "http://localhost:2567",
+  roomName: "relay_arena",
+  nativeCapabilities: {
+    authoritativePath: "colyseus-schema",
+    stateSync: {
+      available: true,
+      lane: "colyseus-schema",
+      schemaVersion: "arena.v1"
+    }
+  }
+});
+
+const binding = createMultiplayerAuthorityBindingStore({
+  sessionId: "relay-arena-session",
+  mode: "server-authoritative",
+  authorityEndpoint: {
+    kind: "server",
+    id: "colyseus-schema"
+  }
+});
+
+const stateBridge = backend.native().createStateBridge({
+  binding,
+  authoritativePath: "colyseus-schema",
+  sourceEndpointId: "colyseus-schema",
+  readState(state) {
+    return typeof state === "object" && state !== null ? state : undefined;
+  },
+  applyState(state, ctx) {
+    // Map provider-native state into an app-owned view model here.
+    console.log(ctx.tick, state);
+  }
+});
+```
+
+The bridge records provider-neutral diagnostics for state version, tick, source endpoint, state size, resync and rejected updates. It does not make Colyseus Schema a `multiplayer-core` type.
 
 ## App Host Integration
 

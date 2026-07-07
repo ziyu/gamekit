@@ -12,6 +12,7 @@ Status: Active
 - `docs/architecture.md`
 - `docs/adr/0010-multiplayer-core-and-backend-adapters.md`
 - `docs/adr/0012-mature-multiplayer-backend-adapter.md`
+- `docs/adr/0013-standard-authoritative-replication-boundary.md`
 
 ## Scope
 
@@ -20,6 +21,7 @@ Status: Active
 - 收窄 `@gamekit/multiplayer-core` 为 GameKit 侧 facade、adapter 接口、authority 类型、semantic command envelope、diagnostics 和 GameModule bridge helper。
 - 新增 memory backend，用作 conformance test、headless 多 client 夹具和本地 loopback fixture。
 - 新增 Colyseus backend adapter，作为首个成熟真实 multiplayer backend 和 demo gate。
+- 为成熟 backend 补 provider-native capability bridge 规划，让 Colyseus Schema、reconnect、matchmaking、room metadata 和 provider diagnostics 能被显式使用，而不是被 GameKit envelope 抹平。
 - 接入 App Host optional standard service 和标准 GameModule helper。
 - 提供 DevTools source / diagnostics 的稳定事实。
 - 设计多人命令、状态复制 contributor、Save 边界和 payload redaction。
@@ -31,6 +33,7 @@ Status: Active
 - 通用 rollback netcode engine 或 MMO server。
 - 把 Sandbox 玩法规则上推为 Multiplayer 协议。
 - 自研通用 room server、matchmaker、reconnect engine、presence store、state sync engine 或 production WebSocket server。
+- 在 `multiplayer-core` 中暴露 Colyseus、Nakama、Steam、EOS 或其他 provider SDK 类型。
 
 ## Current Implementation
 
@@ -74,6 +77,25 @@ corepack pnpm lint
 corepack pnpm format
 git diff --check
 ```
+
+2026-07-07 已补第一版标准 authority / replication helper，并让 `apps/multiplayer-demo` dogfood：
+
+- `@gamekit/multiplayer-core` 增加 authority binding store、host authoritative loop、local authority loop、client receiver/source gate 和 action/input/snapshot 默认 kind。
+- Demo remote room 使用 core host loop 消费 action/input 并广播 authoritative snapshot；Browser client 使用 core receiver 拒绝非 authority snapshot。
+- Offline/local practice 使用 `local` authority loop 和 in-process delivery，复用同一 action/input、tick、snapshot contract。
+- Headless Colyseus integration test 覆盖两个 client 同 room 的 ready/start/input/snapshot 同步，以及非 authority snapshot 不被应用。
+
+下一步规划重点不是继续扩大 core，而是把“完整可用 multiplayer”拆成两层：
+
+- Core baseline：跨 backend 的最小可用 contract，防止伪多人，保证 local/host/server authority、source gate、diagnostics 和 conformance。
+- Provider-native capability bridge：在 `@gamekit/multiplayer-colyseus` 等 backend package 中显式接入 Schema state sync、reconnect、matchmaking、room metadata、provider diagnostics 和 typed native server/runtime path。
+
+2026-07-07 已补 `@gamekit/multiplayer-colyseus` native capability bridge 第一片：
+
+- Root adapter 创建函数返回 typed `ColyseusMultiplayerBackendAdapter`，`native()` 暴露 typed native bridge，同时仍可作为 core `MultiplayerBackendAdapter` 消费。
+- `nativeCapabilities` 进入 backend capabilities/snapshot metadata 和 server room metadata summary，声明当前 authoritative path、可用 lanes、state sync、reconnect、matchmaking 和 room metadata。
+- 新增 `createColyseusNativeStateBridge()`，用于把 provider-native state update 映射到 GameKit authority binding diagnostics，覆盖 session/source endpoint gate、tick/version、state size、resync 和 rejected update。
+- Colyseus package 测试覆盖 native capability summary 不泄漏 Room/Client，以及 provider-native state update 的 source gate 和 diagnostics。
 
 ## Implementation Waves
 
@@ -151,7 +173,27 @@ git diff --check
 - 本地 Colyseus server/client smoke 可以完成 create-or-join、send、leave 和 close。
 - 至少一条 demo command 可以证明通过 Colyseus Room 送达 host/server authority 边界。
 
-### Wave 5: Replication Contributors And Save Boundary
+### Wave 5: Standard Authority Baseline And Provider-Native Bridges
+
+目标：让完整可用能力既有跨 backend 的标准 contract，也能发挥 Colyseus 等成熟 backend 的原生能力。
+
+计划内容：
+
+1. 补齐 core baseline helper：patch/result receiver、resync 状态、snapshot version gate、payload size/redaction hook、peer/player binding utility 和更完整 conformance。
+2. 明确 authority path selection：同一局中 GameKit envelope snapshot stream、provider-native Schema state sync、lockstep 或 rollback 只能有一个 authority state writer；其他路径只能作为 diagnostics、summary 或 migration bridge。
+3. 在 `@gamekit/multiplayer-colyseus` 增加 provider-native bridge 规划和实现入口，例如 Colyseus Schema authority bridge、room metadata summary、provider reconnect/seat reservation summary 和 server-native runtime bridge。
+4. 为 Colyseus native bridge 增加测试：Schema/state source gate、state resync、room isolation、leave/disconnect cleanup、reconnect summary、redaction 和 dispose。
+5. 在 demo 中增加一条可切换同步 lane：继续保留 GameKit envelope snapshot stream，同时增加 Colyseus Schema 或 typed provider state sync dogfood，用同一玩法 contract 比较两条路径。
+6. DevTools/diagnostics 标记当前 authoritative path：`local-loop`、`gamekit-envelope`、`colyseus-schema`、`provider-native` 或 app-defined strategy。
+
+验收：
+
+- `multiplayer-core` 仍不依赖 Colyseus/Nakama/provider SDK，但能表达 authority binding、tick/version、source gate、resync 和 diagnostics。
+- `@gamekit/multiplayer-colyseus` 能显式暴露 provider-native 能力，而不是只作为 message transport 使用。
+- Demo 或测试能证明 Colyseus native state sync 与 GameKit authority binding 不冲突：客户端只应用绑定 authority source，room reset/reconnect 后旧 buffer 不复用。
+- Provider-native bridge 的 payload、Room/Client/Schema/native handle 不进入 Save、DataType、可复用 GameModule 或 core facade。
+
+### Wave 6: Replication Contributors And Save Boundary
 
 目标：建立可扩展的 GameKit 层 summary/contributor 策略，而不是把 provider state sync 或 world diff 固化进 core。
 
@@ -169,7 +211,7 @@ git diff --check
 - Save 相关测试不保存 socket、room handle、secret token 或 SDK object。
 - diagnostics 默认只展示 summary 和 redacted payload。
 
-### Wave 6: DevTools And Example Integration
+### Wave 7: DevTools And Example Integration
 
 目标：让多人链路可解释，并用验证 app 证明边界可用。
 

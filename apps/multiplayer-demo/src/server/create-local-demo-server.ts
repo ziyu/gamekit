@@ -6,6 +6,7 @@ import {
   type MultiplayerRuntime
 } from "@gamekit/multiplayer-core";
 import { createMultiplayerDemoRuntime, type MultiplayerDemoRuntime } from "../domain";
+import { createRealtimeArenaHost, type RealtimeArenaHost } from "../realtime/host";
 
 export const MULTIPLAYER_DEMO_ROOM_NAME = "gamekit_multiplayer_demo";
 export const MULTIPLAYER_DEMO_SESSION_ID = "multiplayer-demo-session";
@@ -31,6 +32,7 @@ export type LocalMultiplayerDemoHost = {
   sessionId: string;
   hostPeerId: string;
   app: MultiplayerDemoRuntime;
+  realtime: RealtimeArenaHost;
   host: MultiplayerRuntime;
   hostMessages: MultiplayerMessageEnvelope[];
   tick(delta?: number): void;
@@ -117,6 +119,7 @@ export async function createLocalMultiplayerDemoHost(
       role: "host"
     }
   });
+  const realtime = createRealtimeArenaHost({ runtime: host, sessionId, hostPeerId });
   app.runtime.start();
 
   let hostDisposed = false;
@@ -129,6 +132,7 @@ export async function createLocalMultiplayerDemoHost(
 
     hostDisposed = true;
     app.runtime.dispose();
+    realtime.dispose();
     unsubscribeHostMessages();
     await host.dispose();
   }
@@ -139,10 +143,12 @@ export async function createLocalMultiplayerDemoHost(
     sessionId,
     hostPeerId,
     app,
+    realtime,
     host,
     hostMessages,
     tick(delta = 16) {
       app.runtime.tick(delta);
+      realtime.tick(delta);
     },
     disposeHost,
     async dispose() {

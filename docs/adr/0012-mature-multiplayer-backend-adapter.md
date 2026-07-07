@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted, complemented by ADR 0013
 
 ## Context
 
@@ -28,6 +28,7 @@ Multiplayer 方向调整为成熟 backend adapter 优先。
 - `@gamekit/multiplayer-core` 只保留 GameKit 侧稳定 facade、App Host service shape、GameModule bridge、语义 command envelope、diagnostic snapshot、redaction 和 adapter conformance helper。
 - GameKit 不自研通用 room server、matchmaker、reconnect engine、presence store、transport codec、state sync engine 或 production WebSocket server。
 - `@gamekit/multiplayer-colyseus` 拥有 Colyseus SDK、Room、client/server integration、state sync mapping、message routing、reconnection 和 provider diagnostics。
+- 完整的 Colyseus adapter 不能只实现 GameKit envelope transport；它还应通过受控 native bridge / provider mapping 暴露 Colyseus Schema state sync、room metadata、reconnect / seat reservation、matchmaking 和 provider diagnostics，同时保持这些类型不进入 `multiplayer-core`。
 - Colyseus Room 是首个真实多人会话 owner。GameKit 的 Sandbox / Tiny Camp demo 通过 Colyseus Room 证明 package 链路，而不是通过 memory 或 raw WebSocket。
 - `@gamekit/multiplayer-memory` 只作为测试替身、bridge fixture 和 deterministic conformance target，不代表生产 backend。
 - Nakama、PartyKit、Steam、EOS 或其他后端未来按 `@gamekit/multiplayer-<provider>` 增加 adapter。GameKit 不为所有 provider 设计超大公共能力目录，只抽取当前 bridge 和 diagnostics 需要的最小稳定事实。

@@ -6,7 +6,6 @@ import {
   multiplayerErrorCodes,
   type CreateSessionRequest,
   type JoinSessionRequest,
-  type MultiplayerBackendAdapter,
   type MultiplayerBackendCapabilities,
   type MultiplayerBackendConnection,
   type MultiplayerBackendListener,
@@ -26,8 +25,14 @@ import {
   isMultiplayerMessageEnvelope,
   isPresencePayload
 } from "./messages";
+import {
+  cloneColyseusNativeCapabilitySummary,
+  createColyseusNativeCapabilitySummary,
+  createColyseusNativeStateBridge
+} from "./native-state";
 import type {
   ColyseusMessageType,
+  ColyseusMultiplayerBackendAdapter,
   ColyseusMultiplayerBackendOptions,
   ColyseusMultiplayerNative,
   GameKitColyseusRoomJoinOptions
@@ -55,7 +60,7 @@ type ColyseusConnectionState = {
 
 export function createColyseusMultiplayerBackend(
   options: ColyseusMultiplayerBackendOptions
-): MultiplayerBackendAdapter {
+): ColyseusMultiplayerBackendAdapter {
   const id = options.id ?? "colyseus";
   const messageType = options.messageType ?? "gamekit.message";
   const presenceType = options.presenceType ?? "gamekit.presence";
@@ -63,6 +68,7 @@ export function createColyseusMultiplayerBackend(
   const client = options.client ?? new ColyseusClient(options.endpoint, options.clientOptions);
   const connections = new Set<ColyseusConnectionState>();
   const providerRoomIds = new Map<string, string>();
+  const nativeCapabilities = createColyseusNativeCapabilitySummary(options.nativeCapabilities);
 
   const capabilities: MultiplayerBackendCapabilities = {
     channels: options.channels ?? defaultChannels(maxPayloadBytes),
@@ -70,7 +76,8 @@ export function createColyseusMultiplayerBackend(
     maxPayloadBytes,
     metadata: {
       roomName: options.roomName,
-      provider: "colyseus"
+      provider: "colyseus",
+      nativeCapabilities: cloneColyseusNativeCapabilitySummary(nativeCapabilities)
     }
   };
 
@@ -86,6 +93,12 @@ export function createColyseusMultiplayerBackend(
       }
 
       return undefined;
+    },
+    capabilities() {
+      return cloneColyseusNativeCapabilitySummary(nativeCapabilities);
+    },
+    createStateBridge(bridgeOptions) {
+      return createColyseusNativeStateBridge(bridgeOptions);
     }
   };
 
@@ -98,7 +111,8 @@ export function createColyseusMultiplayerBackend(
       activeConnections: connections.size,
       metadata: {
         endpoint: redactEndpoint(options.endpoint),
-        roomName: options.roomName
+        roomName: options.roomName,
+        nativeCapabilities: cloneColyseusNativeCapabilitySummary(nativeCapabilities)
       }
     };
   }

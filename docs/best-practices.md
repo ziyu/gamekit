@@ -92,6 +92,8 @@
 - 数据驱动模块必须覆盖 duplicate、unknown type、missing reference、schema/path error、trace/diagnostic。
 - GameRuntime、Camera、Input、TCA、GAS、Save 等有顺序语义的模块必须覆盖顺序、幂等、stop/dispose 和 cleanup。
 - Multiplayer backend adapter 必须覆盖 provider facade 的 connect、create-or-join/leave、message routing、peer summary、disconnect、reconnect 降级、payload validation、dispose cleanup 和 diagnostics；provider 自己拥有的 room/matchmaker/state sync 逻辑不要在 GameKit core 中重写。
+- Multiplayer app/demo 集成测试不能只断言 peer count 或 presence；必须至少断言一条 lifecycle、input、snapshot、patch 或 command result 来自同一个 authority state，并验证非 authority snapshot/patch 不会被 client 应用。
+- 离线单机和多人模式应共享同一套 gameplay orchestration。测试应能用同一 input/action log 在 local authority 和 host/server authority fixture 中得到等价稳定 snapshot，避免维护两套规则实现。
 - Sandbox、demo 或 headless host 的集成测试应覆盖长链路：Data → Asset → App Host → GameRuntime → World → TCA/GAS → Renderer/Input/Camera → Snapshot/Timeline。
 - 固定 seed 测试只比较稳定 snapshot，不比较 DOM、native handle、绝对时间或底层库对象。
 

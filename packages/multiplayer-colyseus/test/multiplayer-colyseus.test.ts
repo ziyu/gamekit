@@ -1,10 +1,11 @@
 import {
+  createMultiplayerAuthorityBindingStore,
   runMultiplayerBackendConformance,
   type MultiplayerMessageEnvelope
 } from "@gamekit/multiplayer-core";
 import { describe, expect, it } from "vitest";
 
-import { createColyseusMultiplayerBackend } from "../src";
+import { createColyseusMultiplayerBackend, createColyseusNativeStateBridge } from "../src";
 import { createGameKitColyseusServer } from "../src/server";
 
 describe("@gamekit/multiplayer-colyseus", () => {
@@ -153,6 +154,68 @@ describe("@gamekit/multiplayer-colyseus", () => {
     }
   });
 
+  it("closes a host-authoritative room when the host peer leaves", async () => {
+    const roomName = uniqueRoomName("host-close");
+    const sessionId = "host-close-session";
+    const server = await createGameKitColyseusServer({ roomName });
+    const host = await createColyseusMultiplayerBackend({
+      endpoint: server.endpoint,
+      roomName,
+      joinByIdFallback: true
+    }).connect({
+      runtimeId: "host-close.host",
+      localPeer: { id: "host", role: "host" },
+      clock: () => 1000
+    });
+    const client = await createColyseusMultiplayerBackend({
+      endpoint: server.endpoint,
+      roomName
+    }).connect({
+      runtimeId: "host-close.client",
+      localPeer: { id: "client", role: "client" },
+      clock: () => 1000
+    });
+    const lateClient = await createColyseusMultiplayerBackend({
+      endpoint: server.endpoint,
+      roomName
+    }).connect({
+      runtimeId: "host-close.late-client",
+      localPeer: { id: "late-client", role: "client" },
+      clock: () => 1000
+    });
+
+    try {
+      await host.createSession({
+        id: sessionId,
+        authority: "host-authoritative",
+        localPeer: { id: "host", role: "host" }
+      });
+      await client.joinSession({
+        sessionId,
+        localPeer: { id: "client", role: "client" }
+      });
+      await waitFor(() =>
+        host.snapshot().peers.some((peer) => peer.id === "client" && peer.status === "connected")
+      );
+
+      await host.close("host left");
+      await waitFor(() => client.snapshot().phase !== "in-session");
+
+      expect(client.snapshot().session).toBeUndefined();
+      await expect(
+        lateClient.joinSession({
+          sessionId,
+          localPeer: { id: "late-client", role: "client" }
+        })
+      ).rejects.toBeTruthy();
+    } finally {
+      await lateClient.close("test cleanup");
+      await client.close("test cleanup");
+      await host.close("test cleanup");
+      await server.dispose();
+    }
+  });
+
   it("redacts endpoint credentials from backend diagnostics", () => {
     const backend = createColyseusMultiplayerBackend({
       endpoint: "http://user:secret@127.0.0.1:2567",
@@ -160,6 +223,137 @@ describe("@gamekit/multiplayer-colyseus", () => {
     });
 
     expect(backend.snapshot().metadata?.endpoint).toBe("http://127.0.0.1:2567/");
+  });
+
+  it("declares provider-native capability lanes without exposing room handles in snapshots", () => {
+    const backend = createColyseusMultiplayerBackend({
+      endpoint: "http://127.0.0.1:2567",
+      roomName: "native-capabilities",
+      nativeCapabilities: {
+        authoritativePath: "colyseus-schema",
+        stateSync: {
+          available: true,
+          lane: "colyseus-schema",
+          schemaVersion: "arena.v1"
+        },
+        reconnect: {
+          available: true,
+          mode: "seat-reservation"
+        },
+        matchmaking: true,
+        roomMetadata: {
+          region: "local"
+        }
+      }
+    });
+
+    expect(backend.native().capabilities()).toMatchObject({
+      authoritativePath: "colyseus-schema",
+      stateSync: {
+        active: true,
+        schemaVersion: "arena.v1"
+      }
+    });
+    expect(backend.snapshot().metadata).toMatchObject({
+      nativeCapabilities: {
+        authoritativePath: "colyseus-schema",
+        lanes: ["gamekit-envelope", "colyseus-schema"],
+        stateSync: {
+          available: true,
+          active: true,
+          schemaVersion: "arena.v1"
+        },
+        reconnect: {
+          available: true,
+          mode: "seat-reservation"
+        },
+        matchmaking: {
+          available: true
+        },
+        roomMetadata: {
+          region: "local"
+        }
+      }
+    });
+    expect(backend.snapshot().metadata).not.toHaveProperty("room");
+    expect(backend.snapshot().metadata).not.toHaveProperty("client");
+  });
+
+  it("gates provider-native state through authority binding diagnostics", () => {
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: "native-session",
+      mode: "server-authoritative",
+      authorityEndpoint: {
+        kind: "server",
+        id: "colyseus-schema"
+      }
+    });
+    let latest: { x: number } | undefined;
+    const bridge = createColyseusNativeStateBridge<{ x: number }>({
+      binding,
+      authoritativePath: "colyseus-schema",
+      sourceEndpointId: "colyseus-schema",
+      clock: () => 150,
+      readState(state) {
+        return isRecord(state) && typeof state.x === "number" ? { x: state.x } : undefined;
+      },
+      applyState(state) {
+        latest = state;
+      }
+    });
+
+    expect(
+      bridge.receiveState({
+        sessionId: "other-session",
+        state: { x: 1 },
+        timestamp: 100
+      })
+    ).toMatchObject({
+      allowed: false,
+      code: "session-mismatch"
+    });
+    expect(
+      bridge.receiveState({
+        sessionId: "native-session",
+        sourceEndpointId: "other-endpoint",
+        state: { x: 2 },
+        timestamp: 100
+      })
+    ).toMatchObject({
+      allowed: false,
+      code: "authority-endpoint-mismatch"
+    });
+
+    expect(
+      bridge.receiveState({
+        sessionId: "native-session",
+        state: { x: 7 },
+        tick: 3,
+        version: "arena.v1",
+        timestamp: 100
+      })
+    ).toEqual({ allowed: true });
+
+    expect(latest).toEqual({ x: 7 });
+    expect(binding.current()).toMatchObject({
+      tick: 3,
+      snapshotVersion: "arena.v1"
+    });
+    expect(bridge.diagnostics()).toMatchObject({
+      authoritativePath: "colyseus-schema",
+      sourceEndpointId: "colyseus-schema",
+      receivedUpdates: 3,
+      appliedUpdates: 1,
+      rejectedUpdates: 2,
+      lastAppliedTick: 3,
+      lastVersion: "arena.v1",
+      lastStateAgeMs: 50,
+      lastRejected: {
+        code: "authority-endpoint-mismatch",
+        sessionId: "native-session",
+        sourceEndpointId: "other-endpoint"
+      }
+    });
   });
 });
 
@@ -176,4 +370,8 @@ async function waitFor(predicate: () => boolean): Promise<void> {
     }
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

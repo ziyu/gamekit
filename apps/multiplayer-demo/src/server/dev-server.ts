@@ -2,11 +2,15 @@ import { createServer as createViteServer } from "vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createGameKitColyseusServer } from "@gamekit/multiplayer-colyseus/server";
 import {
-  createLocalMultiplayerDemoHost,
   MULTIPLAYER_DEMO_SESSION_ID,
-  MULTIPLAYER_DEMO_ROOM_NAME
+  MULTIPLAYER_DEMO_ROOM_NAME,
+  type LocalMultiplayerDemoHost
 } from "./create-local-demo-server";
 import { normalizeMultiplayerDemoSessionId } from "./session-id";
+import {
+  createMultiplayerDemoSessionRegistry,
+  MultiplayerDemoSessionConflictError
+} from "./session-registry";
 
 const HOST = "127.0.0.1";
 const DEFAULT_PORT = 5177;
@@ -15,13 +19,12 @@ const MAX_REQUEST_BYTES = 4 * 1024;
 const colyseus = await createGameKitColyseusServer({
   roomName: `${MULTIPLAYER_DEMO_ROOM_NAME}_dev_${Date.now()}`
 });
-const sessions = new Map<string, Awaited<ReturnType<typeof createLocalMultiplayerDemoHost>>>();
-const pendingSessions = new Map<
-  string,
-  Promise<Awaited<ReturnType<typeof createLocalMultiplayerDemoHost>>>
->();
+const sessions = createMultiplayerDemoSessionRegistry({
+  endpoint: colyseus.endpoint,
+  roomName: colyseus.roomNames[0] ?? MULTIPLAYER_DEMO_ROOM_NAME
+});
 const tickInterval = setInterval(() => {
-  for (const session of sessions.values()) {
+  for (const session of sessions.hosts()) {
     session.tick(50);
   }
 }, 50);
@@ -64,8 +67,7 @@ process.once("SIGTERM", () => {
 async function shutdown(): Promise<void> {
   clearInterval(tickInterval);
   await vite.close();
-  await Promise.all([...sessions.values()].map((session) => session.dispose()));
-  sessions.clear();
+  await sessions.dispose();
   await colyseus.dispose();
   process.exit(0);
 }
@@ -82,7 +84,7 @@ async function handleApiRequest(
       endpoint: colyseus.endpoint,
       roomName: colyseus.roomNames[0] ?? MULTIPLAYER_DEMO_ROOM_NAME,
       defaultSessionId: MULTIPLAYER_DEMO_SESSION_ID,
-      sessions: [...sessions.keys()]
+      sessions: sessions.sessionIds()
     });
     return;
   }
@@ -94,7 +96,7 @@ async function handleApiRequest(
 
   if (req.method === "GET") {
     const sessionId = normalizeMultiplayerDemoSessionId(url.searchParams.get("sessionId"));
-    const session = sessions.get(sessionId);
+    const session = sessions.getSession(sessionId);
     if (!session) {
       writeJson(res, 404, {
         error: `Session is not hosted: ${sessionId}`,
@@ -109,8 +111,33 @@ async function handleApiRequest(
 
   if (req.method === "POST") {
     const body = await readJsonBody(req);
-    const session = await ensureSession(normalizeMultiplayerDemoSessionId(readSessionId(body)));
-    writeJson(res, 200, createSessionResponse(session));
+    const sessionId = normalizeMultiplayerDemoSessionId(readSessionId(body));
+    const hostOwnerId = readHostOwnerId(body);
+    if (!hostOwnerId) {
+      writeJson(res, 400, {
+        error: "Host owner id is required to host a multiplayer demo session.",
+        sessionId
+      });
+      return;
+    }
+
+    try {
+      const hosted = await sessions.hostSession(sessionId, hostOwnerId);
+      writeJson(res, 200, {
+        ...createSessionResponse(hosted.session),
+        created: hosted.created
+      });
+    } catch (error) {
+      if (error instanceof MultiplayerDemoSessionConflictError) {
+        writeJson(res, 409, {
+          error: `Session is already hosted: ${error.sessionId}. Use Join to enter as a client.`,
+          sessionId: error.sessionId
+        });
+        return;
+      }
+
+      throw error;
+    }
     return;
   }
 
@@ -119,15 +146,11 @@ async function handleApiRequest(
     const sessionId = normalizeMultiplayerDemoSessionId(
       readSessionId(body) ?? url.searchParams.get("sessionId")
     );
-    const session = sessions.get(sessionId);
-    if (session) {
-      await session.dispose();
-      sessions.delete(sessionId);
-    }
+    const disposed = await sessions.closeSession(sessionId);
 
     writeJson(res, 200, {
       sessionId,
-      disposed: Boolean(session)
+      disposed
     });
     return;
   }
@@ -137,39 +160,7 @@ async function handleApiRequest(
   });
 }
 
-async function ensureSession(
-  sessionId: string
-): Promise<Awaited<ReturnType<typeof createLocalMultiplayerDemoHost>>> {
-  const current = sessions.get(sessionId);
-  if (current) {
-    return current;
-  }
-
-  const pending = pendingSessions.get(sessionId);
-  if (pending) {
-    return pending;
-  }
-
-  const created = createLocalMultiplayerDemoHost({
-    endpoint: colyseus.endpoint,
-    roomName: colyseus.roomNames[0] ?? MULTIPLAYER_DEMO_ROOM_NAME,
-    sessionId
-  }).then((session) => {
-    sessions.set(sessionId, session);
-    return session;
-  });
-  pendingSessions.set(sessionId, created);
-
-  try {
-    return await created;
-  } finally {
-    pendingSessions.delete(sessionId);
-  }
-}
-
-function createSessionResponse(
-  session: Awaited<ReturnType<typeof createLocalMultiplayerDemoHost>>
-) {
+function createSessionResponse(session: LocalMultiplayerDemoHost) {
   return {
     endpoint: session.endpoint,
     roomName: session.roomName,
@@ -200,11 +191,19 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
 }
 
 function readSessionId(body: unknown): string | undefined {
+  return readStringField(body, "sessionId");
+}
+
+function readHostOwnerId(body: unknown): string | undefined {
+  return readStringField(body, "hostOwnerId");
+}
+
+function readStringField(body: unknown, field: string): string | undefined {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return undefined;
   }
 
-  const value = (body as { sessionId?: unknown }).sessionId;
+  const value = (body as Record<string, unknown>)[field];
   return typeof value === "string" ? value : undefined;
 }
 
