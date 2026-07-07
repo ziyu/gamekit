@@ -1,0 +1,23 @@
+{
+  "name": "physics-2d-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b && vite build",
+    "dev": "vite --host 127.0.0.1",
+    "test": "vitest run --root ../.. --config vitest.config.ts apps/physics-2d-lab/src --passWithNoTests",
+    "lint": "oxlint ."
+  },
+  "dependencies": {
+    "@gamekit/event-bus": "workspace:*",
+    "@gamekit/game-runtime": "workspace:*",
+    "@gamekit/physics-core": "workspace:*",
+    "@gamekit/physics-rapier2d": "workspace:*",
+    "@gamekit/world": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5",
+    "vitest": "^3.1.3"
+  }
+}

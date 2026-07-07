@@ -2,7 +2,7 @@
 
 ## 定位
 
-Driver 是外部引擎或外部运行时的一体化集成入口。它统一持有第三方库的 runtime、scene、resource manager、camera、input 和 plugin 句柄，并从同一个外部运行时中派生 GameKit 所需的多个 adapter。
+Driver 是外部引擎或外部运行时的一体化集成入口。它统一持有第三方库的 runtime、scene、resource manager、camera、input、physics plugin 和其他 plugin 句柄，并从同一个外部运行时中派生 GameKit 所需的多个 adapter。
 
 Driver 解决的是“一个外部运行时横跨多个 GameKit 协议时如何统一集成”的问题。它不是 gameplay module，也不是单一协议 adapter。
 
@@ -15,7 +15,7 @@ Driver 解决的是“一个外部运行时横跨多个 GameKit 协议时如何�
 ## 核心原则
 
 - Core protocol 只定义稳定协议，不依赖具体第三方运行时。
-- Adapter 只实现一个稳定协议，例如 renderer、input source、asset loader、camera sync。
+- Adapter 只实现一个稳定协议，例如 renderer、input source、asset loader、camera sync、physics backend。
 - Driver 统一拥有一个第三方运行时，并暴露一组 GameKit adapter。
 - 同一个第三方运行时只能由一个 Driver 实例负责生命周期。
 - 可复用 gameplay module 和 core package 不直接 import Phaser、Three.js 等底层库。
@@ -28,7 +28,7 @@ Driver 解决的是“一个外部运行时横跨多个 GameKit 协议时如何�
 
 ```txt
 Core Protocol
-  定义 GameKit 稳定接口，例如 RendererAdapter、InputSource、AssetLoaderAdapter、RendererCameraAdapter。
+  定义 GameKit 稳定接口，例如 RendererAdapter、InputSource、AssetLoaderAdapter、RendererCameraAdapter、PhysicsBackendAdapter。
 
 Adapter
   把一个 Core Protocol 映射到某个具体后端能力。
@@ -39,7 +39,7 @@ Driver
 
 判断一个集成是否应该成为 Driver：
 
-- 第三方库拥有自己的 game / scene / renderer / loader / input / camera 生命周期。
+- 第三方库拥有自己的 game / scene / renderer / loader / input / camera / physics plugin 生命周期。
 - 多个 GameKit 协议都需要访问同一个底层 runtime。
 - 多个 adapter 独立初始化会导致重复 scene、重复 loader、重复 input listener 或 camera 坐标不一致。
 - 需要统一管理外部 runtime 的 boot、resize、pause、resume、dispose 和 diagnostic snapshot。
@@ -73,7 +73,7 @@ export type GameDriver = {
 
 Driver lifecycle 归 App Host 或 app composition 层管理。GameRuntime 不直接拥有 Driver。
 
-Driver 可以是 App Host service，因为它主要管理应用级外部句柄和平台/窗口生命周期；Driver 暴露出来的 camera controller、TCA、GAS 等 gameplay 行为不能因此变成 App Service。
+Driver 可以是 App Host service，因为它主要管理应用级外部句柄和平台/窗口生命周期；Driver 暴露出来的 camera controller、physics scene、TCA、GAS 等 gameplay 行为不能因此变成 App Service。
 
 ## Driver Adapters
 
@@ -85,6 +85,7 @@ export type DriverAdapterMap = {
   inputSource?: InputSource;
   assetLoader?: AssetLoaderAdapter;
   camera?: RendererCameraAdapter;
+  physics?: unknown;
   uiOverlay?: unknown;
   custom?: Record<string, unknown>;
 };
@@ -103,12 +104,12 @@ Driver 不维护完整后端 API 的 capability catalog。Phaser、Three.js 等�
 
 App Host、DevTools、Editor 和测试夹具只依赖明确的 adapter presence、driver kind、snapshot 和 app profile 选择结果来判断当前组合：
 
-- 是否存在 renderer、inputSource、assetLoader、camera 等 GameKit adapter。
+- 是否存在 renderer、inputSource、assetLoader、camera、physics 等 GameKit adapter。
 - 当前 driver id / kind / lifecycle phase。
-- 当前 app profile 是否选择该 driver 作为标准 renderer、asset、input 或 camera 来源。
+- 当前 app profile 是否选择该 driver 作为标准 renderer、asset、input、camera 或 physics 来源。
 - 后端专属工具是否显式依赖对应 Driver / Adapter 包。
 
-Gameplay rule 不应直接依赖 driver adapter、native runtime 或后端特性做核心判定；玩法能力应通过 Data、TCA、GAS、World 和配置表达。
+Gameplay rule 不应直接依赖 driver adapter、native runtime 或后端特性做核心判定；玩法能力应通过 Data、TCA、GAS、World、Physics module 和配置表达。
 
 ## Phaser Driver
 
@@ -122,6 +123,7 @@ Phaser Driver 统一持有：
 - loader
 - input plugin
 - camera manager
+- physics systems / Matter plugin / Arcade physics world
 - tween / animation / particle runtime objects
 
 Phaser Driver 可以暴露：
@@ -130,20 +132,22 @@ Phaser Driver 可以暴露：
 - AssetLoaderAdapter：把 AssetDefinition 加载到 Phaser texture/cache。
 - InputSource：把 Phaser input 归一化为 NormalizedInputEvent。
 - RendererCameraAdapter：把 CameraState 同步到 Phaser camera。
+- PhysicsBackendAdapter：把 Phaser Arcade / Matter Physics 绑定为 Physics module 可用的 backend adapter。
 - Typed native bridge：供 app presentation、Editor 后端专属面板或 DevTools renderer plugin 直接访问 Phaser Scene、GameObject、texture/cache 等对象。
 
 边界：
 
 - `@gamekit/driver-phaser` 是默认直接依赖 `phaser` 的包。
-- Phaser asset、input、camera adapter 是 `@gamekit/driver-phaser` 的内部 adapter / module，不作为长期独立 package 暴露。
-- `@gamekit/renderer-phaser` 只把 RenderObject 协议映射到 Driver 提供的 Phaser Scene runtime，不创建 `Phaser.Game`，也不从 renderer 内部派生 input、camera 或 asset 能力。
-- `@gamekit/renderer-core`、`@gamekit/input-core`、`@gamekit/camera-core`、`@gamekit/asset` 不依赖 Phaser。
+- Phaser asset、input、camera、physics adapter 是 `@gamekit/driver-phaser` 的内部 adapter / module，不作为长期独立 package 暴露。
+- `@gamekit/renderer-phaser` 只把 RenderObject 协议映射到 Driver 提供的 Phaser Scene runtime，不创建 `Phaser.Game`，也不从 renderer 内部派生 input、camera、physics 或 asset 能力。
+- `@gamekit/renderer-core`、`@gamekit/input-core`、`@gamekit/camera-core`、`@gamekit/physics-core`、`@gamekit/asset` 不依赖 Phaser。
 - CameraController 和 CameraRig 仍属于 GameModule toolkit；Phaser Driver 只提供 camera sync adapter。
+- Physics scene 仍通过 GameModule helper 跟随 GameRuntime lifecycle；Phaser Driver 只提供绑定 Phaser Scene 的 physics backend adapter。
 - Phaser 原生类型只出现在 `@gamekit/driver-phaser`、`@gamekit/renderer-phaser` 或显式选择 Phaser 的 app/tooling 代码中，不进入 renderer-core、Data、Save 或可复用 gameplay module。
 
 ## Three.js Driver
 
-Three.js 也应该按 Driver 集成，而不是让 renderer、asset、input、camera 各自持有 Three 相关句柄。
+Three.js 也应该按 Driver 集成，而不是让 renderer、asset、input、camera 各自持有 Three 相关句柄。Three.js 本身不是物理引擎；3D 物理应通过 `physics-*` backend adapter 接入，再同步到 Three render object。
 
 Three Driver 统一持有：
 
@@ -241,10 +245,10 @@ Driver diagnostic 是低频应用事实，进入 App Host diagnostics 或 DevToo
 
 ### 模块集成
 
-- 只要第三方库同时影响 renderer、asset、input、camera 或 scene lifecycle，就优先建 Driver，而不是散落多个独立 adapter。
+- 只要第三方库同时影响 renderer、asset、input、camera、physics 或 scene lifecycle，就优先建 Driver，而不是散落多个独立 adapter。
 - Driver 是外部 runtime owner：负责 boot、resize、pause/resume、dispose、diagnostics 和 adapter 暴露；Adapter 是协议映射者，不重新创建 runtime。
 - Profile 必须显式选择标准服务使用哪个 driver adapter。多 Driver 并存时不要靠默认顺序或包名猜测。
-- 新增 Three、Pixi、Godot bridge 等 Driver 时，先复用现有 Renderer/Input/Asset/Camera 协议，不够用再通过 ADR 调整协议。
+- 新增 Three、Pixi、Godot bridge 等 Driver 时，先复用现有 Renderer/Input/Asset/Camera/Physics 协议，不够用再通过 ADR 调整协议。
 - 测试 Driver 时优先使用 fake runtime/driver harness 验证 lifecycle、adapter mapping 和 native handle boundary，浏览器或真实 canvas 只用于少量端到端验证。
 
 ### 模块使用
@@ -252,4 +256,4 @@ Driver diagnostic 是低频应用事实，进入 App Host diagnostics 或 DevToo
 - Driver / Adapter 的具体包可以导出 Phaser、Three 等原生类型给 app presentation、Editor 后端专属面板和 DevTools plugin；这些类型不能进入 core facade、Data、Save 或可复用 gameplay module。
 - Driver 的 typed native bridge 应优先暴露真实后端类型；内部测试夹具或 helper 需要结构化目标时，只使用按能力命名的窄 internal target，不维护 `*Like` 形式的后端 shadow API。
 - Driver diagnostics 只发低频事实，例如 runtime phase、adapter map、surface size、asset cache summary；不要把每帧 render patch 或 raw input 打进 diagnostics。
-- 可复用 GameModule 和非表现层业务代码只消费 Driver 派生的 RendererAdapter、AssetLoaderAdapter、InputSource 或 camera sync adapter，不直接拿 Phaser Scene 或 Three Scene 写玩法。
+- 可复用 GameModule 和非表现层业务代码只消费 Driver 派生的 RendererAdapter、AssetLoaderAdapter、InputSource、camera sync adapter 或 physics backend adapter，不直接拿 Phaser Scene 或 Three Scene 写玩法。

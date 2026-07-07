@@ -2,7 +2,7 @@
 
 ## 定位
 
-DevTools 负责可解释性、可观察性和调试工作台。GameKit 越依赖 Data、TCA、GAS、Renderer Adapter、Save Contributor 和 App Host 组合，越需要 DevTools 能回答“为什么发生了这件事”“哪个数据定义驱动了它”“哪个系统改了状态”“后续产生了哪些表现和存档影响”。
+DevTools 负责可解释性、可观察性和调试工作台。GameKit 越依赖 Data、Physics、TCA、GAS、Renderer Adapter、Save Contributor 和 App Host 组合，越需要 DevTools 能回答“为什么发生了这件事”“哪个数据定义驱动了它”“哪个系统改了状态”“后续产生了哪些表现和存档影响”。
 
 相关包：
 
@@ -22,6 +22,7 @@ DevTools 负责可解释性、可观察性和调试工作台。GameKit 越依赖
 - `@gamekit/renderer-core`
 - `@gamekit/input-core`
 - `@gamekit/camera-core`
+- `@gamekit/physics-core`
 - `@gamekit/tca`
 - `@gamekit/gas`
 - `@gamekit/save`
@@ -31,7 +32,7 @@ DevTools 是 App Service / tooling，不是 GameModule，不进入 gameplay loop
 ## 设计目标
 
 - 提供统一 DevToolsRuntime，用于注册数据源、面板、trace buffer、profiler 和 debug commands。
-- 汇总 EventBus、TCA、GAS、Renderer、Asset、Save、App Host、World snapshot 和 GameRuntime system profiler。
+- 汇总 EventBus、TCA、GAS、Physics、Renderer、Asset、Save、App Host、World snapshot 和 GameRuntime system profiler。
 - 通过 trace correlation 展示“输入 → 事件 → 规则 → 能力 → 状态 → 表现 → 存档/诊断”的链路。
 - 支持 headless 测试和 DevTools UI package 两种使用方式。
 - 支持低开销默认模式和显式开启的深度采样模式。
@@ -425,6 +426,7 @@ export type DevToolsDataSource = {
     | "renderer"
     | "input"
     | "camera"
+    | "physics"
     | "tca"
     | "gas"
     | "save"
@@ -455,6 +457,7 @@ export type DevToolsDataSource = {
 - Renderer：object count、types、escaped handles、adapter capabilities。
 - Input：active scope、contexts、recent actions、held actions。
 - Camera：camera state、mode、target/follow summary、sync status。
+- Physics：scene summary、body/collider count、contact enter/exit、query summary、backend kind。
 - TCA：rules、trace entries、condition/action result。
 - GAS：actors、abilities、effects、tags、trace entries。
 - Save：slots、last operation、diagnostics、compatibility issue。
@@ -476,6 +479,7 @@ export type DevToolsTraceEntry = {
     | "renderer"
     | "asset"
     | "camera"
+    | "physics"
     | "save"
     | "runtime"
     | "host"
@@ -514,6 +518,7 @@ input.action
 → action executed
 → GAS ability/effect
 → World component state change
+→ Physics contact/query
 → Renderer command / diagnostic
 → UI cue / timeline
 → Save diagnostic where relevant
@@ -523,7 +528,7 @@ Correlation 优先使用显式 `correlationId`。没有显式 id 时，可以按
 
 ## Performance Profiler
 
-Performance Profiler 用于回答 GameKit 层面的“慢在哪里”，而不是做完整 JavaScript CPU profiler。它关注 frame、GameRuntime system、App Host service lifecycle、renderer sync、asset loading、driver boot 和 UI/DevTools 自身刷新成本。
+Performance Profiler 用于回答 GameKit 层面的“慢在哪里”，而不是做完整 JavaScript CPU profiler。它关注 frame、GameRuntime system、App Host service lifecycle、physics step/query、renderer sync、asset loading、driver boot 和 UI/DevTools 自身刷新成本。
 
 核心模型：
 
@@ -629,6 +634,7 @@ Profiler 规则：
 - GameRuntime：tick total、每个 system duration、system order、module id、stop 后无采样。
 - App Host：service boot/start/stop/dispose duration、service dependency waterfall、失败 phase。
 - Renderer / Driver：boot、resize、render sync、object create/update/destroy 聚合计数、adapter command duration。
+- Physics：fixed step、World sync、body/collider create/update/destroy、query cost、contact processing duration。
 - Asset：register、load、load group、failed load duration 和状态。
 - Input：每帧 held action flush 数量、scope/context 切换低频 span。
 - UI / DevTools：snapshot refresh、panel render、launcher/shell mount duration。
@@ -655,7 +661,7 @@ Core 只定义 panel metadata 和数据源关系；`@gamekit/devtools-ui` 提供
 
 - Host Services：App Host phase、services、dependencies、diagnostics。
 - Event Log：EventBus recent events、source、timestamp、payload summary。
-- Trace Timeline：合并 input/event/TCA/GAS/renderer/save/runtime trace。
+- Trace Timeline：合并 input/event/TCA/GAS/physics/renderer/save/runtime trace。
 - TCA Trace：rule match、condition pass/fail、action result、派生 event。
 - GAS Inspector：actor、attributes、tags、abilities、effects、cue。
 - Entity / Component Inspector：entity、component summary、selected entity detail。
@@ -663,8 +669,9 @@ Core 只定义 panel metadata 和数据源关系；`@gamekit/devtools-ui` 提供
 - Asset Inspector：asset id、type、group、source、load state、errors、引用来源。
 - Renderer Inspector：render object count、type distribution、escaped/native/direct path、capabilities。
 - Input / Camera Inspector：active scope/context、recent action、held action、camera state、follow target。
+- Physics Inspector：scene、body/collider summary、contact trace、query cost、backend diagnostics。
 - Save Inspector：slots、last operation、compatibility、contributor diagnostics。
-- Performance：frame trend、system table、service waterfall、asset/renderer hot spots、budget warnings。
+- Performance：frame trend、system table、service waterfall、asset/renderer/physics hot spots、budget warnings。
 
 这些面板是调试视图，不是 gameplay UI。游戏 UI 可以复用某些组件，但不能让 DevTools 面板状态成为游戏状态来源。
 
@@ -679,6 +686,7 @@ Inspector detail 应通过数据源查询或 snapshot selector 获取，不在 t
 - Data document → source pack、referencesFrom、referencesTo、validation issues。
 - Asset → definition、load state、source、referencedBy。
 - Render object → definition id、object type、node tree summary、adapter state summary。
+- Physics body / collider → entity binding、definition id、shape/material/filter summary、last transform、backend diagnostic summary。
 - Save slot → envelope metadata、sections、compatibility、diagnostics。
 
 Detail 查询必须可失败并返回 diagnostic。DevTools UI 不能因为某个 detail query 失败而崩溃整个面板。
@@ -853,4 +861,4 @@ DevTools diagnostic 至少包含：
 - App Host devtools service lifecycle。
 - DevTools UI launcher 打开 shell。
 - UI focus scope 阻断 gameplay input。
-- Sandbox 或 headless fixture 能展示至少 EventBus、TCA、GAS、Renderer、Save、Host service 的合并链路。
+- Sandbox 或 headless fixture 能展示至少 EventBus、Physics、TCA、GAS、Renderer、Save、Host service 的合并链路。

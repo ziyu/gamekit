@@ -1,0 +1,231 @@
+:root {
+  color: #eef3e9;
+  background: #101411;
+  font-family:
+    "Aptos Narrow", "Avenir Next Condensed", "Bahnschrift Condensed", "Arial Narrow", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    linear-gradient(90deg, rgba(226, 237, 221, 0.055) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(226, 237, 221, 0.04) 1px, transparent 1px), #101411;
+  background-size:
+    34px 34px,
+    34px 34px,
+    auto;
+}
+
+button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid #4f5c52;
+  border-radius: 5px;
+  color: #edf4e9;
+  background: #20281f;
+  font: inherit;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button:hover,
+button:focus-visible {
+  border-color: #8fd48a;
+  outline: none;
+}
+
+button.is-active {
+  border-color: #e0c15f;
+  color: #15170f;
+  background: #e0c15f;
+}
+
+pre {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.physics-2d-lab {
+  min-height: 100vh;
+}
+
+.physics-2d-lab__shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
+  min-height: 100vh;
+}
+
+.physics-2d-lab__stage {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  border-right: 1px solid #384139;
+  background: #0f1310;
+}
+
+.physics-2d-lab__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+}
+
+.physics-2d-lab__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  min-height: 100vh;
+  max-height: 100vh;
+  padding: 17px;
+  overflow: auto;
+  background: #171d18;
+}
+
+.physics-2d-lab__header {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #404b42;
+}
+
+.physics-2d-lab__eyebrow {
+  margin: 0;
+  color: #a1afa3;
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.physics-2d-lab__title {
+  margin: 0;
+  color: #f3f7ef;
+  font-size: 2.35rem;
+  font-weight: 850;
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.physics-2d-lab__status {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.physics-2d-lab__status-tile {
+  display: grid;
+  gap: 5px;
+  min-height: 59px;
+  padding: 8px;
+  border: 1px solid #3c473f;
+  border-radius: 5px;
+  background: #20281f;
+}
+
+.physics-2d-lab__status-tile span {
+  color: #9eaca1;
+  font-size: 0.68rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.physics-2d-lab__status-tile strong {
+  overflow-wrap: anywhere;
+  color: #f0f5eb;
+  font-size: 0.95rem;
+  font-weight: 850;
+}
+
+.physics-2d-lab__control-group,
+.physics-2d-lab__section {
+  display: grid;
+  gap: 8px;
+}
+
+.physics-2d-lab__control-group h2,
+.physics-2d-lab__section h2 {
+  margin: 0;
+  color: #b9c8bc;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.physics-2d-lab__segmented,
+.physics-2d-lab__transport {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.physics-2d-lab__transport {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.physics-2d-lab__diagnostics {
+  display: grid;
+  gap: 6px;
+  min-height: 78px;
+  max-height: 150px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.physics-2d-lab__diagnostics li {
+  padding: 7px 8px;
+  border: 1px solid #3b463e;
+  border-radius: 5px;
+  color: #dce6d9;
+  background: #20281f;
+  font-size: 0.84rem;
+}
+
+.physics-2d-lab__snapshot,
+.physics-2d-lab__boot-error {
+  max-height: 330px;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid #39443c;
+  border-radius: 5px;
+  color: #dfe8dc;
+  background: #111611;
+  font-family: "SFMono-Regular", "Menlo", monospace;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.physics-2d-lab__boot-error {
+  margin: 20px;
+}
+
+@media (max-width: 920px) {
+  .physics-2d-lab__shell {
+    grid-template-columns: 1fr;
+  }
+
+  .physics-2d-lab__stage {
+    min-height: 56vh;
+    border-right: 0;
+    border-bottom: 1px solid #384139;
+  }
+
+  .physics-2d-lab__canvas {
+    min-height: 56vh;
+  }
+
+  .physics-2d-lab__panel {
+    min-height: auto;
+    max-height: none;
+  }
+}

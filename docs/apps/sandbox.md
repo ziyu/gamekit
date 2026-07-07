@@ -6,7 +6,7 @@
 
 ## 定位
 
-Sandbox 是 GameKit 的框架验证面，用来证明 App Host、Data、Asset、Renderer、Input、Camera、TCA、GAS、EventBus、World 和 GameRuntime 能在一个可观察、可交互的场景里协同工作。
+Sandbox 是 GameKit 的框架验证面，用来证明 App Host、Data、Asset、Renderer、Input、Camera、Physics、TCA、GAS、EventBus、World 和 GameRuntime 能在一个可观察、可交互的场景里协同工作。
 
 Sandbox 不是长期玩法仓库，也不是 DevTools 的替代品。它可以像一个小 demo 游戏一样运行，但其目标是解释框架能力，而不是沉淀一套真实游戏内容生产线。
 
@@ -125,7 +125,7 @@ Sandbox 需要展示 Data 和 Asset 的价值，而不是只展示它们的注�
 - 主要对象必须有明确角色、状态和行为，不使用一组同质小球代表全部实体。
 - 每类对象必须使用不同的复合 RenderObject，包含多层节点、状态条、任务标记、范围、路线或特效。
 - 关键状态变化必须有场景内表现，例如资源增长、搬运、建造进度、受击、维修、燃烧、冷却、升级完成。
-- Input、TCA、GAS、Data、Asset、Renderer、World 的协作必须在舞台上能被感知，再由 Inspector 和 Timeline 补充解释。
+- Input、Physics、TCA、GAS、Data、Asset、Renderer、World 的协作必须在舞台上能被感知，再由 Inspector 和 Timeline 补充解释。
 - 舞台上必须有路线、流向、任务状态和威胁区域，避免对象只在原地闪烁或简单漂移。
 - 复合 RenderObject 应表达“结构”和“状态”：基础形体、状态条、任务 glyph、资源携带层、受击层、cue 层分开更新。
 - Sandbox game module 不直接依赖 Phaser、Koota 或 DOM；具体后端仍通过 Driver、Adapter 和 App Host 注入。
@@ -321,7 +321,7 @@ Inspector 应围绕“当前选中对象”组织，而不是围绕模块平铺�
 - Rules：最近命中的 TCA rules、失败 condition、产生的 actions。
 - Effects：GAS ability/effect/cue、持续时间和属性变化。
 
-Timeline 应突出链路而不是普通日志堆积。一次玩家 confirm、一次 monster attack 或一次 recipe completed 应能串起 input、event、TCA、GAS、world state、renderer cue。
+Timeline 应突出链路而不是普通日志堆积。一次玩家 confirm、一次 monster attack 或一次 recipe completed 应能串起 input、event、physics contact/query、TCA、GAS、world state、renderer cue。
 
 ## Snapshot 要求
 
@@ -334,6 +334,7 @@ Sandbox snapshot 应能支持 headless 测试和 UI 渲染。
 - scene entities、roles、position、task、storage、route。
 - resource、construction、combat、threat 和 wave 状态。
 - GAS actor state、attributes、tags、effects。
+- Physics body/collider summary、contact fact 和 query summary。
 - DataPack、DataType、document、reference summary。
 - Asset registered / loaded / failed summary。
 - module summary 和 host service summary。
@@ -341,7 +342,7 @@ Sandbox snapshot 应能支持 headless 测试和 UI 渲染。
 
 ## 长链路测试要求
 
-Sandbox 必须有一套长期维护的长链路集成测试，用来证明 Tiny Camp 不是“页面上有东西”，而是 App Host、Data、Asset、GameRuntime、World、TCA、GAS、Renderer、Input、Camera、EventBus 和 Snapshot 真的在协同运行。
+Sandbox 必须有一套长期维护的长链路集成测试，用来证明 Tiny Camp 不是“页面上有东西”，而是 App Host、Data、Asset、GameRuntime、World、Physics、TCA、GAS、Renderer、Input、Camera、EventBus 和 Snapshot 真的在协同运行。
 
 长链路测试不是替代模块单元测试，也不是像素级视觉回归测试。它的职责是验证 Sandbox 作为框架验证面的完整机制链路：
 
@@ -389,7 +390,7 @@ Sandbox 必须有一套长期维护的长链路集成测试，用来证明 Tiny 
 
 ### 模块集成
 
-- Sandbox 首要任务是验证框架协作链路，不是沉淀可复用玩法。复杂 demo 逻辑只能服务于 App Host、Data、Asset、Renderer、Input、Camera、TCA、GAS、Save 和 UI 的端到端说明。
+- Sandbox 首要任务是验证框架协作链路，不是沉淀可复用玩法。复杂 demo 逻辑只能服务于 App Host、Data、Asset、Renderer、Input、Camera、Physics、TCA、GAS、Save 和 UI 的端到端说明。
 - Sandbox app shell 负责把 App Host、Driver、Renderer、Input、UI、Save 和标准 GameModule helper 组装起来；Sandbox game module 不直接 import Phaser、Koota、DOM 或 React internal。
 - Sandbox 长链路测试应优先覆盖“模块是否协作”：内容引用、资源加载、自动循环、TCA/GAS 链路、选择/镜头、save/load、diagnostics/timeline。
 - 浏览器手动验收关注第一屏信息层级、game viewport scope、camera 坐标转换、可点击对象、Save/Load 本地恢复和 console error；不要以视觉花活替代协议验证。
