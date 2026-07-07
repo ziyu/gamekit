@@ -303,6 +303,17 @@ export type PhysicsQueries = {
     direction: PhysicsVector,
     options?: PhysicsQueryOptions & { maxDistance?: number }
   ): PhysicsQueryResult[];
+  shapeCast(
+    shape: PhysicsShapeDefinition,
+    position: PhysicsVector,
+    direction: PhysicsVector,
+    options?: PhysicsQueryOptions & {
+      maxDistance?: number;
+      rotation?: PhysicsRotation;
+      stopAtPenetration?: boolean;
+      targetDistance?: number;
+    }
+  ): PhysicsQueryResult[];
   overlapShape(
     shape: PhysicsShapeDefinition,
     position: PhysicsVector,
@@ -313,6 +324,8 @@ export type PhysicsQueries = {
     position: PhysicsVector,
     options?: PhysicsQueryOptions & { rotation?: PhysicsRotation }
   ): boolean;
+  checkCollision(colliderId: PhysicsColliderId, options?: PhysicsQueryOptions): boolean;
+  queryBounds(bounds: PhysicsBounds, options?: PhysicsQueryOptions): PhysicsQueryResult[];
   snapshot(): PhysicsSceneSnapshot;
 };
 

@@ -307,6 +307,44 @@ export type PhysicsScene<TNative = unknown> = {
   dispose(): void;
 };
 
+export type PhysicsQueries = {
+  query(query: PhysicsQuery): PhysicsQueryResult[];
+  queryPoint(point: PhysicsVector, options?: PhysicsQueryOptions): PhysicsQueryResult[];
+  raycast(
+    origin: PhysicsVector,
+    direction: PhysicsVector,
+    options?: PhysicsQueryOptions & { maxDistance?: number; solid?: boolean }
+  ): PhysicsQueryResult[];
+  shapeCast(
+    shape: PhysicsShapeDefinition,
+    position: PhysicsVector,
+    direction: PhysicsVector,
+    options?: PhysicsQueryOptions & {
+      maxDistance?: number;
+      rotation?: PhysicsRotation;
+      stopAtPenetration?: boolean;
+      targetDistance?: number;
+    }
+  ): PhysicsQueryResult[];
+  overlapShape(
+    shape: PhysicsShapeDefinition,
+    position: PhysicsVector,
+    options?: PhysicsQueryOptions & { rotation?: PhysicsRotation }
+  ): PhysicsQueryResult[];
+  checkOverlap(
+    shape: PhysicsShapeDefinition,
+    position: PhysicsVector,
+    options?: PhysicsQueryOptions & { rotation?: PhysicsRotation }
+  ): boolean;
+  checkCollision(colliderId: PhysicsColliderId, options?: PhysicsQueryOptions): boolean;
+  queryBounds(bounds: PhysicsBounds, options?: PhysicsQueryOptions): PhysicsQueryResult[];
+  snapshot(): PhysicsSceneSnapshot;
+};
+
+export type PhysicsHandle = PhysicsQueries & {
+  isBound(): boolean;
+};
+
 export type PhysicsBodyData = PhysicsBodyDefinition & {
   colliders?: Array<DataRef<"physics.collider">>;
   tags?: string[];
