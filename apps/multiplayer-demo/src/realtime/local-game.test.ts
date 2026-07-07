@@ -20,4 +20,16 @@ describe("realtime local game", () => {
     const endX = game.state.players.find((player) => player.id === playerId)?.position.x;
     expect(endX).toBeGreaterThan(startX ?? 0);
   });
+
+  it("keeps the configured player name in local offline practice", () => {
+    const game = createRealtimeLocalGame({ playerName: "Pilot" });
+
+    expect(game.state.players[0]?.label).toBe("Pilot");
+    expect(game.setPlayerName("Pilot Prime").accepted).toBe(true);
+    expect(game.state.players[0]?.label).toBe("Pilot Prime");
+
+    game.reset();
+
+    expect(game.state.players[0]?.label).toBe("Pilot Prime");
+  });
 });

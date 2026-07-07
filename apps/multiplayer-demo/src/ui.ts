@@ -56,6 +56,7 @@ export type MultiplayerDemoUi = {
   rejected: HTMLElement;
   timeline: HTMLElement;
   messages: HTMLElement;
+  playerNameInput: HTMLInputElement;
   roomInput: HTMLInputElement;
   hostButton: HTMLButtonElement;
   connectButton: HTMLButtonElement;
@@ -109,6 +110,7 @@ export function renderMultiplayerDemoShell(root: HTMLElement): MultiplayerDemoUi
   );
 
   const controls = createElement("section", "multiplayer-demo__controls");
+  const playerNameInput = createPlayerNameInput();
   const roomInput = createRoomInput();
   const hostButton = createButton("Host & Join");
   const connectButton = createButton("Join", "multiplayer-demo__primary");
@@ -117,7 +119,12 @@ export function renderMultiplayerDemoShell(root: HTMLElement): MultiplayerDemoUi
 
   controls.replaceChildren(
     createElement("h2", "multiplayer-demo__section-title", "Room"),
-    createRoomControls(roomInput, [hostButton, connectButton, disconnectButton, resetButton])
+    createRoomControls(playerNameInput, roomInput, [
+      hostButton,
+      connectButton,
+      disconnectButton,
+      resetButton
+    ])
   );
 
   const timeline = createElement("ol", "multiplayer-demo__timeline");
@@ -151,6 +158,7 @@ export function renderMultiplayerDemoShell(root: HTMLElement): MultiplayerDemoUi
     rejected: rejected.value,
     timeline,
     messages,
+    playerNameInput,
     roomInput,
     hostButton,
     connectButton,
@@ -275,7 +283,7 @@ export function renderRealtimeArenaUi(
   ui.arenaPlayer.textContent =
     localPlayer === undefined
       ? "none"
-      : `${localPlayer.teamId} / ${localPlayer.carryingCoreId ?? "empty"} / ${localPlayer.deliveredCores}`;
+      : `${localPlayer.label} / ${localPlayer.teamId} / ${localPlayer.carryingCoreId ?? "empty"} / ${localPlayer.deliveredCores}`;
   ui.arenaInput.textContent = `${diagnostics.inputSequence} / ${diagnostics.inputSendRate}hz / ${diagnostics.serverTickRate}tps`;
   ui.arenaHint.textContent = arenaHint(state, diagnostics);
 
@@ -508,18 +516,35 @@ function createHudMetric(label: string): { root: HTMLElement; value: HTMLElement
 }
 
 function createRoomControls(
+  playerNameInput: HTMLInputElement,
   roomInput: HTMLInputElement,
   buttons: HTMLButtonElement[]
 ): HTMLElement {
   const group = createElement("div", "multiplayer-demo__room-controls");
+  const playerLabel = document.createElement("label");
+  playerLabel.className = "multiplayer-demo__room-label";
+  playerLabel.htmlFor = playerNameInput.id;
+  playerLabel.textContent = "Player";
   const label = document.createElement("label");
   label.className = "multiplayer-demo__room-label";
   label.htmlFor = roomInput.id;
   label.textContent = "Room";
   const buttonRow = createElement("div", "multiplayer-demo__room-buttons");
   buttonRow.replaceChildren(...buttons);
-  group.replaceChildren(label, roomInput, buttonRow);
+  group.replaceChildren(playerLabel, playerNameInput, label, roomInput, buttonRow);
   return group;
+}
+
+function createPlayerNameInput(): HTMLInputElement {
+  const input = document.createElement("input");
+  input.id = "multiplayer-demo-player-name";
+  input.className = "multiplayer-demo__room-input";
+  input.type = "text";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.maxLength = 18;
+  input.placeholder = "Runner";
+  return input;
 }
 
 function createRoomInput(): HTMLInputElement {

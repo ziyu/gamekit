@@ -1,5 +1,6 @@
 import {
   addInitialPlayer,
+  assignRealtimeArenaPlayerLabel,
   resetRealtimeArenaPieces,
   resetRealtimeArenaPlayerRuntime,
   resetRoundPieces
@@ -69,6 +70,30 @@ export function setRealtimeArenaPlayerReady(
     teamId: player.teamId,
     label: `${player.label} ${ready ? "ready" : "not ready"}`
   });
+  return ACCEPTED;
+}
+
+export function setRealtimeArenaPlayerName(
+  state: RealtimeArenaState,
+  playerId: string,
+  name: string
+): RealtimeArenaActionResult {
+  const player = findPlayer(state, playerId);
+  if (!player) {
+    return reject("unknown-player", `Unknown player: ${playerId}`);
+  }
+
+  const previousLabel = player.label;
+  const nextLabel = assignRealtimeArenaPlayerLabel(state, player, name);
+  if (nextLabel !== previousLabel) {
+    recordRealtimeArenaEvent(state, {
+      type: "player.name",
+      playerId,
+      teamId: player.teamId,
+      label: `${previousLabel} is now ${nextLabel}`
+    });
+  }
+
   return ACCEPTED;
 }
 

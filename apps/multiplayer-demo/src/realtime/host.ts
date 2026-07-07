@@ -13,6 +13,7 @@ import {
   joinRealtimeArenaPlayer,
   rematchRealtimeArena,
   removeRealtimeArenaPlayer,
+  setRealtimeArenaPlayerName,
   setRealtimeArenaPlayerReady,
   startRealtimeArenaCountdown,
   tickRealtimeArena,
@@ -165,6 +166,10 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
     }
 
     switch (action.type) {
+      case "set-name":
+        diagnostics.lastAction = setRealtimeArenaPlayerName(state, playerId, action.name);
+        updateConnectedPeerDisplayName(peerId, findPlayerLabel(playerId));
+        break;
       case "ready":
         diagnostics.lastAction = setRealtimeArenaPlayerReady(state, playerId, action.ready);
         break;
@@ -209,7 +214,18 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
       return undefined;
     }
 
-    connectedPeers.set(peer.id, clonePeer(peer, "connected"));
+    const currentPeer = connectedPeers.get(peer.id);
+    const trackedDisplayName =
+      currentPeer !== undefined && isActivePeer(currentPeer) ? currentPeer.displayName : undefined;
+    const nextDisplayName = trackedDisplayName ?? peer.displayName;
+    const trackedPeer = clonePeer(
+      {
+        ...peer,
+        ...(nextDisplayName === undefined ? {} : { displayName: nextDisplayName })
+      },
+      "connected"
+    );
+    connectedPeers.set(peer.id, trackedPeer);
     const mappedPlayerId = playerIdsByPeerId.get(peer.id);
     const mappedPlayer =
       mappedPlayerId === undefined
@@ -217,14 +233,12 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
         : state.players.find((player) => player.id === mappedPlayerId);
     if (mappedPlayer) {
       mappedPlayer.connected = true;
-      mappedPlayer.label = peer.displayName ?? mappedPlayer.label;
       return mappedPlayer.id;
     }
 
     const directPlayer = state.players.find((player) => player.id === peer.id);
     if (directPlayer) {
       directPlayer.connected = true;
-      directPlayer.label = peer.displayName ?? directPlayer.label;
       playerIdsByPeerId.set(peer.id, directPlayer.id);
       return directPlayer.id;
     }
@@ -236,7 +250,7 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
     const playerId = peer.playerId ?? peer.id;
     const result = joinRealtimeArenaPlayer(state, {
       id: playerId,
-      label: peer.displayName ?? playerId
+      label: trackedPeer.displayName ?? playerId
     });
     diagnostics.lastAction = result;
     if (!result.accepted) {
@@ -245,6 +259,22 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
 
     playerIdsByPeerId.set(peer.id, playerId);
     return playerId;
+  }
+
+  function updateConnectedPeerDisplayName(peerId: string, label: string | undefined): void {
+    const current = connectedPeers.get(peerId);
+    if (!current || label === undefined) {
+      return;
+    }
+
+    connectedPeers.set(peerId, {
+      ...current,
+      displayName: label
+    });
+  }
+
+  function findPlayerLabel(playerId: string): string | undefined {
+    return state.players.find((player) => player.id === playerId)?.label;
   }
 
   function markPeerLeft(peerId: string): void {

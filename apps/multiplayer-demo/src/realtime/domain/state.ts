@@ -13,6 +13,9 @@ import type {
   RealtimeArenaWall
 } from "./types";
 
+export const DEFAULT_REALTIME_ARENA_PLAYER_LABEL = "Runner";
+const MAX_REALTIME_ARENA_PLAYER_LABEL_LENGTH = 18;
+
 export const DEFAULT_REALTIME_ARENA_RULES: RealtimeArenaRules = {
   countdownMs: 3000,
   roundDurationMs: 90000,
@@ -175,9 +178,10 @@ export function addInitialPlayer(
   const slot = nextAvailablePlayerSlot(state);
   const teamId = input.teamId ?? inferTeamForSlot(slot);
   const spawn = cloneVector(state.spawnPoints[teamId] ?? fallbackSpawn(state, slot));
+  const label = createUniqueRealtimeArenaPlayerLabel(state, input.label ?? input.id);
   const player: RealtimeArenaPlayer = {
     id: input.id,
-    label: input.label ?? input.id,
+    label,
     teamId,
     slot,
     ready: false,
@@ -196,6 +200,18 @@ export function addInitialPlayer(
   state.players.push(player);
   state.score[teamId] ??= 0;
   return player;
+}
+
+export function assignRealtimeArenaPlayerLabel(
+  state: RealtimeArenaState,
+  player: RealtimeArenaPlayer,
+  preferredLabel: string
+): string {
+  const label = createUniqueRealtimeArenaPlayerLabel(state, preferredLabel, {
+    excludePlayerId: player.id
+  });
+  player.label = label;
+  return label;
 }
 
 export function resetRealtimeArenaPlayerRuntime(player: RealtimeArenaPlayer): void {
@@ -311,4 +327,53 @@ function fallbackSpawn(state: RealtimeArenaState, slot: number): RealtimeArenaVe
     x: Math.min(state.bounds.width - 32, 32 + offset),
     y: Math.min(state.bounds.height - 32, 32 + offset)
   };
+}
+
+export function normalizeRealtimeArenaPlayerLabel(
+  value: unknown,
+  fallback = DEFAULT_REALTIME_ARENA_PLAYER_LABEL
+): string {
+  const text = typeof value === "string" ? value : "";
+  const compact = text.replace(/\s+/g, " ").trim();
+  const base = compact.length > 0 ? compact : fallback;
+  const trimmed = base.slice(0, MAX_REALTIME_ARENA_PLAYER_LABEL_LENGTH).trim();
+  return trimmed.length > 0 ? trimmed : DEFAULT_REALTIME_ARENA_PLAYER_LABEL;
+}
+
+export function createUniqueRealtimeArenaPlayerLabel(
+  state: RealtimeArenaState,
+  preferredLabel: string,
+  options: { excludePlayerId?: string } = {}
+): string {
+  const base = normalizeRealtimeArenaPlayerLabel(preferredLabel);
+  const usedLabels = new Set(
+    state.players
+      .filter((player) => player.id !== options.excludePlayerId)
+      .map((player) => labelKey(player.label))
+  );
+
+  if (!usedLabels.has(labelKey(base))) {
+    return base;
+  }
+
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const candidate = labelWithSuffix(base, suffix);
+    if (!usedLabels.has(labelKey(candidate))) {
+      return candidate;
+    }
+  }
+
+  return labelWithSuffix(base, Date.now() % 1000);
+}
+
+function labelWithSuffix(base: string, suffix: number): string {
+  const suffixText = ` ${suffix}`;
+  const root = base
+    .slice(0, Math.max(1, MAX_REALTIME_ARENA_PLAYER_LABEL_LENGTH - suffixText.length))
+    .trim();
+  return `${root || DEFAULT_REALTIME_ARENA_PLAYER_LABEL}${suffixText}`;
+}
+
+function labelKey(label: string): string {
+  return normalizeRealtimeArenaPlayerLabel(label).toLocaleLowerCase();
 }

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   applyRealtimeInputFrame,
   createRealtimeArenaState,
+  joinRealtimeArenaPlayer,
   rematchRealtimeArena,
   removeRealtimeArenaPlayer,
+  setRealtimeArenaPlayerName,
   setRealtimeArenaPlayerReady,
   startRealtimeArenaCountdown,
   tickRealtimeArena,
@@ -209,6 +211,20 @@ describe("realtime arena domain", () => {
       type: "player.left",
       playerId: "runner"
     });
+  });
+
+  it("assigns unique player labels when requested names collide", () => {
+    const state = createRealtimeArenaState();
+
+    expectAccepted(joinRealtimeArenaPlayer(state, { id: "player-a", label: "Runner" }));
+    expectAccepted(joinRealtimeArenaPlayer(state, { id: "player-b", label: "Runner" }));
+    expect(state.players.map((player) => player.label)).toEqual(["Runner", "Runner 2"]);
+
+    expectAccepted(setRealtimeArenaPlayerName(state, "player-b", "Runner"));
+    expect(getPlayer(state, "player-b").label).toBe("Runner 2");
+
+    expectAccepted(setRealtimeArenaPlayerName(state, "player-a", "   "));
+    expect(getPlayer(state, "player-a").label).toBe("Runner");
   });
 });
 

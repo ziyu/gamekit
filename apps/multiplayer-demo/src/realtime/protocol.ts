@@ -12,6 +12,7 @@ export const REALTIME_ARENA_INPUT_KIND = MULTIPLAYER_INPUT_KIND;
 export const REALTIME_ARENA_SNAPSHOT_KIND = MULTIPLAYER_SNAPSHOT_KIND;
 
 export type RealtimeArenaNetworkAction =
+  | { type: "set-name"; name: string }
   | { type: "ready"; ready: boolean }
   | { type: "start" }
   | { type: "rematch" }
@@ -33,6 +34,8 @@ export function isRealtimeArenaNetworkAction(value: unknown): value is RealtimeA
   }
 
   switch (value.type) {
+    case "set-name":
+      return typeof value.name === "string";
     case "ready":
       return typeof value.ready === "boolean";
     case "start":

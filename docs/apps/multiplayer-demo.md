@@ -10,11 +10,12 @@ Multiplayer Demo 是 `@gamekit/multiplayer-core` 与 `@gamekit/multiplayer-colys
 
 - 主体验是可玩的俯视角实时 arena，而不是纯网络控制台；玩家能从 room/lobby 进入一局、游玩、结束、查看结果并 rematch。
 - 游戏主舞台占据首屏主要面积；Room 控制、网络 diagnostics、event feed 和 client messages 只能作为紧凑侧栏或辅助区域存在，不能挤压或打断主舞台操作。
-- Room 控制区允许输入 GameKit session id，并显式执行 `Host & Join`、`Join`、`Leave` 和 `Reset`；`Host & Join` 只能创建当前窗口拥有的 server-side room，或取回同一窗口已经拥有的 host session，成功后必须立即把当前浏览器作为 client 加入，host/join lifecycle 不由 gameplay input 隐式触发。
+- Room 控制区允许输入 GameKit session id 和 player name，并显式执行 `Host & Join`、`Join`、`Leave` 和 `Reset`；`Host & Join` 只能创建当前窗口拥有的 server-side room，或取回同一窗口已经拥有的 host session，成功后必须立即把当前浏览器作为 client 加入，host/join lifecycle 不由 gameplay input 隐式触发。
 - Browser UI 必须显式显示当前窗口身份：`local offline`、`host`、`client`、`host / not joined` 或 `not joined`。按钮权限必须从这个身份派生，不能只根据是否有 session id 或 peer count 判断。
 - `host / not joined` 再次 Join 必须恢复当前窗口的 host 控制身份；不能因为它通过 browser client facade 重新连入，就把原 host 降级成普通 client。
-- Lobby / results overlay 展示玩家 slot、ready 状态、start 权限、countdown、winner、scoreboard、rematch 和 return lobby。
-- Running 视图展示玩家、目标物、relay node、危险区、score、round timer 和本地/远端 player state。
+- Player name 是 lobby / arena authoritative state 的一部分；client 可以提交期望名字，但 host authority 必须清洗并去重最终显示名，默认名字也不能在同一 session 内重复。
+- Lobby / results overlay 展示玩家名字、slot、ready 状态、start 权限、countdown、winner、scoreboard、rematch 和 return lobby。
+- Running 视图展示玩家名字、目标物、relay node、危险区、score、round timer 和本地/远端 player state。
 - Diagnostics 面板展示 Colyseus backend、GameKit session、active/tracked peer count、sent/received、rtt、snapshot age、input sequence、server tick、accepted/rejected input 和 authority event feed。
 - 旧 loopback console 的 select / confirm / strategy / priority 控件不属于长期 realtime game demo 体验；这些低频 command 验证只能保留在测试夹具或后台 bridge 验证中，不能成为浏览器主界面。
 - 本地 dev server 同时启动 Vite UI、Colyseus server，并按 session id 管理 host GameRuntime / arena lifecycle；浏览器 client 通过 Colyseus 加入选中的 GameKit session。
@@ -46,6 +47,7 @@ Multiplayer Demo 是 `@gamekit/multiplayer-core` 与 `@gamekit/multiplayer-colys
 - Host close、client leave、同名 session recreate 是三条不同 lifecycle；demo e2e 必须分别覆盖，不能只用 peer count 或按钮状态间接证明。
 - Colyseus server helper 只出现在 server/dev harness 和测试夹具中，不能进入 browser UI 的公共边界。
 - Host authority 必须把 remote input / command payload 当作不可信输入，先 decode/schema check、round state gate 和 authority validation，再应用到 demo state。
+- Host authority 负责 player name 的最终归一化和去重；Browser UI 只能把输入框里的名字当作期望值，不能绕过 snapshot 自行断定最终显示名。
 - Browser UI 不能把 active peer count 当成 arena 已同步的证明；必须基于 authority binding 和 host snapshot 决定联网 gameplay state。
 - Browser UI 不能根据 backend lane 分叉 gameplay 规则；无论使用 `gamekit-envelope` 还是 provider-native state sync，都必须经过同一 round lifecycle、input/action contract、authority diagnostics 和 snapshot/view-model rendering。
 - Offline / local practice 不能成为另一套玩法实现；它必须和多人模式共享 action、input、simulation、round lifecycle、snapshot rendering 和 diagnostics，只把 delivery 从 remote backend 换成本地 in-process authority。

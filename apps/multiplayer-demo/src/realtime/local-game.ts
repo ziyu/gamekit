@@ -7,6 +7,7 @@ import {
   applyRealtimeInputFrame,
   captureRealtimeArenaSnapshot,
   rematchRealtimeArena,
+  setRealtimeArenaPlayerName,
   setRealtimeArenaPlayerReady,
   startRealtimeArenaCountdown,
   tickRealtimeArena,
@@ -41,6 +42,7 @@ export type RealtimeLocalGame = {
   readonly localPlayerId: string;
   readonly diagnostics: RealtimeLocalGameDiagnostics;
   setReady(ready: boolean): RealtimeArenaActionResult;
+  setPlayerName(name: string): RealtimeArenaActionResult;
   startRound(): RealtimeArenaActionResult;
   rematch(): RealtimeArenaActionResult;
   reset(): void;
@@ -52,13 +54,19 @@ export type RealtimeLocalGame = {
 };
 
 type RealtimeLocalGameAction =
+  | { type: "set-name"; name: string }
   | { type: "ready"; ready: boolean }
   | { type: "start" }
   | { type: "rematch" }
   | { type: "reset" };
 
-export function createRealtimeLocalGame(): RealtimeLocalGame {
-  let state = createPracticeState();
+export type RealtimeLocalGameOptions = {
+  playerName?: string;
+};
+
+export function createRealtimeLocalGame(options: RealtimeLocalGameOptions = {}): RealtimeLocalGame {
+  let localPlayerName = options.playerName;
+  let state = createPracticeState(localPlayerName);
   const input = createRealtimeInputSampler();
   const diagnostics: RealtimeLocalGameDiagnostics = {
     inputSequence: 0,
@@ -111,6 +119,9 @@ export function createRealtimeLocalGame(): RealtimeLocalGame {
     diagnostics,
     setReady(ready) {
       return dispatchLocalAction(authorityLoop, { type: "ready", ready }, diagnostics);
+    },
+    setPlayerName(name) {
+      return dispatchLocalAction(authorityLoop, { type: "set-name", name }, diagnostics);
     },
     startRound() {
       return dispatchLocalAction(authorityLoop, { type: "start" }, diagnostics);
@@ -169,6 +180,13 @@ export function createRealtimeLocalGame(): RealtimeLocalGame {
 
   function handleLocalAction(action: RealtimeLocalGameAction): RealtimeArenaActionResult {
     switch (action.type) {
+      case "set-name": {
+        const result = setRealtimeArenaPlayerName(state, LOCAL_PLAYER_ID, action.name);
+        if (result.accepted) {
+          localPlayerName = state.players.find((player) => player.id === LOCAL_PLAYER_ID)?.label;
+        }
+        return result;
+      }
       case "ready":
         return setRealtimeArenaPlayerReady(state, LOCAL_PLAYER_ID, action.ready);
       case "start": {
@@ -181,7 +199,7 @@ export function createRealtimeLocalGame(): RealtimeLocalGame {
       case "rematch":
         return rematchRealtimeArena(state);
       case "reset":
-        state = createPracticeState();
+        state = createPracticeState(localPlayerName);
         resetEpoch += 1;
         input.reset();
         diagnostics.inputSequence = 0;
@@ -269,11 +287,11 @@ export function bindRealtimeInputKeys(target: RealtimeInputTarget, root: HTMLEle
 
 const LOCAL_PLAYER_ID = "local-runner";
 
-function createPracticeState(): RealtimeArenaState {
+function createPracticeState(playerName?: string): RealtimeArenaState {
   return createRealtimePracticeArenaState([
     {
       id: LOCAL_PLAYER_ID,
-      label: "Runner",
+      label: playerName ?? "Runner",
       teamId: "green"
     }
   ]);
@@ -498,6 +516,30 @@ function drawPlayer(
       player.position.y + dy
     );
   }
+
+  drawPlayerLabel(context, player.label, player.position.x, player.position.y - radius - 12, local);
+}
+
+function drawPlayerLabel(
+  context: CanvasRenderingContext2D,
+  label: string,
+  x: number,
+  y: number,
+  local: boolean
+): void {
+  const text = label.length > 16 ? `${label.slice(0, 15)}...` : label;
+  context.save();
+  context.font = "800 10px 'Aptos Narrow', sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  const width = Math.min(86, Math.max(28, context.measureText(text).width + 12));
+  const height = 16;
+  context.fillStyle = local ? "rgba(244, 247, 238, 0.9)" : "rgba(12, 15, 14, 0.78)";
+  roundRect(context, x - width / 2, y - height / 2, width, height, 5);
+  context.fill();
+  context.fillStyle = local ? "#101512" : "#f4f7ee";
+  context.fillText(text, x, y + 0.5);
+  context.restore();
 }
 
 function drawRoundOverlay(

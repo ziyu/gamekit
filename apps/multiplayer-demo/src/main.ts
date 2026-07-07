@@ -8,7 +8,7 @@ import {
   renderRealtimeArenaCanvas,
   type RealtimeLocalGameDiagnostics
 } from "./realtime/local-game";
-import type { RealtimeArenaSnapshot } from "./realtime/domain";
+import { normalizeRealtimeArenaPlayerLabel, type RealtimeArenaSnapshot } from "./realtime/domain";
 import type { RealtimeArenaNetworkAction, RealtimeArenaSnapshotPayload } from "./realtime/protocol";
 import {
   bindRealtimeArenaControls,
@@ -41,13 +41,14 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
   const ui = renderMultiplayerDemoShell(rootElement);
   const config = await fetchConfig();
   const hostOwnerId = readMultiplayerDemoHostOwnerId();
+  const initialPlayerName = readMultiplayerDemoPlayerName();
   let sessionInfo: MultiplayerDemoSessionInfo | undefined;
   let client: MultiplayerDemoClient | undefined;
   let clientSessionId: string | undefined;
   let localRoomRole: "host" | "client" | undefined;
   let busyLabel: string | undefined;
   let lastError: string | undefined;
-  const realtimeGame = createRealtimeLocalGame();
+  const realtimeGame = createRealtimeLocalGame({ playerName: initialPlayerName });
   const remoteInput = createRealtimeInputSampler();
   const remoteDiagnostics: RealtimeLocalGameDiagnostics = {
     inputSequence: 0,
@@ -80,18 +81,31 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
   let remoteLastSnapshotTick: number | undefined;
 
   ui.roomInput.value = config.defaultSessionId;
+  ui.playerNameInput.value = initialPlayerName;
   renderAll();
   ui.roomInput.addEventListener("input", renderAll);
+  ui.playerNameInput.addEventListener("change", () => {
+    void applyPlayerNameSetting();
+  });
+  ui.playerNameInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+    void applyPlayerNameSetting();
+    ui.arenaCanvas.focus();
+  });
 
   bindMultiplayerDemoControls(ui, {
     host() {
       void runAction("Hosting room", async () => {
-        await hostAndConnectClient(readRoomId());
+        await hostAndConnectClient(readRoomId(), commitPlayerNameInput());
       });
     },
     connect() {
       void runAction("Connecting client", async () => {
-        await connectClient(readRoomId());
+        await connectClient(readRoomId(), commitPlayerNameInput());
       });
     },
     disconnect() {
@@ -272,6 +286,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     const permissions = resolveRealtimeArenaControlPermissions(mode);
     const remote = currentRemoteSnapshot();
     if (remote) {
+      syncPlayerNameInput(remote.snapshot, readRemotePlayerId(remote));
       renderRealtimeArenaUi(
         ui,
         remote.snapshot,
@@ -290,6 +305,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
       return;
     }
 
+    syncPlayerNameInput(realtimeGame.state, realtimeGame.localPlayerId);
     renderRealtimeArenaUi(
       ui,
       realtimeGame.state,
@@ -508,6 +524,40 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     remoteLastSnapshotTick = undefined;
   }
 
+  async function applyPlayerNameSetting(): Promise<void> {
+    const playerName = commitPlayerNameInput();
+    if (isRemoteSessionActive()) {
+      await sendRealtimeAction({ type: "set-name", name: playerName });
+    } else if (isLocalPracticeActive()) {
+      realtimeGame.setPlayerName(playerName);
+    }
+    renderArena();
+  }
+
+  function commitPlayerNameInput(): string {
+    const playerName = normalizeRealtimeArenaPlayerLabel(ui.playerNameInput.value);
+    ui.playerNameInput.value = playerName;
+    writeMultiplayerDemoPlayerName(playerName);
+    return playerName;
+  }
+
+  function syncPlayerNameInput(
+    state: { players: Array<{ id: string; label: string }> },
+    playerId: string
+  ): void {
+    if (document.activeElement === ui.playerNameInput) {
+      return;
+    }
+
+    const player = state.players.find((candidate) => candidate.id === playerId);
+    if (!player || ui.playerNameInput.value === player.label) {
+      return;
+    }
+
+    ui.playerNameInput.value = player.label;
+    writeMultiplayerDemoPlayerName(player.label);
+  }
+
   function readRoomId(): string {
     return ui.roomInput.value;
   }
@@ -535,10 +585,10 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     return sessionInfo;
   }
 
-  async function hostAndConnectClient(sessionId: string): Promise<void> {
+  async function hostAndConnectClient(sessionId: string, playerName: string): Promise<void> {
     try {
       const hosted = await hostRoom(sessionId);
-      await connectHostedClient(hosted, "host");
+      await connectHostedClient(hosted, "host", playerName);
     } catch (error) {
       if (error instanceof DemoApiError && error.status === 409) {
         try {
@@ -557,17 +607,19 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     return sessionInfo;
   }
 
-  async function connectClient(sessionId: string): Promise<void> {
+  async function connectClient(sessionId: string, playerName: string): Promise<void> {
     const hosted = await loadHostedSession(sessionId);
-    await connectHostedClient(hosted, resolveMultiplayerDemoJoinRole(readRunMode()));
+    await connectHostedClient(hosted, resolveMultiplayerDemoJoinRole(readRunMode()), playerName);
   }
 
   async function connectHostedClient(
     hosted: MultiplayerDemoSessionInfo,
-    role: "host" | "client"
+    role: "host" | "client",
+    playerName: string
   ): Promise<void> {
     if (client && client.runtime.phase() === "in-session" && clientSessionId === hosted.sessionId) {
       localRoomRole = role;
+      await client.sendRealtimeAction({ type: "set-name", name: playerName });
       return;
     }
 
@@ -576,10 +628,12 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
       endpoint: hosted.endpoint,
       roomName: hosted.roomName,
       sessionId: hosted.sessionId,
-      hostPeerId: hosted.hostPeerId
+      hostPeerId: hosted.hostPeerId,
+      displayName: playerName
     });
     try {
       await nextClient.connect();
+      await nextClient.sendRealtimeAction({ type: "set-name", name: playerName });
       client = nextClient;
       clientSessionId = hosted.sessionId;
       localRoomRole = role;
@@ -658,7 +712,9 @@ async function fetchConfig(): Promise<MultiplayerDemoConfig> {
 }
 
 const MULTIPLAYER_DEMO_HOST_OWNER_STORAGE_KEY = "gamekit.multiplayerDemo.hostOwnerId";
+const MULTIPLAYER_DEMO_PLAYER_NAME_STORAGE_KEY = "gamekit.multiplayerDemo.playerName";
 const FALLBACK_MULTIPLAYER_DEMO_HOST_OWNER_ID = createMultiplayerDemoHostOwnerId();
+const FALLBACK_MULTIPLAYER_DEMO_PLAYER_NAME = createDefaultMultiplayerDemoPlayerName();
 
 function readMultiplayerDemoHostOwnerId(): string {
   try {
@@ -681,6 +737,44 @@ function createMultiplayerDemoHostOwnerId(): string {
   }
 
   return `window-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000000).toString(36)}`;
+}
+
+function readMultiplayerDemoPlayerName(): string {
+  try {
+    const existing = window.sessionStorage.getItem(MULTIPLAYER_DEMO_PLAYER_NAME_STORAGE_KEY);
+    if (existing) {
+      return normalizeRealtimeArenaPlayerLabel(existing);
+    }
+
+    const next = FALLBACK_MULTIPLAYER_DEMO_PLAYER_NAME;
+    window.sessionStorage.setItem(MULTIPLAYER_DEMO_PLAYER_NAME_STORAGE_KEY, next);
+    return next;
+  } catch {
+    return FALLBACK_MULTIPLAYER_DEMO_PLAYER_NAME;
+  }
+}
+
+function writeMultiplayerDemoPlayerName(playerName: string): void {
+  try {
+    window.sessionStorage.setItem(
+      MULTIPLAYER_DEMO_PLAYER_NAME_STORAGE_KEY,
+      normalizeRealtimeArenaPlayerLabel(playerName)
+    );
+  } catch {
+    // Session storage can be unavailable in locked-down browser contexts.
+  }
+}
+
+function createDefaultMultiplayerDemoPlayerName(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return normalizeRealtimeArenaPlayerLabel(`Runner ${crypto.randomUUID().slice(0, 4)}`);
+  }
+
+  return normalizeRealtimeArenaPlayerLabel(
+    `Runner ${Math.floor(Math.random() * 10000)
+      .toString()
+      .padStart(4, "0")}`
+  );
 }
 
 async function fetchSessionInfo(sessionId: string): Promise<MultiplayerDemoSessionInfo> {

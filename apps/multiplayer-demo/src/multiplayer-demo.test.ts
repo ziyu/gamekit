@@ -216,8 +216,8 @@ describe("multiplayer-demo", () => {
       roomName: colyseus.roomNames[0] ?? MULTIPLAYER_DEMO_ROOM_NAME,
       sessionId: "realtime-room"
     });
-    const clientA = createClient(host, "client-a");
-    const clientB = createClient(host, "client-b");
+    const clientA = createClient(host, "client-a", "Runner");
+    const clientB = createClient(host, "client-b", "Runner");
 
     try {
       await clientA.connect();
@@ -229,6 +229,26 @@ describe("multiplayer-demo", () => {
         () =>
           clientA.latestRealtimeSnapshot()?.snapshot.players.length === 2 &&
           clientB.latestRealtimeSnapshot()?.snapshot.players.length === 2
+      );
+      await waitFor(() => {
+        const labels = host.realtime
+          .snapshot()
+          .snapshot.players.map((player) => player.label)
+          .sort();
+        return labels.join(",") === "Runner,Runner 2";
+      });
+      await waitFor(
+        () =>
+          clientA
+            .latestRealtimeSnapshot()
+            ?.snapshot.players.map((player) => player.label)
+            .sort()
+            .join(",") === "Runner,Runner 2" &&
+          clientB
+            .latestRealtimeSnapshot()
+            ?.snapshot.players.map((player) => player.label)
+            .sort()
+            .join(",") === "Runner,Runner 2"
       );
       const hostSnapshotBeforeSpoof = clientA.latestRealtimeSnapshot();
       await clientB.runtime.send({
@@ -331,14 +351,18 @@ describe("multiplayer-demo", () => {
   });
 });
 
-function createClient(host: LocalMultiplayerDemoHost, peerId: string): MultiplayerDemoClient {
+function createClient(
+  host: LocalMultiplayerDemoHost,
+  peerId: string,
+  displayName = peerId
+): MultiplayerDemoClient {
   return createMultiplayerDemoClient({
     endpoint: host.endpoint,
     roomName: host.roomName,
     sessionId: host.sessionId,
     hostPeerId: host.hostPeerId,
     peerId,
-    displayName: peerId
+    displayName
   });
 }
 

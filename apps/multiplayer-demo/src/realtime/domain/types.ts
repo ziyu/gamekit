@@ -90,6 +90,7 @@ export type RealtimeArenaEvent = {
   type:
     | "player.joined"
     | "player.left"
+    | "player.name"
     | "player.ready"
     | "round.countdown"
     | "round.started"
