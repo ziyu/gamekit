@@ -18,10 +18,12 @@ import type {
   PhysicsBodyId,
   PhysicsColliderId,
   PhysicsContactEvent,
+  PhysicsHandle,
   PhysicsScene,
   PhysicsSceneConfig,
   PhysicsTraceStore
 } from "./types";
+import { bindPhysicsHandle, unbindPhysicsHandle } from "./create-physics-handle";
 
 export type PhysicsWorldBindings = {
   body?: ComponentDef<PhysicsBodyComponentState>;
@@ -44,6 +46,7 @@ export type PhysicsModuleOptions = {
   bindings?: PhysicsWorldBindings;
   eventPolicy?: PhysicsEventPolicy;
   traceStore?: PhysicsTraceStore;
+  handle?: PhysicsHandle;
 };
 
 type ResolvedPhysicsBindings = {
@@ -66,7 +69,16 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
   return defineGameModule<GameInstallContext>({
     id: moduleId,
     install(ctx: GameInstallContext) {
-      scene = options.backend.createScene(options.scene);
+      const nextScene = options.backend.createScene(options.scene);
+      try {
+        if (options.handle !== undefined) {
+          bindPhysicsHandle(options.handle, nextScene, moduleId);
+        }
+      } catch (error) {
+        nextScene.dispose();
+        throw error;
+      }
+      scene = nextScene;
       ctx.systems.register({
         id: `${moduleId}.step`,
         update(systemCtx: WorldSystemContext) {
@@ -137,6 +149,9 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
 
       return {
         dispose() {
+          if (options.handle !== undefined) {
+            unbindPhysicsHandle(options.handle, moduleId);
+          }
           scene?.dispose();
           scene = undefined;
           accumulator = 0;

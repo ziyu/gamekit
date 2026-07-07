@@ -117,6 +117,7 @@ describe("Physics 3D Lab runtime", () => {
 
   it("runs through the standard Physics GameModule helper", () => {
     const harness = createPhysics3dModuleHarness(backend);
+    expect(harness.physics.isBound()).toBe(true);
 
     harness.runtime.start();
     harness.runtime.tick(1000 / 60);
@@ -129,8 +130,24 @@ describe("Physics 3D Lab runtime", () => {
       entityB: harness.trigger
     });
     expect(harness.traceStore.list().map((entry) => entry.kind)).toContain("step");
+    expect(harness.physics.snapshot()).toMatchObject({
+      backend: "physics-3d-lab.test",
+      dimension: "3d",
+      bodyCount: 2,
+      colliderCount: 2
+    });
+    expect(
+      harness.physics
+        .overlapShape(
+          { type: "sphere", radius: 0.25 },
+          { x: 0, y: 1.2, z: 0 },
+          { triggerInteraction: "only" }
+        )
+        .map((hit) => hit.colliderId)
+    ).toContain(harness.contacts[0]?.colliderB);
 
     harness.runtime.dispose();
+    expect(harness.physics.isBound()).toBe(false);
   });
 
   it("frames the debug scene with the native Three camera", () => {

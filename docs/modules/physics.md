@@ -260,6 +260,7 @@ after physics step
 export type PhysicsModuleOptions = {
   backend: PhysicsBackendAdapter | PhysicsBackendFactory;
   scene: PhysicsSceneConfig;
+  handle?: PhysicsHandle;
   bindings: PhysicsWorldBindings;
   eventPolicy?: PhysicsEventPolicy;
   save?: PhysicsSaveOptions;
@@ -270,6 +271,84 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule;
 ```
 
 Physics module 跟随 GameRuntime lifecycle。`stop()` 后不继续 step；`dispose()` 必须释放 backend scene、订阅、body/collider handle map、query cache 和 trace buffer。
+
+## Physics Handle 与依赖注入
+
+`createPhysicsModule(...)` 是一局游戏内 live `PhysicsScene` 的唯一 owner。它负责创建 scene、推进 fixed step、同步 World、发 contact event、写 trace，并在 GameRuntime dispose 时释放 backend scene。业务模块、AI、Combat、交互选择、placement preview 和 Editor 工具不应各自创建新的 `PhysicsScene` 来做查询。
+
+为了让其他 GameModule 使用同一个 scene，Physics Core 可以提供一个可注入的 handle / facade。组合层为每个 physics scene 创建一次 handle，并把同一个 handle 同时传给 `createPhysicsModule(...)` 和需要物理查询的 gameplay module：
+
+```ts
+const worldPhysics = createPhysicsHandle();
+
+const modules = [
+  createPhysicsModule({
+    backend,
+    scene: { dimension: "2d", gravity: { x: 0, y: 9.8 } },
+    handle: worldPhysics
+  }),
+  createCombatModule({ physics: worldPhysics }),
+  createAiModule({ physics: worldPhysics })
+];
+```
+
+Handle 只暴露窄接口，不拥有 scene，也不 boot backend：
+
+```ts
+export type PhysicsQueries = {
+  query(query: PhysicsQuery): PhysicsQueryResult[];
+  queryPoint(point: PhysicsVector, options?: PhysicsQueryOptions): PhysicsQueryResult[];
+  raycast(
+    origin: PhysicsVector,
+    direction: PhysicsVector,
+    options?: PhysicsQueryOptions & { maxDistance?: number }
+  ): PhysicsQueryResult[];
+  shapeCast(
+    shape: PhysicsShapeDefinition,
+    position: PhysicsVector,
+    direction: PhysicsVector,
+    options?: PhysicsQueryOptions & {
+      maxDistance?: number;
+      rotation?: PhysicsRotation;
+      stopAtPenetration?: boolean;
+      targetDistance?: number;
+    }
+  ): PhysicsQueryResult[];
+  overlapShape(
+    shape: PhysicsShapeDefinition,
+    position: PhysicsVector,
+    options?: PhysicsQueryOptions & { rotation?: PhysicsRotation }
+  ): PhysicsQueryResult[];
+  checkOverlap(
+    shape: PhysicsShapeDefinition,
+    position: PhysicsVector,
+    options?: PhysicsQueryOptions & { rotation?: PhysicsRotation }
+  ): boolean;
+  checkCollision(colliderId: PhysicsColliderId, options?: PhysicsQueryOptions): boolean;
+  queryBounds(bounds: PhysicsBounds, options?: PhysicsQueryOptions): PhysicsQueryResult[];
+  snapshot(): PhysicsSceneSnapshot;
+};
+
+export type PhysicsHandle = PhysicsQueries & {
+  isBound(): boolean;
+};
+
+export function createPhysicsHandle(): PhysicsHandle;
+```
+
+`createPhysicsModule(...)` 在 install 时把 handle 绑定到自己创建的 scene，在 dispose 时解绑。Handle 在未绑定、已 dispose 或重复绑定时必须给出明确 `GameError`，不能静默创建 fallback scene。测试可以向业务模块注入 fake `PhysicsQueries`，不需要启动 Rapier 或真实 backend。
+
+依赖注入优先使用显式 module options：
+
+```ts
+createTargetingModule({
+  physics: worldPhysics,
+  teamRules,
+  eventBus
+});
+```
+
+App Host/profile 可以持有 physics handle、backend factory、layer registry 和 DataRegistry，用于组合标准 GameModule；但 App Host 不直接持有 live gameplay `PhysicsScene`。若一个 app 确实需要多个物理场景，应创建多个具名 handle，例如 `worldPhysics`、`previewPhysics`、`serverValidationPhysics`，并让每个 handle 只绑定一个 owner module。
 
 ## World 边界
 
@@ -414,6 +493,8 @@ Query result 只返回稳定 id 和归一化几何信息。Backend native hit、
 
 Core 可以提供便捷 helper，例如 `raycast(...)`、`shapeCast(...)`、`overlapShape(...)`、`checkOverlap(...)`、`checkCollision(...)` 和 `queryBounds(...)`。这些 helper 必须薄包装 `PhysicsQuery`，以保证 backend conformance tests 能覆盖同一条协议路径。
 
+GameModule 内部需要做 targeting、line of sight、ground check 或 placement validation 时，应通过依赖注入得到 `PhysicsQueries` / `PhysicsHandle`，不要 import adapter 包、访问 backend native object，也不要为了查询创建新的 scene。业务模块可以在查询结果返回后结合 GAS/TCA/Data/component 解释 team、damage channel、owner ignore 和 ability target rule。
+
 ## Backend 与 Driver
 
 Rapier、Matter.js、Box2D 这类独立物理库通常是 Physics backend adapter，不是 Driver。它们只拥有 physics scene，不拥有 renderer/input/camera/asset runtime。
@@ -490,6 +571,7 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
 
 - Physics 作为 GameModule 集成，随 GameRuntime tick 推进；不要把 gameplay physics scene 默认注册成 App Host standard service。
 - App Host/profile 可以准备 backend factory、driver physics adapter、DataRegistry、SaveManager 和 DevToolsRuntime，但 Physics scene 生命周期跟随 GameRuntime。
+- 组合层为每个 live physics scene 创建一个具名 `PhysicsHandle`，并把它同时注入 `createPhysicsModule(...)` 和需要查询的 gameplay module；handle 不拥有 scene，只由 Physics module 绑定和解绑。
 - 独立物理库进入 `physics-*` adapter 包；绑定完整外部 scene runtime 的物理能力由对应 Driver 暴露 runtime slice。
 - Physics module 的 World sync 顺序必须明确。常见顺序是 input/AI 写意图，physics step 推进，再把 transform/velocity 写回 World，最后 renderer sync。
 - 新 backend 先通过 physics conformance tests，再补 backend-specific behavior test。真实 canvas 或 Phaser Scene 只用于少量集成测试。
@@ -497,6 +579,7 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
 ### 模块使用
 
 - 业务代码只依赖 `@gamekit/physics-core`、World component、query API 和低频 contact event，不直接 import Rapier、Matter、Phaser Physics 或 backend body 类型。
+- 需要 raycast、overlap、check 或 point query 的业务模块通过 DI 接收 `PhysicsQueries` / `PhysicsHandle`；测试中注入 fake queries，生产组合中注入 Physics module 绑定的 handle。
 - Damage、team/faction、hit/hurt rule、projectile owner、pierce、ability activation 等玩法语义应在游戏模块、GAS 或 TCA 中解释；Physics 只回答空间、碰撞和运动事实。
 - Collision layer/mask 只表达物理过滤；不要把所有玩法 target rule 都塞进 physics filter。需要命中后解释的规则应放在 gameplay 数据中。
 - 高频移动、碰撞和查询留在 physics/world system 内；不要把每帧 contact manifold、position patch 或 query result 全量发到 EventBus、React UI 或 DevTools UI。

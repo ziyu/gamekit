@@ -1,3 +1,4 @@
+import { GameError } from "@gamekit/core";
 import { createDataRegistry } from "@gamekit/data";
 import { createEventBus } from "@gamekit/event-bus";
 import { createGame } from "@gamekit/game-runtime";
@@ -9,6 +10,7 @@ import {
   PhysicsTransformComponent,
   PhysicsVelocityComponent,
   createMemoryPhysicsBackend,
+  createPhysicsHandle,
   createPhysicsDataTypes,
   createPhysicsModule,
   createPhysicsTraceStore,
@@ -319,7 +321,117 @@ describe("Physics module", () => {
 
     runtime.dispose();
   });
+
+  it("binds an injected physics handle for gameplay queries", () => {
+    const world = createMemoryWorld();
+    const actor = world.spawn();
+    world.add(actor, PhysicsBodyComponent, {
+      definition: { kind: "static" }
+    });
+    world.add(actor, PhysicsTransformComponent, {
+      position: { x: 2, y: 0 }
+    });
+    world.add(actor, PhysicsColliderComponent, {
+      definition: {
+        shape: { type: "circle", radius: 0.5 },
+        filter: { groups: ["actor"], collidesWith: ["query"] }
+      }
+    });
+
+    const physics = createPhysicsHandle({ id: "test.physics" });
+    expect(physics.isBound()).toBe(false);
+
+    const runtime = createGame({
+      modules: [
+        createPhysicsModule({
+          backend: createMemoryPhysicsBackend(),
+          fixedDeltaMs: 1000,
+          scene: { gravity: { x: 0, y: 0 } },
+          handle: physics
+        })
+      ],
+      world,
+      eventBus: createEventBus({ clock: () => 1 }),
+      seed: "physics-handle"
+    });
+
+    expect(physics.isBound()).toBe(true);
+    runtime.start();
+    runtime.tick(1000);
+
+    const colliderId = world.get(actor, PhysicsColliderComponent)?.colliderId;
+    expect(colliderId).toBeDefined();
+    expect(
+      physics
+        .raycast(
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          {
+            maxDistance: 4,
+            filter: { groups: ["query"], collidesWith: ["actor"] }
+          }
+        )
+        .map((hit) => hit.colliderId)
+    ).toEqual([colliderId]);
+    expect(physics.checkOverlap({ type: "circle", radius: 0.25 }, { x: 2, y: 0 })).toBe(true);
+    expect(physics.snapshot()).toMatchObject({
+      backend: "memory-physics",
+      bodyCount: 1,
+      colliderCount: 1
+    });
+
+    runtime.dispose();
+    expect(physics.isBound()).toBe(false);
+    expectPhysicsError(() => physics.queryPoint({ x: 2, y: 0 }), "physics.handle_unbound");
+  });
+
+  it("rejects unbound and duplicate physics handle access", () => {
+    const physics = createPhysicsHandle({ id: "duplicate.physics" });
+    expectPhysicsError(() => physics.snapshot(), "physics.handle_unbound");
+
+    const runtime = createGame({
+      modules: [
+        createPhysicsModule({
+          backend: createMemoryPhysicsBackend(),
+          handle: physics
+        })
+      ],
+      world: createMemoryWorld(),
+      eventBus: createEventBus({ clock: () => 1 }),
+      seed: "physics-handle-owner"
+    });
+
+    expectPhysicsError(
+      () =>
+        createGame({
+          modules: [
+            createPhysicsModule({
+              backend: createMemoryPhysicsBackend(),
+              handle: physics
+            })
+          ],
+          world: createMemoryWorld(),
+          eventBus: createEventBus({ clock: () => 1 }),
+          seed: "physics-handle-duplicate"
+        }),
+      "physics.handle_bound"
+    );
+
+    runtime.dispose();
+  });
 });
+
+function expectPhysicsError(callback: () => void, code: string): void {
+  try {
+    callback();
+  } catch (error) {
+    expect(error).toBeInstanceOf(GameError);
+    expect((error as GameError).code).toBe(code);
+    return;
+  }
+
+  throw new Error(`Expected physics error: ${code}`);
+}
 
 function createMemoryWorld(): GameWorld {
   let nextEntity = 1;
