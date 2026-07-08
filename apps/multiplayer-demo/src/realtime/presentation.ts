@@ -1,4 +1,8 @@
-import type { RealtimeArenaPhase, RealtimeArenaSnapshot, RealtimeArenaVector } from "./domain";
+import {
+  createMultiplayerSnapshotPresentation,
+  type MultiplayerPresentationVector
+} from "@gamekit/multiplayer-core";
+import type { RealtimeArenaPhase, RealtimeArenaSnapshot } from "./domain";
 
 export type RealtimeArenaPresentation = {
   reset(): void;
@@ -10,81 +14,59 @@ export type RealtimeArenaPresentationOptions = {
   snapDistance?: number;
 };
 
-type PresentedVector = {
-  x: number;
-  y: number;
-};
-
 const DEFAULT_SMOOTHING_MS = 72;
 const DEFAULT_SNAP_DISTANCE = 96;
 
 export function createRealtimeArenaPresentation(
   options: RealtimeArenaPresentationOptions = {}
 ): RealtimeArenaPresentation {
-  const smoothingMs = Math.max(1, options.smoothingMs ?? DEFAULT_SMOOTHING_MS);
-  const snapDistance = Math.max(0, options.snapDistance ?? DEFAULT_SNAP_DISTANCE);
-  const positions = new Map<string, PresentedVector>();
-  let lastTick: number | undefined;
-  let lastPhase: RealtimeArenaPhase | undefined;
-
-  function reset(): void {
-    positions.clear();
-    lastTick = undefined;
-    lastPhase = undefined;
-  }
-
-  return {
-    reset,
-    present(snapshot, deltaMs) {
-      if (
-        lastTick !== undefined &&
-        (snapshot.tick < lastTick || shouldSnapPhase(lastPhase, snapshot.phase))
-      ) {
-        positions.clear();
-      }
-
-      lastTick = snapshot.tick;
-      lastPhase = snapshot.phase;
-
-      const activeKeys = new Set<string>();
-      const players = snapshot.players.map((player) => {
-        const key = `player:${player.id}`;
-        activeKeys.add(key);
-        return {
-          ...player,
-          spawn: { ...player.spawn },
-          position: presentVector(positions, key, player.position, deltaMs, {
-            smoothingMs,
-            snapDistance
-          }),
-          velocity: { ...player.velocity },
-          ...(player.latestInput === undefined ? {} : { latestInput: { ...player.latestInput } })
-        };
-      });
+  const presentation = createMultiplayerSnapshotPresentation<RealtimeArenaSnapshot>({
+    smoothingMs: options.smoothingMs ?? DEFAULT_SMOOTHING_MS,
+    snapDistance: options.snapDistance ?? DEFAULT_SNAP_DISTANCE,
+    shouldReset(previous, next) {
+      return (
+        previous !== undefined &&
+        (next.tick < previous.tick || shouldSnapPhase(previous.phase, next.phase))
+      );
+    },
+    selectSamples(snapshot) {
+      return [
+        ...snapshot.players.map((player) => ({
+          key: playerKey(player.id),
+          target: player.position
+        })),
+        ...snapshot.cores
+          .filter((core) => core.carriedByPlayerId === undefined)
+          .map((core) => ({
+            key: coreKey(core.id),
+            target: core.position
+          }))
+      ];
+    },
+    applyPresentedSnapshot({ snapshot, presented }) {
+      const players = snapshot.players.map((player) => ({
+        ...player,
+        spawn: { ...player.spawn },
+        position: readPresentedPosition(presented, playerKey(player.id), player.position),
+        velocity: { ...player.velocity },
+        ...(player.latestInput === undefined ? {} : { latestInput: { ...player.latestInput } })
+      }));
       const playersById = new Map(players.map((player) => [player.id, player]));
       const cores = snapshot.cores.map((core) => {
         const carriedByPlayer =
           core.carriedByPlayerId === undefined
             ? undefined
             : playersById.get(core.carriedByPlayerId);
-        const key = `core:${core.id}`;
-        activeKeys.add(key);
-        const position =
-          carriedByPlayer === undefined
-            ? presentVector(positions, key, core.position, deltaMs, {
-                smoothingMs,
-                snapDistance
-              })
-            : { ...carriedByPlayer.position };
 
         return {
           ...core,
           spawn: { ...core.spawn },
-          position
+          position:
+            carriedByPlayer === undefined
+              ? readPresentedPosition(presented, coreKey(core.id), core.position)
+              : { ...carriedByPlayer.position }
         };
       });
-
-      removeInactivePositions(positions, activeKeys);
 
       return {
         ...snapshot,
@@ -109,41 +91,24 @@ export function createRealtimeArenaPresentation(
             })
       };
     }
-  };
-}
+  });
 
-function presentVector(
-  positions: Map<string, PresentedVector>,
-  key: string,
-  target: RealtimeArenaVector,
-  deltaMs: number,
-  options: Required<RealtimeArenaPresentationOptions>
-): RealtimeArenaVector {
-  const current = positions.get(key);
-  if (current === undefined || distance(current, target) >= options.snapDistance || deltaMs <= 0) {
-    const snapped = { ...target };
-    positions.set(key, snapped);
-    return { ...snapped };
-  }
-
-  const amount = 1 - Math.exp(-deltaMs / options.smoothingMs);
-  const next = {
-    x: lerp(current.x, target.x, amount),
-    y: lerp(current.y, target.y, amount)
-  };
-  positions.set(key, next);
-  return { ...next };
-}
-
-function removeInactivePositions(
-  positions: Map<string, PresentedVector>,
-  activeKeys: Set<string>
-): void {
-  for (const key of positions.keys()) {
-    if (!activeKeys.has(key)) {
-      positions.delete(key);
+  return {
+    reset() {
+      presentation.reset();
+    },
+    present(snapshot, deltaMs) {
+      return presentation.present(snapshot, deltaMs);
     }
-  }
+  };
+}
+
+function readPresentedPosition(
+  presented: ReadonlyMap<string, MultiplayerPresentationVector>,
+  key: string,
+  fallback: MultiplayerPresentationVector
+): MultiplayerPresentationVector {
+  return { ...(presented.get(key) ?? fallback) };
 }
 
 function shouldSnapPhase(
@@ -157,10 +122,10 @@ function shouldSnapPhase(
   return next === "lobby" || next === "countdown" || previous === "results";
 }
 
-function lerp(from: number, to: number, amount: number): number {
-  return from + (to - from) * Math.min(1, Math.max(0, amount));
+function playerKey(playerId: string): string {
+  return `player:${playerId}`;
 }
 
-function distance(a: RealtimeArenaVector, b: RealtimeArenaVector): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
+function coreKey(coreId: string): string {
+  return `core:${coreId}`;
 }

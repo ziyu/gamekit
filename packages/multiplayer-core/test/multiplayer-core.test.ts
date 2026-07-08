@@ -9,6 +9,7 @@ import {
   createMultiplayerLocalAuthorityLoop,
   createMultiplayerPeerPlayerBindingStore,
   createMultiplayerRuntime,
+  createMultiplayerSnapshotPresentation,
   createUniqueMultiplayerDisplayName,
   MULTIPLAYER_ACTION_KIND,
   MULTIPLAYER_INPUT_KIND,
@@ -553,6 +554,136 @@ describe("peer/player binding utility", () => {
     expect(normalizeMultiplayerDisplayName("  Alpha   Bravo  ", "Fallback")).toBe("Alpha Bravo");
     expect(normalizeMultiplayerDisplayName("   ", "Fallback")).toBe("Fallback");
     expect(createUniqueMultiplayerDisplayName("Scout", ["Scout", "Scout 2"])).toBe("Scout 3");
+  });
+});
+
+describe("createMultiplayerSnapshotPresentation", () => {
+  it("smooths selected snapshot samples without owning game state shape", () => {
+    type Snapshot = {
+      tick: number;
+      units: Array<{ id: string; position: { x: number; y: number } }>;
+    };
+    const presentation = createMultiplayerSnapshotPresentation<Snapshot>({
+      smoothingMs: 80,
+      snapDistance: 1000,
+      selectSamples(snapshot) {
+        return snapshot.units.map((unit) => ({
+          key: unit.id,
+          target: unit.position
+        }));
+      },
+      applyPresentedSnapshot({ snapshot, presented }) {
+        return {
+          ...snapshot,
+          units: snapshot.units.map((unit) => ({
+            ...unit,
+            position: { ...(presented.get(unit.id) ?? unit.position) }
+          }))
+        };
+      }
+    });
+
+    const first = presentation.present(
+      { tick: 1, units: [{ id: "unit-a", position: { x: 10, y: 0 } }] },
+      16
+    );
+    const second = presentation.present(
+      { tick: 2, units: [{ id: "unit-a", position: { x: 58, y: 0 } }] },
+      16
+    );
+    const third = presentation.present(
+      { tick: 2, units: [{ id: "unit-a", position: { x: 58, y: 0 } }] },
+      16
+    );
+
+    expect(first.units[0]?.position).toEqual({ x: 10, y: 0 });
+    expect(second.units[0]?.position.x).toBeGreaterThan(10);
+    expect(second.units[0]?.position.x).toBeLessThan(58);
+    expect(third.units[0]?.position.x).toBeGreaterThan(second.units[0]?.position.x ?? 0);
+    expect(presentation.diagnostics()).toMatchObject({
+      activeSamples: 1,
+      resets: 0,
+      lastDeltaMs: 16
+    });
+  });
+
+  it("removes inactive samples from presentation state", () => {
+    type Snapshot = {
+      units: Array<{ id: string; position: { x: number; y: number } }>;
+    };
+    const presentation = createMultiplayerSnapshotPresentation<Snapshot>({
+      selectSamples(snapshot) {
+        return snapshot.units.map((unit) => ({
+          key: unit.id,
+          target: unit.position
+        }));
+      },
+      applyPresentedSnapshot({ snapshot, presented }) {
+        return {
+          units: snapshot.units.map((unit) => ({
+            ...unit,
+            position: { ...(presented.get(unit.id) ?? unit.position) }
+          }))
+        };
+      }
+    });
+
+    presentation.present(
+      {
+        units: [
+          { id: "unit-a", position: { x: 0, y: 0 } },
+          { id: "unit-b", position: { x: 100, y: 0 } }
+        ]
+      },
+      16
+    );
+    presentation.present({ units: [{ id: "unit-a", position: { x: 10, y: 0 } }] }, 16);
+
+    expect(presentation.diagnostics().activeSamples).toBe(1);
+  });
+
+  it("lets games reset presentation state and force snap individual samples", () => {
+    type Snapshot = {
+      epoch: number;
+      units: Array<{ id: string; teleport?: boolean; position: { x: number; y: number } }>;
+    };
+    const presentation = createMultiplayerSnapshotPresentation<Snapshot>({
+      smoothingMs: 80,
+      snapDistance: 1000,
+      shouldReset(previous, next) {
+        return previous !== undefined && previous.epoch !== next.epoch;
+      },
+      selectSamples(snapshot) {
+        return snapshot.units.map((unit) => ({
+          key: unit.id,
+          target: unit.position,
+          snap: unit.teleport === true
+        }));
+      },
+      applyPresentedSnapshot({ snapshot, presented }) {
+        return {
+          ...snapshot,
+          units: snapshot.units.map((unit) => ({
+            ...unit,
+            position: { ...(presented.get(unit.id) ?? unit.position) }
+          }))
+        };
+      }
+    });
+
+    presentation.present({ epoch: 1, units: [{ id: "unit-a", position: { x: 0, y: 0 } }] }, 16);
+    const teleported = presentation.present(
+      { epoch: 1, units: [{ id: "unit-a", teleport: true, position: { x: 100, y: 0 } }] },
+      16
+    );
+    const reset = presentation.present(
+      { epoch: 2, units: [{ id: "unit-a", position: { x: 200, y: 0 } }] },
+      16
+    );
+
+    expect(teleported.units[0]?.position).toEqual({ x: 100, y: 0 });
+    expect(reset.units[0]?.position).toEqual({ x: 200, y: 0 });
+    expect(presentation.diagnostics().resets).toBe(1);
   });
 });
 

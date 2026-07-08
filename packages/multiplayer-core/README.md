@@ -82,6 +82,39 @@ const loop = createMultiplayerAuthorityHostLoop({
 
 Offline/local play should use the same action/input, tick, snapshot/apply and diagnostics contract through `createMultiplayerLocalAuthorityLoop()`. The delivery is in-process, but gameplay should not fork into a second single-player-only rule path.
 
+## Snapshot Presentation
+
+Network and authority ticks are often lower than renderer refresh rate. Use `createMultiplayerSnapshotPresentation()` to keep interpolation/presentation caches out of backend adapters while still sharing the same local/offline and remote snapshot path:
+
+```ts
+import { createMultiplayerSnapshotPresentation } from "@gamekit/multiplayer-core";
+
+const presentation = createMultiplayerSnapshotPresentation({
+  selectSamples(snapshot) {
+    return snapshot.players.map((player) => ({
+      key: player.id,
+      target: player.position
+    }));
+  },
+  applyPresentedSnapshot({ snapshot, presented }) {
+    return {
+      ...snapshot,
+      players: snapshot.players.map((player) => ({
+        ...player,
+        position: presented.get(player.id) ?? player.position
+      }))
+    };
+  },
+  shouldReset(previous, next) {
+    return previous !== undefined && next.tick < previous.tick;
+  }
+});
+
+render(presentation.present(authoritativeSnapshot, frameDeltaMs));
+```
+
+The helper only smooths keyed `{ x, y }` samples. Games still decide which fields are presentable, when to snap teleports or phase changes, and how to apply presented values to render-only snapshots. Backend packages such as `@gamekit/multiplayer-colyseus` should expose provider state and diagnostics, not hard-code gameplay interpolation.
+
 ## Peer / Player Binding
 
 Use `createMultiplayerPeerPlayerBindingStore()` to bind provider peers to app players, display names, slots and spectator/leave states:

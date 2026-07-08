@@ -315,6 +315,7 @@ client action / input
 - 为 local authority 提供 in-process delivery，使 offline singleplayer、unit test 和 local preview 可以复用同一 reducer/simulation/snapshot receiver，而不是创建第二套单机入口。
 - 在 host/server side 维护 input queue、last accepted sequence、rejected reason、tick boundary 和 snapshot broadcaster 的通用骨架。
 - 在 client side 维护 authority source gate、snapshot age、last applied tick、resync state 和 rejected non-authority payload diagnostics。
+- 提供 snapshot presentation helper：core 只维护 keyed sample 的平滑缓存、snap/reset 规则和低成本 diagnostics；游戏自己声明可插值字段、teleport/phase change 何时 snap、以及如何把 presented value 写入 render-only snapshot。
 - 提供 peer/player binding utilities，避免重复实现 duplicate peer、late join、disconnect 和 reconnect 映射。
 - 提供 conformance tests，验证多 client 不会各自本地开局、非 authority snapshot 不会被应用、不同 session state 隔离、离开 peer 不继续阻塞 ready/start。
 
@@ -324,6 +325,7 @@ client action / input
 - Local authority 不等于绕过 multiplayer contract。它只是把 transport 替换为 in-process delivery，玩法 state 仍由 authority loop 推进，并通过 snapshot/patch/result 驱动 presentation。
 - Provider-native state sync 仍可使用，例如 Colyseus Schema；但必须声明它是否是 authority source，并通过 typed native bridge 或 adapter mapping 暴露 provider-neutral diagnostics。
 - Client prediction 和 interpolation 是表现层或可回滚缓存，不是 authority state。
+- Backend adapter 不应 hard-code 具体游戏 interpolation。Colyseus、Nakama 等 provider 可以提供 state sync 和 tick source；GameKit core 提供 provider-neutral presentation helper；游戏或 demo 负责声明字段映射和 snap policy。
 
 ## Provider-Native Capability Bridge
 
@@ -511,6 +513,7 @@ Multiplayer diagnostics 应回答：
 
 - 游戏代码发送语义命令，不发送 backend frame。命令应小、可序列化、可验证，并能关联 tick、peer、player 和 correlation id。
 - 线上权威玩法默认使用 host/server validation；客户端预测只影响本地表现，不直接写入长期权威状态。
+- 使用 `createMultiplayerSnapshotPresentation()` 或同等 presentation cache 连接 authoritative snapshot 和 renderer frame；不要让 renderer 直接按低频网络 tick 跳变，也不要把 presented position 写回 authority state。
 - UI 和 gameplay 代码应读取 authority binding / last authoritative snapshot 来决定是否显示联网游戏状态；未绑定时只能显示连接中、观战、离线练习或等待同步。
 - 单机 UI 也应读取 local authoritative snapshot，而不是直接读写另一份 mutable gameplay state。
 - 本地 simulation 在联网模式中只能作为 prediction/interpolation cache，必须能被 authority snapshot 校正或丢弃。
