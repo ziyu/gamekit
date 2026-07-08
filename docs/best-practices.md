@@ -144,11 +144,11 @@
 - declaration bundler 遇到复杂类型递归时，可以为该包显式保留 tsc declaration tree，同时用 bundler 只输出入口 JS；这种例外要通过包级 build metadata 标记，并继续经过 tarball 和外部安装 smoke。
 - 发布 staging 目录每轮必须先清理目标包目录，再复制当前 `dist`，并在 staging 侧再次清理 `.tsbuildinfo`，避免固定 release 目录带入旧文件。
 - 发布验证中的 npm cache/logs 应隔离到 release 目录，避免用户级 `~/.npm` 权限或缓存状态影响 `npm pack`。
-- scoped package 通过 registry HTTP API 发布时，payload 需要顶层 `access: "public"`；仅保留 manifest `publishConfig.access` 可能会被 registry 当作 private scoped package。
-- 自动化发布脚本不得把 token 写入仓库、日志或命令错误栈。若调用 curl，应通过临时 config/header 文件传递 Authorization，并在结束后删除临时目录。
+- scoped package 通过 token fallback 发布时必须显式传递 `--access public`；仅保留 manifest `publishConfig.access` 可能会被 registry 当作 private scoped package。
+- 自动化发布脚本不得把 token 写入仓库、日志或命令错误栈。token fallback 应通过 npm CLI 和临时 userconfig 传递认证，并在结束后删除临时目录。
 - 未发布前验证一组相互依赖的 tarball 时，临时消费者必须把内部包解析到本地 tarball，例如通过 pnpmfile hook 或 overrides；否则包内的明确版本号会让安装器去 registry 查找尚未发布的相邻包。
 - registry 网络不稳定时可以重试安装步骤，但不能跳过 registry smoke；至少一次需要从 npm registry 安装已发布包并运行外部 consumer smoke。
-- GitHub Actions 发布 job 必须绑定受保护 Environment，并优先通过 npm Trusted Publishing/OIDC 发布；`NPM_TOKEN` 只作为 fallback。发布脚本只能从环境变量或 stdin 读取 token，不能把 token 写入日志、仓库或命令参数。
+- GitHub Actions 发布 job 必须绑定受保护 Environment，并优先通过 npm Trusted Publishing/OIDC 发布；`NPM_TOKEN` 只用于新包首发 bootstrap 和 fallback。发布脚本只能从环境变量或 stdin 读取 token，不能把 token 写入日志、仓库或命令参数。
 - Trusted Publishing 会校验 npm provenance，发布产物的 `package.json.repository.url` 必须匹配 GitHub Actions 来源仓库。
 - 具体发布步骤必须维护在 `docs/release.md`，不要把一次发布的临时状态、失败日志或人工补救命令写入长期最佳实践。
 
