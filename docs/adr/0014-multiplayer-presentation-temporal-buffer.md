@@ -1,0 +1,81 @@
+# ADR 0014：Multiplayer Presentation 使用时间采样和类型化插值
+
+## Status
+
+Accepted
+
+## Context
+
+ADR 0013 已经把 Multiplayer 的标准同步边界收敛为 authority endpoint → authoritative snapshot/patch/result → client receiver → presentation / prediction / interpolation。接下来需要明确 presentation helper 的长期形态。
+
+最直接的做法是提供一个 keyed `{ x, y }` smoothing helper。它能快速改善 demo 中低频 snapshot 导致的跳变，但长期限制很明显：实际游戏需要平滑的状态不止二维位置，还包括速度、朝向、3D transform、camera target、动画 blend、projectile trail、载具、载具乘客、携带物、UI indicator 等。同时，泛化成“递归遍历任意 snapshot 并自动插值所有 number”的方案也不合适，因为 snapshot 里包含 score、phase、cooldown、enum、boolean、inventory、事件和 authority metadata；这些字段不能按同一规则插值，深度遍历还会放大每帧成本和语义风险。
+
+已有多人/网络同步实践通常把问题拆成两层：
+
+- 网络层接收带 tick/time/version 的 authoritative snapshot，并在客户端维护一个短期 snapshot interpolation buffer。
+- 游戏或 presentation 层显式声明哪些字段能插值、如何插值、何时 snap/reset，以及本地 prediction 如何被 authority 校正。
+
+参考资料：
+
+- [Gaffer On Games: Snapshot Interpolation](https://gafferongames.com/post/snapshot_interpolation/)
+- [Unity Netcode NetworkTransform](https://mp-docs.dl.it.unity3d.com/netcode/current/components/networktransform/)
+- [Colyseus Phaser Linear Interpolation Tutorial](https://docs.colyseus.io/learn/tutorial/phaser/linear-interpolation)
+
+## Decision
+
+Multiplayer presentation 的长期公共设计采用“temporal snapshot buffer + typed interpolation primitives + game-owned track projection”。
+
+`@gamekit/multiplayer-core` 应提供 provider-neutral 的 presentation timing toolkit：
+
+- 按 `tick`、`serverTime` 或 provider version 接收 authoritative snapshot。
+- 维护短期 ordered buffer，处理过期、乱序、重复、resync、trim 和 reset。
+- 按 render time 和 interpolation delay 采样，返回 `previous`、`next`、`alpha`、`status`、snapshot age、delay、buffer length、dropped/stale counters 等诊断。
+- 提供低成本 typed interpolation primitives，例如 number、angle、vector2、vector3、quaternion/slerp 和 step/snap value。
+
+`@gamekit/multiplayer-core` 不提供 deep generic snapshot interpolator，也不把二维 vector smoothing helper 作为稳定抽象中心。
+
+游戏或 app presentation 层负责 track projection：
+
+- 从具体 `ArenaSnapshot`、`PlayerSnapshot`、`CoreSnapshot` 或其他 gameplay snapshot 中挑选可表现字段。
+- 为每个字段选择 interpolation primitive、snap distance、teleport/phase reset、短暂 extrapolate 或 step policy。
+- 把采样结果写入 render-only snapshot、renderer native object、camera display state 或 UI view model。
+- 确保 presented state 不写回 authority state、Save payload、DataType 或 provider-native state。
+
+Prediction / reconciliation 与 remote interpolation 分开：
+
+- 本地玩家可以基于 input 做 prediction，并在 authoritative snapshot 到达后校正。
+- 远端 entity 默认通过 snapshot buffer 插值。
+- 两者共享 authority receiver、snapshot age、tick drift、correction magnitude 和 resync diagnostics，但不混成一个 backend adapter 行为。
+
+Backend adapter 职责保持不变：
+
+- Colyseus、Nakama 等 provider 可以提供 state sync、server tick、room metadata、reconnect 和 native bridge。
+- Adapter 不 hard-code 具体游戏字段的 interpolation。
+- Provider-native state sync 可以成为 authoritative source，但必须通过 authority binding 标记 source、tick/version、resync 和 diagnostics。
+
+## Consequences
+
+收益：
+
+- 同时支持 2D、3D、camera、UI indicator 和 renderer-native presentation，不被 `{ x, y }` helper 限死。
+- 避免深度通用插值误处理 score、phase、enum、boolean、事件和 authority metadata。
+- 高频路径的字段数量、类型和 allocation 可由调用方显式控制，性能模型更清晰。
+- Offline/local、host-authoritative、server-authoritative 和 provider-native state sync 都能共享同一条 presentation contract。
+- Backend adapter 继续保持 provider 接入层，不膨胀成游戏表现层。
+
+代价：
+
+- 游戏需要显式声明 track projection；core 不能自动知道哪些字段可插值。
+- Core API 会比单个 vector helper 多一层时间采样概念，需要测试 buffer delay、乱序、reset 和 sample status。
+- Prediction/reconciliation 仍需要游戏侧规则参与，不能由 provider-neutral helper 自动完成。
+
+约束：
+
+- 不把插值后的 presented state 写回 authoritative simulation、Data save payload 或 provider-native room state。
+- Authority binding 变化、session reset、snapshot version change、phase hard transition、teleport 或 resync 必须 reset 相关 presentation buffer / prediction cache。
+- Multiplayer demo 和 conformance tests 不能只断言移动“看起来更平滑”；还要断言 snapshot age、delay、stale/drop counters、reset cleanup 和 authority source gate。
+
+## References
+
+- ADR 0013：`docs/adr/0013-standard-authoritative-replication-boundary.md`
+- Multiplayer 模块设计：`docs/modules/multiplayer.md`

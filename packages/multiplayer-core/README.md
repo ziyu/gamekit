@@ -84,36 +84,24 @@ Offline/local play should use the same action/input, tick, snapshot/apply and di
 
 ## Snapshot Presentation
 
-Network and authority ticks are often lower than renderer refresh rate. Use `createMultiplayerSnapshotPresentation()` to keep interpolation/presentation caches out of backend adapters while still sharing the same local/offline and remote snapshot path:
+Network and authority ticks are often lower than renderer refresh rate. Presentation code should keep authoritative state and display state separate:
 
-```ts
-import { createMultiplayerSnapshotPresentation } from "@gamekit/multiplayer-core";
-
-const presentation = createMultiplayerSnapshotPresentation({
-  selectSamples(snapshot) {
-    return snapshot.players.map((player) => ({
-      key: player.id,
-      target: player.position
-    }));
-  },
-  applyPresentedSnapshot({ snapshot, presented }) {
-    return {
-      ...snapshot,
-      players: snapshot.players.map((player) => ({
-        ...player,
-        position: presented.get(player.id) ?? player.position
-      }))
-    };
-  },
-  shouldReset(previous, next) {
-    return previous !== undefined && next.tick < previous.tick;
-  }
-});
-
-render(presentation.present(authoritativeSnapshot, frameDeltaMs));
+```txt
+authoritative snapshot
+  -> temporal snapshot buffer
+  -> sample previous / next / alpha for the current render time
+  -> game-owned track projection
+  -> render-only snapshot, renderer objects or UI view model
 ```
 
-The helper only smooths keyed `{ x, y }` samples. Games still decide which fields are presentable, when to snap teleports or phase changes, and how to apply presented values to render-only snapshots. Backend packages such as `@gamekit/multiplayer-colyseus` should expose provider state and diagnostics, not hard-code gameplay interpolation.
+The stable package boundary is a presentation timing toolkit, not a backend adapter feature and not a deep object interpolator. Core utilities should stay provider-neutral:
+
+- store short-lived authoritative snapshots by tick, server time or provider version;
+- report sample status, interpolation delay, snapshot age, stale/drop counters and reset diagnostics;
+- provide typed interpolation primitives such as number, angle, vector2, vector3, quaternion/slerp and step/snap value;
+- leave field selection, snap/extrapolate policy and render writes to the game or app presentation layer.
+
+Games should reset presentation buffers when the authority binding, session, snapshot version, hard phase, teleport or resync state changes. Backend packages such as `@gamekit/multiplayer-colyseus` should expose provider state, tick/version source and diagnostics, not hard-code gameplay interpolation policy.
 
 ## Peer / Player Binding
 

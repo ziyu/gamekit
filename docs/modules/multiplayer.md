@@ -315,7 +315,7 @@ client action / input
 - 为 local authority 提供 in-process delivery，使 offline singleplayer、unit test 和 local preview 可以复用同一 reducer/simulation/snapshot receiver，而不是创建第二套单机入口。
 - 在 host/server side 维护 input queue、last accepted sequence、rejected reason、tick boundary 和 snapshot broadcaster 的通用骨架。
 - 在 client side 维护 authority source gate、snapshot age、last applied tick、resync state 和 rejected non-authority payload diagnostics。
-- 提供 snapshot presentation helper：core 只维护 keyed sample 的平滑缓存、snap/reset 规则和低成本 diagnostics；游戏自己声明可插值字段、teleport/phase change 何时 snap、以及如何把 presented value 写入 render-only snapshot。
+- 提供 snapshot presentation timing toolkit：core 维护按 tick/server time 排序的短期 snapshot buffer、render delay/jitter window、sample status、stale/drop diagnostics 和少量类型化插值原语；游戏自己声明可表现字段、track layout、snap/extrapolate policy，以及如何把 presented value 写入 render-only snapshot。
 - 提供 peer/player binding utilities，避免重复实现 duplicate peer、late join、disconnect 和 reconnect 映射。
 - 提供 conformance tests，验证多 client 不会各自本地开局、非 authority snapshot 不会被应用、不同 session state 隔离、离开 peer 不继续阻塞 ready/start。
 
@@ -324,8 +324,27 @@ client action / input
 - 游戏仍然定义 input frame、action type、simulation、collision、score、round lifecycle、snapshot shape 和 validation policy。
 - Local authority 不等于绕过 multiplayer contract。它只是把 transport 替换为 in-process delivery，玩法 state 仍由 authority loop 推进，并通过 snapshot/patch/result 驱动 presentation。
 - Provider-native state sync 仍可使用，例如 Colyseus Schema；但必须声明它是否是 authority source，并通过 typed native bridge 或 adapter mapping 暴露 provider-neutral diagnostics。
-- Client prediction 和 interpolation 是表现层或可回滚缓存，不是 authority state。
-- Backend adapter 不应 hard-code 具体游戏 interpolation。Colyseus、Nakama 等 provider 可以提供 state sync 和 tick source；GameKit core 提供 provider-neutral presentation helper；游戏或 demo 负责声明字段映射和 snap policy。
+- Client prediction、reconciliation 和 interpolation 是表现层或可回滚缓存，不是 authority state。
+- Backend adapter 不应 hard-code 具体游戏 interpolation。Colyseus、Nakama 等 provider 可以提供 state sync、server tick 和 snapshot/version source；GameKit core 提供 provider-neutral presentation timing 与低成本 interpolation primitives；游戏或 demo 负责声明字段映射和 snap policy。
+
+## Snapshot Presentation / Interpolation
+
+Authoritative snapshot 通常以固定 tick 或 provider state update 到达，频率和 jitter 都不同于 renderer frame。Multiplayer 的 presentation 层必须把“权威状态”和“显示状态”分开：renderer 可以消费插值后的 render-only snapshot，但不能把 presented position、display rotation、预测缓存或平滑状态写回 authority state。
+
+长期边界：
+
+- Core 提供 temporal snapshot buffer，而不是完整对象图插值器。Buffer 接收带 `tick`、`serverTime` 或 provider version 的 authoritative snapshot，按 render time 采样出 `previous`、`next`、`alpha`、`status`、snapshot age、delay、dropped/stale count 等信息。
+- Core 提供少量类型化、可组合、低分配的 interpolation primitives，例如 number、angle、vector2、vector3、quaternion/slerp 和 step/snap value。Core 不递归遍历任意 snapshot object，不猜测字段语义，也不自动插值 boolean、enum、inventory、score、phase 或事件。
+- 游戏或 app presentation 层拥有 track projection：声明哪些 entity/field 可以插值、使用什么 primitive、什么时候 snap、什么时候允许短暂 extrapolate、什么时候因为 teleport、phase change、authority binding change、snapshot version change 或 resync 直接 reset。
+- 本地玩家 prediction / server reconciliation 与远端 entity interpolation 分开建模。Prediction 可以复用同一个 authoritative snapshot receiver 和 diagnostics，但不应被塞进 backend adapter 或通用 snapshot buffer 内部。
+- Local/offline authority 也走同一 presentation contract。它可以使用更小或为零的 render delay，但不能绕过 snapshot/apply/presentation 路径去直接读写另一份单机显示状态。
+- Backend adapter 只提供 provider-neutral snapshot/version/tick summary、source gate 和 provider-native capability bridge。Colyseus Schema、Nakama match state 等 provider-native state sync 可以成为 authoritative source，但 presentation policy 仍由 GameKit presentation layer 和游戏 track projection 决定。
+
+性能约束：
+
+- 不提供 deep generic interpolation、schema reflection 或按 frame 遍历整棵 gameplay snapshot 的默认实现。
+- Track 数量、字段类型和 allocation 行为必须由调用方显式控制；高频路径优先复用 buffer、scratch object 或 renderer-specific write target。
+- Diagnostics 采样低频摘要，默认不展开完整高频 payload。
 
 ## Provider-Native Capability Bridge
 
@@ -513,7 +532,7 @@ Multiplayer diagnostics 应回答：
 
 - 游戏代码发送语义命令，不发送 backend frame。命令应小、可序列化、可验证，并能关联 tick、peer、player 和 correlation id。
 - 线上权威玩法默认使用 host/server validation；客户端预测只影响本地表现，不直接写入长期权威状态。
-- 使用 `createMultiplayerSnapshotPresentation()` 或同等 presentation cache 连接 authoritative snapshot 和 renderer frame；不要让 renderer 直接按低频网络 tick 跳变，也不要把 presented position 写回 authority state。
+- 使用 temporal snapshot buffer、typed interpolation primitives 或等价 presentation cache 连接 authoritative snapshot 和 renderer frame；不要让 renderer 直接按低频网络 tick 跳变，也不要把 presented position 写回 authority state。
 - UI 和 gameplay 代码应读取 authority binding / last authoritative snapshot 来决定是否显示联网游戏状态；未绑定时只能显示连接中、观战、离线练习或等待同步。
 - 单机 UI 也应读取 local authoritative snapshot，而不是直接读写另一份 mutable gameplay state。
 - 本地 simulation 在联网模式中只能作为 prediction/interpolation cache，必须能被 authority snapshot 校正或丢弃。

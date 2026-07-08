@@ -55,6 +55,7 @@ corepack pnpm --filter multiplayer-demo dev
 - Browser client 离开房间或 host 关闭房间后，server-side host 必须从 authoritative arena state 中移除对应 player actor，并广播新的 snapshot；UI 不能继续渲染已经离开的 client。
 - Demo 可以拥有 app-local payload、规则、peer/player 映射和 presentation，但 authority binding、host/local authority loop、snapshot source gate 和通用 replication diagnostics 应 dogfood `multiplayer-core` 的标准 helper；demo 不应维护一套平行的多人同步框架。
 - Host GameRuntime 安装 `createMultiplayerBridgeModule()`，在 tick 边界处理低频 command、authority fact 和 trace；高频位置、速度、snapshot buffer 不进入 EventBus。
+- 远端玩家和共享对象的平滑表现遵循 `docs/adr/0014-multiplayer-presentation-temporal-buffer.md`：使用 temporal snapshot buffer、类型化插值原语和 demo-owned track projection；插值后的 presented state 只写入 render-only view model，不写回 authoritative arena state。
 - 高频 arena state 可以通过 GameKit envelope snapshot stream 或 provider-native state sync lane 同步；无论选择哪条 lane，都必须使用 authority binding 约束 tick/version、source gate、resync 和 local authority。GameKit envelope 继续承载低频语义事实和 diagnostics。
 - 完整多人能力验证应保留两个同步 lane：`gamekit-envelope` 作为跨 backend baseline，`colyseus-schema` 或其他 provider-native lane 用来验证成熟 backend 原生 state sync、reconnect、room metadata 和 provider diagnostics。两条 lane 必须输出同一种 app-local view model，UI 和 gameplay domain 不直接依赖 Colyseus Room、Schema 或 Client。
 - 每个 room 必须声明当前 authoritative path；GameKit envelope snapshot stream 与 Colyseus native state sync 不能同时写同一份 authority state。非当前 authority path 只能作为 diagnostics、summary 或 debug comparison。
