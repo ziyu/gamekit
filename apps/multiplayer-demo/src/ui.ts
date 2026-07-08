@@ -24,6 +24,7 @@ export type MultiplayerDemoJoinRole = "host" | "client";
 export type RealtimeArenaControlPermissions = {
   ready: boolean;
   startRound: boolean;
+  interact: boolean;
   rematch: boolean;
   resetArena: boolean;
 };
@@ -71,6 +72,7 @@ export type MultiplayerDemoUi = {
   arenaHint: HTMLElement;
   readyButton: HTMLButtonElement;
   startRoundButton: HTMLButtonElement;
+  interactButton: HTMLButtonElement;
   rematchButton: HTMLButtonElement;
   resetArenaButton: HTMLButtonElement;
 };
@@ -173,6 +175,7 @@ export function renderMultiplayerDemoShell(root: HTMLElement): MultiplayerDemoUi
     arenaHint: arena.hint,
     readyButton: arena.readyButton,
     startRoundButton: arena.startRoundButton,
+    interactButton: arena.interactButton,
     rematchButton: arena.rematchButton,
     resetArenaButton: arena.resetArenaButton
   };
@@ -203,12 +206,14 @@ export function bindRealtimeArenaControls(
   actions: {
     ready(): void;
     startRound(): void;
+    interact(): void;
     rematch(): void;
     resetArena(): void;
   }
 ): void {
   ui.readyButton.addEventListener("click", actions.ready);
   ui.startRoundButton.addEventListener("click", actions.startRound);
+  ui.interactButton.addEventListener("click", actions.interact);
   ui.rematchButton.addEventListener("click", actions.rematch);
   ui.resetArenaButton.addEventListener("click", actions.resetArena);
 }
@@ -285,12 +290,15 @@ export function renderRealtimeArenaUi(
       ? "none"
       : `${localPlayer.label} / ${localPlayer.teamId} / ${localPlayer.carryingCoreId ?? "empty"} / ${localPlayer.deliveredCores}`;
   ui.arenaInput.textContent = `${diagnostics.inputSequence} / ${diagnostics.inputSendRate}hz / ${diagnostics.serverTickRate}tps`;
-  ui.arenaHint.textContent = arenaHint(state, diagnostics);
+  ui.arenaHint.textContent = arenaHint(state, diagnostics, localPlayer);
 
   ui.readyButton.disabled = !permissions.ready || state.phase !== "lobby";
   ui.readyButton.textContent = localPlayer?.ready ? "Unready" : "Ready";
   ui.startRoundButton.disabled =
     !permissions.startRound || state.phase !== "lobby" || localPlayer?.ready !== true;
+  ui.interactButton.disabled =
+    !permissions.interact || state.phase !== "running" || localPlayer === undefined;
+  ui.interactButton.textContent = localPlayer?.carryingCoreId ? "Deliver" : "Interact";
   ui.rematchButton.disabled = !permissions.rematch || state.phase !== "results";
   ui.resetArenaButton.disabled = !permissions.resetArena;
 
@@ -375,6 +383,7 @@ export function resolveRealtimeArenaControlPermissions(
       return {
         ready: true,
         startRound: true,
+        interact: true,
         rematch: true,
         resetArena: true
       };
@@ -382,6 +391,7 @@ export function resolveRealtimeArenaControlPermissions(
       return {
         ready: true,
         startRound: false,
+        interact: true,
         rematch: false,
         resetArena: false
       };
@@ -390,6 +400,7 @@ export function resolveRealtimeArenaControlPermissions(
       return {
         ready: false,
         startRound: false,
+        interact: false,
         rematch: false,
         resetArena: false
       };
@@ -464,6 +475,7 @@ function createRealtimeArenaPanel(): {
   hint: HTMLElement;
   readyButton: HTMLButtonElement;
   startRoundButton: HTMLButtonElement;
+  interactButton: HTMLButtonElement;
   rematchButton: HTMLButtonElement;
   resetArenaButton: HTMLButtonElement;
 } {
@@ -485,9 +497,16 @@ function createRealtimeArenaPanel(): {
   const controls = createElement("div", "multiplayer-demo__round-controls");
   const readyButton = createButton("Ready");
   const startRoundButton = createButton("Start Round", "multiplayer-demo__primary");
+  const interactButton = createButton("Interact");
   const rematchButton = createButton("Rematch");
   const resetArenaButton = createButton("Reset Arena");
-  controls.replaceChildren(readyButton, startRoundButton, rematchButton, resetArenaButton);
+  controls.replaceChildren(
+    readyButton,
+    startRoundButton,
+    interactButton,
+    rematchButton,
+    resetArenaButton
+  );
   const hint = createElement("p", "multiplayer-demo__arena-hint", "Local arena ready");
   root.replaceChildren(stage, controls, hint);
 
@@ -502,6 +521,7 @@ function createRealtimeArenaPanel(): {
     hint,
     readyButton,
     startRoundButton,
+    interactButton,
     rematchButton,
     resetArenaButton
   };
@@ -612,7 +632,8 @@ function formatScore(score: Record<string, number>): string {
 
 function arenaHint(
   state: RealtimeArenaViewState,
-  diagnostics: RealtimeLocalGameDiagnostics
+  diagnostics: RealtimeLocalGameDiagnostics,
+  localPlayer?: RealtimeArenaViewState["players"][number]
 ): string {
   if (diagnostics.lastAction && !diagnostics.lastAction.accepted) {
     return diagnostics.lastAction.reason;
@@ -632,7 +653,36 @@ function arenaHint(
   if (state.phase === "ending") {
     return "Ending";
   }
-  return "Running";
+
+  if (!localPlayer) {
+    return "Waiting for player snapshot";
+  }
+  if (localPlayer.carryingCoreId) {
+    const relay = state.relayNodes.find((node) => node.teamId === localPlayer.teamId);
+    if (
+      relay &&
+      distance(localPlayer.position, relay.position) <= relay.radius + state.rules.deliverRadius
+    ) {
+      return "Relay in range";
+    }
+
+    return "Carry core to your relay";
+  }
+
+  const core = state.cores.find(
+    (candidate) =>
+      candidate.carriedByPlayerId === undefined &&
+      distance(localPlayer.position, candidate.position) <=
+        candidate.radius + state.rules.pickupRadius
+  );
+  return core ? "Core in range" : "Secure a core";
+}
+
+function distance(
+  a: RealtimeArenaViewState["players"][number]["position"],
+  b: RealtimeArenaViewState["players"][number]["position"]
+): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function eventTone(type: string): string {

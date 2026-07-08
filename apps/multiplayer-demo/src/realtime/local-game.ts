@@ -27,6 +27,7 @@ export type RealtimeLocalGameDiagnostics = {
 
 export type RealtimeInputTarget = {
   setInputKey(code: string, down: boolean): void;
+  queueInteract(): void;
   resetInputKeys(): void;
 };
 
@@ -47,6 +48,7 @@ export type RealtimeLocalGame = {
   rematch(): RealtimeArenaActionResult;
   reset(): void;
   setInputKey(code: string, down: boolean): void;
+  queueInteract(): void;
   resetInputKeys(): void;
   step(now: number): void;
   snapshot(): RealtimeArenaSnapshot;
@@ -134,6 +136,9 @@ export function createRealtimeLocalGame(options: RealtimeLocalGameOptions = {}):
     },
     setInputKey(code, down) {
       input.setInputKey(code, down);
+    },
+    queueInteract() {
+      input.queueInteract();
     },
     resetInputKeys() {
       input.resetKeys();
@@ -305,6 +310,9 @@ export function createRealtimeInputSampler(): RealtimeInputSampler {
     keys.clear();
     interactQueued = false;
   };
+  const queueInteract = (): void => {
+    interactQueued = true;
+  };
 
   return {
     get sequence() {
@@ -323,11 +331,14 @@ export function createRealtimeInputSampler(): RealtimeInputSampler {
       interactQueued = false;
       return frame;
     },
+    queueInteract() {
+      queueInteract();
+    },
     setInputKey(code, down) {
       if (down) {
         keys.add(code);
         if (code === "KeyE") {
-          interactQueued = true;
+          queueInteract();
         }
       } else {
         keys.delete(code);

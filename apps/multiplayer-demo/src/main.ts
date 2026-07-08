@@ -64,6 +64,13 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
           realtimeGame.setInputKey(code, down);
         }
       },
+      queueInteract() {
+        if (isRemoteSessionActive()) {
+          remoteInput.queueInteract();
+        } else if (isLocalPracticeActive()) {
+          realtimeGame.queueInteract();
+        }
+      },
       resetInputKeys() {
         remoteInput.resetInputKeys();
         realtimeGame.resetInputKeys();
@@ -169,6 +176,22 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
         void sendRealtimeAction({ type: "rematch" });
       } else if (isLocalPracticeActive()) {
         realtimeGame.rematch();
+      } else {
+        rejectDisallowedArenaAction(disallowedArenaActionReason(mode));
+      }
+      ui.arenaCanvas.focus();
+      renderArena();
+    },
+    interact() {
+      const mode = readRunMode();
+      if (!resolveRealtimeArenaControlPermissions(mode).interact) {
+        rejectDisallowedArenaAction(disallowedArenaActionReason(mode));
+        return;
+      }
+      if (isRemoteSessionActive()) {
+        remoteInput.queueInteract();
+      } else if (isLocalPracticeActive()) {
+        realtimeGame.queueInteract();
       } else {
         rejectDisallowedArenaAction(disallowedArenaActionReason(mode));
       }
@@ -324,6 +347,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     ui.arenaHint.textContent = "Waiting for host snapshot";
     ui.readyButton.disabled = true;
     ui.startRoundButton.disabled = true;
+    ui.interactButton.disabled = true;
     ui.rematchButton.disabled = true;
     ui.resetArenaButton.disabled =
       !resolveRealtimeArenaControlPermissions(readRunMode()).resetArena;
@@ -342,6 +366,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
         : "Join the hosted room before playing";
     ui.readyButton.disabled = true;
     ui.startRoundButton.disabled = true;
+    ui.interactButton.disabled = true;
     ui.rematchButton.disabled = true;
     ui.resetArenaButton.disabled = true;
   }

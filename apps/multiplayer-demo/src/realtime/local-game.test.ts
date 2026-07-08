@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRealtimeLocalGame } from "./local-game";
+import { createRealtimeInputSampler, createRealtimeLocalGame } from "./local-game";
 
 describe("realtime local game", () => {
   it("feeds sampled input into the fixed tick simulation", () => {
@@ -31,5 +31,16 @@ describe("realtime local game", () => {
     game.reset();
 
     expect(game.state.players[0]?.label).toBe("Pilot Prime");
+  });
+
+  it("queues interact as a one-shot input frame", () => {
+    const input = createRealtimeInputSampler();
+
+    expect(input.nextFrame(0).interact).toBe(false);
+
+    input.queueInteract();
+
+    expect(input.nextFrame(50).interact).toBe(true);
+    expect(input.nextFrame(100).interact).toBe(false);
   });
 });

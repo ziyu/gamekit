@@ -11,27 +11,27 @@ describe("multiplayer-demo UI state", () => {
     [
       "local-offline",
       { host: true, join: true, leave: false, resetRoom: false },
-      { ready: true, startRound: true, rematch: true, resetArena: true }
+      { ready: true, startRound: true, interact: true, rematch: true, resetArena: true }
     ],
     [
       "host",
       { host: false, join: false, leave: true, resetRoom: true },
-      { ready: true, startRound: true, rematch: true, resetArena: true }
+      { ready: true, startRound: true, interact: true, rematch: true, resetArena: true }
     ],
     [
       "client",
       { host: false, join: false, leave: true, resetRoom: false },
-      { ready: true, startRound: false, rematch: false, resetArena: false }
+      { ready: true, startRound: false, interact: true, rematch: false, resetArena: false }
     ],
     [
       "host-not-joined",
       { host: false, join: true, leave: false, resetRoom: true },
-      { ready: false, startRound: false, rematch: false, resetArena: false }
+      { ready: false, startRound: false, interact: false, rematch: false, resetArena: false }
     ],
     [
       "hosted-not-joined",
       { host: false, join: true, leave: false, resetRoom: false },
-      { ready: false, startRound: false, rematch: false, resetArena: false }
+      { ready: false, startRound: false, interact: false, rematch: false, resetArena: false }
     ]
   ] satisfies Array<
     [
