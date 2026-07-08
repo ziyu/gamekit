@@ -8,6 +8,7 @@ import {
   renderRealtimeArenaCanvas,
   type RealtimeLocalGameDiagnostics
 } from "./realtime/local-game";
+import { createRealtimeArenaPresentation } from "./realtime/presentation";
 import { normalizeRealtimeArenaPlayerLabel, type RealtimeArenaSnapshot } from "./realtime/domain";
 import type { RealtimeArenaNetworkAction, RealtimeArenaSnapshotPayload } from "./realtime/protocol";
 import {
@@ -49,6 +50,8 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
   let busyLabel: string | undefined;
   let lastError: string | undefined;
   const realtimeGame = createRealtimeLocalGame({ playerName: initialPlayerName });
+  const localPresentation = createRealtimeArenaPresentation();
+  const remotePresentation = createRealtimeArenaPresentation();
   const remoteInput = createRealtimeInputSampler();
   const remoteDiagnostics: RealtimeLocalGameDiagnostics = {
     inputSequence: 0,
@@ -79,6 +82,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     ui.root
   );
   let animationFrame = 0;
+  let lastRenderFrameTime: number | undefined;
   let lastArenaUiRender = 0;
   let remoteLastFrameTime: number | undefined;
   let remoteInputAccumulator = 0;
@@ -208,6 +212,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
         void sendRealtimeAction({ type: "reset" });
       } else if (isLocalPracticeActive()) {
         realtimeGame.reset();
+        localPresentation.reset();
       } else {
         rejectDisallowedArenaAction(disallowedArenaActionReason(mode));
       }
@@ -240,12 +245,22 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
   window.addEventListener("beforeunload", cleanup, { once: true });
 
   function animateArena(now: number): void {
+    const renderDeltaMs =
+      lastRenderFrameTime === undefined
+        ? REALTIME_ARENA_TICK_MS
+        : Math.min(250, Math.max(0, now - lastRenderFrameTime));
+    lastRenderFrameTime = now;
+
     if (isRemoteSessionActive()) {
       stepRemoteArena(now);
-      renderRemoteArenaCanvas();
+      renderRemoteArenaCanvas(renderDeltaMs);
     } else if (isLocalPracticeActive()) {
       realtimeGame.step(now);
-      realtimeGame.render(ui.arenaCanvas);
+      renderRealtimeArenaCanvas(
+        ui.arenaCanvas,
+        localPresentation.present(realtimeGame.snapshot(), renderDeltaMs),
+        realtimeGame.localPlayerId
+      );
     } else {
       clearArenaCanvas();
     }
@@ -420,14 +435,18 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     }
   }
 
-  function renderRemoteArenaCanvas(): void {
+  function renderRemoteArenaCanvas(renderDeltaMs: number): void {
     const remote = currentRemoteSnapshot();
     if (!remote) {
       clearArenaCanvas();
       return;
     }
 
-    renderRealtimeArenaCanvas(ui.arenaCanvas, remote.snapshot, readRemotePlayerId(remote));
+    renderRealtimeArenaCanvas(
+      ui.arenaCanvas,
+      remotePresentation.present(remote.snapshot, renderDeltaMs),
+      readRemotePlayerId(remote)
+    );
   }
 
   function clearArenaCanvas(): void {
@@ -537,6 +556,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
 
   function resetRemoteSync(): void {
     remoteInput.reset();
+    remotePresentation.reset();
     remoteDiagnostics.inputSequence = 0;
     remoteDiagnostics.inputSendRate = 0;
     remoteDiagnostics.serverTickRate = 20;
