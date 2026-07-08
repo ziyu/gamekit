@@ -15,7 +15,7 @@ Multiplayer Demo 是 `@gamekit/multiplayer-core` 与 `@gamekit/multiplayer-colys
 - `host / not joined` 再次 Join 必须恢复当前窗口的 host 控制身份；不能因为它通过 browser client facade 重新连入，就把原 host 降级成普通 client。
 - Player name 是 lobby / arena authoritative state 的一部分；client 可以提交期望名字，但 host authority 必须清洗并去重最终显示名，默认名字也不能在同一 session 内重复。
 - Lobby / results overlay 展示玩家名字、slot、ready 状态、start 权限、countdown、winner、scoreboard、rematch 和 return lobby。
-- Running 视图展示玩家名字、目标物、relay node、危险区、score、round timer、本地/远端 player state、上下文玩法提示和显式 `Interact` / `Deliver` 动作按钮；按钮和键盘输入都必须进入同一 input frame contract，不能绕过 host authority。
+- Running 视图展示玩家名字、目标物、relay node、危险区、score、round timer、本地/远端 player state、上下文玩法提示和显式 `Interact [E]` / `Deliver [E]` 快捷动作；按钮和 `E` 键都必须进入同一 input frame contract，不能绕过 host authority。
 - Diagnostics 面板展示 Colyseus backend、GameKit session、active/tracked peer count、sent/received、rtt、snapshot age、input sequence、server tick、accepted/rejected input 和 authority event feed。
 - 旧 loopback console 的 select / confirm / strategy / priority 控件不属于长期 realtime game demo 体验；这些低频 command 验证只能保留在测试夹具或后台 bridge 验证中，不能成为浏览器主界面。
 - 本地 dev server 同时启动 Vite UI、Colyseus server，并按 session id 管理 host GameRuntime / arena lifecycle；浏览器 client 通过 Colyseus 加入选中的 GameKit session。

@@ -5,6 +5,10 @@ import type { RealtimeLocalGameDiagnostics } from "./realtime/local-game";
 
 type RealtimeArenaViewState = RealtimeArenaState | RealtimeArenaSnapshot;
 
+const INTERACT_SHORTCUT_KEY = "E";
+const INTERACT_BUTTON_LABEL = `Interact [${INTERACT_SHORTCUT_KEY}]`;
+const DELIVER_BUTTON_LABEL = `Deliver [${INTERACT_SHORTCUT_KEY}]`;
+
 export type MultiplayerDemoRunMode =
   | "local-offline"
   | "host"
@@ -298,7 +302,7 @@ export function renderRealtimeArenaUi(
     !permissions.startRound || state.phase !== "lobby" || localPlayer?.ready !== true;
   ui.interactButton.disabled =
     !permissions.interact || state.phase !== "running" || localPlayer === undefined;
-  ui.interactButton.textContent = localPlayer?.carryingCoreId ? "Deliver" : "Interact";
+  ui.interactButton.textContent = formatInteractButtonLabel(localPlayer?.carryingCoreId);
   ui.rematchButton.disabled = !permissions.rematch || state.phase !== "results";
   ui.resetArenaButton.disabled = !permissions.resetArena;
 
@@ -497,7 +501,9 @@ function createRealtimeArenaPanel(): {
   const controls = createElement("div", "multiplayer-demo__round-controls");
   const readyButton = createButton("Ready");
   const startRoundButton = createButton("Start Round", "multiplayer-demo__primary");
-  const interactButton = createButton("Interact");
+  const interactButton = createButton(INTERACT_BUTTON_LABEL);
+  interactButton.setAttribute("aria-keyshortcuts", INTERACT_SHORTCUT_KEY);
+  interactButton.title = `Shortcut: ${INTERACT_SHORTCUT_KEY}`;
   const rematchButton = createButton("Rematch");
   const resetArenaButton = createButton("Reset Arena");
   controls.replaceChildren(
@@ -628,6 +634,10 @@ function formatScore(score: Record<string, number>): string {
   return Object.entries(score)
     .map(([teamId, value]) => `${teamId}:${value}`)
     .join(" ");
+}
+
+function formatInteractButtonLabel(carryingCoreId?: string): string {
+  return carryingCoreId ? DELIVER_BUTTON_LABEL : INTERACT_BUTTON_LABEL;
 }
 
 function arenaHint(

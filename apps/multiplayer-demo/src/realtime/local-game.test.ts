@@ -43,4 +43,13 @@ describe("realtime local game", () => {
     expect(input.nextFrame(50).interact).toBe(true);
     expect(input.nextFrame(100).interact).toBe(false);
   });
+
+  it("maps the E shortcut to a one-shot interact input frame", () => {
+    const input = createRealtimeInputSampler();
+
+    input.setInputKey("KeyE", true);
+
+    expect(input.nextFrame(50).interact).toBe(true);
+    expect(input.nextFrame(100).interact).toBe(false);
+  });
 });
