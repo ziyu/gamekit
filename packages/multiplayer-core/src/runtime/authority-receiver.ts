@@ -1,5 +1,6 @@
 import {
   MULTIPLAYER_PATCH_KIND,
+  MULTIPLAYER_RESULT_KIND,
   MULTIPLAYER_SNAPSHOT_KIND,
   type MultiplayerAuthorityApplyContext,
   type MultiplayerAuthorityBindingStore,
@@ -7,16 +8,19 @@ import {
 } from "./authority-types";
 import type { MultiplayerMessageEnvelope, MultiplayerRuntime } from "./types";
 
-export type MultiplayerAuthorityReceiverOptions<TSnapshot, TPatch = unknown> = {
+export type MultiplayerAuthorityReceiverOptions<TSnapshot, TPatch = unknown, TResult = unknown> = {
   runtime: MultiplayerRuntime;
   binding: MultiplayerAuthorityBindingStore;
   snapshotKind?: string;
   patchKind?: string;
+  resultKind?: string;
   clock?: () => number;
   readSnapshot?(payload: unknown, message: MultiplayerMessageEnvelope): TSnapshot | undefined;
   readPatch?(payload: unknown, message: MultiplayerMessageEnvelope): TPatch | undefined;
+  readResult?(payload: unknown, message: MultiplayerMessageEnvelope): TResult | undefined;
   applySnapshot(snapshot: TSnapshot, ctx: MultiplayerAuthorityApplyContext): void;
   applyPatch?(patch: TPatch, ctx: MultiplayerAuthorityApplyContext): void;
+  applyResult?(result: TResult, ctx: MultiplayerAuthorityApplyContext): void;
   onRejected?(rejection: MultiplayerAuthorityRejectedPayload): void;
 };
 
@@ -25,6 +29,8 @@ export type MultiplayerAuthorityReceiverDiagnostics = {
   appliedSnapshots: number;
   receivedPatches: number;
   appliedPatches: number;
+  receivedResults: number;
+  appliedResults: number;
   rejectedMessages: number;
   lastAppliedTick?: number;
   lastSnapshotAgeMs?: number;
@@ -36,17 +42,20 @@ export type MultiplayerAuthorityReceiver = {
   dispose(): void;
 };
 
-export function createMultiplayerAuthorityReceiver<TSnapshot, TPatch = unknown>(
-  options: MultiplayerAuthorityReceiverOptions<TSnapshot, TPatch>
+export function createMultiplayerAuthorityReceiver<TSnapshot, TPatch = unknown, TResult = unknown>(
+  options: MultiplayerAuthorityReceiverOptions<TSnapshot, TPatch, TResult>
 ): MultiplayerAuthorityReceiver {
   const snapshotKind = options.snapshotKind ?? MULTIPLAYER_SNAPSHOT_KIND;
   const patchKind = options.patchKind ?? MULTIPLAYER_PATCH_KIND;
+  const resultKind = options.resultKind ?? MULTIPLAYER_RESULT_KIND;
   const clock = options.clock ?? (() => Date.now());
   const diagnostics: MultiplayerAuthorityReceiverDiagnostics = {
     receivedSnapshots: 0,
     appliedSnapshots: 0,
     receivedPatches: 0,
     appliedPatches: 0,
+    receivedResults: 0,
+    appliedResults: 0,
     rejectedMessages: 0
   };
 
@@ -60,6 +69,12 @@ export function createMultiplayerAuthorityReceiver<TSnapshot, TPatch = unknown>(
     if (message.kind === patchKind) {
       diagnostics.receivedPatches += 1;
       handlePatch(message);
+      return;
+    }
+
+    if (message.kind === resultKind) {
+      diagnostics.receivedResults += 1;
+      handleResult(message);
     }
   });
 
@@ -125,6 +140,38 @@ export function createMultiplayerAuthorityReceiver<TSnapshot, TPatch = unknown>(
     }
   }
 
+  function handleResult(message: MultiplayerMessageEnvelope): void {
+    const decision = options.binding.acceptsMessage(message);
+    if (!decision.allowed) {
+      rejectMessage(message, decision.code, decision.reason);
+      return;
+    }
+
+    if (!options.readResult || !options.applyResult) {
+      rejectMessage(message, "result-not-supported", "Result receiver is not configured.");
+      return;
+    }
+
+    const result = options.readResult(message.payload, message);
+    if (result === undefined) {
+      rejectMessage(message, "invalid-result", "Result payload could not be decoded.");
+      return;
+    }
+
+    const binding = options.binding.current();
+    options.applyResult(result, {
+      binding,
+      message,
+      sourcePeerId: message.sourcePeerId,
+      ...(message.tick === undefined ? {} : { tick: message.tick })
+    });
+    diagnostics.appliedResults += 1;
+    if (message.tick !== undefined) {
+      diagnostics.lastAppliedTick = message.tick;
+      options.binding.update({ tick: message.tick });
+    }
+  }
+
   function rejectMessage(message: MultiplayerMessageEnvelope, code: string, reason: string): void {
     const rejection: MultiplayerAuthorityRejectedPayload = {
       code,
@@ -156,6 +203,8 @@ function cloneDiagnostics(
     appliedSnapshots: diagnostics.appliedSnapshots,
     receivedPatches: diagnostics.receivedPatches,
     appliedPatches: diagnostics.appliedPatches,
+    receivedResults: diagnostics.receivedResults,
+    appliedResults: diagnostics.appliedResults,
     rejectedMessages: diagnostics.rejectedMessages,
     ...(diagnostics.lastAppliedTick === undefined
       ? {}

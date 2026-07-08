@@ -101,8 +101,12 @@ export function createMultiplayerRuntime(
     },
     async reconnect() {
       throw createMultiplayerError(
-        multiplayerErrorCodes.missingConnection,
-        "Reconnect is not available for this multiplayer runtime."
+        multiplayerErrorCodes.unsupportedCapability,
+        "Reconnect is not supported by this multiplayer runtime.",
+        {
+          backendId: options.backend.id,
+          capability: "reconnect"
+        }
       );
     },
     async send<TPayload = unknown>(message: MultiplayerOutgoingMessage<TPayload>) {

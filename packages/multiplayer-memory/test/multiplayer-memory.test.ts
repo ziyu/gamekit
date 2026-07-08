@@ -1,5 +1,6 @@
 import {
   createMultiplayerRuntime,
+  runMultiplayerAuthorityConformance,
   runMultiplayerBackendConformance
 } from "@gamekit/multiplayer-core";
 import { describe, expect, it } from "vitest";
@@ -19,6 +20,50 @@ describe("createMemoryMultiplayerBackend", () => {
     });
     expect(report.receivedByClient.some((message) => message.sourcePeerId === "host")).toBe(true);
     expect(report.receivedByHost.some((message) => message.sourcePeerId === "client")).toBe(true);
+  });
+
+  it("passes the multiplayer authority conformance runner", async () => {
+    const report = await runMultiplayerAuthorityConformance({
+      createBackend: () => createMemoryMultiplayerBackend(),
+      clock: () => 100
+    });
+
+    expect(report.authoritativeSnapshot).toEqual(report.localSnapshot);
+    expect(report.authoritativeSnapshot).toMatchObject({
+      started: true,
+      positions: {
+        "client-a": 2,
+        "client-b": 3
+      },
+      tick: 2
+    });
+    expect(report.hostDiagnostics).toMatchObject({
+      acceptedActions: 1,
+      acceptedInputs: 2,
+      rejectedInputs: 1
+    });
+    expect(report.clientDiagnostics.clientB).toMatchObject({
+      rejectedMessages: 3,
+      appliedSnapshots: 2,
+      appliedPatches: 1,
+      appliedResults: 1
+    });
+    expect(report.authoritativePatch).toEqual({
+      positions: {
+        "client-a": 2,
+        "client-b": 3
+      }
+    });
+    expect(report.authoritativeResult).toEqual({
+      commandId: "start",
+      accepted: true
+    });
+    expect(
+      report.receivedByHost.some((message) => message.sourcePeerId === "isolated-client")
+    ).toBe(false);
+    expect(
+      report.receivedByIsolatedHost.some((message) => message.sourcePeerId === "isolated-client")
+    ).toBe(true);
   });
 
   it("rejects duplicate sessions clearly", async () => {

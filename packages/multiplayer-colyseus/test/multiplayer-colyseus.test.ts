@@ -1,5 +1,6 @@
 import {
   createMultiplayerAuthorityBindingStore,
+  runMultiplayerAuthorityConformance,
   runMultiplayerBackendConformance,
   type MultiplayerMessageEnvelope
 } from "@gamekit/multiplayer-core";
@@ -26,6 +27,62 @@ describe("@gamekit/multiplayer-colyseus", () => {
       expect(report.sessionId).toBe("conformance.session");
       expect(report.receivedByClient.some((message) => message.sourcePeerId === "host")).toBe(true);
       expect(report.receivedByHost.some((message) => message.sourcePeerId === "client")).toBe(true);
+    } finally {
+      await server.dispose();
+    }
+  });
+
+  it("passes the multiplayer authority conformance against local Colyseus rooms", async () => {
+    const roomName = uniqueRoomName("authority");
+    const server = await createGameKitColyseusServer({ roomName });
+
+    try {
+      const report = await runMultiplayerAuthorityConformance({
+        createBackend: () =>
+          createColyseusMultiplayerBackend({
+            endpoint: server.endpoint,
+            roomName
+          }),
+        clock: () => 1000,
+        messageTimeoutMs: 1500
+      });
+
+      expect(report.authoritativeSnapshot).toEqual(report.localSnapshot);
+      expect(report.authoritativeSnapshot).toMatchObject({
+        started: true,
+        positions: {
+          "client-a": 2,
+          "client-b": 3
+        },
+        tick: 2
+      });
+      expect(report.hostDiagnostics).toMatchObject({
+        acceptedActions: 1,
+        acceptedInputs: 2,
+        rejectedInputs: 1
+      });
+      expect(report.clientDiagnostics.clientB).toMatchObject({
+        rejectedMessages: 3,
+        appliedSnapshots: 2,
+        appliedPatches: 1,
+        appliedResults: 1
+      });
+      expect(report.authoritativePatch).toEqual({
+        positions: {
+          "client-a": 2,
+          "client-b": 3
+        }
+      });
+      expect(report.authoritativeResult).toEqual({
+        commandId: "start",
+        accepted: true
+      });
+      expect(
+        report.receivedByHost.some((message) => message.sourcePeerId === "isolated-client")
+      ).toBe(false);
+      expect(
+        report.receivedByIsolatedHost.some((message) => message.sourcePeerId === "isolated-client")
+      ).toBe(true);
     } finally {
       await server.dispose();
     }

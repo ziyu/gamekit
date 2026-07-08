@@ -97,6 +97,8 @@ git diff --check
 - 新增 `createColyseusNativeStateBridge()`，用于把 provider-native state update 映射到 GameKit authority binding diagnostics，覆盖 session/source endpoint gate、tick/version、state size、resync 和 rejected update。
 - Colyseus package 测试覆盖 native capability summary 不泄漏 Room/Client，以及 provider-native state update 的 source gate 和 diagnostics。
 
+首个可用 multiplayer 版本的剩余 P0/P1 缺口、验收门禁和关闭要求记录在 `docs/implementation/multiplayer-first-usable-version.md`。本文件继续维护 package 体系规划，不重复维护同一份任务清单。
+
 ## Implementation Waves
 
 2026-07-01 调整：可见 demo 的最终验收必须经过成熟真实 backend。`@gamekit/multiplayer-memory` 继续负责 conformance 和确定性夹具，下一步重点改为 `@gamekit/multiplayer-colyseus`。GameKit 不继续扩展自研 WebSocket backend 或通用 multiplayer runtime；只用 memory backend 的 demo 不算完整跑通 package 体系。

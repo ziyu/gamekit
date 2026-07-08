@@ -125,6 +125,17 @@ When `multiplayer-core` converges on a `createOrJoinSession()` facade, this pack
 
 For `host-authoritative` rooms, the peer with `role: "host"` is the authority owner. When that peer leaves, the server room closes and remaining clients are disconnected instead of leaving an orphan room that can still accept late clients. Ordinary client leave only updates presence and leaves the room open.
 
+## Reconnect Support Level
+
+The first usable GameKit multiplayer version marks reconnect as unsupported at the provider-neutral runtime boundary:
+
+- `MultiplayerBackendCapabilities.reconnect` is `false`.
+- `createMultiplayerRuntime().reconnect()` rejects with `MULTIPLAYER_UNSUPPORTED_CAPABILITY`.
+- Diagnostics should report reconnect as unsupported or as a provider-specific redacted summary only.
+- Colyseus seat reservation tokens, if introduced later, must remain inside this package or app-specific server code and must surface only as redacted summaries.
+
+Host close, expired reconnect, same-name session recreate and player binding recovery are not silently treated as reconnect. Apps must handle them as explicit leave, close or new-session lifecycle until a backend-specific reconnect facade is implemented and tested.
+
 ## Message Mapping
 
 GameKit message envelopes stay provider-neutral:

@@ -3,17 +3,25 @@ import { describe, expect, it } from "vitest";
 import {
   createMultiplayerBridgeModule,
   createMultiplayerAuthorityBindingStore,
+  createMultiplayerAuthorityDiagnostics,
   createMultiplayerAuthorityHostLoop,
   createMultiplayerAuthorityReceiver,
   createMultiplayerLocalAuthorityLoop,
+  createMultiplayerPeerPlayerBindingStore,
   createMultiplayerRuntime,
+  createUniqueMultiplayerDisplayName,
   MULTIPLAYER_ACTION_KIND,
   MULTIPLAYER_INPUT_KIND,
+  MULTIPLAYER_PATCH_KIND,
+  MULTIPLAYER_RESULT_KIND,
   MULTIPLAYER_SNAPSHOT_KIND,
+  multiplayerErrorCodes,
+  normalizeMultiplayerDisplayName,
   type MultiplayerBackendAdapter,
   type MultiplayerBackendConnection,
   type MultiplayerBackendListener,
   type MultiplayerMessageEnvelope,
+  type MultiplayerPeer,
   type MultiplayerSession
 } from "../src";
 
@@ -118,6 +126,22 @@ describe("createMultiplayerRuntime", () => {
     expect(runtime.phase()).toBe("connected");
     expect(runtime.session()).toBeUndefined();
   });
+
+  it("rejects reconnect with a stable unsupported capability error", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "runtime",
+      backend: fake.backend
+    });
+
+    await expect(runtime.reconnect?.()).rejects.toMatchObject({
+      code: multiplayerErrorCodes.unsupportedCapability,
+      details: {
+        backendId: "fake",
+        capability: "reconnect"
+      }
+    });
+  });
 });
 
 describe("multiplayer authority helpers", () => {
@@ -168,6 +192,78 @@ describe("multiplayer authority helpers", () => {
       }
     });
     expect(binding.current()).toMatchObject({ tick: 3 });
+  });
+
+  it("applies patches and results only from the bound authority source", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "client-runtime",
+      backend: fake.backend,
+      clock: () => 100
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "host-authoritative",
+      localPeer: { id: "client", role: "client" }
+    });
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: "session-1",
+      mode: "host-authoritative",
+      authorityPeerId: "host",
+      localPlayerId: "player-client"
+    });
+    let latestPatch: { dx: number } | undefined;
+    let latestResult: { accepted: boolean } | undefined;
+    const receiver = createMultiplayerAuthorityReceiver<
+      { x: number },
+      { dx: number },
+      { accepted: boolean }
+    >({
+      runtime,
+      binding,
+      readSnapshot(payload) {
+        return isRecord(payload) && typeof payload.x === "number" ? { x: payload.x } : undefined;
+      },
+      readPatch(payload) {
+        return isRecord(payload) && typeof payload.dx === "number" ? { dx: payload.dx } : undefined;
+      },
+      readResult(payload) {
+        return isRecord(payload) && typeof payload.accepted === "boolean"
+          ? { accepted: payload.accepted }
+          : undefined;
+      },
+      applySnapshot() {
+        // This test focuses on patch/result source gates.
+      },
+      applyPatch(patch) {
+        latestPatch = patch;
+      },
+      applyResult(result) {
+        latestResult = result;
+      }
+    });
+
+    fake.emit(messageFrom("client", MULTIPLAYER_PATCH_KIND, { dx: 99 }));
+    fake.emit(messageFrom("host", MULTIPLAYER_PATCH_KIND, { dx: 2 }, { tick: 5 }));
+    fake.emit(messageFrom("client", MULTIPLAYER_RESULT_KIND, { accepted: false }));
+    fake.emit(messageFrom("host", MULTIPLAYER_RESULT_KIND, { accepted: true }, { tick: 6 }));
+
+    expect(latestPatch).toEqual({ dx: 2 });
+    expect(latestResult).toEqual({ accepted: true });
+    expect(receiver.diagnostics()).toMatchObject({
+      receivedPatches: 2,
+      appliedPatches: 1,
+      receivedResults: 2,
+      appliedResults: 1,
+      rejectedMessages: 2,
+      lastAppliedTick: 6,
+      lastRejected: {
+        code: "non-authority-source",
+        sourcePeerId: "client",
+        kind: MULTIPLAYER_RESULT_KIND
+      }
+    });
+    expect(binding.current()).toMatchObject({ tick: 6 });
   });
 
   it("runs host authority actions and inputs before broadcasting a snapshot", async () => {
@@ -284,6 +380,179 @@ describe("multiplayer authority helpers", () => {
       rejectedInputs: 1,
       sentSnapshots: 1
     });
+  });
+
+  it("summarizes authority state without provider handles or payloads", () => {
+    const bindingStore = createMultiplayerAuthorityBindingStore({
+      sessionId: "session-1",
+      mode: "host-authoritative",
+      status: "resyncing",
+      authorityPeerId: "host",
+      authorityEndpoint: { kind: "peer", id: "host-endpoint", peerId: "host" },
+      localPlayerId: "player-client",
+      tick: 4,
+      snapshotVersion: "state.v1"
+    });
+
+    const diagnostics = createMultiplayerAuthorityDiagnostics({
+      binding: bindingStore.current(),
+      loop: {
+        tick: 5,
+        receivedActions: 2,
+        acceptedActions: 1,
+        rejectedActions: 1,
+        receivedInputs: 3,
+        acceptedInputs: 2,
+        rejectedInputs: 1,
+        sentSnapshots: 4,
+        rejectedMessages: 2,
+        lastRejected: { code: "stale-input", reason: "Input was stale." },
+        lastBroadcastError: "transport closed"
+      },
+      receiver: {
+        receivedSnapshots: 3,
+        appliedSnapshots: 2,
+        receivedPatches: 1,
+        appliedPatches: 1,
+        receivedResults: 1,
+        appliedResults: 1,
+        rejectedMessages: 1,
+        lastAppliedTick: 4,
+        lastSnapshotAgeMs: 25,
+        lastRejected: {
+          code: "non-authority-source",
+          reason: "Rejected non-authority source.",
+          sourcePeerId: "client"
+        }
+      },
+      connection: {
+        status: "closed",
+        reason: "host-left",
+        reconnectSupported: false,
+        reconnectReason: "unsupported"
+      }
+    });
+
+    expect(diagnostics).toMatchObject({
+      sessionId: "session-1",
+      mode: "host-authoritative",
+      status: "resyncing",
+      authoritativePath: "gamekit-envelope",
+      resyncing: true,
+      authorityPeerId: "host",
+      localPlayerId: "player-client",
+      tick: 4,
+      snapshotVersion: "state.v1",
+      receivedActions: 2,
+      acceptedInputs: 2,
+      sentSnapshots: 4,
+      receivedSnapshots: 3,
+      appliedPatches: 1,
+      rejectedMessages: 3,
+      lastAppliedTick: 4,
+      lastSnapshotAgeMs: 25,
+      lastRejected: {
+        code: "non-authority-source",
+        sourcePeerId: "client"
+      },
+      lastBroadcastError: "transport closed",
+      connection: {
+        status: "closed",
+        reconnectSupported: false
+      }
+    });
+
+    diagnostics.binding.status = "closed";
+    expect(bindingStore.current().status).toBe("resyncing");
+  });
+});
+
+describe("peer/player binding utility", () => {
+  it("binds peers to unique player display names and cleans up leave state", () => {
+    const store = createMultiplayerPeerPlayerBindingStore({
+      displayNameFallback(_peer, index) {
+        return `Player ${index}`;
+      }
+    });
+
+    const alpha = store.bindPeer(peer("peer-a", { playerId: "player-a", displayName: " Scout " }));
+    const bravo = store.bindPeer(peer("peer-b", { playerId: "player-b", displayName: "Scout" }));
+    const charlie = store.bindPeer(peer("peer-c", { playerId: "player-c", displayName: "   " }));
+
+    expect(alpha).toMatchObject({ playerId: "player-a", displayName: "Scout" });
+    expect(bravo).toMatchObject({ playerId: "player-b", displayName: "Scout 2" });
+    expect(charlie).toMatchObject({ playerId: "player-c", displayName: "Player 3" });
+    expect(store.playerIdForPeer("peer-b")).toBe("player-b");
+    expect(store.activeBindings().map((binding) => binding.playerId)).toEqual([
+      "player-a",
+      "player-b",
+      "player-c"
+    ]);
+
+    const left = store.markPeerLeft("peer-b", {
+      status: "disconnected",
+      reason: "tab closed"
+    });
+
+    expect(left).toMatchObject({
+      playerId: "player-b",
+      status: "disconnected",
+      reason: "tab closed"
+    });
+    expect(store.playerIdForPeer("peer-b")).toBeUndefined();
+    expect(store.activeBindings().map((binding) => binding.playerId)).toEqual([
+      "player-a",
+      "player-c"
+    ]);
+
+    const restored = store.bindPeer(
+      peer("peer-d", { playerId: "player-b", displayName: "Scout" }),
+      { slot: "blue" }
+    );
+    expect(restored).toMatchObject({
+      peerId: "peer-d",
+      playerId: "player-b",
+      displayName: "Scout 2",
+      status: "active",
+      slot: "blue"
+    });
+
+    const removed = store.markPeerLeft("peer-c", { remove: true });
+    expect(removed).toMatchObject({ playerId: "player-c", status: "left" });
+    expect(store.bindings().map((binding) => binding.playerId)).toEqual(["player-a", "player-b"]);
+  });
+
+  it("supports spectator bindings and closes a binding set", () => {
+    const store = createMultiplayerPeerPlayerBindingStore();
+
+    store.bindPeer(peer("peer-a", { playerId: "player-a", role: "host" }));
+    store.bindPeer(peer("peer-s", { playerId: "spectator-a", role: "spectator" }));
+
+    expect(store.bindings()).toEqual([
+      expect.objectContaining({ playerId: "player-a", status: "active" }),
+      expect.objectContaining({ playerId: "spectator-a", status: "spectator" })
+    ]);
+    expect(store.activeBindings().map((binding) => binding.playerId)).toEqual(["player-a"]);
+
+    const closed = store.close("room closed");
+    expect(closed).toEqual([
+      expect.objectContaining({ playerId: "player-a", status: "closed", reason: "room closed" }),
+      expect.objectContaining({
+        playerId: "spectator-a",
+        status: "closed",
+        reason: "room closed"
+      })
+    ]);
+    expect(store.activeBindings()).toEqual([]);
+    expect(() => store.bindPeer(peer("peer-b"))).toThrowErrorMatchingInlineSnapshot(
+      `[GameError: Peer/player binding store is closed.]`
+    );
+  });
+
+  it("normalizes and de-duplicates display names", () => {
+    expect(normalizeMultiplayerDisplayName("  Alpha   Bravo  ", "Fallback")).toBe("Alpha Bravo");
+    expect(normalizeMultiplayerDisplayName("   ", "Fallback")).toBe("Fallback");
+    expect(createUniqueMultiplayerDisplayName("Scout", ["Scout", "Scout 2"])).toBe("Scout 3");
   });
 });
 
@@ -525,6 +794,22 @@ function messageFrom(
     timestamp: 100,
     ...(options.tick === undefined ? {} : { tick: options.tick }),
     payload
+  };
+}
+
+function peer(
+  id: string,
+  options: Partial<Omit<MultiplayerPeer, "id" | "status">> & {
+    status?: MultiplayerPeer["status"];
+  } = {}
+): MultiplayerPeer {
+  return {
+    id,
+    status: options.status ?? "connected",
+    ...(options.displayName === undefined ? {} : { displayName: options.displayName }),
+    ...(options.role === undefined ? {} : { role: options.role }),
+    ...(options.playerId === undefined ? {} : { playerId: options.playerId }),
+    ...(options.metadata === undefined ? {} : { metadata: options.metadata })
   };
 }
 

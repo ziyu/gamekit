@@ -20,6 +20,28 @@ Multiplayer Demo 是 `@gamekit/multiplayer-core` 与 `@gamekit/multiplayer-colys
 - 旧 loopback console 的 select / confirm / strategy / priority 控件不属于长期 realtime game demo 体验；这些低频 command 验证只能保留在测试夹具或后台 bridge 验证中，不能成为浏览器主界面。
 - 本地 dev server 同时启动 Vite UI、Colyseus server，并按 session id 管理 host GameRuntime / arena lifecycle；浏览器 client 通过 Colyseus 加入选中的 GameKit session。
 
+## 本地验证方式
+
+本地启动：
+
+```bash
+corepack pnpm --filter multiplayer-demo dev
+```
+
+基础多人验证：
+
+- 打开两个浏览器窗口，输入同一个 GameKit session id。
+- 第一个窗口执行 `Host & Join`，第二个窗口只执行 `Join`。
+- 两边设置不同 player name，并确认 authoritative snapshot 中显示的最终名字已经由 host 去重。
+- Host 执行 ready/start，client 只能执行 ready/input/interact，不能 Host、Reset Room、Start Round 或 Rematch。
+- Running 阶段移动和交互后，两边 arena 必须渲染同一份 host authoritative snapshot；不能只以 peer count、joined 状态或按钮亮灭判断多人已同步。
+- client 执行 Leave 后，host authoritative snapshot 必须移除该 player actor；host close 后，client 必须离开 session，late join 必须失败或进入明确的新 session lifecycle。
+
+离线验证：
+
+- 没有 hosted/active session 上下文时，浏览器可以进入 `local offline`。
+- `local offline` 必须复用同一套 action/input、round lifecycle、simulation、snapshot rendering 和 diagnostics contract，只把 authority endpoint 换成 in-process local loop。
+
 ## 模块协作
 
 - `apps/multiplayer-demo/src/server` 持有本地 Colyseus server，以及 `sessionId -> host runtime / arena room` lifecycle。
