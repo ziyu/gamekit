@@ -23,7 +23,7 @@
     "format": "oxfmt --check .",
     "format:write": "oxfmt --write .",
     "bench:world": "tsx scripts/world-benchmark.ts",
-    "bench:presentation": "tsx scripts/presentation-benchmark.ts",
+    "bench:multiplayer": "tsx scripts/multiplayer-benchmark.ts",
     "changeset": "changeset",
     "changeset:auto": "node scripts/create-auto-changeset.mjs",
     "release:publish": "node scripts/release-gamekits.mjs",

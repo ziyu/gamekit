@@ -198,6 +198,16 @@ const summary = createMultiplayerAuthorityDiagnostics({
 
 Diagnostics intentionally exclude provider handles, sockets, room objects, secrets, tokens and full high-frequency payloads.
 
+## Benchmarks
+
+Run the module-level benchmark suite when changing multiplayer hot paths:
+
+```bash
+corepack pnpm bench:multiplayer
+```
+
+The suite covers envelope normalization, authority receiver source gates, host/local authority loops, snapshot playback and presentation projection. Results are trend signals for profiling and regression review; they are not fixed pass/fail budgets.
+
 ## App Host Integration
 
 `@gamekit/app-host` can own a multiplayer runtime as an optional standard service and install the standard GameModule bridge:
