@@ -1,6 +1,6 @@
 # Multiplayer Realtime Game Demo
 
-Status: Active; Wave 0 rule domain, Wave 1 stage-first local playable arena, host-authoritative realtime sync, and core authority helper dogfood implemented.
+Status: Active; Wave 0 rule domain, Wave 1 stage-first local playable arena, host-authoritative realtime sync, core authority helper dogfood, and temporal snapshot presentation buffer implemented.
 
 ## Goal
 
@@ -37,7 +37,7 @@ Status: Active; Wave 0 rule domain, Wave 1 stage-first local playable arena, hos
 - 离线单机/本地练习继续成立，并已走 `local` authority binding 和 in-process delivery，复用同一 action/input、simulation、snapshot/apply 和 diagnostics contract；它不再是另一套单机 gameplay runtime。
 - `@gamekit/multiplayer-core` 的单元测试和 demo 的 headless Colyseus integration test 已覆盖 host authoritative action/input/snapshot、local authority、非 authority snapshot 拒绝和双 client 同步。
 
-后续实现优先级可以回到更细的多人质量：prediction/interpolation、latency diagnostics、patch/result helper、断线/重连、迟到加入和 provider-native state sync 评估。
+后续实现优先级可以回到更细的多人质量：prediction/correction、latency diagnostics、patch/result helper、断线/重连、迟到加入和 provider-native state sync 评估。
 
 完整可用能力需要同时保留两条验证路径：
 
@@ -352,14 +352,14 @@ Status: Planned.
 
 ### Wave 5: Prediction, Interpolation, Diagnostics
 
-Status: Planned.
+Status: In Progress; temporal snapshot interpolation buffer implemented, prediction/correction, artificial latency and richer diagnostics still planned.
 
 目标：让 demo 能观察真实多人手感问题，而不是只看到最终状态。
 
 任务：
 
 1. 为本地玩家添加 input prediction 和 server correction。
-2. 为远端玩家添加 temporal snapshot interpolation buffer，避免继续扩展二维向量专用平滑 helper。
+2. 已为远端玩家和共享对象接入 temporal snapshot interpolation buffer，并移除二维向量专用平滑 helper 作为长期入口。
 3. 添加 artificial latency/jitter/loss 开关，只影响 demo client path。
 4. 展示 rtt、snapshot age、input seq ack、correction magnitude、server tick drift。
 5. 增加 forged input/debug controls，用于验证 authority。
@@ -438,7 +438,7 @@ Status: Planned.
 
 - 是否给本地练习增加 bot 或 dummy opponent；当前第一版是单人限时挑战。
 - 当前 GameKit envelope snapshot stream 已通过 `multiplayer-core` authority helper 发送和接收；Colyseus Schema state sync / typed state helper 应作为 native capability lane 规划，但具体 schema shape、API 命名和默认启用策略仍需单独评估。
-- Presentation smoothing 采用 ADR 0014 的 temporal snapshot buffer + typed interpolation primitives + game-owned track projection；不把 keyed `{ x, y }` smoothing helper 作为长期方向。
+- Presentation smoothing 已采用 ADR 0014 的 core snapshot playback + reusable projector + declared `Network*` tracks + typed presented values；不把 keyed `{ x, y }` smoothing helper、app-local playback clock、demo 手写插值或每帧临时 projection 容器作为长期方向。
 - Server tick 选 20Hz 还是 30Hz；snapshot broadcast 选 10Hz、15Hz 还是 20Hz。
 - Running 中迟到加入是 spectator/next-round，还是允许安全 spawn。
 - Disconnect 后是否 AI 接管，还是从本局剔除并在 results 中标记 DNF。

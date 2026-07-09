@@ -15,7 +15,11 @@ import { createEventBus } from "@gamekit/event-bus";
 import { createGasDataTypes, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
 import { createGame } from "@gamekit/game-runtime";
 import { createInputRouter } from "@gamekit/input-core";
-import { createMultiplayerRuntime } from "@gamekit/multiplayer-core";
+import {
+  createMultiplayerRuntime,
+  defineSnapshotVector2Track,
+  type NetworkVector2
+} from "@gamekit/multiplayer-core";
 import { createMemoryMultiplayerBackend } from "@gamekit/multiplayer-memory";
 import { createMemorySaveStore } from "@gamekit/save";
 import { type GameWorld } from "@gamekit/world";
@@ -854,6 +858,95 @@ describe("configured app host", () => {
     expect(handled).toEqual(["move-1:client", "move-2:client"]);
 
     await clientMultiplayer.dispose();
+  });
+
+  it("runs standard multiplayer presentation playback on host game ticks", async () => {
+    const backend = createMemoryMultiplayerBackend();
+    const multiplayer = createMultiplayerRuntime({
+      id: "presentation-runtime",
+      backend
+    });
+    const eventBus = createEventBus({ clock: () => 1 });
+    let latestSnapshot = { tick: 0, position: { x: 0, y: 0 } };
+    const presented: Array<{
+      status: string;
+      tick: number | undefined;
+      position: NetworkVector2;
+    }> = [];
+
+    const app = defineGameApp({
+      id: "standard-multiplayer-presentation",
+      services: [{ id: "multiplayer" }, { id: "game", dependencies: ["multiplayer"] }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        multiplayer: {
+          runtime: multiplayer
+        },
+        game: {
+          standardModules: {
+            multiplayer: {
+              presentation: {
+                interpolationDelayMs: 50,
+                readTime(entry) {
+                  return entry.snapshot.tick * 50;
+                },
+                tracks: [
+                  defineSnapshotVector2Track<typeof latestSnapshot>({
+                    selectInto(snapshot, writer) {
+                      writer.add("avatar:position", snapshot.position);
+                    }
+                  })
+                ],
+                readSnapshot() {
+                  return {
+                    snapshot: latestSnapshot,
+                    tick: latestSnapshot.tick
+                  };
+                },
+                applySample({ sample, presented: values }) {
+                  presented.push({
+                    status: sample.status,
+                    tick: sample.next?.snapshot.tick,
+                    position: values.vector2("avatar:position", { x: -1, y: -1 })
+                  });
+                }
+              }
+            }
+          },
+          createRuntime(_ctx, modules) {
+            expect(modules.map((module) => module.id)).toEqual(["gamekit.multiplayer.bridge"]);
+            return createGame({
+              modules,
+              world: createMemoryWorld(),
+              eventBus,
+              seed: "standard-multiplayer-presentation"
+            });
+          }
+        }
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+    expect(configured.host.services.game?.systems.values().map((system) => system.id)).toEqual([
+      "gamekit.multiplayer.bridge.presentation"
+    ]);
+
+    await configured.host.start();
+    configured.host.tick(0, 0);
+    latestSnapshot = { tick: 1, position: { x: 50, y: 0 } };
+    configured.host.tick(50, 50);
+    latestSnapshot = { tick: 2, position: { x: 100, y: 0 } };
+    configured.host.tick(50, 100);
+
+    expect(presented).toEqual([
+      { status: "before-first", tick: 0, position: { x: 0, y: 0 } },
+      { status: "exact", tick: 0, position: { x: 0, y: 0 } },
+      { status: "exact", tick: 1, position: { x: 50, y: 0 } }
+    ]);
+
+    await configured.host.dispose();
   });
 
   it("smooths standard camera module renderer sync over runtime ticks", async () => {

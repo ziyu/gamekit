@@ -88,20 +88,79 @@ Network and authority ticks are often lower than renderer refresh rate. Presenta
 
 ```txt
 authoritative snapshot
-  -> temporal snapshot buffer
+  -> snapshot playback clock and temporal buffer
   -> sample previous / next / alpha for the current render time
-  -> game-owned track projection
+  -> declared Network* presentation tracks
+  -> presented values
   -> render-only snapshot, renderer objects or UI view model
 ```
 
-The stable package boundary is a presentation timing toolkit, not a backend adapter feature and not a deep object interpolator. Core utilities should stay provider-neutral:
+The stable package boundary is a presentation timing and declared-track toolkit, not a backend adapter feature and not a deep object interpolator. Core utilities should stay provider-neutral:
 
-- store short-lived authoritative snapshots by tick, server time or provider version;
-- report sample status, interpolation delay, snapshot age, stale/drop counters and reset diagnostics;
+- play short-lived authoritative snapshots by tick, server time or provider version;
+- pace render sampling behind the latest authoritative timeline and clamp under-runs by default;
+- report presentation FPS, sample status, interpolation delay, snapshot age, stale/drop counters and reset diagnostics;
 - provide typed interpolation primitives such as number, angle, vector2, vector3, quaternion/slerp and step/snap value;
-- leave field selection, snap/extrapolate policy and render writes to the game or app presentation layer.
+- expose small network value shapes such as `NetworkScalar`, `NetworkAngleRadians`, `NetworkVector2`, `NetworkVector3`, `NetworkQuaternion`, `NetworkTransform2` and `NetworkTransform3`;
+- project declared `Network*` presentation tracks into typed `presented` values;
+- reuse projector buffers and direct-write typed values on hot paths;
+- leave field selection, track keys, reset policy and render writes to the game or app presentation layer.
 
-Games should reset presentation buffers when the authority binding, session, snapshot version, hard phase, teleport or resync state changes. Backend packages such as `@gamekit/multiplayer-colyseus` should expose provider state, tick/version source and diagnostics, not hard-code gameplay interpolation policy.
+Typical app code declares the tracks once, creates a reusable projector, and reads or writes presented values during render projection:
+
+```ts
+const playback = createSnapshotPlayback<ArenaSnapshot>({
+  interpolationDelayMs: 100,
+  readTime: (entry) => entry.snapshot.tick * tickMs
+});
+const tracks = [
+  defineSnapshotVector2Track<ArenaSnapshot>({
+    snapDistance: 96,
+    selectInto(snapshot, writer) {
+      for (const player of snapshot.players) {
+        writer.add(`player:${player.id}:position`, player.position);
+      }
+    }
+  })
+];
+const projector = createSnapshotPresentationProjector(tracks);
+
+const sample = playback.present({ snapshot, tick: snapshot.tick }, renderDeltaMs);
+const presented = projector.present(sample);
+const player = snapshot.players[0];
+presented.vector2Into(`player:${player.id}:position`, renderPlayer.position, player.position);
+```
+
+`presentSnapshotTracks()` remains available as a one-shot convenience for tests and small tools. Runtime presentation loops should prefer `createSnapshotPresentationProjector()`, `selectInto()` and `vector2Into()` / `vector3Into()` / `quaternionInto()` so the core can reuse track buffers and caller-owned render targets.
+
+When the app uses `@gamekit/app-host` standard game modules, the multiplayer module can own the playback loop and declared-track interpolation for the app:
+
+```ts
+standardModules: {
+  multiplayer: {
+    presentation: {
+      interpolationDelayMs: 100,
+      readTime: (entry) => entry.snapshot.tick * tickMs,
+      tracks,
+      readSnapshot: () => latestAuthoritativeSnapshotEntry,
+      applySample: ({ presented, snapshot }) => {
+        const player = snapshot.players.find((candidate) => candidate.id === renderPlayer.id);
+        if (player) {
+          presented.vector2Into(
+            `player:${renderPlayer.id}:position`,
+            renderPlayer.position,
+            player.position
+          );
+        }
+      }
+    }
+  }
+}
+```
+
+After the first snapshot, `readSnapshot` may return `undefined` on frames where no new authoritative update arrived; the standard module advances the existing playback buffer with the GameRuntime frame delta.
+
+Games should reset snapshot playback when the authority binding, session, snapshot version, hard phase, teleport or resync state changes. `createSnapshotBuffer()` remains available as a low-level escape hatch for custom netcode, but the default path should use `createSnapshotPlayback()` so render pacing, jitter delay, under-run clamping and diagnostics stay in core. Backend packages such as `@gamekit/multiplayer-colyseus` should expose provider state, tick/version source and diagnostics, not hard-code gameplay interpolation policy.
 
 ## Peer / Player Binding
 

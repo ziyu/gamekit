@@ -16,6 +16,7 @@ import type { GameInstallContext, GameRuntime } from "@gamekit/game-runtime";
 import type { InputDevice, InputRouter, InputSourceAdapter } from "@gamekit/input-core";
 import type {
   CreateMultiplayerBridgeModuleOptions,
+  MultiplayerPresentationBridgeOptions,
   MultiplayerRuntime
 } from "@gamekit/multiplayer-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
@@ -234,7 +235,8 @@ export type StandardMultiplayerGameModuleOptions<TContext> = {
   runtime?: StandardValue<MultiplayerRuntime, TContext> | undefined;
   commandKinds?: string[] | undefined;
   authority?: CreateMultiplayerBridgeModuleOptions<GameInstallContext>["authority"] | undefined;
-  handleCommand: CreateMultiplayerBridgeModuleOptions<GameInstallContext>["handleCommand"];
+  handleCommand?: CreateMultiplayerBridgeModuleOptions<GameInstallContext>["handleCommand"];
+  presentation?: StandardValue<MultiplayerPresentationBridgeOptions, TContext> | undefined;
 };
 
 export type StandardCameraGameModuleOptions<TContext> = {

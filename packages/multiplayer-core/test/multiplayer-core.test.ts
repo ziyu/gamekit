@@ -9,8 +9,16 @@ import {
   createMultiplayerLocalAuthorityLoop,
   createMultiplayerPeerPlayerBindingStore,
   createMultiplayerRuntime,
-  createMultiplayerSnapshotPresentation,
+  createSnapshotBuffer,
+  createSnapshotPresentationProjector,
+  createSnapshotPlayback,
   createUniqueMultiplayerDisplayName,
+  defineSnapshotVector2Track,
+  interpolateAngleRadians,
+  interpolateNumber,
+  interpolateQuaternion,
+  interpolateVector2,
+  interpolateVector3,
   MULTIPLAYER_ACTION_KIND,
   MULTIPLAYER_INPUT_KIND,
   MULTIPLAYER_PATCH_KIND,
@@ -18,12 +26,19 @@ import {
   MULTIPLAYER_SNAPSHOT_KIND,
   multiplayerErrorCodes,
   normalizeMultiplayerDisplayName,
+  presentSnapshotTracks,
+  stepValue,
   type MultiplayerBackendAdapter,
   type MultiplayerBackendConnection,
   type MultiplayerBackendListener,
   type MultiplayerMessageEnvelope,
   type MultiplayerPeer,
-  type MultiplayerSession
+  type MultiplayerSession,
+  type NetworkAngleRadians,
+  type NetworkScalar,
+  type NetworkTransform2,
+  type NetworkTransform3,
+  type NetworkVector2
 } from "../src";
 
 describe("createMultiplayerRuntime", () => {
@@ -557,133 +572,381 @@ describe("peer/player binding utility", () => {
   });
 });
 
-describe("createMultiplayerSnapshotPresentation", () => {
-  it("smooths selected snapshot samples without owning game state shape", () => {
+describe("createSnapshotBuffer", () => {
+  it("samples ordered authoritative snapshots with render delay diagnostics", () => {
     type Snapshot = {
       tick: number;
-      units: Array<{ id: string; position: { x: number; y: number } }>;
+      position: { x: number; y: number };
     };
-    const presentation = createMultiplayerSnapshotPresentation<Snapshot>({
-      smoothingMs: 80,
-      snapDistance: 1000,
-      selectSamples(snapshot) {
-        return snapshot.units.map((unit) => ({
-          key: unit.id,
-          target: unit.position
-        }));
-      },
-      applyPresentedSnapshot({ snapshot, presented }) {
-        return {
-          ...snapshot,
-          units: snapshot.units.map((unit) => ({
-            ...unit,
-            position: { ...(presented.get(unit.id) ?? unit.position) }
-          }))
-        };
-      }
+    const buffer = createSnapshotBuffer<Snapshot>({
+      interpolationDelayMs: 100
     });
 
-    const first = presentation.present(
-      { tick: 1, units: [{ id: "unit-a", position: { x: 10, y: 0 } }] },
-      16
-    );
-    const second = presentation.present(
-      { tick: 2, units: [{ id: "unit-a", position: { x: 58, y: 0 } }] },
-      16
-    );
-    const third = presentation.present(
-      { tick: 2, units: [{ id: "unit-a", position: { x: 58, y: 0 } }] },
-      16
-    );
+    expect(buffer.sample(1000)).toMatchObject({
+      status: "empty",
+      bufferLength: 0
+    });
 
-    expect(first.units[0]?.position).toEqual({ x: 10, y: 0 });
-    expect(second.units[0]?.position.x).toBeGreaterThan(10);
-    expect(second.units[0]?.position.x).toBeLessThan(58);
-    expect(third.units[0]?.position.x).toBeGreaterThan(second.units[0]?.position.x ?? 0);
-    expect(presentation.diagnostics()).toMatchObject({
-      activeSamples: 1,
-      resets: 0,
-      lastDeltaMs: 16
+    buffer.push({
+      snapshot: { tick: 3, position: { x: 100, y: 0 } },
+      serverTime: 1100
+    });
+    buffer.push({
+      snapshot: { tick: 1, position: { x: 0, y: 0 } },
+      serverTime: 1000
+    });
+    buffer.push({
+      snapshot: { tick: 2, position: { x: 50, y: 0 } },
+      serverTime: 1050
+    });
+
+    const sample = buffer.sample(1125);
+
+    expect(sample).toMatchObject({
+      status: "interpolated",
+      sampleTime: 1025,
+      delayMs: 100,
+      bufferLength: 3,
+      snapshotAgeMs: 75
+    });
+    expect(sample.previous?.snapshot.tick).toBe(1);
+    expect(sample.next?.snapshot.tick).toBe(2);
+    expect(sample.alpha).toBeCloseTo(0.5);
+    expect(buffer.diagnostics()).toMatchObject({
+      bufferLength: 3,
+      acceptedSnapshots: 3,
+      lastSampleStatus: "interpolated",
+      lastSampleAgeMs: 75
     });
   });
 
-  it("removes inactive samples from presentation state", () => {
+  it("tracks duplicate, stale, dropped and reset buffer diagnostics", () => {
+    const buffer = createSnapshotBuffer<{ x: number }>({
+      maxSnapshots: 2,
+      maxAgeMs: 50
+    });
+
+    expect(buffer.push({ snapshot: { x: 1 }, time: 100 })).toEqual({
+      accepted: true,
+      time: 100
+    });
+    expect(buffer.push({ snapshot: { x: 2 }, time: 100 })).toEqual({
+      accepted: true,
+      reason: "duplicate",
+      time: 100
+    });
+    buffer.push({ snapshot: { x: 3 }, time: 140 });
+    buffer.push({ snapshot: { x: 4 }, time: 200 });
+    expect(buffer.push({ snapshot: { x: 5 }, time: 100 })).toEqual({
+      accepted: false,
+      reason: "stale",
+      time: 100
+    });
+
+    expect(buffer.frames().map((frame) => frame.time)).toEqual([200]);
+    expect(buffer.diagnostics()).toMatchObject({
+      acceptedSnapshots: 3,
+      duplicateSnapshots: 1,
+      droppedSnapshots: 2,
+      staleSnapshots: 1,
+      bufferLength: 1
+    });
+
+    buffer.reset();
+
+    expect(buffer.frames()).toEqual([]);
+    expect(buffer.diagnostics()).toMatchObject({
+      bufferLength: 0,
+      resets: 1
+    });
+  });
+
+  it("falls back to stable buffer defaults for invalid numeric options", () => {
+    const buffer = createSnapshotBuffer<{ x: number }>({
+      interpolationDelayMs: Number.NaN,
+      maxSnapshots: Number.NaN,
+      maxAgeMs: Number.NaN
+    });
+
+    buffer.push({ snapshot: { x: 1 }, time: 0 });
+    buffer.push({ snapshot: { x: 2 }, time: 10 });
+
+    expect(buffer.frames().map((frame) => frame.time)).toEqual([0, 10]);
+    expect(buffer.sample(110)).toMatchObject({
+      delayMs: 100,
+      sampleTime: 10,
+      status: "exact"
+    });
+  });
+
+  it("paces snapshot playback behind the latest authoritative timeline", () => {
     type Snapshot = {
-      units: Array<{ id: string; position: { x: number; y: number } }>;
+      tick: number;
+      x: number;
     };
-    const presentation = createMultiplayerSnapshotPresentation<Snapshot>({
-      selectSamples(snapshot) {
-        return snapshot.units.map((unit) => ({
-          key: unit.id,
-          target: unit.position
-        }));
-      },
-      applyPresentedSnapshot({ snapshot, presented }) {
-        return {
-          units: snapshot.units.map((unit) => ({
-            ...unit,
-            position: { ...(presented.get(unit.id) ?? unit.position) }
-          }))
-        };
+    const playback = createSnapshotPlayback<Snapshot>({
+      interpolationDelayMs: 100,
+      readTime(entry) {
+        return entry.snapshot.tick * 50;
       }
     });
 
-    presentation.present(
+    playback.present({ snapshot: { tick: 0, x: 0 } }, 0);
+    playback.present({ snapshot: { tick: 1, x: 50 } }, 50);
+    playback.present({ snapshot: { tick: 2, x: 100 } }, 50);
+    const sample = playback.present({ snapshot: { tick: 3, x: 150 } }, 25);
+
+    expect(sample.status).toBe("interpolated");
+    expect(sample.previous?.snapshot.tick).toBe(0);
+    expect(sample.next?.snapshot.tick).toBe(1);
+    expect(sample.alpha).toBeCloseTo(0.5);
+    expect(sample.clampedToLatest).toBe(false);
+    expect(playback.diagnostics()).toMatchObject({
+      bufferLength: 4,
+      framesPresented: 4,
+      frameDeltaMs: 25,
+      lastSampleStatus: "interpolated"
+    });
+  });
+
+  it("clamps snapshot playback when render frames outrun snapshot delivery", () => {
+    const playback = createSnapshotPlayback<{ tick: number; x: number }>({
+      interpolationDelayMs: 100,
+      readTime(entry) {
+        return entry.snapshot.tick * 50;
+      }
+    });
+    const latest = { tick: 1, x: 50 };
+
+    playback.present({ snapshot: { tick: 0, x: 0 } }, 0);
+    let sample = playback.present({ snapshot: latest }, 50);
+    for (let frame = 0; frame < 12; frame += 1) {
+      sample = playback.advance(50);
+    }
+
+    expect(sample.status).toBe("exact");
+    expect(sample.sampleTime).toBe(50);
+    expect(sample.clampedToLatest).toBe(true);
+    expect(playback.diagnostics()).toMatchObject({
+      clampedFrames: expect.any(Number),
+      renderTime: 150,
+      latestSnapshotTime: 50,
+      lastSampleStatus: "exact"
+    });
+    expect(playback.diagnostics().clampedFrames).toBeGreaterThan(0);
+  });
+
+  it("reports snapshot playback frame rate from presented deltas", () => {
+    const playback = createSnapshotPlayback<{ tick: number }>({
+      readTime(entry) {
+        return entry.snapshot.tick * 50;
+      }
+    });
+
+    for (let frame = 0; frame < 10; frame += 1) {
+      playback.present({ snapshot: { tick: 0 } }, 100);
+    }
+
+    expect(playback.diagnostics()).toMatchObject({
+      frameRate: 10,
+      frameDeltaMs: 100,
+      framesPresented: 10
+    });
+  });
+
+  it("projects declared NetworkVector2 tracks into presented values", () => {
+    type Snapshot = {
+      tick: number;
+      players: Array<{
+        id: string;
+        position: NetworkVector2;
+      }>;
+    };
+    const playback = createSnapshotPlayback<Snapshot>({
+      interpolationDelayMs: 0,
+      readTime(entry) {
+        return entry.snapshot.tick * 50;
+      }
+    });
+    const tracks = [
+      defineSnapshotVector2Track<Snapshot>({
+        snapDistance: 1000,
+        select(snapshot) {
+          return snapshot.players.map((player) => ({
+            key: `player:${player.id}:position`,
+            value: player.position
+          }));
+        }
+      })
+    ];
+
+    playback.present(
       {
-        units: [
-          { id: "unit-a", position: { x: 0, y: 0 } },
-          { id: "unit-b", position: { x: 100, y: 0 } }
-        ]
+        snapshot: {
+          tick: 0,
+          players: [{ id: "runner", position: { x: 0, y: 10 } }]
+        }
       },
-      16
+      0
     );
-    presentation.present({ units: [{ id: "unit-a", position: { x: 10, y: 0 } }] }, 16);
+    const sample = playback.present(
+      {
+        snapshot: {
+          tick: 1,
+          players: [{ id: "runner", position: { x: 50, y: 30 } }]
+        }
+      },
+      25
+    );
+    const presented = presentSnapshotTracks(sample, tracks);
+    const position = presented.vector2("player:runner:position", { x: -1, y: -1 });
 
-    expect(presentation.diagnostics().activeSamples).toBe(1);
+    expect(position).toEqual({ x: 25, y: 20 });
+    position.x = 999;
+    expect(presented.vector2("player:runner:position", { x: -1, y: -1 })).toEqual({
+      x: 25,
+      y: 20
+    });
   });
 
-  it("lets games reset presentation state and force snap individual samples", () => {
+  it("reuses projector state and writes presented vectors into caller targets", () => {
     type Snapshot = {
-      epoch: number;
-      units: Array<{ id: string; teleport?: boolean; position: { x: number; y: number } }>;
+      tick: number;
+      entities: Array<{
+        id: number;
+        position: NetworkVector2;
+      }>;
     };
-    const presentation = createMultiplayerSnapshotPresentation<Snapshot>({
-      smoothingMs: 80,
-      snapDistance: 1000,
-      shouldReset(previous, next) {
-        return previous !== undefined && previous.epoch !== next.epoch;
-      },
-      selectSamples(snapshot) {
-        return snapshot.units.map((unit) => ({
-          key: unit.id,
-          target: unit.position,
-          snap: unit.teleport === true
-        }));
-      },
-      applyPresentedSnapshot({ snapshot, presented }) {
-        return {
-          ...snapshot,
-          units: snapshot.units.map((unit) => ({
-            ...unit,
-            position: { ...(presented.get(unit.id) ?? unit.position) }
-          }))
-        };
+    const playback = createSnapshotPlayback<Snapshot>({
+      interpolationDelayMs: 0,
+      readTime(entry) {
+        return entry.snapshot.tick * 50;
       }
     });
+    let selectIntoCalls = 0;
+    const projector = createSnapshotPresentationProjector<Snapshot>([
+      defineSnapshotVector2Track<Snapshot>({
+        selectInto(snapshot, writer) {
+          selectIntoCalls += 1;
+          for (const entity of snapshot.entities) {
+            writer.add(entity.id, entity.position);
+          }
+        }
+      })
+    ]);
 
-    presentation.present({ epoch: 1, units: [{ id: "unit-a", position: { x: 0, y: 0 } }] }, 16);
-    const teleported = presentation.present(
-      { epoch: 1, units: [{ id: "unit-a", teleport: true, position: { x: 100, y: 0 } }] },
-      16
+    playback.present(
+      {
+        snapshot: {
+          tick: 0,
+          entities: [{ id: 1, position: { x: 0, y: 0 } }]
+        }
+      },
+      0
     );
-    const reset = presentation.present(
-      { epoch: 2, units: [{ id: "unit-a", position: { x: 200, y: 0 } }] },
-      16
+    const firstSample = playback.present(
+      {
+        snapshot: {
+          tick: 1,
+          entities: [{ id: 1, position: { x: 10, y: 20 } }]
+        }
+      },
+      25
     );
+    const firstPresented = projector.present(firstSample);
+    const storedValue = firstPresented.values.get(1);
+    const target = { x: 0, y: 0 };
 
-    expect(teleported.units[0]?.position).toEqual({ x: 100, y: 0 });
-    expect(reset.units[0]?.position).toEqual({ x: 200, y: 0 });
-    expect(presentation.diagnostics().resets).toBe(1);
+    expect(firstPresented.vector2Into(1, target, { x: -1, y: -1 })).toBe(target);
+    expect(target).toEqual({ x: 5, y: 10 });
+    expect(selectIntoCalls).toBe(2);
+
+    const secondSample = playback.present(
+      {
+        snapshot: {
+          tick: 2,
+          entities: [{ id: 1, position: { x: 20, y: 40 } }]
+        }
+      },
+      25
+    );
+    const secondPresented = projector.present(secondSample);
+
+    expect(secondPresented).toBe(firstPresented);
+    expect(secondPresented.values.get(1)).toBe(storedValue);
+    expect(secondPresented.vector2(1, { x: -1, y: -1 })).toEqual({ x: 10, y: 20 });
+  });
+
+  it("snaps declared vector tracks beyond their snap distance", () => {
+    type Snapshot = {
+      tick: number;
+      position: NetworkVector2;
+    };
+    const playback = createSnapshotPlayback<Snapshot>({
+      interpolationDelayMs: 0,
+      readTime(entry) {
+        return entry.snapshot.tick * 50;
+      }
+    });
+    const tracks = [
+      defineSnapshotVector2Track<Snapshot>({
+        snapDistance: 32,
+        select(snapshot) {
+          return [
+            {
+              key: "avatar:position",
+              value: snapshot.position
+            }
+          ];
+        }
+      })
+    ];
+
+    playback.present({ snapshot: { tick: 0, position: { x: 0, y: 0 } } }, 0);
+    const sample = playback.present({ snapshot: { tick: 1, position: { x: 400, y: 0 } } }, 25);
+
+    expect(
+      presentSnapshotTracks(sample, tracks).vector2("avatar:position", { x: -1, y: -1 })
+    ).toEqual({ x: 400, y: 0 });
+  });
+
+  it("provides typed interpolation primitives without owning snapshot shape", () => {
+    const scalar: NetworkScalar = interpolateNumber(10, 20, 0.25);
+    expect(scalar).toBe(12.5);
+    expect(interpolateVector2({ x: 0, y: 10 }, { x: 20, y: 30 }, 0.5)).toEqual({
+      x: 10,
+      y: 20
+    });
+    expect(interpolateVector3({ x: 0, y: 10, z: 20 }, { x: 30, y: 40, z: 50 }, 0.5)).toEqual({
+      x: 15,
+      y: 25,
+      z: 35
+    });
+    const angle: NetworkAngleRadians = interpolateAngleRadians(0, Math.PI * 1.5, 0.5);
+    expect(angle).toBeCloseTo(-Math.PI / 4);
+    expect(stepValue("lobby", "running", 0.49, 0.5)).toBe("lobby");
+    expect(stepValue("lobby", "running", 0.5, 0.5)).toBe("running");
+
+    const halfTurn = interpolateQuaternion(
+      { x: 0, y: 0, z: 0, w: 1 },
+      { x: 0, y: 0, z: 1, w: 0 },
+      0.5
+    );
+    expect(halfTurn.z).toBeCloseTo(Math.SQRT1_2);
+    expect(halfTurn.w).toBeCloseTo(Math.SQRT1_2);
+
+    const transform2: NetworkTransform2 = {
+      position: { x: 10, y: 20 },
+      rotation: angle,
+      scale: { x: 1, y: 1 }
+    };
+    const transform3: NetworkTransform3 = {
+      position: { x: 15, y: 25, z: 35 },
+      rotation: halfTurn,
+      scale: { x: 1, y: 1, z: 1 }
+    };
+    expect(transform2.position).toEqual({ x: 10, y: 20 });
+    expect(transform3.position).toEqual({ x: 15, y: 25, z: 35 });
   });
 });
 
@@ -788,6 +1051,86 @@ describe("createMultiplayerBridgeModule", () => {
         code: "not_authorized",
         reason: "client cannot act"
       }
+    ]);
+  });
+
+  it("runs snapshot presentation playback on the game system tick", () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "runtime",
+      backend: fake.backend
+    });
+    const eventBus = createEventBus({ clock: () => 10 });
+    const systems: Array<{
+      id: string;
+      update(ctx?: { delta?: number; elapsed?: number; tick?: number }): void;
+    }> = [];
+    let latestSnapshot: { tick: number; position: NetworkVector2 } | undefined = {
+      tick: 0,
+      position: { x: 0, y: 0 }
+    };
+    const applied: Array<{
+      status: string;
+      tick: number | undefined;
+      position: NetworkVector2;
+    }> = [];
+
+    const module = createMultiplayerBridgeModule({
+      runtime,
+      presentation: {
+        interpolationDelayMs: 50,
+        readTime(entry) {
+          return entry.snapshot.tick * 50;
+        },
+        tracks: [
+          defineSnapshotVector2Track<{ tick: number; position: NetworkVector2 }>({
+            selectInto(snapshot, writer) {
+              writer.add("avatar:position", snapshot.position);
+            }
+          })
+        ],
+        readSnapshot() {
+          return latestSnapshot === undefined
+            ? undefined
+            : {
+                snapshot: latestSnapshot,
+                tick: latestSnapshot.tick
+              };
+        },
+        applySample({ sample, presented }) {
+          applied.push({
+            status: sample.status,
+            tick: sample.next?.snapshot.tick,
+            position: presented.vector2("avatar:position", { x: -1, y: -1 })
+          });
+        }
+      }
+    });
+
+    module.install({
+      eventBus,
+      systems: {
+        register(system) {
+          systems.push(system);
+        }
+      }
+    });
+
+    expect(systems.map((system) => system.id)).toEqual(["gamekit.multiplayer.bridge.presentation"]);
+
+    systems[0]?.update({ delta: 0, elapsed: 0, tick: 1 });
+    latestSnapshot = { tick: 1, position: { x: 50, y: 0 } };
+    systems[0]?.update({ delta: 50, elapsed: 50, tick: 2 });
+    latestSnapshot = { tick: 2, position: { x: 100, y: 0 } };
+    systems[0]?.update({ delta: 50, elapsed: 100, tick: 3 });
+    latestSnapshot = undefined;
+    systems[0]?.update({ delta: 50, elapsed: 150, tick: 4 });
+
+    expect(applied).toEqual([
+      { status: "before-first", tick: 0, position: { x: 0, y: 0 } },
+      { status: "exact", tick: 0, position: { x: 0, y: 0 } },
+      { status: "exact", tick: 1, position: { x: 50, y: 0 } },
+      { status: "exact", tick: 2, position: { x: 100, y: 0 } }
     ]);
   });
 });

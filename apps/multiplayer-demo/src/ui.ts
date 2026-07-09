@@ -2,6 +2,7 @@ import type { MultiplayerDemoAppSnapshot } from "./domain";
 import type { MultiplayerDemoClient } from "./client";
 import type { RealtimeArenaSnapshot, RealtimeArenaState } from "./realtime/domain";
 import type { RealtimeLocalGameDiagnostics } from "./realtime/local-game";
+import type { RealtimeArenaPresentationDiagnostics } from "./realtime/presentation";
 
 type RealtimeArenaViewState = RealtimeArenaState | RealtimeArenaSnapshot;
 
@@ -31,6 +32,10 @@ export type RealtimeArenaControlPermissions = {
   interact: boolean;
   rematch: boolean;
   resetArena: boolean;
+};
+
+export type RealtimeArenaUiDiagnostics = RealtimeLocalGameDiagnostics & {
+  presentation?: RealtimeArenaPresentationDiagnostics;
 };
 
 export type MultiplayerDemoConfig = {
@@ -279,7 +284,7 @@ export function renderClientState(
 export function renderRealtimeArenaUi(
   ui: MultiplayerDemoUi,
   state: RealtimeArenaViewState,
-  diagnostics: RealtimeLocalGameDiagnostics,
+  diagnostics: RealtimeArenaUiDiagnostics,
   localPlayerId: string,
   permissions: RealtimeArenaControlPermissions = resolveRealtimeArenaControlPermissions(
     "local-offline"
@@ -293,7 +298,8 @@ export function renderRealtimeArenaUi(
     localPlayer === undefined
       ? "none"
       : `${localPlayer.label} / ${localPlayer.teamId} / ${localPlayer.carryingCoreId ?? "empty"} / ${localPlayer.deliveredCores}`;
-  ui.arenaInput.textContent = `${diagnostics.inputSequence} / ${diagnostics.inputSendRate}hz / ${diagnostics.serverTickRate}tps`;
+  ui.arenaInput.textContent = formatRealtimeArenaDiagnostics(diagnostics);
+  ui.arenaInput.title = formatRealtimeArenaDiagnosticsTitle(diagnostics);
   ui.arenaHint.textContent = arenaHint(state, diagnostics, localPlayer);
 
   ui.readyButton.disabled = !permissions.ready || state.phase !== "lobby";
@@ -318,6 +324,31 @@ export function renderRealtimeArenaUi(
     item.replaceChildren(title, detail);
     ui.timeline.append(item);
   }
+}
+
+export function formatRealtimeArenaDiagnostics(diagnostics: RealtimeArenaUiDiagnostics): string {
+  const frameRate = diagnostics.presentation?.frameRate ?? 0;
+  return `${diagnostics.inputSequence} / ${diagnostics.inputSendRate}hz / ${diagnostics.serverTickRate}tps / ${frameRate}fps`;
+}
+
+export function formatRealtimeArenaDiagnosticsTitle(
+  diagnostics: RealtimeArenaUiDiagnostics
+): string {
+  const presentation = diagnostics.presentation;
+  if (!presentation) {
+    return "input sequence / input send rate / server tick rate / presentation frame rate";
+  }
+
+  const status = presentation.lastSampleStatus ?? "waiting";
+  const age =
+    presentation.lastSampleAgeMs === undefined
+      ? "age --"
+      : `age ${Math.round(presentation.lastSampleAgeMs)}ms`;
+  const delay =
+    presentation.lastSampleDelayMs === undefined
+      ? "delay --"
+      : `delay ${Math.round(presentation.lastSampleDelayMs)}ms`;
+  return `presentation ${status}; ${presentation.bufferLength} buffered; ${age}; ${delay}`;
 }
 
 export function resolveMultiplayerDemoRoomControls(
@@ -494,7 +525,7 @@ function createRealtimeArenaPanel(): {
   const timer = createHudMetric("Timer");
   const score = createHudMetric("Score");
   const player = createHudMetric("Runner");
-  const input = createHudMetric("Input");
+  const input = createHudMetric("Net / FPS");
   hud.replaceChildren(phase.root, timer.root, score.root, player.root, input.root);
   stage.replaceChildren(canvas, hud);
 
@@ -642,7 +673,7 @@ function formatInteractButtonLabel(carryingCoreId?: string): string {
 
 function arenaHint(
   state: RealtimeArenaViewState,
-  diagnostics: RealtimeLocalGameDiagnostics,
+  diagnostics: RealtimeArenaUiDiagnostics,
   localPlayer?: RealtimeArenaViewState["players"][number]
 ): string {
   if (diagnostics.lastAction && !diagnostics.lastAction.accepted) {

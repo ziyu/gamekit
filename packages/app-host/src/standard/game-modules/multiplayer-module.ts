@@ -19,9 +19,11 @@ export function createStandardMultiplayerModule<TContext>(
   }
 
   const bridgeOptions: CreateMultiplayerBridgeModuleOptions<GameInstallContext> = {
-    runtime,
-    handleCommand: options.handleCommand
+    runtime
   };
+  if (options.handleCommand !== undefined) {
+    bridgeOptions.handleCommand = options.handleCommand;
+  }
   if (options.id !== undefined) {
     bridgeOptions.id = options.id;
   }
@@ -30,6 +32,9 @@ export function createStandardMultiplayerModule<TContext>(
   }
   if (options.authority !== undefined) {
     bridgeOptions.authority = options.authority;
+  }
+  if (options.presentation !== undefined) {
+    bridgeOptions.presentation = resolveStandardValue(ctx, options.presentation);
   }
 
   return createMultiplayerBridgeModule<GameInstallContext>(bridgeOptions);

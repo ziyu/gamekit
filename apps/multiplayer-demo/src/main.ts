@@ -8,12 +8,17 @@ import {
   renderRealtimeArenaCanvas,
   type RealtimeLocalGameDiagnostics
 } from "./realtime/local-game";
-import { createRealtimeArenaPresentation } from "./realtime/presentation";
+import {
+  createRealtimeArenaPresentation,
+  type RealtimeArenaPresentation
+} from "./realtime/presentation";
 import { normalizeRealtimeArenaPlayerLabel, type RealtimeArenaSnapshot } from "./realtime/domain";
 import type { RealtimeArenaNetworkAction, RealtimeArenaSnapshotPayload } from "./realtime/protocol";
 import {
   bindRealtimeArenaControls,
   bindMultiplayerDemoControls,
+  formatRealtimeArenaDiagnostics,
+  formatRealtimeArenaDiagnosticsTitle,
   renderBootError,
   renderClientState,
   renderMultiplayerDemoShell,
@@ -25,7 +30,8 @@ import {
   runModeLabel,
   type MultiplayerDemoConfig,
   type MultiplayerDemoRunMode,
-  type MultiplayerDemoSessionInfo
+  type MultiplayerDemoSessionInfo,
+  type RealtimeArenaUiDiagnostics
 } from "./ui";
 
 const root = document.querySelector<HTMLElement>("#app");
@@ -328,7 +334,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
       renderRealtimeArenaUi(
         ui,
         remote.snapshot,
-        remoteDiagnostics,
+        withPresentationDiagnostics(remoteDiagnostics, remotePresentation),
         readRemotePlayerId(remote),
         permissions
       );
@@ -347,7 +353,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     renderRealtimeArenaUi(
       ui,
       realtimeGame.state,
-      realtimeGame.diagnostics,
+      withPresentationDiagnostics(realtimeGame.diagnostics, localPresentation),
       realtimeGame.localPlayerId,
       permissions
     );
@@ -358,7 +364,9 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     ui.arenaTimer.textContent = "--";
     ui.arenaScore.textContent = "--";
     ui.arenaPlayer.textContent = "joining";
-    ui.arenaInput.textContent = `${remoteDiagnostics.inputSequence} / ${remoteDiagnostics.inputSendRate}hz / ${remoteDiagnostics.serverTickRate}tps`;
+    const diagnostics = withPresentationDiagnostics(remoteDiagnostics, remotePresentation);
+    ui.arenaInput.textContent = formatRealtimeArenaDiagnostics(diagnostics);
+    ui.arenaInput.title = formatRealtimeArenaDiagnosticsTitle(diagnostics);
     ui.arenaHint.textContent = "Waiting for host snapshot";
     ui.readyButton.disabled = true;
     ui.startRoundButton.disabled = true;
@@ -375,6 +383,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     ui.arenaScore.textContent = "--";
     ui.arenaPlayer.textContent = "not joined";
     ui.arenaInput.textContent = "--";
+    ui.arenaInput.title = "";
     ui.arenaHint.textContent =
       mode === "host-not-joined"
         ? "Host room is open; join before playing"
@@ -567,6 +576,16 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     remoteInputsSentThisSecond = 0;
     remoteTicksSeenThisSecond = 0;
     remoteLastSnapshotTick = undefined;
+  }
+
+  function withPresentationDiagnostics(
+    diagnostics: RealtimeLocalGameDiagnostics,
+    presentation: RealtimeArenaPresentation
+  ): RealtimeArenaUiDiagnostics {
+    return {
+      ...diagnostics,
+      presentation: presentation.diagnostics()
+    };
   }
 
   async function applyPlayerNameSetting(): Promise<void> {

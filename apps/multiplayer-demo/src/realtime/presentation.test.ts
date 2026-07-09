@@ -12,7 +12,7 @@ describe("realtime arena presentation", () => {
       players: [{ id: "runner", teamId: "green" }]
     });
     const presentation = createRealtimeArenaPresentation({
-      smoothingMs: 80,
+      interpolationDelayMs: 0,
       snapDistance: 1000
     });
 
@@ -30,12 +30,83 @@ describe("realtime arena presentation", () => {
     expect(readPlayer(second).position.x).toBeGreaterThan(readPlayer(first).position.x);
   });
 
+  it("samples behind latest snapshots when interpolation delay is configured", () => {
+    const state = createRealtimeArenaState({
+      players: [{ id: "runner", teamId: "green" }]
+    });
+    const presentation = createRealtimeArenaPresentation({
+      interpolationDelayMs: 100,
+      snapDistance: 1000
+    });
+
+    const start = presentation.present(captureRealtimeArenaSnapshot(state), 0);
+    const startX = readPlayer(start).position.x;
+    const y = readStatePlayer(state).position.y;
+
+    state.tick += 1;
+    readStatePlayer(state).position = { x: startX + 50, y };
+    presentation.present(captureRealtimeArenaSnapshot(state), 50);
+
+    state.tick += 1;
+    readStatePlayer(state).position = { x: startX + 100, y };
+    presentation.present(captureRealtimeArenaSnapshot(state), 50);
+
+    state.tick += 1;
+    readStatePlayer(state).position = { x: startX + 150, y };
+    const delayed = presentation.present(captureRealtimeArenaSnapshot(state), 25);
+
+    expect(presentation.diagnostics().lastSampleStatus).toBe("interpolated");
+    expect(readPlayer(delayed).position.x).toBeGreaterThan(startX);
+    expect(readPlayer(delayed).position.x).toBeLessThan(startX + 50);
+  });
+
+  it("caps render time when local frames outrun the snapshot stream", () => {
+    const state = createRealtimeArenaState({
+      players: [{ id: "runner", teamId: "green" }]
+    });
+    const presentation = createRealtimeArenaPresentation({
+      interpolationDelayMs: 100,
+      snapDistance: 1000
+    });
+
+    const start = presentation.present(captureRealtimeArenaSnapshot(state), 0);
+    const startX = readPlayer(start).position.x;
+    const y = readStatePlayer(state).position.y;
+
+    state.tick += 1;
+    readStatePlayer(state).position = { x: startX + 50, y };
+    const latest = captureRealtimeArenaSnapshot(state);
+    let presented = presentation.present(latest, 50);
+    for (let frame = 0; frame < 12; frame += 1) {
+      presented = presentation.present(latest, 50);
+    }
+
+    expect(presentation.diagnostics().lastSampleStatus).toBe("exact");
+    expect(presentation.diagnostics().clampedFrames).toBeGreaterThan(0);
+    expect(readPlayer(presented).position.x).toBe(startX + 50);
+  });
+
+  it("reports presentation frame rate from presented frame deltas", () => {
+    const state = createRealtimeArenaState({
+      players: [{ id: "runner", teamId: "green" }]
+    });
+    const presentation = createRealtimeArenaPresentation();
+    const snapshot = captureRealtimeArenaSnapshot(state);
+
+    for (let frame = 0; frame < 10; frame += 1) {
+      presentation.present(snapshot, 100);
+    }
+
+    expect(presentation.diagnostics().frameRate).toBe(10);
+    expect(presentation.diagnostics().frameDeltaMs).toBe(100);
+  });
+
   it("snaps large authoritative jumps instead of easing across teleports", () => {
     const state = createRealtimeArenaState({
       players: [{ id: "runner", teamId: "green" }]
     });
     const presentation = createRealtimeArenaPresentation({
-      smoothingMs: 80,
+      interpolationDelayMs: 0,
       snapDistance: 32
     });
 
@@ -53,7 +124,7 @@ describe("realtime arena presentation", () => {
       players: [{ id: "runner", teamId: "green" }]
     });
     const presentation = createRealtimeArenaPresentation({
-      smoothingMs: 80,
+      interpolationDelayMs: 0,
       snapDistance: 1000
     });
 
