@@ -68,6 +68,7 @@ const loop = createMultiplayerAuthorityHostLoop({
   readInput: decodeInput,
   inputSequence: (input) => input.sequence,
   inputSequenceKey: (input) => input.playerId,
+  inputQueueMode: "latest",
   handleInput({ payload, message }) {
     if (payload.playerId !== message.sourcePeerId) {
       return { allowed: false, code: "player-source-mismatch", reason: "Bad source." };
@@ -79,6 +80,8 @@ const loop = createMultiplayerAuthorityHostLoop({
   }
 });
 ```
+
+Choose queue semantics from the input model. Discrete commands that must all execute use the default `fifo` mode; `maxInputsPerSourcePerTick: 1` prevents a burst from advancing one player multiple simulation steps inside one authority tick, and `maxQueuedInputsPerSource` bounds hostile or jittery senders. Continuously sampled movement, aim or steering state uses `inputQueueMode: "latest"`: a newer state replaces an older unconsumed state from the same source, queue depth stays bounded by active sources, and diagnostics report `queuedInputs`, `maxQueuedInputs` and `coalescedInputs`. The simulation may hold the last applied state until a newer state or game-owned timeout replaces it. Its acknowledgement advances only after that latest state has been adopted by an authoritative simulation tick; superseded samples need not execute individually.
 
 Offline/local play should use the same action/input, tick, snapshot/apply and diagnostics contract through `createMultiplayerLocalAuthorityLoop()`. The delivery is in-process, but gameplay should not fork into a second single-player-only rule path.
 
@@ -98,8 +101,8 @@ authoritative snapshot
 The stable package boundary is a presentation timing and declared-track toolkit, not a backend adapter feature and not a deep object interpolator. Core utilities should stay provider-neutral:
 
 - play short-lived authoritative snapshots by tick, server time or provider version;
-- pace render sampling behind the latest authoritative timeline and clamp under-runs by default;
-- report presentation FPS, sample status, interpolation delay, snapshot age, stale/drop counters and reset diagnostics;
+- pace render sampling behind the latest authoritative timeline, adapt within configured delay bounds from measured arrival jitter, and clamp under-runs by default;
+- report presentation FPS, sample status, current/target interpolation delay, estimated jitter, snapshot age, stale/drop counters and reset diagnostics;
 - provide typed interpolation primitives such as number, angle, vector2, vector3, quaternion/slerp and step/snap value;
 - expose small network value shapes such as `NetworkScalar`, `NetworkAngleRadians`, `NetworkVector2`, `NetworkVector3`, `NetworkQuaternion`, `NetworkTransform2` and `NetworkTransform3`;
 - project declared `Network*` presentation tracks into typed `presented` values;
@@ -110,7 +113,11 @@ Typical app code declares the tracks once, creates a reusable projector, and rea
 
 ```ts
 const playback = createSnapshotPlayback<ArenaSnapshot>({
-  interpolationDelayMs: 100,
+  interpolationDelayMs: 50,
+  adaptiveDelay: {
+    minDelayMs: 50,
+    maxDelayMs: 150
+  },
   readTime: (entry) => entry.snapshot.tick * tickMs
 });
 const tracks = [
@@ -131,7 +138,7 @@ const player = snapshot.players[0];
 presented.vector2Into(`player:${player.id}:position`, renderPlayer.position, player.position);
 ```
 
-`presentSnapshotTracks()` remains available as a one-shot convenience for tests and small tools. Runtime presentation loops should prefer `createSnapshotPresentationProjector()`, `selectInto()` and `vector2Into()` / `vector3Into()` / `quaternionInto()` so the core can reuse track buffers and caller-owned render targets.
+`presentSnapshotTracks()` remains available as a one-shot convenience for tests and small tools. Runtime presentation loops should prefer `createSnapshotPresentationProjector()`, `selectInto()` and `vector2Into()` / `vector3Into()` / `quaternionInto()` so the core can reuse track buffers and caller-owned render targets. Do not rebuild a complete cloned gameplay snapshot on every frame when the renderer can accept direct transform writes.
 
 When the app uses `@gamekit/app-host` standard game modules, the multiplayer module can own the playback loop and declared-track interpolation for the app:
 
@@ -139,7 +146,8 @@ When the app uses `@gamekit/app-host` standard game modules, the multiplayer mod
 standardModules: {
   multiplayer: {
     presentation: {
-      interpolationDelayMs: 100,
+      interpolationDelayMs: 50,
+      adaptiveDelay: { minDelayMs: 50, maxDelayMs: 150 },
       readTime: (entry) => entry.snapshot.tick * tickMs,
       tracks,
       readSnapshot: () => latestAuthoritativeSnapshotEntry,
@@ -161,6 +169,52 @@ standardModules: {
 After the first snapshot, `readSnapshot` may return `undefined` on frames where no new authoritative update arrived; the standard module advances the existing playback buffer with the GameRuntime frame delta.
 
 Games should reset snapshot playback when the authority binding, session, snapshot version, hard phase, teleport or resync state changes. `createSnapshotBuffer()` remains available as a low-level escape hatch for custom netcode, but the default path should use `createSnapshotPlayback()` so render pacing, jitter delay, under-run clamping and diagnostics stay in core. Backend packages such as `@gamekit/multiplayer-colyseus` should expose provider state, tick/version source and diagnostics, not hard-code gameplay interpolation policy.
+
+## Client Prediction
+
+Local player prediction is modeled separately from remote interpolation. `createMultiplayerPredictionBuffer()` keeps a bounded input log, applies local inputs immediately, drops inputs acknowledged by the authoritative snapshot, rewinds to the authoritative state and replays still-pending inputs:
+
+```ts
+const prediction = createMultiplayerPredictionBuffer({
+  initialState: readPlayerPredictionState(snapshot),
+  cloneState: (state) => ({ ...state, position: { ...state.position } }),
+  applyInput(state, input) {
+    return movePredictedPlayer(state, input);
+  },
+  presentState(fromState, toState, { alpha }) {
+    return interpolatePredictedPlayer(fromState, toState, alpha);
+  },
+  predictionStepMs: 50,
+  measureCorrection(previous, next) {
+    return distance(previous.position, next.position);
+  },
+  correctionSmoothing: {
+    durationMs: 100,
+    maxMagnitude: 48,
+    apply(target, { previousPresentedState, initialTargetState, remainingAlpha }) {
+      return applyPredictionCorrectionOffset(
+        target,
+        previousPresentedState,
+        initialTargetState,
+        remainingAlpha
+      );
+    }
+  }
+});
+
+prediction.predict({ sequence: input.sequence, input, timestamp: input.clientTime });
+prediction.reconcile({
+  authoritativeState: readPlayerPredictionState(authoritativeSnapshot),
+  acknowledgedSequence: authoritativeSnapshot.inputAck,
+  timestamp: renderFrame.time
+});
+const renderState = prediction.present({
+  deltaMs: renderFrame.deltaMs,
+  timestamp: renderFrame.time
+});
+```
+
+Core owns the input queue, ack handling, replay, bounded fixed-step presentation clock, correction smoothing lifecycle and diagnostics. A predicted command computes the next fixed-step simulation endpoint immediately, while `present()` samples between the previous and current endpoint over `predictionStepMs`; it must not extrapolate again from an endpoint that already represents the end of the step. Reconciliation updates prediction state immediately. Small render corrections are represented as an offset from the corrected moving target and decay over the configured duration, so later prediction steps continue moving at their normal rate. Corrections above `maxMagnitude`, hard resets and teleports still snap. `present()` always works on cloned state, so render sampling never advances authoritative or rollback state. The game still owns deterministic input replay, collision, movement rules, interpolation of its state shape and final render writes.
 
 ## Peer / Player Binding
 
@@ -204,9 +258,11 @@ Run the module-level benchmark suite when changing multiplayer hot paths:
 
 ```bash
 corepack pnpm bench:multiplayer
+corepack pnpm bench:multiplayer:check
+corepack pnpm bench:multiplayer:stability
 ```
 
-The suite covers envelope normalization, authority receiver source gates, host/local authority loops, snapshot playback and presentation projection. Results are trend signals for profiling and regression review; they are not fixed pass/fail budgets.
+The suite covers envelope normalization, authority receiver source gates, host/local authority loops, latest-input coalescing, prediction reconciliation and render-time presentation, snapshot playback and presentation projection. The regular command remains a profiling trend signal. `bench:multiplayer:check` applies deliberately broad CI ceilings that catch order-of-magnitude regressions, while the stability command simulates 30 minutes of bounded prediction/playback/direct-write activity and checks retained heap after GC.
 
 ## App Host Integration
 

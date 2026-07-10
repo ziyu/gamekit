@@ -24,6 +24,12 @@ type QueuedPayload<TPayload> = {
   payload: TPayload;
 };
 
+type QueuedInput<TInput> = QueuedPayload<TInput> & {
+  sourceKey: string;
+};
+
+export type MultiplayerAuthorityInputQueueMode = "fifo" | "latest";
+
 export type MultiplayerAuthorityHostLoopOptions<TAction, TInput, TSnapshot> = {
   runtime: MultiplayerRuntime;
   binding: MultiplayerAuthorityBindingStore;
@@ -36,6 +42,9 @@ export type MultiplayerAuthorityHostLoopOptions<TAction, TInput, TSnapshot> = {
   readInput?(payload: unknown, message: MultiplayerMessageEnvelope): TInput | undefined;
   inputSequence?(input: TInput, message: MultiplayerMessageEnvelope): number | undefined;
   inputSequenceKey?(input: TInput, message: MultiplayerMessageEnvelope): string;
+  inputQueueMode?: MultiplayerAuthorityInputQueueMode;
+  maxInputsPerSourcePerTick?: number;
+  maxQueuedInputsPerSource?: number;
   handleAction?(
     ctx: MultiplayerAuthorityMessageContext<TAction>
   ): MultiplayerAuthorityDecision | void;
@@ -55,6 +64,9 @@ export type MultiplayerAuthorityLoopDiagnostics = {
   receivedInputs: number;
   acceptedInputs: number;
   rejectedInputs: number;
+  coalescedInputs: number;
+  queuedInputs: number;
+  maxQueuedInputs: number;
   sentSnapshots: number;
   rejectedMessages: number;
   lastRejected?: MultiplayerAuthorityRejectedPayload;
@@ -100,8 +112,18 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
   const actionKind = options.actionKind ?? MULTIPLAYER_ACTION_KIND;
   const inputKind = options.inputKind ?? MULTIPLAYER_INPUT_KIND;
   const snapshotKind = options.snapshotKind ?? MULTIPLAYER_SNAPSHOT_KIND;
+  const inputQueueMode = options.inputQueueMode ?? "fifo";
+  const maxInputsPerSourcePerTick = normalizeMaxInputsPerSourcePerTick(
+    options.maxInputsPerSourcePerTick
+  );
+  const maxQueuedInputsPerSource = normalizeMaxQueuedInputsPerSource(
+    options.maxQueuedInputsPerSource,
+    maxInputsPerSourcePerTick
+  );
   const actionQueue: Array<QueuedPayload<TAction>> = [];
-  const inputQueue: Array<QueuedPayload<TInput>> = [];
+  const inputQueue: Array<QueuedInput<TInput>> = [];
+  const queuedInputsBySource = new Map<string, number>();
+  const latestQueuedInputBySource = new Map<string, QueuedInput<TInput>>();
   const inputSequences = new Map<string, number>();
   const diagnostics: MultiplayerAuthorityLoopDiagnostics = createDiagnostics();
 
@@ -155,7 +177,35 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       return;
     }
 
-    inputQueue.push({ message, payload });
+    const sourceKey = options.inputSequenceKey?.(payload, message) ?? message.sourcePeerId;
+    const queuedLatest = latestQueuedInputBySource.get(sourceKey);
+    if (inputQueueMode === "latest" && queuedLatest !== undefined) {
+      const replacementDecision = acceptsQueuedInputReplacement(queuedLatest, payload, message);
+      if (!replacementDecision.allowed) {
+        rejectMessage(message, replacementDecision.code, replacementDecision.reason);
+        diagnostics.rejectedInputs += 1;
+        return;
+      }
+      queuedLatest.message = message;
+      queuedLatest.payload = payload;
+      diagnostics.coalescedInputs += 1;
+      return;
+    }
+
+    const queuedForSource = queuedInputsBySource.get(sourceKey) ?? 0;
+    if (queuedForSource >= maxQueuedInputsPerSource) {
+      rejectMessage(message, "input-queue-full", "Input queue is full for this source.");
+      diagnostics.rejectedInputs += 1;
+      return;
+    }
+
+    const entry = { message, payload, sourceKey };
+    inputQueue.push(entry);
+    if (inputQueueMode === "latest") {
+      latestQueuedInputBySource.set(sourceKey, entry);
+    }
+    queuedInputsBySource.set(sourceKey, queuedForSource + 1);
+    refreshQueueDiagnostics();
   }
 
   function processAction(entry: QueuedPayload<TAction>): void {
@@ -176,7 +226,7 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
     diagnostics.acceptedActions += 1;
   }
 
-  function processInput(entry: QueuedPayload<TInput>): void {
+  function processInput(entry: QueuedInput<TInput>): void {
     const sequenceDecision = acceptsInputSequence(entry.payload, entry.message);
     if (!sequenceDecision.allowed) {
       rejectMessage(entry.message, sequenceDecision.code, sequenceDecision.reason);
@@ -199,6 +249,82 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
     }
 
     diagnostics.acceptedInputs += 1;
+  }
+
+  function processQueuedInputs(): void {
+    if (!Number.isFinite(maxInputsPerSourcePerTick)) {
+      while (inputQueue.length > 0) {
+        const entry = inputQueue.shift();
+        if (entry) {
+          releaseQueuedInput(entry);
+          processInput(entry);
+        }
+      }
+      refreshQueueDiagnostics();
+      return;
+    }
+
+    const processedBySource = new Map<string, number>();
+    const deferred: Array<QueuedInput<TInput>> = [];
+    while (inputQueue.length > 0) {
+      const entry = inputQueue.shift();
+      if (!entry) {
+        continue;
+      }
+      const sourceKey = entry.sourceKey;
+      const processed = processedBySource.get(sourceKey) ?? 0;
+      if (processed >= maxInputsPerSourcePerTick) {
+        deferred.push(entry);
+        continue;
+      }
+      releaseQueuedInput(entry);
+      processInput(entry);
+      processedBySource.set(sourceKey, processed + 1);
+    }
+    inputQueue.push(...deferred);
+    refreshQueueDiagnostics();
+  }
+
+  function acceptsQueuedInputReplacement(
+    queued: QueuedInput<TInput>,
+    input: TInput,
+    message: MultiplayerMessageEnvelope
+  ): MultiplayerAuthorityDecision {
+    const queuedSequence = options.inputSequence?.(queued.payload, queued.message);
+    const nextSequence = options.inputSequence?.(input, message);
+    if (
+      queuedSequence !== undefined &&
+      nextSequence !== undefined &&
+      nextSequence <= queuedSequence
+    ) {
+      return {
+        allowed: false,
+        code: nextSequence === queuedSequence ? "duplicate-input" : "stale-input",
+        reason: "Input sequence must be strictly increasing."
+      };
+    }
+    return { allowed: true };
+  }
+
+  function releaseQueuedInput(entry: QueuedInput<TInput>): void {
+    decrementQueuedInput(entry.sourceKey);
+    if (latestQueuedInputBySource.get(entry.sourceKey) === entry) {
+      latestQueuedInputBySource.delete(entry.sourceKey);
+    }
+  }
+
+  function decrementQueuedInput(sourceKey: string): void {
+    const remaining = (queuedInputsBySource.get(sourceKey) ?? 1) - 1;
+    if (remaining <= 0) {
+      queuedInputsBySource.delete(sourceKey);
+    } else {
+      queuedInputsBySource.set(sourceKey, remaining);
+    }
+  }
+
+  function refreshQueueDiagnostics(): void {
+    diagnostics.queuedInputs = inputQueue.length;
+    diagnostics.maxQueuedInputs = Math.max(diagnostics.maxQueuedInputs, inputQueue.length);
   }
 
   function acceptsInputSequence(
@@ -269,12 +395,7 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
           processAction(entry);
         }
       }
-      while (inputQueue.length > 0) {
-        const entry = inputQueue.shift();
-        if (entry) {
-          processInput(entry);
-        }
-      }
+      processQueuedInputs();
       const binding = options.binding.update({ tick: diagnostics.tick });
       options.tick?.({
         binding,
@@ -291,7 +412,10 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       unsubscribe();
       actionQueue.length = 0;
       inputQueue.length = 0;
+      queuedInputsBySource.clear();
+      latestQueuedInputBySource.clear();
       inputSequences.clear();
+      refreshQueueDiagnostics();
     }
   };
 }
@@ -422,6 +546,24 @@ export function createMultiplayerLocalAuthorityLoop<TAction, TInput, TSnapshot>(
   };
 }
 
+function normalizeMaxInputsPerSourcePerTick(value: number | undefined): number {
+  return value === undefined || !Number.isFinite(value)
+    ? Number.POSITIVE_INFINITY
+    : Math.max(1, Math.floor(value));
+}
+
+function normalizeMaxQueuedInputsPerSource(
+  value: number | undefined,
+  maxInputsPerSourcePerTick: number
+): number {
+  if (value !== undefined && Number.isFinite(value)) {
+    return Math.max(1, Math.floor(value));
+  }
+  return Number.isFinite(maxInputsPerSourcePerTick)
+    ? maxInputsPerSourcePerTick * 4
+    : Number.POSITIVE_INFINITY;
+}
+
 function acceptsClientMessage(
   binding: MultiplayerAuthorityBinding,
   message: MultiplayerMessageEnvelope
@@ -468,6 +610,9 @@ function createDiagnostics(): MultiplayerAuthorityLoopDiagnostics {
     receivedInputs: 0,
     acceptedInputs: 0,
     rejectedInputs: 0,
+    coalescedInputs: 0,
+    queuedInputs: 0,
+    maxQueuedInputs: 0,
     sentSnapshots: 0,
     rejectedMessages: 0
   };
@@ -484,6 +629,9 @@ function cloneDiagnostics(
     receivedInputs: diagnostics.receivedInputs,
     acceptedInputs: diagnostics.acceptedInputs,
     rejectedInputs: diagnostics.rejectedInputs,
+    coalescedInputs: diagnostics.coalescedInputs,
+    queuedInputs: diagnostics.queuedInputs,
+    maxQueuedInputs: diagnostics.maxQueuedInputs,
     sentSnapshots: diagnostics.sentSnapshots,
     rejectedMessages: diagnostics.rejectedMessages,
     ...(diagnostics.lastRejected === undefined

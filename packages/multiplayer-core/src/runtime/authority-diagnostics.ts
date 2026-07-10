@@ -43,6 +43,9 @@ export type MultiplayerAuthorityDiagnostics = {
   receivedInputs: number;
   acceptedInputs: number;
   rejectedInputs: number;
+  coalescedInputs: number;
+  queuedInputs: number;
+  maxQueuedInputs: number;
   sentSnapshots: number;
   receivedSnapshots: number;
   appliedSnapshots: number;
@@ -99,6 +102,9 @@ export function createMultiplayerAuthorityDiagnostics(
     receivedInputs: loop?.receivedInputs ?? 0,
     acceptedInputs: loop?.acceptedInputs ?? 0,
     rejectedInputs: loop?.rejectedInputs ?? 0,
+    coalescedInputs: loop?.coalescedInputs ?? 0,
+    queuedInputs: loop?.queuedInputs ?? 0,
+    maxQueuedInputs: loop?.maxQueuedInputs ?? 0,
     sentSnapshots: loop?.sentSnapshots ?? 0,
     receivedSnapshots: receiver?.receivedSnapshots ?? 0,
     appliedSnapshots: receiver?.appliedSnapshots ?? 0,

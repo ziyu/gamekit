@@ -75,7 +75,17 @@ export type SnapshotBuffer<TSnapshot> = {
 export type SnapshotPlaybackOptions<TSnapshot> = SnapshotBufferOptions<TSnapshot> & {
   clampToLatest?: boolean;
   maxFrameDeltaMs?: number;
+  adaptiveDelay?: SnapshotPlaybackAdaptiveDelayOptions;
   shouldReset?(previous: TSnapshot | undefined, next: TSnapshot): boolean;
+};
+
+export type SnapshotPlaybackAdaptiveDelayOptions = {
+  minDelayMs?: number;
+  maxDelayMs?: number;
+  jitterMultiplier?: number;
+  jitterSmoothing?: number;
+  riseRate?: number;
+  fallRate?: number;
 };
 
 export type SnapshotPlaybackSample<TSnapshot> = SnapshotBufferSample<TSnapshot> & {
@@ -87,6 +97,10 @@ export type SnapshotPlaybackDiagnostics = SnapshotBufferDiagnostics & {
   frameRate: number;
   framesPresented: number;
   clampedFrames: number;
+  adaptiveDelayEnabled: boolean;
+  interpolationDelayMs: number;
+  targetDelayMs: number;
+  estimatedJitterMs: number;
   frameDeltaMs?: number;
   renderTime?: number;
   latestSnapshotTime?: number;
@@ -265,6 +279,10 @@ export type SnapshotPresentationProjector<TSnapshot> = {
 const DEFAULT_INTERPOLATION_DELAY_MS = 100;
 const DEFAULT_MAX_SNAPSHOTS = 32;
 const DEFAULT_MAX_FRAME_DELTA_MS = 250;
+const DEFAULT_JITTER_MULTIPLIER = 2;
+const DEFAULT_JITTER_SMOOTHING = 1 / 16;
+const DEFAULT_DELAY_RISE_RATE = 0.5;
+const DEFAULT_DELAY_FALL_RATE = 0.05;
 
 export function createSnapshotBuffer<TSnapshot>(
   options: SnapshotBufferOptions<TSnapshot> = {}
@@ -392,6 +410,23 @@ export function createSnapshotPlayback<TSnapshot>(
     options.maxFrameDeltaMs,
     DEFAULT_MAX_FRAME_DELTA_MS
   );
+  const adaptiveDelay = options.adaptiveDelay;
+  const adaptiveDelayEnabled = adaptiveDelay !== undefined;
+  const minDelayMs = normalizeNonNegativeNumber(adaptiveDelay?.minDelayMs, interpolationDelayMs);
+  const maxDelayMs = Math.max(
+    minDelayMs,
+    normalizeNonNegativeNumber(adaptiveDelay?.maxDelayMs, interpolationDelayMs * 3)
+  );
+  const jitterMultiplier = normalizeNonNegativeNumber(
+    adaptiveDelay?.jitterMultiplier,
+    DEFAULT_JITTER_MULTIPLIER
+  );
+  const jitterSmoothing = normalizeUnitInterval(
+    adaptiveDelay?.jitterSmoothing,
+    DEFAULT_JITTER_SMOOTHING
+  );
+  const delayRiseRate = normalizeUnitInterval(adaptiveDelay?.riseRate, DEFAULT_DELAY_RISE_RATE);
+  const delayFallRate = normalizeUnitInterval(adaptiveDelay?.fallRate, DEFAULT_DELAY_FALL_RATE);
   const clampToLatest = options.clampToLatest ?? true;
   const buffer = createSnapshotBuffer<TSnapshot>(options);
   let previousSnapshot: TSnapshot | undefined;
@@ -404,6 +439,21 @@ export function createSnapshotPlayback<TSnapshot>(
   let framesPresented = 0;
   let clampedFrames = 0;
   let frameDeltaMs: number | undefined;
+  let arrivalTimeMs = 0;
+  let lastArrivalTimeMs: number | undefined;
+  let lastArrivalSnapshotTime: number | undefined;
+  let estimatedJitterMs = 0;
+  let currentDelayMs = clamp(interpolationDelayMs, minDelayMs, maxDelayMs);
+  let targetDelayMs = currentDelayMs;
+
+  function resetAdaptiveDelay(): void {
+    arrivalTimeMs = 0;
+    lastArrivalTimeMs = undefined;
+    lastArrivalSnapshotTime = undefined;
+    estimatedJitterMs = 0;
+    currentDelayMs = clamp(interpolationDelayMs, minDelayMs, maxDelayMs);
+    targetDelayMs = currentDelayMs;
+  }
 
   function reset(): void {
     buffer.reset();
@@ -417,6 +467,7 @@ export function createSnapshotPlayback<TSnapshot>(
     framesPresented = 0;
     clampedFrames = 0;
     frameDeltaMs = undefined;
+    resetAdaptiveDelay();
   }
 
   function present(
@@ -427,6 +478,7 @@ export function createSnapshotPlayback<TSnapshot>(
       buffer.reset();
       renderTime = undefined;
       latestSnapshotTime = undefined;
+      resetAdaptiveDelay();
     }
 
     const pushResult = buffer.push(entry);
@@ -454,11 +506,13 @@ export function createSnapshotPlayback<TSnapshot>(
     pushResult: SnapshotBufferPushResult
   ): SnapshotPlaybackSample<TSnapshot> {
     const frameDelta = recordPresentationFrame(deltaMs);
+    arrivalTimeMs += frameDelta;
+    recordSnapshotArrival(pushResult);
     const nextRenderTime =
       (renderTime ?? fallbackRenderTime ?? latestSnapshotTime ?? 0) + frameDelta;
     const maxRenderTime =
       clampToLatest && latestSnapshotTime !== undefined
-        ? latestSnapshotTime + interpolationDelayMs
+        ? latestSnapshotTime + currentDelayMs
         : Number.POSITIVE_INFINITY;
     const clampedToLatest = nextRenderTime > maxRenderTime;
     if (clampedToLatest) {
@@ -466,7 +520,7 @@ export function createSnapshotPlayback<TSnapshot>(
     }
     renderTime = clampedToLatest ? maxRenderTime : nextRenderTime;
     lastSample = {
-      ...buffer.sample(renderTime),
+      ...buffer.sample(renderTime, currentDelayMs),
       pushResult,
       clampedToLatest
     };
@@ -487,6 +541,36 @@ export function createSnapshotPlayback<TSnapshot>(
     return normalizedDeltaMs;
   }
 
+  function recordSnapshotArrival(pushResult: SnapshotBufferPushResult): void {
+    if (
+      !adaptiveDelayEnabled ||
+      !pushResult.accepted ||
+      pushResult.reason === "duplicate" ||
+      pushResult.time === undefined ||
+      (lastArrivalSnapshotTime !== undefined && pushResult.time <= lastArrivalSnapshotTime)
+    ) {
+      return;
+    }
+
+    if (lastArrivalTimeMs !== undefined && lastArrivalSnapshotTime !== undefined) {
+      const arrivalDeltaMs = arrivalTimeMs - lastArrivalTimeMs;
+      const snapshotDeltaMs = pushResult.time - lastArrivalSnapshotTime;
+      const variationMs = Math.abs(arrivalDeltaMs - snapshotDeltaMs);
+      estimatedJitterMs += (variationMs - estimatedJitterMs) * jitterSmoothing;
+      targetDelayMs = clamp(
+        interpolationDelayMs + estimatedJitterMs * jitterMultiplier,
+        minDelayMs,
+        maxDelayMs
+      );
+      const adjustmentRate = targetDelayMs >= currentDelayMs ? delayRiseRate : delayFallRate;
+      currentDelayMs += (targetDelayMs - currentDelayMs) * adjustmentRate;
+      currentDelayMs = clamp(currentDelayMs, minDelayMs, maxDelayMs);
+    }
+
+    lastArrivalTimeMs = arrivalTimeMs;
+    lastArrivalSnapshotTime = pushResult.time;
+  }
+
   return {
     present,
     advance,
@@ -500,6 +584,10 @@ export function createSnapshotPlayback<TSnapshot>(
         frameRate,
         framesPresented,
         clampedFrames,
+        adaptiveDelayEnabled,
+        interpolationDelayMs: currentDelayMs,
+        targetDelayMs,
+        estimatedJitterMs,
         ...(frameDeltaMs === undefined ? {} : { frameDeltaMs }),
         ...(renderTime === undefined ? {} : { renderTime }),
         ...(latestSnapshotTime === undefined ? {} : { latestSnapshotTime }),
@@ -1503,6 +1591,10 @@ function cloneFrame<TSnapshot>(
 
 function normalizeNonNegativeNumber(value: number | undefined, fallback: number): number {
   return value === undefined || !Number.isFinite(value) ? fallback : Math.max(0, value);
+}
+
+function normalizeUnitInterval(value: number | undefined, fallback: number): number {
+  return value === undefined || !Number.isFinite(value) ? fallback : clamp01(value);
 }
 
 function normalizePositiveInteger(value: number | undefined, fallback: number): number {

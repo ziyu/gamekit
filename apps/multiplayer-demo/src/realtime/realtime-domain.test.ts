@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyRealtimeArenaPlayerInteract,
   applyRealtimeInputFrame,
   createRealtimeArenaState,
   joinRealtimeArenaPlayer,
@@ -80,11 +81,11 @@ describe("realtime arena domain", () => {
     readyAndStart(state, ["runner"]);
     expect(state.phase).toBe("running");
 
-    expectAccepted(applyRealtimeInputFrame(state, "runner", inputFrame(1, { interact: true })));
+    expectAccepted(applyRealtimeArenaPlayerInteract(state, "runner"));
     tickRealtimeArena(state, 16);
     expect(getPlayer(state, "runner").carryingCoreId).toBe("core-alpha");
 
-    expectAccepted(applyRealtimeInputFrame(state, "runner", inputFrame(2, { interact: true })));
+    expectAccepted(applyRealtimeArenaPlayerInteract(state, "runner"));
     tickRealtimeArena(state, 16);
 
     expect(state.phase).toBe("results");
@@ -134,13 +135,68 @@ describe("realtime arena domain", () => {
     );
   });
 
+  it("holds the latest realtime input state until a newer state replaces it", () => {
+    const state = createRealtimeArenaState({
+      rules: { countdownMs: 0, playerSpeedPerSecond: 100 },
+      players: [{ id: "runner", teamId: "green" }]
+    });
+    readyAndStart(state, ["runner"]);
+    tickRealtimeArena(state, 0);
+    const startX = getPlayer(state, "runner").position.x;
+
+    expectAccepted(applyRealtimeInputFrame(state, "runner", inputFrame(1, { moveX: 1 })));
+    tickRealtimeArena(state, 50);
+    expect(getPlayer(state, "runner").position.x).toBeCloseTo(startX + 5);
+
+    tickRealtimeArena(state, 50);
+    expect(getPlayer(state, "runner")).toMatchObject({
+      position: { x: startX + 10 },
+      velocity: { x: 100, y: 0 },
+      lastInputSequence: 1
+    });
+
+    expectAccepted(applyRealtimeInputFrame(state, "runner", inputFrame(3, { moveX: 0 })));
+    tickRealtimeArena(state, 50);
+    expect(getPlayer(state, "runner")).toMatchObject({
+      position: { x: startX + 10 },
+      velocity: { x: 0, y: 0 },
+      lastInputSequence: 3
+    });
+  });
+
+  it("clears held movement after the authority input-state timeout", () => {
+    const state = createRealtimeArenaState({
+      rules: {
+        countdownMs: 0,
+        playerSpeedPerSecond: 100,
+        inputTimeoutMs: 120
+      },
+      players: [{ id: "runner", teamId: "green" }]
+    });
+    readyAndStart(state, ["runner"]);
+    tickRealtimeArena(state, 0);
+    const startX = getPlayer(state, "runner").position.x;
+
+    expectAccepted(applyRealtimeInputFrame(state, "runner", inputFrame(1, { moveX: 1 })));
+    tickRealtimeArena(state, 50);
+    tickRealtimeArena(state, 50);
+    tickRealtimeArena(state, 50);
+
+    expect(getPlayer(state, "runner")).toMatchObject({
+      position: { x: startX + 10 },
+      velocity: { x: 0, y: 0 },
+      inputStateAgeMs: 150
+    });
+  });
+
   it("blocks movement through walls while clamping players inside arena bounds", () => {
     const state = createRealtimeArenaState({
       layout: collisionLayout,
       rules: {
         countdownMs: 0,
         playerRadius: 10,
-        playerSpeedPerSecond: 100
+        playerSpeedPerSecond: 100,
+        inputTimeoutMs: 2000
       },
       players: [{ id: "runner", teamId: "green" }]
     });
@@ -169,12 +225,8 @@ describe("realtime arena domain", () => {
     });
 
     readyAndStart(state, ["player-green", "player-orange"]);
-    expectAccepted(
-      applyRealtimeInputFrame(state, "player-green", inputFrame(1, { interact: true }))
-    );
-    expectAccepted(
-      applyRealtimeInputFrame(state, "player-orange", inputFrame(1, { interact: true }))
-    );
+    expectAccepted(applyRealtimeArenaPlayerInteract(state, "player-green"));
+    expectAccepted(applyRealtimeArenaPlayerInteract(state, "player-orange"));
 
     tickRealtimeArena(state, 16);
 
@@ -197,7 +249,7 @@ describe("realtime arena domain", () => {
     });
 
     readyAndStart(state, ["runner", "defender"]);
-    expectAccepted(applyRealtimeInputFrame(state, "runner", inputFrame(1, { interact: true })));
+    expectAccepted(applyRealtimeArenaPlayerInteract(state, "runner"));
     tickRealtimeArena(state, 16);
     expect(getPlayer(state, "runner").carryingCoreId).toBe("core-alpha");
     expect(state.cores[0]?.carriedByPlayerId).toBe("runner");
@@ -323,7 +375,6 @@ function inputFrame(
     moveX: 0,
     moveY: 0,
     sprint: false,
-    interact: false,
     ...overrides
   };
 }

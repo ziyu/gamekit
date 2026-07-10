@@ -1,6 +1,6 @@
 # Multiplayer Realtime Game Demo
 
-Status: Active; Wave 0 rule domain, Wave 1 stage-first local playable arena, host-authoritative realtime sync, core authority helper dogfood, and temporal snapshot presentation buffer implemented.
+Status: Active; Wave 0 rule domain, Wave 1 stage-first local playable arena, host-authoritative realtime sync, core authority helper dogfood, temporal snapshot presentation buffer and corrected Wave 5 fixed-step prediction/correction diagnostics implemented.
 
 ## Goal
 
@@ -37,7 +37,7 @@ Status: Active; Wave 0 rule domain, Wave 1 stage-first local playable arena, hos
 - 离线单机/本地练习继续成立，并已走 `local` authority binding 和 in-process delivery，复用同一 action/input、simulation、snapshot/apply 和 diagnostics contract；它不再是另一套单机 gameplay runtime。
 - `@gamekit/multiplayer-core` 的单元测试和 demo 的 headless Colyseus integration test 已覆盖 host authoritative action/input/snapshot、local authority、非 authority snapshot 拒绝和双 client 同步。
 
-后续实现优先级可以回到更细的多人质量：prediction/correction、latency diagnostics、patch/result helper、断线/重连、迟到加入和 provider-native state sync 评估。
+后续实现优先级可以回到 patch/result helper、断线/重连、迟到加入和 provider-native state sync 评估；prediction/correction 已建立 fixed-step presentation、applied-input ack 和 latency diagnostics 基线。
 
 完整可用能力需要同时保留两条验证路径：
 
@@ -159,15 +159,20 @@ type RealtimeInputFrame = {
   moveX: -1 | 0 | 1;
   moveY: -1 | 0 | 1;
   sprint: boolean;
-  interact: boolean;
 };
+
+type RealtimeArenaAction =
+  | { type: "interact" }
+  | { type: "ready"; ready: boolean }
+  | { type: "start" }
+  | { type: "rematch" };
 ```
 
 规则：
 
 - Browser 每帧采样键盘，但以 15-30Hz 合并发送 input frame。
-- Input frame 只表示意图，不是事实。
-- 非 running 状态下，移动/交互输入必须被忽略或转成 UI action。
+- Input frame 只表示可合并的 continuous movement state，不是事实；`interact` 等一次性操作走独立离散 action。
+- 非 running 状态下，移动输入和 gameplay action 必须被 authority 拒绝或忽略。
 - 服务端按 peer id 维护最后输入序号，丢弃重复、倒序或超频输入。
 - 不信任 client timestamp，只用于诊断和延迟估算。
 
@@ -352,22 +357,36 @@ Status: Planned.
 
 ### Wave 5: Prediction, Interpolation, Diagnostics
 
-Status: In Progress; temporal snapshot interpolation buffer implemented, prediction/correction, artificial latency and richer diagnostics still planned.
+Status: Implemented; temporal snapshot interpolation buffer, local prediction/correction, artificial client input latency/jitter/loss and richer diagnostics are available in the demo.
 
 目标：让 demo 能观察真实多人手感问题，而不是只看到最终状态。
 
 任务：
 
-1. 为本地玩家添加 input prediction 和 server correction。
+1. 已为本地玩家添加 input prediction、server correction、fixed prediction step 起点/终点之间的 render-time sampling，以及小 correction 的 render-only offset decay；renderer 不再直接消费 20Hz 或 reconcile 后的 raw predicted endpoint，也不会对已经前进完整 tick 的 endpoint 重复 extrapolate。
 2. 已为远端玩家和共享对象接入 temporal snapshot interpolation buffer，并移除二维向量专用平滑 helper 作为长期入口。
-3. 添加 artificial latency/jitter/loss 开关，只影响 demo client path。
-4. 展示 rtt、snapshot age、input seq ack、correction magnitude、server tick drift。
-5. 增加 forged input/debug controls，用于验证 authority。
+3. 已添加 artificial latency/jitter/loss 开关，只影响 demo client input path。
+4. 已展示 rtt、snapshot age、input seq ack、correction magnitude、input lead/server tick drift 诊断。
+5. 已增加 forged stale input debug control，用于验证 authority rejection。
+6. 已将 realtime movement input 明确为 continuous state：core authority loop 使用 `latest` 模式按 peer 合并尚未消费的 burst，simulation 保持最后应用的移动状态直到更新或 `250ms` timeout，ack 在 latest state 被本次 tick 采用后推进；`interact` 已从 movement frame 拆到独立 action FIFO，在 authority tick 中逐次应用，不会被状态合并覆盖。旧的等速 FIFO 方案会把 jitter 永久转化为远端延迟，已移除。
+7. 已将远端固定 `100ms` interpolation delay 改为以 `50ms` 为基线、`150ms` 为上限的 adaptive jitter delay，并在 HUD 展示 current delay 和 estimated jitter；稳定网络降低远端视角延迟，抖动增大时自动扩大缓冲。
+8. 已将 demo 正式 Canvas 帧循环改为 reusable presentation frame + `vector2Into` direct-write，不再每帧 materialize 完整 cloned gameplay snapshot；同时加入覆盖全部 multiplayer benchmark suite 的 CI 粗粒度预算和 30 分钟模拟 retained heap 稳定性检查。
 
 验收：
 
-- 开启人工延迟后，远端玩家通过 snapshot buffer 平滑移动，本地玩家能被 authority 校正。
+- 开启人工延迟后，远端玩家通过 snapshot buffer 平滑移动，本地玩家在 prediction tick 之间连续表现；按下、持续、松开、反向和掉帧追帧都不在 tick 边界产生整步跳变。Authority 立即校正 simulation，小幅显示误差随移动 target 渐进收敛，大幅误差直接 snap。
+- 稳定 snapshot cadence 下远端 delay 保持最小值；arrival jitter 增大时 delay 在上限内上升，恢复稳定后逐步下降。正式 render loop 复用 direct-write frame，便利用 `present()` 仍只服务测试、小工具和低规模调用。
+- 同一 peer 的多份 movement state 在一个 authority tick 前到达时只应用最新状态；持续按住无需每 tick 排队，neutral/release 在下一 authority tick 生效，断流超过 timeout 自动停止，HUD authority queue 正常长期为 `q0`。离散 `interact` action 不被 movement burst 合并或丢失。
 - Diagnostics 能解释“为什么抖动、为什么被回滚、为什么输入被拒绝”。
+
+验证记录（2026-07-10）：
+
+- `corepack pnpm test`：62 个 workspace task 全部通过；multiplayer core 32 tests、demo 52 tests，覆盖 adaptive jitter delay、direct-write frame 复用、fixed-step sampling、无误差 reconcile 连续性、moving-target correction、latest-per-source burst coalescing、FIFO queue overflow、movement hold/release/timeout、独立 interact action、掉帧追帧和 120Hz 十分钟模拟。
+- `corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format`、`git diff --check`：全部通过。
+- `corepack pnpm bench:multiplayer:check`：9 个粗粒度 CI budget 全部通过；本机 32 clients authority host loop 为 `0.0146 ms/tick`；32 clients、每 tick 每端 burst 4 的 latest coalescing 共接收 640000 inputs、应用 160000、合并 480000、queue peak 32，为 `0.0360 ms/tick`；120Hz prediction presentation 为 `0.1155 us/frame`，5000 tracks direct-write projection 为 `1.5169 ms/frame`。
+- `corepack pnpm bench:multiplayer:stability`：60Hz / 20 snapshot TPS / 32 tracks 的 30 分钟模拟共 108000 frames；GC 后 retained heap 增长 `0.076 MiB`、peak growth `0.0842 MiB`，snapshot buffer 保持 24，prediction pending 保持 2。
+- `corepack pnpm bench:world`：10k entity 场景通过，spawn/add `11.06ms`、query/update `7.32ms`；本轮 multiplayer hot-path 改动未引入 world hot-path 回归。
+- 自动化已覆盖 protocol、authority、prediction 和长时序稳定性；真实浏览器双窗口的视觉手感仍需作为 browser smoke 单独确认。
 
 ### Wave 6: Multiplayer Feature Completion
 
@@ -415,15 +434,15 @@ Status: Planned.
 
 ## Test Matrix
 
-| Area           | Required tests                                                                                                  |
-| -------------- | --------------------------------------------------------------------------------------------------------------- |
-| Game loop      | ready, countdown, running, ending, results, rematch, reset, win, draw/overtime                                  |
-| Simulation     | deterministic movement, collision, pickup, deliver, cooldown, tie resolution                                    |
-| Authority      | duplicate sequence, backwards sequence, out-of-bounds move, forged pickup, input rejected outside running state |
-| Room flow      | host, strict join, ready, start permission, rematch, room reset, room isolation                                 |
-| Transport      | two clients input stream, snapshot delivery, active peer cleanup, room isolate                                  |
-| Client runtime | interpolation buffer, prediction correction, stale snapshot handling                                            |
-| Browser smoke  | single-window full game, two windows same room full round, second room isolation, input scope, HUD metrics      |
+| Area           | Required tests                                                                                                                                                       |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Game loop      | ready, countdown, running, ending, results, rematch, reset, win, draw/overtime                                                                                       |
+| Simulation     | deterministic movement, collision, pickup, deliver, cooldown, tie resolution                                                                                         |
+| Authority      | duplicate sequence, backwards sequence, out-of-bounds move, forged pickup, input rejected outside running state                                                      |
+| Room flow      | host, strict join, ready, start permission, rematch, room reset, room isolation                                                                                      |
+| Transport      | two clients input stream, snapshot delivery, active peer cleanup, room isolate                                                                                       |
+| Client runtime | interpolation buffer, prediction input-edge continuity, moving-target correction decay, render-stall catch-up, ten-minute simulated cadence, stale snapshot handling |
+| Browser smoke  | single-window full game, two windows same room full round, second room isolation, input scope, HUD metrics                                                           |
 
 ## Non-Goals
 

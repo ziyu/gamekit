@@ -303,17 +303,51 @@ describe("multiplayer-demo", () => {
         clientTime: 0,
         moveX: 1,
         moveY: 0,
-        sprint: false,
-        interact: false
+        sprint: false
       });
-      await waitForHostRealtimeMessages(host, REALTIME_ARENA_INPUT_KIND, 1);
+      await clientA.sendRealtimeInput({
+        sequence: 2,
+        clientTime: 50,
+        moveX: 1,
+        moveY: 0,
+        sprint: false
+      });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_INPUT_KIND, 2);
       host.tick(50);
       await waitFor(
         () =>
-          findSnapshotPlayer(host.realtime.snapshot().snapshot, playerAId).lastInputSequence === 1
+          findSnapshotPlayer(host.realtime.snapshot().snapshot, playerAId).lastInputSequence === 2
       );
+      const afterFirstInputX = findSnapshotPlayer(host.realtime.snapshot().snapshot, playerAId)
+        .position.x;
+      expect(afterFirstInputX - beforeX).toBeCloseTo(7.75);
+      expect(host.realtime.diagnostics()).toMatchObject({
+        coalescedInputs: 1,
+        queuedInputs: 0,
+        maxQueuedInputs: 1
+      });
 
       host.tick(50);
+      const afterSecondInputX = findSnapshotPlayer(host.realtime.snapshot().snapshot, playerAId)
+        .position.x;
+      expect(afterSecondInputX - afterFirstInputX).toBeCloseTo(7.75);
+
+      await clientA.sendRealtimeInput({
+        sequence: 3,
+        clientTime: 100,
+        moveX: 0,
+        moveY: 0,
+        sprint: false
+      });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_INPUT_KIND, 3);
+      host.tick(50);
+      await waitFor(
+        () =>
+          findSnapshotPlayer(host.realtime.snapshot().snapshot, playerAId).lastInputSequence === 3
+      );
+      const afterReleaseX = findSnapshotPlayer(host.realtime.snapshot().snapshot, playerAId)
+        .position.x;
+      expect(afterReleaseX).toBeCloseTo(afterSecondInputX);
       await waitFor(() => {
         const snapshotA = clientA.latestRealtimeSnapshot();
         const snapshotB = clientB.latestRealtimeSnapshot();
@@ -324,9 +358,31 @@ describe("multiplayer-demo", () => {
         const playerAOnA = findSnapshotPlayer(snapshotA.snapshot, playerAId);
         const playerAOnB = findSnapshotPlayer(snapshotB.snapshot, playerAId);
         return (
-          playerAOnA.position.x > beforeX &&
+          playerAOnA.position.x === afterReleaseX &&
           playerAOnA.position.x === playerAOnB.position.x &&
           playerAOnA.position.y === playerAOnB.position.y
+        );
+      });
+
+      const authorityPlayerA = host.realtime.state.players.find(
+        (player) => player.id === playerAId
+      );
+      const authorityCore = host.realtime.state.cores[0];
+      expect(authorityPlayerA).toBeDefined();
+      expect(authorityCore).toBeDefined();
+      if (!authorityPlayerA || !authorityCore) {
+        throw new Error("Expected authoritative player and core.");
+      }
+      authorityPlayerA.position = { ...authorityCore.position };
+      await clientA.sendRealtimeAction({ type: "interact" });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_ACTION_KIND, 5);
+      host.tick(50);
+      await waitFor(() => {
+        const observerSnapshot = clientB.latestRealtimeSnapshot();
+        return (
+          observerSnapshot !== undefined &&
+          findSnapshotPlayer(observerSnapshot.snapshot, playerAId).carryingCoreId ===
+            authorityCore.id
         );
       });
 

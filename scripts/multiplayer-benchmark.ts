@@ -4,6 +4,7 @@ import {
   createMultiplayerAuthorityHostLoop,
   createMultiplayerAuthorityReceiver,
   createMultiplayerLocalAuthorityLoop,
+  createMultiplayerPredictionBuffer,
   createSnapshotPlayback,
   createSnapshotPresentationProjector,
   defineSnapshotVector2Track,
@@ -21,6 +22,10 @@ import {
   type NetworkVector2,
   type PresentedSnapshotTracks
 } from "../packages/multiplayer-core/src";
+import {
+  checkMultiplayerBenchmarkBudgets,
+  multiplayerBenchmarkBudgetCount
+} from "./multiplayer-benchmark-budget";
 
 type BenchmarkSnapshot = {
   tick: number;
@@ -37,6 +42,11 @@ type BenchmarkInput = {
 type BenchmarkPayload = {
   tick: number;
   x: number;
+};
+
+type BenchmarkPredictionState = {
+  x: number;
+  y: number;
 };
 
 type BenchmarkCase = Record<string, number | string>;
@@ -65,22 +75,40 @@ const suites: BenchmarkSuite[] = [
   runEnvelopeNormalizationBenchmark(),
   runAuthorityReceiverBenchmark(),
   runHostAuthorityLoopBenchmark(),
+  runLatestInputCoalescingBenchmark(),
   runLocalAuthorityLoopBenchmark(),
+  runPredictionReconciliationBenchmark(),
+  runPredictionPresentationBenchmark(),
   runSnapshotPlaybackBenchmark(),
   runPresentationProjectionBenchmark()
 ];
+const budgetCheckEnabled = process.argv.includes("--check");
+const budgetFailures = budgetCheckEnabled ? checkMultiplayerBenchmarkBudgets(suites) : [];
 
 console.log(
   JSON.stringify(
     {
       benchmark: "multiplayer",
       package: "@gamekit/multiplayer-core",
-      suites
+      suites,
+      ...(budgetCheckEnabled
+        ? {
+            budgetCheck: {
+              budgets: multiplayerBenchmarkBudgetCount(),
+              passed: budgetFailures.length === 0,
+              failures: budgetFailures
+            }
+          }
+        : {})
     },
     null,
     2
   )
 );
+
+if (budgetFailures.length > 0) {
+  process.exitCode = 1;
+}
 
 function runEnvelopeNormalizationBenchmark(): BenchmarkSuite {
   const cases = [100_000, 500_000].map((messages) => {
@@ -252,6 +280,84 @@ function runHostAuthorityLoopBenchmark(): BenchmarkSuite {
   };
 }
 
+function runLatestInputCoalescingBenchmark(): BenchmarkSuite {
+  const cases = [8, 32].map((clients) => {
+    const ticks = 5_000;
+    const burstSize = 4;
+    const runtime = createBenchmarkRuntime(clients);
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: SESSION_ID,
+      mode: "host-authoritative",
+      status: "bound",
+      authorityEndpoint: {
+        kind: "peer",
+        id: AUTHORITY_PEER_ID,
+        peerId: AUTHORITY_PEER_ID
+      },
+      authorityPeerId: AUTHORITY_PEER_ID
+    });
+    let checksum = 0;
+    const loop = createMultiplayerAuthorityHostLoop<never, BenchmarkInput, BenchmarkPayload>({
+      runtime,
+      binding,
+      readInput(payload) {
+        return isBenchmarkInput(payload) ? payload : undefined;
+      },
+      inputSequence(input) {
+        return input.sequence;
+      },
+      inputSequenceKey(input) {
+        return input.playerId;
+      },
+      inputQueueMode: "latest",
+      handleInput(ctx) {
+        checksum += ctx.payload.sequence;
+      },
+      captureSnapshot(ctx) {
+        return {
+          tick: ctx.tick,
+          x: checksum
+        };
+      }
+    });
+
+    for (let tick = 0; tick < 200; tick += 1) {
+      emitClientInputBurst(runtime, clients, tick, burstSize);
+      loop.tick(TICK_MS);
+    }
+    const before = loop.diagnostics();
+
+    const start = performance.now();
+    for (let tick = 0; tick < ticks; tick += 1) {
+      emitClientInputBurst(runtime, clients, tick + 200, burstSize);
+      loop.tick(TICK_MS);
+    }
+    const durationMs = performance.now() - start;
+    const diagnostics = loop.diagnostics();
+    const inputs = ticks * clients * burstSize;
+    loop.dispose();
+
+    return {
+      clients,
+      ticks,
+      burstSize,
+      inputs,
+      acceptedInputs: diagnostics.acceptedInputs - before.acceptedInputs,
+      coalescedInputs: diagnostics.coalescedInputs - before.coalescedInputs,
+      maxQueuedInputs: diagnostics.maxQueuedInputs,
+      durationMs: round(durationMs),
+      microsecondsPerInput: round((durationMs * 1000) / inputs),
+      msPerTick: round(durationMs / ticks),
+      checksum
+    };
+  });
+
+  return {
+    suite: "authority-latest-input-coalescing",
+    cases
+  };
+}
+
 function runLocalAuthorityLoopBenchmark(): BenchmarkSuite {
   const cases = [100_000, 500_000].map((inputs) => {
     let checksum = 0;
@@ -308,6 +414,170 @@ function runLocalAuthorityLoopBenchmark(): BenchmarkSuite {
 
   return {
     suite: "authority-local-input-loop",
+    cases
+  };
+}
+
+function runPredictionReconciliationBenchmark(): BenchmarkSuite {
+  const cases = [
+    { inputs: 100_000, reconcileEvery: 4 },
+    { inputs: 100_000, reconcileEvery: 12 }
+  ].map(({ inputs, reconcileEvery }) => {
+    const prediction = createMultiplayerPredictionBuffer<BenchmarkPredictionState, BenchmarkInput>({
+      initialState: { x: 0, y: 0 },
+      maxInputs: 256,
+      cloneState(state) {
+        return { x: state.x, y: state.y };
+      },
+      applyInput(state, input) {
+        state.x += input.dx;
+        state.y += input.dy;
+        return state;
+      },
+      measureCorrection(previous, next) {
+        return Math.hypot(previous.x - next.x, previous.y - next.y);
+      }
+    });
+    let authoritativeState: BenchmarkPredictionState = { x: 0, y: 0 };
+    let lastAcknowledgedSequence = 0;
+    let checksum = 0;
+
+    for (let sequence = 1; sequence <= 1_000; sequence += 1) {
+      prediction.predict({ sequence, input: createBenchmarkInput(sequence), timestamp: sequence });
+      if (sequence % reconcileEvery === 0) {
+        authoritativeState = { x: sequence, y: sequence * 2 };
+        lastAcknowledgedSequence = sequence;
+        prediction.reconcile({
+          authoritativeState,
+          acknowledgedSequence: lastAcknowledgedSequence
+        });
+      }
+    }
+    const before = prediction.diagnostics();
+
+    const start = performance.now();
+    for (let index = 0; index < inputs; index += 1) {
+      const sequence = index + 1_001;
+      prediction.predict({ sequence, input: createBenchmarkInput(sequence), timestamp: sequence });
+      if (sequence % reconcileEvery === 0) {
+        authoritativeState = { x: sequence, y: sequence * 2 };
+        lastAcknowledgedSequence = sequence;
+        const result = prediction.reconcile({
+          authoritativeState,
+          acknowledgedSequence: lastAcknowledgedSequence
+        });
+        checksum += result.state.x;
+      }
+    }
+    const durationMs = performance.now() - start;
+    const diagnostics = prediction.diagnostics();
+
+    return {
+      inputs,
+      reconcileEvery,
+      acknowledgedInputs: diagnostics.acknowledgedInputs - before.acknowledgedInputs,
+      pendingInputs: diagnostics.pendingInputs,
+      durationMs: round(durationMs),
+      microsecondsPerInput: round((durationMs * 1000) / inputs),
+      checksum: round(checksum)
+    };
+  });
+
+  return {
+    suite: "prediction-reconciliation",
+    cases
+  };
+}
+
+function runPredictionPresentationBenchmark(): BenchmarkSuite {
+  const cases = [60, 120].map((presentationFps) => {
+    const frames = 500_000;
+    const frameDeltaMs = 1000 / presentationFps;
+    const prediction = createMultiplayerPredictionBuffer<BenchmarkPredictionState, BenchmarkInput>({
+      initialState: { x: 0, y: 0 },
+      predictionStepMs: TICK_MS,
+      cloneState(state) {
+        return { x: state.x, y: state.y };
+      },
+      applyInput(state, input) {
+        state.x += input.dx;
+        state.y += input.dy;
+        return state;
+      },
+      presentState(fromState, toState, context) {
+        toState.x = fromState.x + (toState.x - fromState.x) * context.alpha;
+        toState.y = fromState.y + (toState.y - fromState.y) * context.alpha;
+        return toState;
+      },
+      measureCorrection(previous, next) {
+        return Math.hypot(previous.x - next.x, previous.y - next.y);
+      },
+      correctionSmoothing: {
+        durationMs: 100,
+        maxMagnitude: 10,
+        apply(target, context) {
+          target.x +=
+            (context.previousPresentedState.x - context.initialTargetState.x) *
+            context.remainingAlpha;
+          target.y +=
+            (context.previousPresentedState.y - context.initialTargetState.y) *
+            context.remainingAlpha;
+          return target;
+        }
+      }
+    });
+    let sequence = 0;
+    let timestamp = 0;
+    let nextPredictionTime = 0;
+    let checksum = 0;
+
+    function presentFrame(): void {
+      timestamp += frameDeltaMs;
+      while (timestamp >= nextPredictionTime) {
+        sequence += 1;
+        prediction.predict({
+          sequence,
+          input: createPresentationBenchmarkInput(sequence),
+          timestamp: nextPredictionTime
+        });
+        if (sequence % 12 === 0) {
+          const current = prediction.state();
+          prediction.reconcile({
+            authoritativeState: { x: current.x - 0.25, y: current.y - 0.5 },
+            acknowledgedSequence: sequence
+          });
+        }
+        nextPredictionTime += TICK_MS;
+      }
+      const presented = prediction.present({ deltaMs: frameDeltaMs, timestamp });
+      checksum += presented.x + presented.y;
+    }
+
+    for (let frame = 0; frame < 1_000; frame += 1) {
+      presentFrame();
+    }
+    const before = prediction.diagnostics();
+    const start = performance.now();
+    for (let frame = 0; frame < frames; frame += 1) {
+      presentFrame();
+    }
+    const durationMs = performance.now() - start;
+    const diagnostics = prediction.diagnostics();
+
+    return {
+      frames,
+      presentationFps,
+      predictedInputs: diagnostics.predictedInputs - before.predictedInputs,
+      smoothedCorrections: diagnostics.smoothedCorrections - before.smoothedCorrections,
+      clampedFrames: diagnostics.clampedPresentationFrames - before.clampedPresentationFrames,
+      durationMs: round(durationMs),
+      microsecondsPerFrame: round((durationMs * 1000) / frames),
+      checksum: round(checksum)
+    };
+  });
+
+  return {
+    suite: "prediction-presentation",
     cases
   };
 }
@@ -537,12 +807,46 @@ function emitClientInputs(runtime: BenchmarkRuntime, clients: number, tick: numb
   }
 }
 
+function emitClientInputBurst(
+  runtime: BenchmarkRuntime,
+  clients: number,
+  tick: number,
+  burstSize: number
+): void {
+  for (let clientIndex = 0; clientIndex < clients; clientIndex += 1) {
+    for (let burstIndex = 0; burstIndex < burstSize; burstIndex += 1) {
+      const sequence = tick * burstSize + burstIndex + 1;
+      runtime.emit({
+        id: `input-burst-${tick}-${clientIndex}-${burstIndex}`,
+        sessionId: SESSION_ID,
+        channel: RELIABLE_CHANNEL,
+        kind: MULTIPLAYER_INPUT_KIND,
+        sourcePeerId: `client-${clientIndex}`,
+        sequence,
+        tick,
+        timestamp: tick,
+        payload: createBenchmarkInput(sequence, clientIndex)
+      });
+    }
+  }
+}
+
 function createBenchmarkInput(sequence: number, playerIndex = 0): BenchmarkInput {
   return {
     playerId: `player-${playerIndex}`,
     sequence,
     dx: 1,
     dy: 2
+  };
+}
+
+function createPresentationBenchmarkInput(sequence: number): BenchmarkInput {
+  const phase = Math.floor((sequence - 1) / 20) % 4;
+  return {
+    playerId: "player-0",
+    sequence,
+    dx: phase === 0 ? 1 : phase === 2 ? -1 : 0,
+    dy: phase === 1 ? 1 : phase === 3 ? -1 : 0
   };
 }
 

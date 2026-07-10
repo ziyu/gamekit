@@ -23,6 +23,7 @@ export const DEFAULT_REALTIME_ARENA_RULES: RealtimeArenaRules = {
   scoreLimit: 5,
   playerRadius: 12,
   playerSpeedPerSecond: 130,
+  inputTimeoutMs: 250,
   sprintMultiplier: 1.75,
   sprintDurationMs: 260,
   sprintCooldownMs: 900,
@@ -138,12 +139,13 @@ export function captureRealtimeArenaSnapshot(state: RealtimeArenaState): Realtim
       position: cloneVector(player.position),
       velocity: cloneVector(player.velocity),
       lastInputSequence: player.lastInputSequence,
+      inputStateAgeMs: player.inputStateAgeMs,
       sprintRemainingMs: player.sprintRemainingMs,
       sprintCooldownMs: player.sprintCooldownMs,
       deliveredCores: player.deliveredCores,
       rejectedInputs: player.rejectedInputs,
       ...(player.carryingCoreId === undefined ? {} : { carryingCoreId: player.carryingCoreId }),
-      ...(player.latestInput === undefined ? {} : { latestInput: { ...player.latestInput } })
+      ...(player.inputState === undefined ? {} : { inputState: { ...player.inputState } })
     })),
     cores: state.cores.map((core) => ({
       id: core.id,
@@ -190,7 +192,7 @@ export function addInitialPlayer(
     position: cloneVector(spawn),
     velocity: { x: 0, y: 0 },
     lastInputSequence: 0,
-    pendingInteract: false,
+    inputStateAgeMs: 0,
     sprintRemainingMs: 0,
     sprintCooldownMs: 0,
     deliveredCores: 0,
@@ -217,11 +219,11 @@ export function assignRealtimeArenaPlayerLabel(
 export function resetRealtimeArenaPlayerRuntime(player: RealtimeArenaPlayer): void {
   player.ready = false;
   player.velocity = { x: 0, y: 0 };
-  player.pendingInteract = false;
+  player.inputStateAgeMs = 0;
   player.sprintRemainingMs = 0;
   player.sprintCooldownMs = 0;
   delete player.carryingCoreId;
-  delete player.latestInput;
+  delete player.inputState;
 }
 
 export function resetRealtimeArenaPieces(state: RealtimeArenaState): void {
@@ -230,13 +232,13 @@ export function resetRealtimeArenaPieces(state: RealtimeArenaState): void {
     player.position = cloneVector(player.spawn);
     player.velocity = { x: 0, y: 0 };
     player.lastInputSequence = 0;
-    player.pendingInteract = false;
+    player.inputStateAgeMs = 0;
     player.sprintRemainingMs = 0;
     player.sprintCooldownMs = 0;
     player.deliveredCores = 0;
     player.rejectedInputs = 0;
     delete player.carryingCoreId;
-    delete player.latestInput;
+    delete player.inputState;
   }
   resetRoundPieces(state);
 }
@@ -248,7 +250,6 @@ export function resetRoundPieces(state: RealtimeArenaState): void {
   for (const player of state.players) {
     player.position = cloneVector(player.spawn);
     player.velocity = { x: 0, y: 0 };
-    player.pendingInteract = false;
     player.sprintRemainingMs = 0;
     player.sprintCooldownMs = 0;
     player.deliveredCores = 0;

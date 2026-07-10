@@ -15,8 +15,8 @@ Multiplayer Demo 是 `@gamekit/multiplayer-core` 与 `@gamekit/multiplayer-colys
 - `host / not joined` 再次 Join 必须恢复当前窗口的 host 控制身份；不能因为它通过 browser client facade 重新连入，就把原 host 降级成普通 client。
 - Player name 是 lobby / arena authoritative state 的一部分；client 可以提交期望名字，但 host authority 必须清洗并去重最终显示名，默认名字也不能在同一 session 内重复。
 - Lobby / results overlay 展示玩家名字、slot、ready 状态、start 权限、countdown、winner、scoreboard、rematch 和 return lobby。
-- Running 视图展示玩家名字、目标物、relay node、危险区、score、round timer、本地/远端 player state、上下文玩法提示和显式 `Interact [E]` / `Deliver [E]` 快捷动作；按钮和 `E` 键都必须进入同一 input frame contract，不能绕过 host authority。
-- Diagnostics 面板展示 Colyseus backend、GameKit session、active/tracked peer count、sent/received、rtt、snapshot age、input sequence、server tick、accepted/rejected input 和 authority event feed。
+- Running 视图展示玩家名字、目标物、relay node、危险区、score、round timer、本地/远端 player state、上下文玩法提示和显式 `Interact [E]` / `Deliver [E]` 快捷动作；按钮和 `E` 键都必须进入同一离散 action contract，不能绕过 host authority，也不能混入会合并的 movement state。
+- Diagnostics 面板展示 Colyseus backend、GameKit session、active/tracked peer count、sent/received、rtt、snapshot age、input sequence、server tick、presentation FPS、adaptive interpolation delay、estimated snapshot jitter、accepted/rejected input 和 authority event feed。
 - 旧 loopback console 的 select / confirm / strategy / priority 控件不属于长期 realtime game demo 体验；这些低频 command 验证只能保留在测试夹具或后台 bridge 验证中，不能成为浏览器主界面。
 - 本地 dev server 同时启动 Vite UI、Colyseus server，并按 session id 管理 host GameRuntime / arena lifecycle；浏览器 client 通过 Colyseus 加入选中的 GameKit session。
 
@@ -55,8 +55,9 @@ corepack pnpm --filter multiplayer-demo dev
 - Browser client 离开房间或 host 关闭房间后，server-side host 必须从 authoritative arena state 中移除对应 player actor，并广播新的 snapshot；UI 不能继续渲染已经离开的 client。
 - Demo 可以拥有 app-local payload、规则、peer/player 映射和 presentation，但 authority binding、host/local authority loop、snapshot source gate 和通用 replication diagnostics 应 dogfood `multiplayer-core` 的标准 helper；demo 不应维护一套平行的多人同步框架。
 - Host GameRuntime 安装 `createMultiplayerBridgeModule()`，在 tick 边界处理低频 command、authority fact 和 trace；高频位置、速度、snapshot buffer 不进入 EventBus。
-- 远端玩家和共享对象的平滑表现遵循 `docs/adr/0014-multiplayer-presentation-temporal-buffer.md`：使用 temporal snapshot buffer、类型化插值原语和 demo-owned track projection；插值后的 presented state 只写入 render-only view model，不写回 authoritative arena state。
+- 远端玩家和共享对象的平滑表现遵循 `docs/adr/0014-multiplayer-presentation-temporal-buffer.md`：使用 temporal snapshot buffer、bounded adaptive jitter delay、类型化插值原语和 demo-owned track projection；正式 Canvas 帧循环通过 reusable presentation frame 和 direct-write getter 写入复用目标，不为每帧 materialize 完整 cloned gameplay snapshot。插值后的 presented state 不写回 authoritative arena state。
 - 高频 arena state 可以通过 GameKit envelope snapshot stream 或 provider-native state sync lane 同步；无论选择哪条 lane，都必须使用 authority binding 约束 tick/version、source gate、resync 和 local authority。GameKit envelope 继续承载低频语义事实和 diagnostics。
+- Movement input 是按 peer 复制的 continuous state：host 在 tick 前只保留最新状态并持续应用，直到 neutral/release 或默认 `250ms` timeout；`Interact [E]` 等一次性动作走独立 action FIFO，每份 action 只消费一次，不会被 movement coalescing 覆盖。HUD 展示 authority queued/peak/coalesced，网络 burst 只能增加 coalesced 计数，不能形成历史输入 backlog。
 - 完整多人能力验证应保留两个同步 lane：`gamekit-envelope` 作为跨 backend baseline，`colyseus-schema` 或其他 provider-native lane 用来验证成熟 backend 原生 state sync、reconnect、room metadata 和 provider diagnostics。两条 lane 必须输出同一种 app-local view model，UI 和 gameplay domain 不直接依赖 Colyseus Room、Schema 或 Client。
 - 每个 room 必须声明当前 authoritative path；GameKit envelope snapshot stream 与 Colyseus native state sync 不能同时写同一份 authority state。非当前 authority path 只能作为 diagnostics、summary 或 debug comparison。
 - UI 通过 app-local client facade 发送 input / ready / start / rematch 等 action，并消费 authoritative snapshot；UI 不直接读取 Colyseus Room、Client 或 socket handle。

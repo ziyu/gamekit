@@ -315,6 +315,59 @@ input:focus-visible {
   font-size: 0.86rem;
 }
 
+.multiplayer-demo__net-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: #f4f7ee;
+  font-size: 0.88rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.multiplayer-demo__net-checkbox {
+  width: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0;
+  accent-color: #54d6d0;
+}
+
+.multiplayer-demo__net-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.multiplayer-demo__net-field {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  min-width: 0;
+  color: #9baa9d;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.multiplayer-demo__net-field small {
+  color: #7f8d84;
+  font-size: 0.7rem;
+}
+
+.multiplayer-demo__net-input {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 0.84rem;
+}
+
+.multiplayer-demo__net-summary {
+  min-height: 16px;
+  margin: 0;
+  color: #9baa9d;
+  font-size: 0.78rem;
+}
+
 .multiplayer-demo__timeline,
 .multiplayer-demo__messages {
   display: grid;

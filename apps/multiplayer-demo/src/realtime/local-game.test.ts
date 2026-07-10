@@ -33,23 +33,38 @@ describe("realtime local game", () => {
     expect(game.state.players[0]?.label).toBe("Pilot Prime");
   });
 
-  it("queues interact as a one-shot input frame", () => {
+  it("keeps the movement sampler limited to continuous input state", () => {
     const input = createRealtimeInputSampler();
 
-    expect(input.nextFrame(0).interact).toBe(false);
+    input.setInputKey("KeyD", true);
 
-    input.queueInteract();
-
-    expect(input.nextFrame(50).interact).toBe(true);
-    expect(input.nextFrame(100).interact).toBe(false);
+    expect(input.nextFrame(50)).toEqual({
+      sequence: 1,
+      clientTime: 50,
+      moveX: 1,
+      moveY: 0,
+      sprint: false
+    });
   });
 
-  it("maps the E shortcut to a one-shot interact input frame", () => {
-    const input = createRealtimeInputSampler();
+  it("dispatches interact as a one-shot local authority action", () => {
+    const game = createRealtimeLocalGame();
+    expect(game.setReady(true).accepted).toBe(true);
+    expect(game.startRound().accepted).toBe(true);
+    for (let now = 0; now <= 2000; now += 50) {
+      game.step(now);
+    }
+    const player = game.state.players[0];
+    const core = game.state.cores[0];
+    expect(player).toBeDefined();
+    expect(core).toBeDefined();
+    if (!player || !core) {
+      throw new Error("Expected local arena player and core.");
+    }
+    player.position = { ...core.position };
 
-    input.setInputKey("KeyE", true);
+    game.queueInteract();
 
-    expect(input.nextFrame(50).interact).toBe(true);
-    expect(input.nextFrame(100).interact).toBe(false);
+    expect(player.carryingCoreId).toBe(core.id);
   });
 });

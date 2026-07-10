@@ -12,11 +12,24 @@ import {
   createRealtimeArenaPresentation,
   type RealtimeArenaPresentation
 } from "./realtime/presentation";
-import { normalizeRealtimeArenaPlayerLabel, type RealtimeArenaSnapshot } from "./realtime/domain";
-import type { RealtimeArenaNetworkAction, RealtimeArenaSnapshotPayload } from "./realtime/protocol";
+import {
+  createRealtimeArenaPlayerPrediction,
+  type RealtimeArenaPredictionDiagnostics
+} from "./realtime/prediction";
+import {
+  normalizeRealtimeArenaPlayerLabel,
+  type RealtimeArenaSnapshot,
+  type RealtimeInputFrame
+} from "./realtime/domain";
+import type {
+  RealtimeArenaAuthorityInputDiagnostics,
+  RealtimeArenaNetworkAction,
+  RealtimeArenaSnapshotPayload
+} from "./realtime/protocol";
 import {
   bindRealtimeArenaControls,
   bindMultiplayerDemoControls,
+  bindRealtimeNetworkConditionControls,
   formatRealtimeArenaDiagnostics,
   formatRealtimeArenaDiagnosticsTitle,
   renderBootError,
@@ -31,6 +44,7 @@ import {
   type MultiplayerDemoConfig,
   type MultiplayerDemoRunMode,
   type MultiplayerDemoSessionInfo,
+  type RealtimeNetworkConditionSettings,
   type RealtimeArenaUiDiagnostics
 } from "./ui";
 
@@ -56,14 +70,25 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
   let busyLabel: string | undefined;
   let lastError: string | undefined;
   const realtimeGame = createRealtimeLocalGame({ playerName: initialPlayerName });
-  const localPresentation = createRealtimeArenaPresentation();
+  const localPresentation = createRealtimeArenaPresentation({
+    interpolationDelayMs: 0,
+    adaptiveDelay: false
+  });
   const remotePresentation = createRealtimeArenaPresentation();
+  const remotePrediction = createRealtimeArenaPlayerPrediction();
   const remoteInput = createRealtimeInputSampler();
   const remoteDiagnostics: RealtimeLocalGameDiagnostics = {
     inputSequence: 0,
     inputSendRate: 0,
     serverTickRate: 20
   };
+  let networkConditions: RealtimeNetworkConditionSettings = {
+    enabled: false,
+    latencyMs: 120,
+    jitterMs: 40,
+    lossPercent: 0
+  };
+  const scheduledInputTimers = new Set<number>();
   const disposeRealtimeInput = bindRealtimeInputKeys(
     {
       setInputKey(code, down) {
@@ -75,7 +100,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
       },
       queueInteract() {
         if (isRemoteSessionActive()) {
-          remoteInput.queueInteract();
+          void sendRealtimeAction({ type: "interact" });
         } else if (isLocalPracticeActive()) {
           realtimeGame.queueInteract();
         }
@@ -135,6 +160,12 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
         await resetRoom(readRoomId());
       });
     }
+  });
+  bindRealtimeNetworkConditionControls(ui, (settings) => {
+    networkConditions = settings;
+  });
+  ui.forgeInputButton.addEventListener("click", () => {
+    void sendForgedRealtimeInput();
   });
   bindRealtimeArenaControls(ui, {
     ready() {
@@ -199,7 +230,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
         return;
       }
       if (isRemoteSessionActive()) {
-        remoteInput.queueInteract();
+        void sendRealtimeAction({ type: "interact" });
       } else if (isLocalPracticeActive()) {
         realtimeGame.queueInteract();
       } else {
@@ -259,13 +290,16 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
 
     if (isRemoteSessionActive()) {
       stepRemoteArena(now);
-      renderRemoteArenaCanvas(renderDeltaMs);
+      renderRemoteArenaCanvas(renderDeltaMs, now);
     } else if (isLocalPracticeActive()) {
       realtimeGame.step(now);
+      const snapshot = realtimeGame.snapshot();
+      const presentationFrame = localPresentation.sample(snapshot, renderDeltaMs);
       renderRealtimeArenaCanvas(
         ui.arenaCanvas,
-        localPresentation.present(realtimeGame.snapshot(), renderDeltaMs),
-        realtimeGame.localPlayerId
+        presentationFrame.snapshot,
+        realtimeGame.localPlayerId,
+        presentationFrame
       );
     } else {
       clearArenaCanvas();
@@ -334,7 +368,12 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
       renderRealtimeArenaUi(
         ui,
         remote.snapshot,
-        withPresentationDiagnostics(remoteDiagnostics, remotePresentation),
+        withRealtimeDiagnostics(
+          remoteDiagnostics,
+          remotePresentation,
+          remotePrediction.diagnostics(),
+          remote.authorityInput
+        ),
         readRemotePlayerId(remote),
         permissions
       );
@@ -353,7 +392,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     renderRealtimeArenaUi(
       ui,
       realtimeGame.state,
-      withPresentationDiagnostics(realtimeGame.diagnostics, localPresentation),
+      withRealtimeDiagnostics(realtimeGame.diagnostics, localPresentation),
       realtimeGame.localPlayerId,
       permissions
     );
@@ -364,7 +403,11 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     ui.arenaTimer.textContent = "--";
     ui.arenaScore.textContent = "--";
     ui.arenaPlayer.textContent = "joining";
-    const diagnostics = withPresentationDiagnostics(remoteDiagnostics, remotePresentation);
+    const diagnostics = withRealtimeDiagnostics(
+      remoteDiagnostics,
+      remotePresentation,
+      remotePrediction.diagnostics()
+    );
     ui.arenaInput.textContent = formatRealtimeArenaDiagnostics(diagnostics);
     ui.arenaInput.title = formatRealtimeArenaDiagnosticsTitle(diagnostics);
     ui.arenaHint.textContent = "Waiting for host snapshot";
@@ -410,25 +453,25 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
         remoteTicksSeenThisSecond += Math.max(0, remote.snapshot.tick - remoteLastSnapshotTick);
       }
       remoteLastSnapshotTick = remote.snapshot.tick;
+      const currentPeerId = client?.peerId;
+      if (currentPeerId) {
+        remotePrediction.reconcile(remote, currentPeerId, {
+          frameTime: now,
+          wallTime: Date.now()
+        });
+      }
     }
 
     while (remoteInputAccumulator >= REALTIME_ARENA_TICK_MS) {
+      remoteInputAccumulator -= REALTIME_ARENA_TICK_MS;
       if (remote?.snapshot.phase === "running" && hasRemoteLocalPlayer(remote.snapshot, remote)) {
-        const frame = remoteInput.nextFrame(now);
+        const inputTickTime = now - remoteInputAccumulator;
+        const frame = remoteInput.nextFrame(inputTickTime);
         remoteDiagnostics.inputSequence = frame.sequence;
         remoteInputsSentThisSecond += 1;
-        const currentClient = client;
-        if (currentClient) {
-          void currentClient.sendRealtimeInput(frame).catch((error: unknown) => {
-            remoteDiagnostics.lastAction = {
-              accepted: false,
-              code: "input-send-failed",
-              reason: error instanceof Error ? error.message : String(error)
-            };
-          });
-        }
+        remotePrediction.predict(remote.snapshot, readRemotePlayerId(remote), frame);
+        scheduleRealtimeInput(frame);
       }
-      remoteInputAccumulator -= REALTIME_ARENA_TICK_MS;
     }
 
     if (remoteRateWindowMs >= 1000) {
@@ -444,17 +487,32 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     }
   }
 
-  function renderRemoteArenaCanvas(renderDeltaMs: number): void {
+  function renderRemoteArenaCanvas(renderDeltaMs: number, now: number): void {
     const remote = currentRemoteSnapshot();
     if (!remote) {
       clearArenaCanvas();
       return;
     }
 
+    const predictedPlayer = remotePrediction.present(renderDeltaMs, now);
+    const presentationFrame = remotePresentation.sample(
+      remote.snapshot,
+      renderDeltaMs,
+      predictedPlayer === undefined
+        ? {}
+        : {
+            predictedPlayer: {
+              playerId: predictedPlayer.playerId,
+              position: predictedPlayer.position,
+              velocity: predictedPlayer.velocity
+            }
+          }
+    );
     renderRealtimeArenaCanvas(
       ui.arenaCanvas,
-      remotePresentation.present(remote.snapshot, renderDeltaMs),
-      readRemotePlayerId(remote)
+      presentationFrame.snapshot,
+      readRemotePlayerId(remote),
+      presentationFrame
     );
   }
 
@@ -474,6 +532,106 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     }
     context.fillStyle = "#111612";
     context.fillRect(0, 0, ui.arenaCanvas.width, ui.arenaCanvas.height);
+  }
+
+  function scheduleRealtimeInput(frame: RealtimeInputFrame): void {
+    const currentClient = client;
+    if (!currentClient || currentClient.runtime.phase() !== "in-session") {
+      return;
+    }
+
+    if (!networkConditions.enabled) {
+      void sendRealtimeInput(currentClient, frame);
+      return;
+    }
+
+    if (Math.random() * 100 < networkConditions.lossPercent) {
+      remoteDiagnostics.lastAction = {
+        accepted: false,
+        code: "debug-input-dropped",
+        reason: "Artificial network loss dropped an input frame."
+      };
+      return;
+    }
+
+    const delayMs = Math.max(
+      0,
+      networkConditions.latencyMs + randomJitter(networkConditions.jitterMs)
+    );
+    const timer = window.setTimeout(() => {
+      scheduledInputTimers.delete(timer);
+      if (client !== currentClient || currentClient.runtime.phase() !== "in-session") {
+        return;
+      }
+      void sendRealtimeInput(currentClient, frame);
+    }, delayMs);
+    scheduledInputTimers.add(timer);
+  }
+
+  async function sendRealtimeInput(
+    currentClient: MultiplayerDemoClient,
+    frame: RealtimeInputFrame
+  ): Promise<void> {
+    try {
+      await currentClient.sendRealtimeInput(frame);
+    } catch (error) {
+      remoteDiagnostics.lastAction = {
+        accepted: false,
+        code: "input-send-failed",
+        reason: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  function clearScheduledInputTimers(): void {
+    for (const timer of scheduledInputTimers) {
+      window.clearTimeout(timer);
+    }
+    scheduledInputTimers.clear();
+  }
+
+  function randomJitter(jitterMs: number): number {
+    if (jitterMs <= 0) {
+      return 0;
+    }
+    return (Math.random() * 2 - 1) * jitterMs;
+  }
+
+  async function sendForgedRealtimeInput(): Promise<void> {
+    const currentClient = client;
+    const remote = currentRemoteSnapshot();
+    if (!currentClient || currentClient.runtime.phase() !== "in-session" || !remote) {
+      return;
+    }
+
+    const acknowledgedSequence =
+      remote.inputAcksByPeerId[currentClient.peerId] ??
+      remote.snapshot.players.find((player) => player.id === readRemotePlayerId(remote))
+        ?.lastInputSequence ??
+      0;
+    const frame: RealtimeInputFrame = {
+      sequence: acknowledgedSequence,
+      clientTime: Math.round(performance.now()),
+      moveX: 1,
+      moveY: 0,
+      sprint: false
+    };
+
+    try {
+      await currentClient.sendRealtimeInput(frame);
+      remoteDiagnostics.lastAction = {
+        accepted: false,
+        code: "debug-input-forged",
+        reason: `Sent forged stale input sequence ${frame.sequence}.`
+      };
+    } catch (error) {
+      remoteDiagnostics.lastAction = {
+        accepted: false,
+        code: "debug-input-forge-failed",
+        reason: error instanceof Error ? error.message : String(error)
+      };
+    }
+    renderArena();
   }
 
   async function sendRealtimeAction(action: RealtimeArenaNetworkAction): Promise<void> {
@@ -576,15 +734,21 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     remoteInputsSentThisSecond = 0;
     remoteTicksSeenThisSecond = 0;
     remoteLastSnapshotTick = undefined;
+    remotePrediction.reset();
+    clearScheduledInputTimers();
   }
 
-  function withPresentationDiagnostics(
+  function withRealtimeDiagnostics(
     diagnostics: RealtimeLocalGameDiagnostics,
-    presentation: RealtimeArenaPresentation
+    presentation: RealtimeArenaPresentation,
+    prediction?: RealtimeArenaPredictionDiagnostics,
+    authorityInput?: RealtimeArenaAuthorityInputDiagnostics
   ): RealtimeArenaUiDiagnostics {
     return {
       ...diagnostics,
-      presentation: presentation.diagnostics()
+      presentation: presentation.diagnostics(),
+      ...(prediction === undefined ? {} : { prediction }),
+      ...(authorityInput === undefined ? {} : { authorityInput })
     };
   }
 
@@ -757,6 +921,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
   function cleanup(): void {
     window.clearInterval(refreshHandle);
     window.cancelAnimationFrame(animationFrame);
+    clearScheduledInputTimers();
     disposeRealtimeInput();
     void disposeClient();
   }

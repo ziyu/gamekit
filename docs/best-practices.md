@@ -93,6 +93,7 @@
 - GameRuntime、Camera、Input、TCA、GAS、Save 等有顺序语义的模块必须覆盖顺序、幂等、stop/dispose 和 cleanup。
 - Multiplayer backend adapter 必须覆盖 provider facade 的 connect、create-or-join/leave、message routing、peer summary、disconnect、reconnect 降级、payload validation、dispose cleanup 和 diagnostics；provider 自己拥有的 room/matchmaker/state sync 逻辑不要在 GameKit core 中重写。
 - Multiplayer app/demo 集成测试不能只断言 peer count 或 presence；必须至少断言一条 lifecycle、input、snapshot、patch 或 command result 来自同一个 authority state，并验证非 authority snapshot/patch 不会被 client 应用。
+- Multiplayer 输入先区分 continuous state 和 discrete command：移动、瞄准、驾驶采用 latest-per-source coalescing、持有状态和明确 timeout；交互、购买、一次性技能采用 bounded FIFO/action。生产频率与消费频率相同的 continuous input 不能进入逐条 FIFO，否则 jitter 会永久转化为远端表现延迟。
 - 离线单机和多人模式应共享同一套 gameplay orchestration。测试应能用同一 input/action log 在 local authority 和 host/server authority fixture 中得到等价稳定 snapshot，避免维护两套规则实现。
 - Sandbox、demo 或 headless host 的集成测试应覆盖长链路：Data → Asset → App Host → GameRuntime → World → TCA/GAS → Renderer/Input/Camera → Snapshot/Timeline。
 - 固定 seed 测试只比较稳定 snapshot，不比较 DOM、native handle、绝对时间或底层库对象。
@@ -202,7 +203,7 @@
 
 - 性能判断必须有数据，先用 benchmark 或 profiler 记录基线。
 - 新增 adapter、renderer sync、TCA runner、asset loader 时应补最小 benchmark 或 profile 入口。
-- benchmark 结果只作为趋势参考，不写死成易碎测试。
+- benchmark 的细微变化只作为趋势参考，不写死成易碎测试；已经稳定的热点模块可以在 CI 使用留有足够机器波动余量的粗粒度预算，拦截数量级退化、无界队列和 retained heap 持续增长。预算不能代替 profiler，也不能把正常噪声变成合并阻塞。
 - DevTools Performance 面板只展示 GameKit 级 frame/system/service/adapter 归因，不替代浏览器 profiler；需要 CPU flamegraph、layout、paint、GPU 信息时仍使用浏览器或引擎原生工具。
 - 默认只开启低成本 summary；深度 span、单帧详情、完整 payload 展开必须由用户显式开启或在测试夹具中启用。
 - 每个热点模块都应定义自己的预算语义，例如 runtime tick、render sync、asset load group、service boot、UI refresh；预算超限只产生诊断，不改变 gameplay。

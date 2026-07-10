@@ -313,7 +313,7 @@ client action / input
 
 - 为 action/input/snapshot/patch/result 提供 provider-neutral envelope、schema version、sequence、tick、correlation id 和 redaction hook。
 - 为 local authority 提供 in-process delivery，使 offline singleplayer、unit test 和 local preview 可以复用同一 reducer/simulation/snapshot receiver，而不是创建第二套单机入口。
-- 在 host/server side 维护 input queue、last accepted sequence、rejected reason、tick boundary 和 snapshot broadcaster 的通用骨架。
+- 在 host/server side 维护有界 input queue、last accepted sequence、rejected reason、每 source 每 tick 的消费上限、tick boundary 和 snapshot broadcaster 的通用骨架。Queue policy 必须匹配输入语义：购买、交互、一次性技能等离散 command 使用 bounded FIFO；移动、瞄准、驾驶等连续 input state 使用 latest-per-source coalescing，新状态覆盖尚未消费的旧采样，不能在生产/消费同频时积累历史方向。固定步 command 的 ack 只能随已经进入本次 authoritative simulation/snapshot 的 command 推进；continuous state 的 ack 可以跨过被 supersede 的采样，但只能在 latest state 已被 authoritative tick 采用后推进。Diagnostics 必须区分 queued、max queued、coalesced 和 rejected。
 - 在 client side 维护 authority source gate、snapshot age、last applied tick、resync state 和 rejected non-authority payload diagnostics。
 - 提供 snapshot presentation timing + declared track toolkit：core 维护按 tick/server time 排序的短期 snapshot playback、render delay/jitter window、under-run clamp、presentation FPS、sample status、stale/drop diagnostics、类型化插值原语和 `Network*` presentation track 投影；游戏自己声明可表现字段、track key、snap/reset policy，以及如何把底层算好的 presented value 写入 render-only snapshot。
 - 提供 peer/player binding utilities，避免重复实现 duplicate peer、late join、disconnect 和 reconnect 映射。
@@ -333,17 +333,17 @@ Authoritative snapshot 通常以固定 tick 或 provider state update 到达，�
 
 长期边界：
 
-- Core 提供 temporal snapshot playback 和 declared track projection，而不是完整对象图插值器。Playback 接收带 `tick`、`serverTime` 或 provider version 的 authoritative snapshot，维护 render sampling clock、interpolation delay/jitter window、under-run clamp、presentation FPS，并采样出 `previous`、`next`、`alpha`、`status`、snapshot age、delay、dropped/stale count 等信息。遵循标准架构的游戏默认应使用 core playback、`createSnapshotPresentationProjector()` 或 App Host standard multiplayer presentation binding，而不是在 app 里重新实现播放时钟或每帧临时插值容器。
+- Core 提供 temporal snapshot playback 和 declared track projection，而不是完整对象图插值器。Playback 接收带 `tick`、`serverTime` 或 provider version 的 authoritative snapshot，维护 render sampling clock、interpolation delay/jitter window、under-run clamp、presentation FPS，并采样出 `previous`、`next`、`alpha`、`status`、snapshot age、delay、dropped/stale count 等信息。固定 interpolation delay 是显式基线；标准 adaptive delay 根据新 snapshot arrival interval 相对 authority timeline 的偏差估计 jitter，在调用方声明的 min/max 内快速增加、缓慢恢复，并公开 current/target delay 与 estimated jitter。遵循标准架构的游戏默认应使用 core playback、`createSnapshotPresentationProjector()` 或 App Host standard multiplayer presentation binding，而不是在 app 里重新实现播放时钟或每帧临时插值容器。
 - Core 提供少量类型化、可组合、低分配的 interpolation primitives 和 `Network*` presentation track，例如 scalar、angle、vector2、vector3、quaternion/slerp 和 step/snap value。相关公共数据形状使用 `Network*` 命名，表示网络 snapshot / presentation value 的结构约束，不作为 GameKit 全局数学类型。Core 根据游戏声明的 track key 和 selector 输出 typed presented value；core 不递归遍历任意 snapshot object，不猜测字段语义，也不自动插值 boolean、enum、inventory、score、phase 或事件。高频路径应优先使用 `selectInto(writer)` 声明 track，并用 `vector2Into`、`vector3Into`、`quaternionInto` 等 direct-write getter 写入 caller-owned render target。
 - 游戏或 app presentation 层拥有 track declaration 和最终写入：声明哪些 entity/field 可以插值、使用什么 primitive、什么时候 snap、什么时候允许短暂 extrapolate、什么时候因为 teleport、phase change、authority binding change、snapshot version change 或 resync 直接 reset，以及如何把底层算好的 presented value 写入 render-only snapshot 或 renderer object。
-- 本地玩家 prediction / server reconciliation 与远端 entity interpolation 分开建模。Prediction 可以复用同一个 authoritative snapshot receiver 和 diagnostics，但不应被塞进 backend adapter 或通用 snapshot buffer 内部。
+- 本地玩家 prediction / server reconciliation 与远端 entity interpolation 分开建模。Core 提供 bounded input log、ack 丢弃、authoritative rewind、pending replay、fixed-step presentation clock、correction smoothing lifecycle 和 diagnostics 的 prediction buffer；游戏声明输入如何计算下一个 predicted endpoint，以及具体 state shape 如何在本预测步的起点和终点之间插值。一个已经前进完整 fixed step 的 endpoint 不能再从终点向未来重复 extrapolate。Reconcile 必须立即校正 simulation state；只有 render-only correction offset 可以在明确 duration 和 max magnitude 内渐进消化，而且 offset 必须叠加在持续移动的新 target 上独立衰减，不能从固定旧显示状态 lerp 到移动 target。超过阈值、teleport 和 hard reset 直接 snap。Prediction 可以复用同一个 authoritative snapshot receiver 和 diagnostics，但不应被塞进 backend adapter 或通用 snapshot buffer 内部。固定 tick 的 raw predicted state 不能直接覆盖 renderer，否则本地玩家会按 prediction tick 频率阶梯移动；校正后的 raw state 也不能无条件硬切 renderer，否则会出现 prediction 后的短暂回跳。
 - Local/offline authority 也走同一 presentation contract。它可以使用更小或为零的 render delay，但不能绕过 snapshot/apply/presentation 路径去直接读写另一份单机显示状态。
 - Backend adapter 只提供 provider-neutral snapshot/version/tick summary、source gate 和 provider-native capability bridge。Colyseus Schema、Nakama match state 等 provider-native state sync 可以成为 authoritative source，但 presentation policy 仍由 GameKit presentation layer 和游戏 track projection 决定。
 
 性能约束：
 
 - 不提供 deep generic interpolation、schema reflection 或按 frame 遍历整棵 gameplay snapshot 的默认实现。
-- Track 数量、字段类型和 allocation 行为必须由调用方通过 declaration 显式控制；高频路径优先复用 projector、buffer、scratch object 或 renderer-specific write target。`presentSnapshotTracks()` 只作为小工具/测试的一次性便利用法，大规模 runtime loop 使用 reusable projector。
+- Track 数量、字段类型和 allocation 行为必须由调用方通过 declaration 显式控制；高频路径优先复用 projector、buffer、scratch object 或 renderer-specific write target，并通过 `vector2Into` / `vector3Into` / `quaternionInto` 直接写入，不能为了方便在每个 render frame 深拷贝完整 gameplay snapshot。`presentSnapshotTracks()` 和完整 render-only snapshot materialization 只作为小工具、测试或低规模便利用法，大规模 runtime loop 使用 reusable projector。
 - Diagnostics 采样低频摘要，默认不展开完整高频 payload。
 
 ## Provider-Native Capability Bridge
@@ -527,13 +527,15 @@ Multiplayer diagnostics 应回答：
 - 接入 realtime game demo 或真实游戏时，优先使用 multiplayer core 的 authority binding / replication helper；只有 provider-native state sync 或特殊 netcode 需求明确时，才通过 typed native bridge 替换默认复制策略。
 - 离线单机、local preview 和 multiplayer room 应共享 gameplay orchestration；差异应收敛为 authority endpoint 和 transport/delivery adapter，而不是分叉玩法代码。
 - 多客户端 headless test 不能只断言 peer count；必须断言同一 lifecycle、input 或 snapshot 来自同一个 authority state。
-- 改动多人高频路径时运行并按需扩展 `bench:multiplayer`。模块级 benchmark 应覆盖 envelope normalization、authority receiver source gate、host/local authority loop、snapshot playback 和 presentation projection；provider-native backend 可在对应 adapter 包中补独立 benchmark。
+- 改动多人高频路径时运行并按需扩展 `bench:multiplayer`。模块级 benchmark 应覆盖 envelope normalization、authority receiver source gate、host/local authority loop、latest-input coalescing、prediction reconciliation/presentation、snapshot playback 和 presentation projection；CI 使用宽松预算拦截数量级回归，并用模拟长时序 + GC 后 retained heap 检查有界缓存。provider-native backend 可在对应 adapter 包中补独立 benchmark。
 
 ### 模块使用
 
 - 游戏代码发送语义命令，不发送 backend frame。命令应小、可序列化、可验证，并能关联 tick、peer、player 和 correlation id。
 - 线上权威玩法默认使用 host/server validation；客户端预测只影响本地表现，不直接写入长期权威状态。
+- 连续移动/瞄准输入按 latest state 复制并由 authority 在新状态或超时前保持；不能把 20Hz 输入采样作为与 20Hz simulation 等速的 FIFO command 队列。必须逐条执行的交互、购买和一次性技能使用有界 FIFO 或独立 action contract。
 - 使用 core snapshot playback、declared `Network*` presentation tracks 或明确的 presentation cache 连接 authoritative snapshot 和 renderer frame；通过 App Host standard multiplayer module 启动的游戏，应优先把 latest authoritative snapshot source、track declaration 和 apply hook 挂到 module presentation binding，让底层随 GameRuntime tick 自动推进 playback 并产出 typed presented values。不要让 renderer 直接按低频网络 tick 跳变，不要在 app 层重复实现通用 playback clock，也不要把 presented position 写回 authority state。
+- 本地预测使用 core prediction buffer 的 `present()` 读取 render-only state，并为 fixed tick 预测声明 prediction step duration、起点/终点插值和 correction offset policy；不要把 `state()` 返回的 raw predicted endpoint 直接写入 renderer，也不要对 endpoint 再做一整步向前 extrapolate。`reconcile()` 立即更新 prediction simulation，但小 correction 的表现误差应作为移动 target 上的 offset 在短窗口内收敛；大 correction、teleport、binding/session change、hard phase transition 和 resync 直接 snap/reset prediction presentation。
 - UI 和 gameplay 代码应读取 authority binding / last authoritative snapshot 来决定是否显示联网游戏状态；未绑定时只能显示连接中、观战、离线练习或等待同步。
 - 单机 UI 也应读取 local authoritative snapshot，而不是直接读写另一份 mutable gameplay state。
 - 本地 simulation 在联网模式中只能作为 prediction/interpolation cache，必须能被 authority snapshot 校正或丢弃。

@@ -7,6 +7,7 @@ export * from "./bridge";
 export * from "./conformance";
 export * from "./errors";
 export * from "./peer-player-binding";
+export * from "./prediction";
 export * from "./presentation";
 export * from "./runtime";
 export * from "./types";

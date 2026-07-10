@@ -3,6 +3,8 @@ import type { MultiplayerDemoClient } from "./client";
 import type { RealtimeArenaSnapshot, RealtimeArenaState } from "./realtime/domain";
 import type { RealtimeLocalGameDiagnostics } from "./realtime/local-game";
 import type { RealtimeArenaPresentationDiagnostics } from "./realtime/presentation";
+import type { RealtimeArenaPredictionDiagnostics } from "./realtime/prediction";
+import type { RealtimeArenaAuthorityInputDiagnostics } from "./realtime/protocol";
 
 type RealtimeArenaViewState = RealtimeArenaState | RealtimeArenaSnapshot;
 
@@ -34,8 +36,17 @@ export type RealtimeArenaControlPermissions = {
   resetArena: boolean;
 };
 
+export type RealtimeNetworkConditionSettings = {
+  enabled: boolean;
+  latencyMs: number;
+  jitterMs: number;
+  lossPercent: number;
+};
+
 export type RealtimeArenaUiDiagnostics = RealtimeLocalGameDiagnostics & {
   presentation?: RealtimeArenaPresentationDiagnostics;
+  prediction?: RealtimeArenaPredictionDiagnostics;
+  authorityInput?: RealtimeArenaAuthorityInputDiagnostics;
 };
 
 export type MultiplayerDemoConfig = {
@@ -72,6 +83,12 @@ export type MultiplayerDemoUi = {
   connectButton: HTMLButtonElement;
   disconnectButton: HTMLButtonElement;
   resetButton: HTMLButtonElement;
+  networkEnabledInput: HTMLInputElement;
+  networkLatencyInput: HTMLInputElement;
+  networkJitterInput: HTMLInputElement;
+  networkLossInput: HTMLInputElement;
+  forgeInputButton: HTMLButtonElement;
+  networkSummary: HTMLElement;
   arenaCanvas: HTMLCanvasElement;
   arenaPhase: HTMLElement;
   arenaTimer: HTMLElement;
@@ -127,6 +144,7 @@ export function renderMultiplayerDemoShell(root: HTMLElement): MultiplayerDemoUi
   const connectButton = createButton("Join", "multiplayer-demo__primary");
   const disconnectButton = createButton("Leave");
   const resetButton = createButton("Reset");
+  const networkConditions = createNetworkConditionControls();
 
   controls.replaceChildren(
     createElement("h2", "multiplayer-demo__section-title", "Room"),
@@ -150,7 +168,7 @@ export function renderMultiplayerDemoShell(root: HTMLElement): MultiplayerDemoUi
     createElement("h2", "multiplayer-demo__section-title", "Messages"),
     messages
   );
-  side.replaceChildren(controls, metrics, eventsPanel, messagesPanel);
+  side.replaceChildren(controls, networkConditions.root, metrics, eventsPanel, messagesPanel);
 
   main.replaceChildren(header, arena.root);
   shell.replaceChildren(main, side);
@@ -175,6 +193,12 @@ export function renderMultiplayerDemoShell(root: HTMLElement): MultiplayerDemoUi
     connectButton,
     disconnectButton,
     resetButton,
+    networkEnabledInput: networkConditions.enabledInput,
+    networkLatencyInput: networkConditions.latencyInput,
+    networkJitterInput: networkConditions.jitterInput,
+    networkLossInput: networkConditions.lossInput,
+    forgeInputButton: networkConditions.forgeInputButton,
+    networkSummary: networkConditions.summary,
     arenaCanvas: arena.canvas,
     arenaPhase: arena.phase,
     arenaTimer: arena.timer,
@@ -227,6 +251,50 @@ export function bindRealtimeArenaControls(
   ui.resetArenaButton.addEventListener("click", actions.resetArena);
 }
 
+export function bindRealtimeNetworkConditionControls(
+  ui: MultiplayerDemoUi,
+  action: (settings: RealtimeNetworkConditionSettings) => void
+): void {
+  const update = (): void => {
+    const settings = readRealtimeNetworkConditionSettings(ui);
+    renderRealtimeNetworkConditionSettings(ui, settings);
+    action(settings);
+  };
+
+  ui.networkEnabledInput.addEventListener("change", update);
+  ui.networkLatencyInput.addEventListener("input", update);
+  ui.networkJitterInput.addEventListener("input", update);
+  ui.networkLossInput.addEventListener("input", update);
+  update();
+}
+
+export function readRealtimeNetworkConditionSettings(
+  ui: MultiplayerDemoUi
+): RealtimeNetworkConditionSettings {
+  return {
+    enabled: ui.networkEnabledInput.checked,
+    latencyMs: clampInteger(ui.networkLatencyInput.valueAsNumber, 0, 1000),
+    jitterMs: clampInteger(ui.networkJitterInput.valueAsNumber, 0, 1000),
+    lossPercent: clampInteger(ui.networkLossInput.valueAsNumber, 0, 100)
+  };
+}
+
+export function renderRealtimeNetworkConditionSettings(
+  ui: MultiplayerDemoUi,
+  settings: RealtimeNetworkConditionSettings
+): void {
+  ui.networkEnabledInput.checked = settings.enabled;
+  ui.networkLatencyInput.value = String(settings.latencyMs);
+  ui.networkJitterInput.value = String(settings.jitterMs);
+  ui.networkLossInput.value = String(settings.lossPercent);
+  ui.networkLatencyInput.disabled = !settings.enabled;
+  ui.networkJitterInput.disabled = !settings.enabled;
+  ui.networkLossInput.disabled = !settings.enabled;
+  ui.networkSummary.textContent = settings.enabled
+    ? `${settings.latencyMs}ms + ${settings.jitterMs}ms jitter / ${settings.lossPercent}% loss`
+    : "off";
+}
+
 export function renderServerReady(ui: MultiplayerDemoUi, config: MultiplayerDemoConfig): void {
   ui.status.textContent = "Server ready";
   ui.mode.textContent = runModeLabel("local-offline");
@@ -266,6 +334,7 @@ export function renderClientState(
   ui.connectButton.disabled = !controls.join;
   ui.disconnectButton.disabled = !controls.leave || client === undefined;
   ui.resetButton.disabled = !controls.resetRoom;
+  ui.forgeInputButton.disabled = busy || (options.mode !== "host" && options.mode !== "client");
   ui.messages.replaceChildren();
 
   for (const message of [...(client?.messages ?? [])].reverse().slice(0, 8)) {
@@ -328,7 +397,14 @@ export function renderRealtimeArenaUi(
 
 export function formatRealtimeArenaDiagnostics(diagnostics: RealtimeArenaUiDiagnostics): string {
   const frameRate = diagnostics.presentation?.frameRate ?? 0;
-  return `${diagnostics.inputSequence} / ${diagnostics.inputSendRate}hz / ${diagnostics.serverTickRate}tps / ${frameRate}fps`;
+  const delay = Math.round(diagnostics.presentation?.interpolationDelayMs ?? 0);
+  const jitter = Math.round(diagnostics.presentation?.estimatedJitterMs ?? 0);
+  const queuedInputs = diagnostics.authorityInput?.queuedInputs ?? 0;
+  const ack = diagnostics.prediction?.inputAckSequence;
+  const correction = diagnostics.prediction?.lastCorrectionMagnitude ?? 0;
+  const sequence =
+    ack === undefined ? `${diagnostics.inputSequence}` : `${diagnostics.inputSequence}->${ack}`;
+  return `${sequence} / ${diagnostics.inputSendRate}hz / ${diagnostics.serverTickRate}tps / ${frameRate}fps / d${delay} / j${jitter} / q${queuedInputs} / c${Math.round(correction)}`;
 }
 
 export function formatRealtimeArenaDiagnosticsTitle(
@@ -336,7 +412,7 @@ export function formatRealtimeArenaDiagnosticsTitle(
 ): string {
   const presentation = diagnostics.presentation;
   if (!presentation) {
-    return "input sequence / input send rate / server tick rate / presentation frame rate";
+    return "input sequence / input ack / input send rate / server tick rate / presentation frame rate";
   }
 
   const status = presentation.lastSampleStatus ?? "waiting";
@@ -348,7 +424,39 @@ export function formatRealtimeArenaDiagnosticsTitle(
     presentation.lastSampleDelayMs === undefined
       ? "delay --"
       : `delay ${Math.round(presentation.lastSampleDelayMs)}ms`;
-  return `presentation ${status}; ${presentation.bufferLength} buffered; ${age}; ${delay}`;
+  const jitter = presentation.adaptiveDelayEnabled
+    ? `jitter ${Math.round(presentation.estimatedJitterMs)}ms; target ${Math.round(presentation.targetDelayMs)}ms`
+    : "jitter fixed";
+  const prediction = diagnostics.prediction;
+  const authorityInput = diagnostics.authorityInput;
+  const authorityInputText =
+    authorityInput === undefined
+      ? "authority input --"
+      : `authority input queued ${authorityInput.queuedInputs}; peak ${authorityInput.maxQueuedInputs}; coalesced ${authorityInput.coalescedInputs}`;
+  const predictionText =
+    prediction === undefined
+      ? "prediction --"
+      : [
+          `ack ${prediction.inputAckSequence ?? "--"}`,
+          `pending ${prediction.pendingInputs}`,
+          `lead ${prediction.inputLead ?? "--"}`,
+          `rtt ${formatOptionalMs(prediction.roundTripTimeMs)}`,
+          `snapshot ${formatOptionalMs(prediction.snapshotAgeMs)}`,
+          `correction ${formatOptionalNumber(prediction.lastCorrectionMagnitude)}`,
+          `smoothing ${prediction.correctionSmoothingActive ? `${Math.round(prediction.correctionSmoothingElapsedMs)}ms` : "off"}`,
+          `smoothed ${prediction.smoothedCorrections}`,
+          `prediction phase ${Math.round(prediction.presentationAlpha * 100)}% (${formatOptionalMs(prediction.presentationElapsedMs)})`,
+          `presentation clamps ${prediction.clampedPresentationFrames}`
+        ].join("; ");
+  return `presentation ${status}; ${presentation.bufferLength} buffered; ${age}; ${delay}; ${jitter}; ${authorityInputText}; ${predictionText}`;
+}
+
+function formatOptionalMs(value: number | undefined): string {
+  return value === undefined ? "--" : `${Math.round(value)}ms`;
+}
+
+function formatOptionalNumber(value: number | undefined): string {
+  return value === undefined ? "--" : String(Math.round(value * 10) / 10);
 }
 
 export function resolveMultiplayerDemoRoomControls(
@@ -592,6 +700,85 @@ function createRoomControls(
   return group;
 }
 
+function createNetworkConditionControls(): {
+  root: HTMLElement;
+  enabledInput: HTMLInputElement;
+  latencyInput: HTMLInputElement;
+  jitterInput: HTMLInputElement;
+  lossInput: HTMLInputElement;
+  forgeInputButton: HTMLButtonElement;
+  summary: HTMLElement;
+} {
+  const root = createElement("section", "multiplayer-demo__controls");
+  const enabledInput = document.createElement("input");
+  enabledInput.id = "multiplayer-demo-network-enabled";
+  enabledInput.className = "multiplayer-demo__net-checkbox";
+  enabledInput.type = "checkbox";
+  const enabledLabel = document.createElement("label");
+  enabledLabel.className = "multiplayer-demo__net-toggle";
+  enabledLabel.htmlFor = enabledInput.id;
+  enabledLabel.replaceChildren(enabledInput, document.createTextNode("Artificial Net"));
+
+  const latencyInput = createNetworkNumberInput("multiplayer-demo-network-latency", 0, 1000, 25);
+  const jitterInput = createNetworkNumberInput("multiplayer-demo-network-jitter", 0, 1000, 25);
+  const lossInput = createNetworkNumberInput("multiplayer-demo-network-loss", 0, 100, 1);
+  latencyInput.value = "120";
+  jitterInput.value = "40";
+  lossInput.value = "0";
+
+  const fields = createElement("div", "multiplayer-demo__net-grid");
+  fields.replaceChildren(
+    createNetworkField("Latency", "ms", latencyInput),
+    createNetworkField("Jitter", "ms", jitterInput),
+    createNetworkField("Loss", "%", lossInput)
+  );
+  const forgeInputButton = createButton("Forge Stale");
+  forgeInputButton.title = "Send a stale input frame";
+  const summary = createElement("p", "multiplayer-demo__net-summary", "off");
+  root.replaceChildren(
+    createElement("h2", "multiplayer-demo__section-title", "Network"),
+    enabledLabel,
+    fields,
+    forgeInputButton,
+    summary
+  );
+  return {
+    root,
+    enabledInput,
+    latencyInput,
+    jitterInput,
+    lossInput,
+    forgeInputButton,
+    summary
+  };
+}
+
+function createNetworkField(label: string, suffix: string, input: HTMLInputElement): HTMLElement {
+  const field = createElement("label", "multiplayer-demo__net-field");
+  field.htmlFor = input.id;
+  const labelElement = createElement("span", undefined, label);
+  const suffixElement = createElement("small", undefined, suffix);
+  field.replaceChildren(labelElement, input, suffixElement);
+  return field;
+}
+
+function createNetworkNumberInput(
+  id: string,
+  min: number,
+  max: number,
+  step: number
+): HTMLInputElement {
+  const input = document.createElement("input");
+  input.id = id;
+  input.className = "multiplayer-demo__net-input";
+  input.type = "number";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.inputMode = "numeric";
+  return input;
+}
+
 function createPlayerNameInput(): HTMLInputElement {
   const input = document.createElement("input");
   input.id = "multiplayer-demo-player-name";
@@ -639,6 +826,13 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
     element.textContent = text;
   }
   return element;
+}
+
+function clampInteger(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  return Math.min(max, Math.max(min, Math.round(value)));
 }
 
 function formatRoundTime(state: RealtimeArenaViewState): string {

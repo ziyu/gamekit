@@ -8,6 +8,7 @@ import {
 } from "@gamekit/multiplayer-core";
 import { createRealtimePracticeArenaState, REALTIME_ARENA_TICK_MS } from "./config";
 import {
+  applyRealtimeArenaPlayerInteract,
   applyRealtimeInputFrame,
   captureRealtimeArenaSnapshot,
   joinRealtimeArenaPlayer,
@@ -43,6 +44,9 @@ export type RealtimeArenaHost = {
 export type RealtimeArenaHostDiagnostics = {
   sentSnapshots: number;
   rejectedMessages: number;
+  coalescedInputs: number;
+  queuedInputs: number;
+  maxQueuedInputs: number;
   lastAction?: RealtimeArenaActionResult;
   lastBroadcastError?: string;
 };
@@ -63,9 +67,13 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
   const clock = options.clock ?? (() => Date.now());
   const connectedPeers = new Map<string, MultiplayerPeer>();
   const playerIdsByPeerId = new Map<string, string>();
+  const inputAcksByPeerId = new Map<string, number>();
   const diagnostics: RealtimeArenaHostDiagnostics = {
     sentSnapshots: 0,
-    rejectedMessages: 0
+    rejectedMessages: 0,
+    coalescedInputs: 0,
+    queuedInputs: 0,
+    maxQueuedInputs: 0
   };
   let state = createRealtimePracticeArenaState();
   const authorityBinding = createMultiplayerAuthorityBindingStore({
@@ -98,6 +106,7 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
     inputSequence(input) {
       return input.sequence;
     },
+    inputQueueMode: "latest",
     handleAction({ message, payload }) {
       return toAuthorityDecision(handleActionFromPeer(message.sourcePeerId, payload));
     },
@@ -179,6 +188,9 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
         }
         diagnostics.lastAction = startRealtimeArenaCountdown(state);
         break;
+      case "interact":
+        diagnostics.lastAction = applyRealtimeArenaPlayerInteract(state, playerId);
+        break;
       case "rematch":
         diagnostics.lastAction = rematchRealtimeArena(state);
         break;
@@ -206,6 +218,9 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
     }
 
     diagnostics.lastAction = applyRealtimeInputFrame(state, playerId, input);
+    if (diagnostics.lastAction.accepted) {
+      inputAcksByPeerId.set(peerId, input.sequence);
+    }
     return diagnostics.lastAction;
   }
 
@@ -233,6 +248,9 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
         : state.players.find((player) => player.id === mappedPlayerId);
     if (mappedPlayer) {
       mappedPlayer.connected = true;
+      if (!inputAcksByPeerId.has(peer.id)) {
+        inputAcksByPeerId.set(peer.id, mappedPlayer.lastInputSequence);
+      }
       return mappedPlayer.id;
     }
 
@@ -240,6 +258,7 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
     if (directPlayer) {
       directPlayer.connected = true;
       playerIdsByPeerId.set(peer.id, directPlayer.id);
+      inputAcksByPeerId.set(peer.id, directPlayer.lastInputSequence);
       return directPlayer.id;
     }
 
@@ -258,6 +277,7 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
     }
 
     playerIdsByPeerId.set(peer.id, playerId);
+    inputAcksByPeerId.set(peer.id, 0);
     return playerId;
   }
 
@@ -287,6 +307,7 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
     if (playerId !== undefined) {
       diagnostics.lastAction = removeRealtimeArenaPlayer(state, playerId);
       playerIdsByPeerId.delete(peerId);
+      inputAcksByPeerId.delete(peerId);
     }
   }
 
@@ -308,16 +329,24 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
     const activePeers = [...connectedPeers.values()].filter(isActivePeer);
     state = createRealtimePracticeArenaState();
     playerIdsByPeerId.clear();
+    inputAcksByPeerId.clear();
     for (const peer of activePeers) {
       ensurePlayerForPeer(peer);
     }
   }
 
   function createSnapshotPayload(): RealtimeArenaSnapshotPayload {
+    const authorityDiagnostics = authorityLoop.diagnostics();
     return {
       snapshot: captureRealtimeArenaSnapshot(state),
       playersByPeerId: Object.fromEntries(playerIdsByPeerId.entries()),
-      serverTime: clock()
+      inputAcksByPeerId: Object.fromEntries(inputAcksByPeerId.entries()),
+      serverTime: clock(),
+      authorityInput: {
+        queuedInputs: authorityDiagnostics.queuedInputs,
+        maxQueuedInputs: authorityDiagnostics.maxQueuedInputs,
+        coalescedInputs: authorityDiagnostics.coalescedInputs
+      }
     };
   }
 
@@ -334,6 +363,9 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
         ...diagnostics,
         sentSnapshots: authorityDiagnostics.sentSnapshots,
         rejectedMessages: authorityDiagnostics.rejectedMessages,
+        coalescedInputs: authorityDiagnostics.coalescedInputs,
+        queuedInputs: authorityDiagnostics.queuedInputs,
+        maxQueuedInputs: authorityDiagnostics.maxQueuedInputs,
         ...(authorityDiagnostics.lastBroadcastError === undefined
           ? {}
           : { lastBroadcastError: authorityDiagnostics.lastBroadcastError })

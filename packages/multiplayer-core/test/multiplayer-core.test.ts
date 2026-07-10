@@ -8,6 +8,7 @@ import {
   createMultiplayerAuthorityReceiver,
   createMultiplayerLocalAuthorityLoop,
   createMultiplayerPeerPlayerBindingStore,
+  createMultiplayerPredictionBuffer,
   createMultiplayerRuntime,
   createSnapshotBuffer,
   createSnapshotPresentationProjector,
@@ -346,6 +347,157 @@ describe("multiplayer authority helpers", () => {
     });
   });
 
+  it("bounds realtime input consumption per source at each authority tick", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "bounded-input-host",
+      backend: fake.backend,
+      clock: () => 200
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "host-authoritative",
+      localPeer: { id: "host", role: "host" }
+    });
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: "session-1",
+      mode: "host-authoritative",
+      authorityPeerId: "host"
+    });
+    const processed: string[] = [];
+    const loop = createMultiplayerAuthorityHostLoop<never, InputPayload, { tick: number }>({
+      runtime,
+      binding,
+      readInput,
+      inputSequence: (input) => input.sequence,
+      maxInputsPerSourcePerTick: 1,
+      maxQueuedInputsPerSource: 2,
+      handleInput({ message, payload }) {
+        processed.push(`${message.sourcePeerId}:${payload.sequence}`);
+      },
+      captureSnapshot({ tick }) {
+        return { tick };
+      }
+    });
+
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 1, dx: 1 }));
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 2, dx: 1 }));
+    fake.emit(messageFrom("client-b", MULTIPLAYER_INPUT_KIND, { sequence: 1, dx: 1 }));
+
+    loop.tick(50);
+    expect(processed).toEqual(["client-a:1", "client-b:1"]);
+    expect(loop.diagnostics()).toMatchObject({ acceptedInputs: 2, tick: 1 });
+
+    loop.tick(50);
+    expect(processed).toEqual(["client-a:1", "client-b:1", "client-a:2"]);
+    expect(loop.diagnostics()).toMatchObject({ acceptedInputs: 3, tick: 2 });
+
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 4, dx: 1 }));
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 3, dx: 1 }));
+    loop.tick(50);
+    loop.tick(50);
+
+    expect(processed).toEqual(["client-a:1", "client-b:1", "client-a:2", "client-a:4"]);
+    expect(loop.diagnostics()).toMatchObject({
+      acceptedInputs: 4,
+      rejectedInputs: 1,
+      tick: 4,
+      lastRejected: { code: "stale-input" }
+    });
+
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 5, dx: 1 }));
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 6, dx: 1 }));
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 7, dx: 1 }));
+    loop.tick(50);
+    loop.tick(50);
+
+    expect(processed).toEqual([
+      "client-a:1",
+      "client-b:1",
+      "client-a:2",
+      "client-a:4",
+      "client-a:5",
+      "client-a:6"
+    ]);
+    expect(loop.diagnostics()).toMatchObject({
+      acceptedInputs: 6,
+      rejectedInputs: 2,
+      tick: 6,
+      lastRejected: { code: "input-queue-full" }
+    });
+  });
+
+  it("coalesces queued input state to the latest sequence per source", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "latest-input-host",
+      backend: fake.backend,
+      clock: () => 200
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "host-authoritative",
+      localPeer: { id: "host", role: "host" }
+    });
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: "session-1",
+      mode: "host-authoritative",
+      authorityPeerId: "host"
+    });
+    const processed: string[] = [];
+    const loop = createMultiplayerAuthorityHostLoop<never, InputPayload, { tick: number }>({
+      runtime,
+      binding,
+      readInput,
+      inputSequence: (input) => input.sequence,
+      inputQueueMode: "latest",
+      handleInput({ message, payload }) {
+        processed.push(`${message.sourcePeerId}:${payload.sequence}`);
+      },
+      captureSnapshot({ tick }) {
+        return { tick };
+      }
+    });
+
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 1, dx: 1 }));
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 2, dx: 1 }));
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 3, dx: 1 }));
+    fake.emit(messageFrom("client-b", MULTIPLAYER_INPUT_KIND, { sequence: 1, dx: 1 }));
+
+    expect(loop.diagnostics()).toMatchObject({
+      receivedInputs: 4,
+      acceptedInputs: 0,
+      coalescedInputs: 2,
+      queuedInputs: 2,
+      maxQueuedInputs: 2
+    });
+
+    loop.tick(50);
+    expect(processed).toEqual(["client-a:3", "client-b:1"]);
+    expect(loop.diagnostics()).toMatchObject({
+      acceptedInputs: 2,
+      coalescedInputs: 2,
+      queuedInputs: 0
+    });
+
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 5, dx: 1 }));
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 4, dx: 1 }));
+    loop.tick(50);
+
+    expect(processed).toEqual(["client-a:3", "client-b:1", "client-a:5"]);
+    expect(loop.diagnostics()).toMatchObject({
+      acceptedInputs: 3,
+      rejectedInputs: 1,
+      queuedInputs: 0,
+      lastRejected: { code: "stale-input" }
+    });
+
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 6, dx: 1 }));
+    expect(loop.diagnostics().queuedInputs).toBe(1);
+    loop.dispose();
+    expect(loop.diagnostics().queuedInputs).toBe(0);
+  });
+
   it("uses the same action and input contract for local authority", () => {
     const state = { started: false, x: 0 };
     const loop = createMultiplayerLocalAuthorityLoop<ActionPayload, InputPayload, SnapshotPayload>({
@@ -480,6 +632,220 @@ describe("multiplayer authority helpers", () => {
 
     diagnostics.binding.status = "closed";
     expect(bindingStore.current().status).toBe("resyncing");
+  });
+});
+
+describe("multiplayer prediction helpers", () => {
+  it("reconciles authoritative state and replays unacknowledged inputs", () => {
+    const prediction = createMultiplayerPredictionBuffer<
+      { x: number; y: number },
+      { dx: number; dy: number }
+    >({
+      initialState: { x: 0, y: 0 },
+      cloneState(state) {
+        return { ...state };
+      },
+      applyInput(state, input) {
+        return {
+          x: state.x + input.dx,
+          y: state.y + input.dy
+        };
+      },
+      measureCorrection(previous, next) {
+        return Math.hypot(previous.x - next.x, previous.y - next.y);
+      }
+    });
+
+    prediction.predict({ sequence: 1, input: { dx: 1, dy: 0 }, timestamp: 10 });
+    prediction.predict({ sequence: 2, input: { dx: 1, dy: 0 }, timestamp: 20 });
+
+    const result = prediction.reconcile({
+      authoritativeState: { x: 1.25, y: 0 },
+      acknowledgedSequence: 1
+    });
+
+    expect(result).toMatchObject({
+      state: { x: 2.25, y: 0 },
+      pendingInputs: 1,
+      acknowledgedInputs: 1,
+      replayedInputs: 1,
+      correctionMagnitude: 0.25
+    });
+    expect(prediction.pendingInputs().map((frame) => frame.sequence)).toEqual([2]);
+    expect(prediction.diagnostics()).toMatchObject({
+      predictedInputs: 2,
+      acknowledgedInputs: 1,
+      replayedInputs: 1,
+      corrections: 1,
+      pendingInputs: 1,
+      lastAcknowledgedSequence: 1,
+      lastPredictedSequence: 2,
+      lastCorrectionMagnitude: 0.25
+    });
+  });
+
+  it("presents fixed-tick prediction continuously without mutating or rewinding it", () => {
+    const prediction = createMultiplayerPredictionBuffer<
+      { x: number; velocity: number },
+      { velocity: number }
+    >({
+      initialState: { x: 0, velocity: 0 },
+      predictionStepMs: 50,
+      cloneState(state) {
+        return { ...state };
+      },
+      applyInput(state, input) {
+        return {
+          x: state.x + input.velocity * 0.05,
+          velocity: input.velocity
+        };
+      },
+      presentState(fromState, toState, context) {
+        return {
+          x: fromState.x + (toState.x - fromState.x) * context.alpha,
+          velocity: toState.velocity
+        };
+      }
+    });
+
+    prediction.predict({ sequence: 1, input: { velocity: 100 }, timestamp: 50 });
+
+    expect(prediction.state()).toEqual({ x: 5, velocity: 100 });
+    expect(prediction.present({ deltaMs: 10, timestamp: 60 })).toEqual({
+      x: 1,
+      velocity: 100
+    });
+    expect(prediction.present({ deltaMs: 10, timestamp: 70 })).toEqual({
+      x: 2,
+      velocity: 100
+    });
+    expect(prediction.state()).toEqual({ x: 5, velocity: 100 });
+
+    prediction.reconcile({
+      authoritativeState: { x: 5, velocity: 100 },
+      acknowledgedSequence: 1,
+      timestamp: 70
+    });
+
+    expect(prediction.present({ deltaMs: 10, timestamp: 80 })).toEqual({
+      x: 3,
+      velocity: 100
+    });
+    expect(prediction.present({ deltaMs: 120, timestamp: 200 })).toEqual({
+      x: 5,
+      velocity: 100
+    });
+    expect(prediction.diagnostics()).toMatchObject({
+      presentedFrames: 4,
+      clampedPresentationFrames: 1,
+      presentationElapsedMs: 50,
+      presentationAlpha: 1
+    });
+  });
+
+  it("smooths correction only in presentation while simulation reconciles immediately", () => {
+    const prediction = createMultiplayerPredictionBuffer<
+      { x: number; velocity: number },
+      { velocity: number }
+    >({
+      initialState: { x: 0, velocity: 0 },
+      predictionStepMs: 50,
+      cloneState(state) {
+        return { ...state };
+      },
+      applyInput(state, input) {
+        return {
+          x: state.x + input.velocity * 0.05,
+          velocity: input.velocity
+        };
+      },
+      presentState(fromState, toState, context) {
+        return {
+          x: fromState.x + (toState.x - fromState.x) * context.alpha,
+          velocity: toState.velocity
+        };
+      },
+      measureCorrection(previous, next) {
+        return Math.abs(previous.x - next.x);
+      },
+      correctionSmoothing: {
+        durationMs: 100,
+        maxMagnitude: 10,
+        apply(target, context) {
+          target.x +=
+            (context.previousPresentedState.x - context.initialTargetState.x) *
+            context.remainingAlpha;
+          return target;
+        }
+      }
+    });
+
+    prediction.predict({ sequence: 1, input: { velocity: 100 }, timestamp: 50 });
+    expect(prediction.present({ deltaMs: 20, timestamp: 70 }).x).toBe(2);
+
+    prediction.reconcile({
+      authoritativeState: { x: 0, velocity: 100 },
+      acknowledgedSequence: 1,
+      timestamp: 70
+    });
+
+    expect(prediction.state()).toEqual({ x: 0, velocity: 100 });
+    expect(prediction.present({ deltaMs: 10, timestamp: 80 }).x).toBeCloseTo(1.8);
+
+    prediction.predict({ sequence: 2, input: { velocity: 100 }, timestamp: 100 });
+    expect(prediction.present({ deltaMs: 30, timestamp: 110 }).x).toBeCloseTo(2.2);
+    expect(prediction.present({ deltaMs: 60, timestamp: 170 }).x).toBeCloseTo(5);
+    expect(prediction.state()).toEqual({ x: 5, velocity: 100 });
+    expect(prediction.diagnostics()).toMatchObject({
+      corrections: 1,
+      smoothedCorrections: 1,
+      correctionSmoothingActive: false,
+      correctionSmoothingElapsedMs: 100
+    });
+
+    prediction.reconcile({
+      authoritativeState: { x: -100, velocity: 100 },
+      acknowledgedSequence: 2,
+      timestamp: 170
+    });
+
+    expect(prediction.present({ deltaMs: 10, timestamp: 180 }).x).toBeCloseTo(-100);
+    expect(prediction.diagnostics()).toMatchObject({
+      corrections: 2,
+      smoothedCorrections: 1,
+      correctionSmoothingActive: false,
+      correctionSmoothingElapsedMs: 0
+    });
+  });
+
+  it("rejects stale input and bounds the pending input queue", () => {
+    const prediction = createMultiplayerPredictionBuffer<number, number>({
+      initialState: 0,
+      maxInputs: 2,
+      cloneState(state) {
+        return state;
+      },
+      applyInput(state, input) {
+        return state + input;
+      }
+    });
+
+    expect(prediction.predict({ sequence: 1, input: 1 }).accepted).toBe(true);
+    expect(prediction.predict({ sequence: 2, input: 1 }).accepted).toBe(true);
+    expect(prediction.predict({ sequence: 2, input: 1 })).toMatchObject({
+      accepted: false,
+      reason: "stale-sequence"
+    });
+    expect(prediction.predict({ sequence: 3, input: 1 }).accepted).toBe(true);
+
+    expect(prediction.pendingInputs().map((frame) => frame.sequence)).toEqual([2, 3]);
+    expect(prediction.diagnostics()).toMatchObject({
+      predictedInputs: 3,
+      rejectedInputs: 1,
+      droppedInputs: 1,
+      pendingInputs: 2,
+      lastRejectedReason: "stale-sequence"
+    });
   });
 });
 
@@ -734,6 +1100,47 @@ describe("createSnapshotBuffer", () => {
       lastSampleStatus: "exact"
     });
     expect(playback.diagnostics().clampedFrames).toBeGreaterThan(0);
+  });
+
+  it("adapts interpolation delay to snapshot arrival jitter within bounds", () => {
+    const playback = createSnapshotPlayback<{ tick: number }>({
+      interpolationDelayMs: 50,
+      adaptiveDelay: {
+        minDelayMs: 50,
+        maxDelayMs: 150,
+        jitterMultiplier: 2,
+        jitterSmoothing: 1,
+        riseRate: 1,
+        fallRate: 1
+      },
+      readTime(entry) {
+        return entry.snapshot.tick * 50;
+      }
+    });
+
+    playback.present({ snapshot: { tick: 0 } }, 0);
+    playback.present({ snapshot: { tick: 1 } }, 50);
+    expect(playback.diagnostics()).toMatchObject({
+      adaptiveDelayEnabled: true,
+      interpolationDelayMs: 50,
+      targetDelayMs: 50,
+      estimatedJitterMs: 0
+    });
+
+    playback.present({ snapshot: { tick: 1 } }, 50);
+    playback.present({ snapshot: { tick: 2 } }, 100);
+    expect(playback.diagnostics()).toMatchObject({
+      interpolationDelayMs: 150,
+      targetDelayMs: 150,
+      estimatedJitterMs: 100
+    });
+
+    playback.present({ snapshot: { tick: 3 } }, 50);
+    expect(playback.diagnostics()).toMatchObject({
+      interpolationDelayMs: 50,
+      targetDelayMs: 50,
+      estimatedJitterMs: 0
+    });
   });
 
   it("reports snapshot playback frame rate from presented deltas", () => {

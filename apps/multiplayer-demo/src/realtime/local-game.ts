@@ -1,9 +1,11 @@
 import {
   createMultiplayerLocalAuthorityLoop,
   type MultiplayerAuthorityDecision,
-  type MultiplayerLocalAuthorityLoop
+  type MultiplayerLocalAuthorityLoop,
+  type NetworkVector2
 } from "@gamekit/multiplayer-core";
 import {
+  applyRealtimeArenaPlayerInteract,
   applyRealtimeInputFrame,
   captureRealtimeArenaSnapshot,
   rematchRealtimeArena,
@@ -17,6 +19,7 @@ import {
   type RealtimeInputFrame
 } from "./domain";
 import { createRealtimePracticeArenaState, REALTIME_ARENA_TICK_MS } from "./config";
+import type { RealtimeArenaPresentationFrame } from "./presentation";
 
 export type RealtimeLocalGameDiagnostics = {
   inputSequence: number;
@@ -31,12 +34,19 @@ export type RealtimeInputTarget = {
   resetInputKeys(): void;
 };
 
-export type RealtimeInputSampler = RealtimeInputTarget & {
+export type RealtimeInputSampler = Omit<RealtimeInputTarget, "queueInteract"> & {
   readonly sequence: number;
   nextFrame(now: number): RealtimeInputFrame;
   reset(): void;
   resetKeys(): void;
 };
+
+type RealtimeArenaCanvasScratch = {
+  position: NetworkVector2;
+  velocity: NetworkVector2;
+};
+
+const canvasScratchByElement = new WeakMap<HTMLCanvasElement, RealtimeArenaCanvasScratch>();
 
 export type RealtimeLocalGame = {
   readonly state: RealtimeArenaState;
@@ -59,6 +69,7 @@ type RealtimeLocalGameAction =
   | { type: "set-name"; name: string }
   | { type: "ready"; ready: boolean }
   | { type: "start" }
+  | { type: "interact" }
   | { type: "rematch" }
   | { type: "reset" };
 
@@ -138,7 +149,7 @@ export function createRealtimeLocalGame(options: RealtimeLocalGameOptions = {}):
       input.setInputKey(code, down);
     },
     queueInteract() {
-      input.queueInteract();
+      return dispatchLocalAction(authorityLoop, { type: "interact" }, diagnostics);
     },
     resetInputKeys() {
       input.resetKeys();
@@ -201,6 +212,8 @@ export function createRealtimeLocalGame(options: RealtimeLocalGameOptions = {}):
         }
         return startRealtimeArenaCountdown(state);
       }
+      case "interact":
+        return applyRealtimeArenaPlayerInteract(state, LOCAL_PLAYER_ID);
       case "rematch":
         return rematchRealtimeArena(state);
       case "reset":
@@ -259,6 +272,12 @@ export function bindRealtimeInputKeys(target: RealtimeInputTarget, root: HTMLEle
     }
 
     event.preventDefault();
+    if (event.code === "KeyE") {
+      if (!event.repeat) {
+        target.queueInteract();
+      }
+      return;
+    }
     target.setInputKey(event.code, true);
   };
   const keyUp = (event: KeyboardEvent): void => {
@@ -271,6 +290,9 @@ export function bindRealtimeInputKeys(target: RealtimeInputTarget, root: HTMLEle
     }
 
     event.preventDefault();
+    if (event.code === "KeyE") {
+      return;
+    }
     target.setInputKey(event.code, false);
   };
   const blur = (): void => {
@@ -305,13 +327,8 @@ function createPracticeState(playerName?: string): RealtimeArenaState {
 export function createRealtimeInputSampler(): RealtimeInputSampler {
   const keys = new Set<string>();
   let sequence = 0;
-  let interactQueued = false;
   const resetKeys = (): void => {
     keys.clear();
-    interactQueued = false;
-  };
-  const queueInteract = (): void => {
-    interactQueued = true;
   };
 
   return {
@@ -325,21 +342,13 @@ export function createRealtimeInputSampler(): RealtimeInputSampler {
         clientTime: Math.round(now),
         moveX: axis(keys, "KeyA", "ArrowLeft", "KeyD", "ArrowRight"),
         moveY: axis(keys, "KeyW", "ArrowUp", "KeyS", "ArrowDown"),
-        sprint: keys.has("Space"),
-        interact: interactQueued
+        sprint: keys.has("Space")
       };
-      interactQueued = false;
       return frame;
-    },
-    queueInteract() {
-      queueInteract();
     },
     setInputKey(code, down) {
       if (down) {
         keys.add(code);
-        if (code === "KeyE") {
-          queueInteract();
-        }
       } else {
         keys.delete(code);
       }
@@ -375,7 +384,8 @@ function axis(
 export function renderRealtimeArenaCanvas(
   canvas: HTMLCanvasElement,
   snapshot: RealtimeArenaSnapshot,
-  localPlayerId: string
+  localPlayerId: string,
+  presentation?: RealtimeArenaPresentationFrame
 ): void {
   const context = canvas.getContext("2d");
   if (!context) {
@@ -394,20 +404,75 @@ export function renderRealtimeArenaCanvas(
   for (const wall of snapshot.walls) {
     drawWall(context, wall.x, wall.y, wall.width, wall.height);
   }
-  for (const core of snapshot.cores) {
+  const players = presentation?.players ?? snapshot.players;
+  const cores = presentation?.cores ?? snapshot.cores;
+  const scratch = readCanvasScratch(canvas);
+  const presentedPosition = scratch.position;
+  const presentedVelocity = scratch.velocity;
+  for (const core of cores) {
+    if (presentation === undefined) {
+      writeVector2(presentedPosition, core.position);
+    } else if (core.carriedByPlayerId === undefined) {
+      presentation.writeCorePosition(core.id, presentedPosition, core.position);
+    } else {
+      const carrier = findPlayer(players, core.carriedByPlayerId);
+      if (carrier === undefined) {
+        presentation.writeCorePosition(core.id, presentedPosition, core.position);
+      } else {
+        presentation.writePlayerPosition(carrier.id, presentedPosition, carrier.position);
+      }
+    }
     drawCore(
       context,
-      core.position.x,
-      core.position.y,
+      presentedPosition.x,
+      presentedPosition.y,
       core.radius,
       core.carriedByPlayerId !== undefined
     );
   }
-  for (const player of snapshot.players) {
-    drawPlayer(context, player, player.id === localPlayerId, snapshot.rules.playerRadius);
+  for (const player of players) {
+    if (presentation === undefined) {
+      writeVector2(presentedPosition, player.position);
+      writeVector2(presentedVelocity, player.velocity);
+    } else {
+      presentation.writePlayerPosition(player.id, presentedPosition, player.position);
+      presentation.writePlayerVelocity(player.id, presentedVelocity, player.velocity);
+    }
+    drawPlayer(
+      context,
+      player,
+      player.id === localPlayerId,
+      snapshot.rules.playerRadius,
+      presentedPosition,
+      presentedVelocity
+    );
   }
   drawRoundOverlay(context, snapshot, snapshot.rules.countdownMs);
   context.restore();
+}
+
+function readCanvasScratch(canvas: HTMLCanvasElement): RealtimeArenaCanvasScratch {
+  let scratch = canvasScratchByElement.get(canvas);
+  if (scratch === undefined) {
+    scratch = {
+      position: { x: 0, y: 0 },
+      velocity: { x: 0, y: 0 }
+    };
+    canvasScratchByElement.set(canvas, scratch);
+  }
+  return scratch;
+}
+
+function findPlayer(
+  players: RealtimeArenaSnapshot["players"],
+  playerId: string
+): RealtimeArenaSnapshot["players"][number] | undefined {
+  for (const player of players) {
+    if (player.id === playerId) {
+      return player;
+    }
+  }
+  return undefined;
 }
 
 function resizeCanvas(canvas: HTMLCanvasElement, width: number, height: number): void {
@@ -502,33 +567,34 @@ function drawPlayer(
   context: CanvasRenderingContext2D,
   player: RealtimeArenaSnapshot["players"][number],
   local: boolean,
-  radius: number
+  radius: number,
+  position: NetworkVector2,
+  velocity: NetworkVector2
 ): void {
   const color = player.teamId === "green" ? "#a9e66d" : "#ff9166";
   context.fillStyle = local ? "#f4f7ee" : color;
   context.strokeStyle = color;
   context.lineWidth = local ? 5 : 3;
   context.beginPath();
-  context.arc(player.position.x, player.position.y, radius, 0, Math.PI * 2);
+  context.arc(position.x, position.y, radius, 0, Math.PI * 2);
   context.fill();
   context.stroke();
 
-  const directionLength = Math.hypot(player.velocity.x, player.velocity.y);
+  const directionLength = Math.hypot(velocity.x, velocity.y);
   if (directionLength > 0.01) {
-    const dx = (player.velocity.x / directionLength) * 22;
-    const dy = (player.velocity.y / directionLength) * 22;
+    const dx = (velocity.x / directionLength) * 22;
+    const dy = (velocity.y / directionLength) * 22;
     context.strokeStyle = "#e6c45c";
     context.lineWidth = 3;
-    line(
-      context,
-      player.position.x,
-      player.position.y,
-      player.position.x + dx,
-      player.position.y + dy
-    );
+    line(context, position.x, position.y, position.x + dx, position.y + dy);
   }
 
-  drawPlayerLabel(context, player.label, player.position.x, player.position.y - radius - 12, local);
+  drawPlayerLabel(context, player.label, position.x, position.y - radius - 12, local);
+}
+
+function writeVector2(target: NetworkVector2, value: NetworkVector2): void {
+  target.x = value.x;
+  target.y = value.y;
 }
 
 function drawPlayerLabel(

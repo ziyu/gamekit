@@ -16,6 +16,7 @@ export const REALTIME_ARENA_RULES: Partial<RealtimeArenaRules> = {
   scoreLimit: 3,
   playerRadius: 13,
   playerSpeedPerSecond: 155,
+  inputTimeoutMs: 250,
   sprintMultiplier: 1.8,
   sprintDurationMs: 240,
   sprintCooldownMs: 820,

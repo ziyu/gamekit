@@ -13,6 +13,7 @@ describe("realtime arena presentation", () => {
     });
     const presentation = createRealtimeArenaPresentation({
       interpolationDelayMs: 0,
+      adaptiveDelay: false,
       snapDistance: 1000
     });
 
@@ -36,6 +37,7 @@ describe("realtime arena presentation", () => {
     });
     const presentation = createRealtimeArenaPresentation({
       interpolationDelayMs: 100,
+      adaptiveDelay: false,
       snapDistance: 1000
     });
 
@@ -66,6 +68,7 @@ describe("realtime arena presentation", () => {
     });
     const presentation = createRealtimeArenaPresentation({
       interpolationDelayMs: 100,
+      adaptiveDelay: false,
       snapDistance: 1000
     });
 
@@ -107,6 +110,7 @@ describe("realtime arena presentation", () => {
     });
     const presentation = createRealtimeArenaPresentation({
       interpolationDelayMs: 0,
+      adaptiveDelay: false,
       snapDistance: 32
     });
 
@@ -125,6 +129,7 @@ describe("realtime arena presentation", () => {
     });
     const presentation = createRealtimeArenaPresentation({
       interpolationDelayMs: 0,
+      adaptiveDelay: false,
       snapDistance: 1000
     });
 
@@ -149,6 +154,68 @@ describe("realtime arena presentation", () => {
 
     expect(presentedCore?.position).toEqual(presentedPlayer.position);
     expect(presentedCore?.position.x).toBeLessThan(player.position.x);
+  });
+
+  it("lets local prediction override only the predicted player render position", () => {
+    const state = createRealtimeArenaState({
+      players: [
+        { id: "runner", teamId: "green" },
+        { id: "remote", teamId: "orange" }
+      ]
+    });
+    const presentation = createRealtimeArenaPresentation({
+      interpolationDelayMs: 0,
+      adaptiveDelay: false,
+      snapDistance: 1000
+    });
+    const snapshot = captureRealtimeArenaSnapshot(state);
+
+    const presented = presentation.present(snapshot, 16, {
+      predictedPlayer: {
+        playerId: "runner",
+        position: { x: 222, y: 111 },
+        velocity: { x: 20, y: 0 }
+      }
+    });
+
+    const runner = presented.players.find((player) => player.id === "runner");
+    const remote = presented.players.find((player) => player.id === "remote");
+    expect(runner?.position).toEqual({ x: 222, y: 111 });
+    expect(runner?.velocity).toEqual({ x: 20, y: 0 });
+    expect(remote?.position).toEqual(
+      snapshot.players.find((player) => player.id === "remote")?.position
+    );
+  });
+
+  it("writes presentation values into reusable render targets without cloning snapshots", () => {
+    const state = createRealtimeArenaState({
+      players: [{ id: "runner", teamId: "green" }]
+    });
+    const presentation = createRealtimeArenaPresentation({
+      interpolationDelayMs: 0,
+      adaptiveDelay: false,
+      snapDistance: 1000
+    });
+    const firstSnapshot = captureRealtimeArenaSnapshot(state);
+    const firstFrame = presentation.sample(firstSnapshot, 0);
+
+    state.tick += 1;
+    readStatePlayer(state).position.x += 50;
+    const nextSnapshot = captureRealtimeArenaSnapshot(state);
+    const nextFrame = presentation.sample(nextSnapshot, 25);
+    const target = { x: 0, y: 0 };
+    const nextPlayer = nextFrame.players[0];
+    if (!nextPlayer) {
+      throw new Error("Expected a presented player");
+    }
+
+    nextFrame.writePlayerPosition(nextPlayer.id, target, nextPlayer.position);
+
+    expect(nextFrame).toBe(firstFrame);
+    expect(nextFrame.snapshot).toBe(firstSnapshot);
+    expect(target.x).toBeGreaterThan(firstSnapshot.players[0]?.position.x ?? 0);
+    expect(target.x).toBeLessThan(nextPlayer.position.x);
+    expect(nextSnapshot.players[0]?.position.x).toBe(nextPlayer.position.x);
   });
 });
 

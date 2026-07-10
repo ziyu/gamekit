@@ -24,8 +24,7 @@ const NEUTRAL_INPUT: RealtimeInputFrame = {
   clientTime: 0,
   moveX: 0,
   moveY: 0,
-  sprint: false,
-  interact: false
+  sprint: false
 };
 
 export function joinRealtimeArenaPlayer(
@@ -195,10 +194,29 @@ export function applyRealtimeInputFrame(
   }
 
   player.lastInputSequence = frame.sequence;
-  player.latestInput = { ...frame };
-  if (frame.interact) {
-    player.pendingInteract = true;
+  player.inputState = { ...frame };
+  player.inputStateAgeMs = 0;
+  return ACCEPTED;
+}
+
+export function applyRealtimeArenaPlayerInteract(
+  state: RealtimeArenaState,
+  playerId: string
+): RealtimeArenaActionResult {
+  const player = findPlayer(state, playerId);
+  if (!player) {
+    return reject("unknown-player", `Unknown player: ${playerId}`);
   }
+  if (state.phase !== "running") {
+    return rejectPlayerInput(
+      state,
+      player,
+      "round-not-running",
+      "Interact is only accepted while running."
+    );
+  }
+
+  handlePlayerInteract(state, player);
   return ACCEPTED;
 }
 
@@ -268,10 +286,6 @@ function tickRunning(state: RealtimeArenaState, deltaMs: number): void {
     updateSprintTimers(player, deltaMs);
     updatePlayerMotion(state, player, deltaMs);
     updateCarriedCore(state, player);
-    if (player.pendingInteract) {
-      handlePlayerInteract(state, player);
-      player.pendingInteract = false;
-    }
   }
 
   const scoreLimitResult = findScoreLimitResult(state);
@@ -295,7 +309,13 @@ function updatePlayerMotion(
   player: RealtimeArenaPlayer,
   deltaMs: number
 ): void {
-  const input = player.latestInput ?? NEUTRAL_INPUT;
+  if (player.inputState !== undefined) {
+    player.inputStateAgeMs += deltaMs;
+    if (player.inputStateAgeMs > state.rules.inputTimeoutMs) {
+      delete player.inputState;
+    }
+  }
+  const input = player.inputState ?? NEUTRAL_INPUT;
   if (input.sprint && player.sprintCooldownMs <= 0 && player.sprintRemainingMs <= 0) {
     player.sprintRemainingMs = state.rules.sprintDurationMs;
     player.sprintCooldownMs = state.rules.sprintCooldownMs;
@@ -452,7 +472,6 @@ function enterRunning(state: RealtimeArenaState): void {
   for (const player of state.players) {
     player.position = { ...player.spawn };
     player.velocity = { x: 0, y: 0 };
-    player.pendingInteract = false;
     delete player.carryingCoreId;
   }
   for (const core of state.cores) {
@@ -535,8 +554,7 @@ function isValidInputFrame(frame: RealtimeInputFrame): boolean {
     Number.isFinite(frame.clientTime) &&
     isMoveAxis(frame.moveX) &&
     isMoveAxis(frame.moveY) &&
-    typeof frame.sprint === "boolean" &&
-    typeof frame.interact === "boolean"
+    typeof frame.sprint === "boolean"
   );
 }
 

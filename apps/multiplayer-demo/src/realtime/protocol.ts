@@ -15,6 +15,7 @@ export type RealtimeArenaNetworkAction =
   | { type: "set-name"; name: string }
   | { type: "ready"; ready: boolean }
   | { type: "start" }
+  | { type: "interact" }
   | { type: "rematch" }
   | { type: "reset" };
 
@@ -22,10 +23,18 @@ export type RealtimeArenaInputPayload = {
   frame: RealtimeInputFrame;
 };
 
+export type RealtimeArenaAuthorityInputDiagnostics = {
+  queuedInputs: number;
+  maxQueuedInputs: number;
+  coalescedInputs: number;
+};
+
 export type RealtimeArenaSnapshotPayload = {
   snapshot: RealtimeArenaSnapshot;
   playersByPeerId: Record<string, string>;
+  inputAcksByPeerId: Record<string, number>;
   serverTime: number;
+  authorityInput?: RealtimeArenaAuthorityInputDiagnostics;
 };
 
 export function isRealtimeArenaNetworkAction(value: unknown): value is RealtimeArenaNetworkAction {
@@ -39,6 +48,7 @@ export function isRealtimeArenaNetworkAction(value: unknown): value is RealtimeA
     case "ready":
       return typeof value.ready === "boolean";
     case "start":
+    case "interact":
     case "rematch":
     case "reset":
       return true;
@@ -60,8 +70,7 @@ export function readRealtimeArenaInputPayload(
       clientTime: value.frame.clientTime,
       moveX: value.frame.moveX,
       moveY: value.frame.moveY,
-      sprint: value.frame.sprint,
-      interact: value.frame.interact
+      sprint: value.frame.sprint
     }
   };
 }
@@ -85,12 +94,55 @@ export function readRealtimeArenaSnapshotPayload(
     }
     playersByPeerId[peerId] = playerId;
   }
+  const inputAcksByPeerId: Record<string, number> = {};
+  if (value.inputAcksByPeerId !== undefined) {
+    if (!isRecord(value.inputAcksByPeerId)) {
+      return undefined;
+    }
+    for (const [peerId, sequence] of Object.entries(value.inputAcksByPeerId)) {
+      if (typeof sequence !== "number" || !Number.isInteger(sequence) || sequence < 0) {
+        return undefined;
+      }
+      inputAcksByPeerId[peerId] = sequence;
+    }
+  }
+  const authorityInput = readAuthorityInputDiagnostics(value.authorityInput);
+  if (value.authorityInput !== undefined && authorityInput === undefined) {
+    return undefined;
+  }
 
   return {
     snapshot: value.snapshot as RealtimeArenaSnapshot,
     playersByPeerId,
-    serverTime: value.serverTime
+    inputAcksByPeerId,
+    serverTime: value.serverTime,
+    ...(authorityInput === undefined ? {} : { authorityInput })
   };
+}
+
+function readAuthorityInputDiagnostics(
+  value: unknown
+): RealtimeArenaAuthorityInputDiagnostics | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (
+    !isRecord(value) ||
+    !isNonNegativeInteger(value.queuedInputs) ||
+    !isNonNegativeInteger(value.maxQueuedInputs) ||
+    !isNonNegativeInteger(value.coalescedInputs)
+  ) {
+    return undefined;
+  }
+  return {
+    queuedInputs: value.queuedInputs,
+    maxQueuedInputs: value.maxQueuedInputs,
+    coalescedInputs: value.coalescedInputs
+  };
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
 function isRealtimeInputFrame(value: unknown): value is RealtimeInputFrame {
@@ -105,8 +157,7 @@ function isRealtimeInputFrame(value: unknown): value is RealtimeInputFrame {
     typeof value.clientTime === "number" &&
     isAxis(value.moveX) &&
     isAxis(value.moveY) &&
-    typeof value.sprint === "boolean" &&
-    typeof value.interact === "boolean"
+    typeof value.sprint === "boolean"
   );
 }
 

@@ -17,6 +17,7 @@ export type RealtimeArenaRules = {
   scoreLimit: number;
   playerRadius: number;
   playerSpeedPerSecond: number;
+  inputTimeoutMs: number;
   sprintMultiplier: number;
   sprintDurationMs: number;
   sprintCooldownMs: number;
@@ -54,7 +55,6 @@ export type RealtimeInputFrame = {
   moveX: -1 | 0 | 1;
   moveY: -1 | 0 | 1;
   sprint: boolean;
-  interact: boolean;
 };
 
 export type RealtimeArenaPlayer = {
@@ -68,13 +68,13 @@ export type RealtimeArenaPlayer = {
   position: RealtimeArenaVector;
   velocity: RealtimeArenaVector;
   lastInputSequence: number;
-  pendingInteract: boolean;
+  inputStateAgeMs: number;
   sprintRemainingMs: number;
   sprintCooldownMs: number;
   deliveredCores: number;
   rejectedInputs: number;
   carryingCoreId?: string;
-  latestInput?: RealtimeInputFrame;
+  inputState?: RealtimeInputFrame;
 };
 
 export type RealtimeRoundResult = {
@@ -163,8 +163,8 @@ export type RealtimeArenaSnapshot = {
   bounds: RealtimeArenaBounds;
   rules: RealtimeArenaRules;
   players: Array<
-    Omit<RealtimeArenaPlayer, "latestInput" | "pendingInteract"> & {
-      latestInput?: RealtimeInputFrame;
+    Omit<RealtimeArenaPlayer, "inputState"> & {
+      inputState?: RealtimeInputFrame;
     }
   >;
   cores: RealtimeArenaCore[];

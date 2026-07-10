@@ -40,3 +40,27 @@ jobs:
 
       - name: Format
         run: corepack pnpm format
+
+  multiplayer-performance:
+    name: Multiplayer Performance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Performance budgets
+        run: corepack pnpm bench:multiplayer:check
+
+      - name: Retained heap stability
+        run: corepack pnpm bench:multiplayer:stability
