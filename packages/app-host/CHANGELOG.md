@@ -1,5 +1,38 @@
 # @gamekit/app-host
 
+## 0.1.0-alpha.5
+
+### Minor Changes
+
+- 116b3bd: Add App Host standard Physics module composition, expose the core-owned canonical Multiplayer GameModule factory, and preserve project-reference-compatible declarations for the multi-entry Colyseus adapter.
+
+### Patch Changes
+
+- 42c830b: Add provider-neutral temporal snapshot playback, standard multiplayer presentation module binding, reusable presentation projectors, declared Network presentation tracks, typed interpolation primitives and small Network value shapes outside backend adapters.
+- Updated dependencies [d2d3825]
+- Updated dependencies [7d88257]
+- Updated dependencies [63c2214]
+- Updated dependencies [cf78f3f]
+- Updated dependencies [42c830b]
+- Updated dependencies [c2b4371]
+- Updated dependencies [116b3bd]
+  - @gamekit/multiplayer-core@0.1.0-alpha.4
+  - @gamekit/core@0.1.0-alpha.5
+  - @gamekit/platform-core@0.1.0-alpha.5
+  - @gamekit/renderer-core@0.1.0-alpha.5
+  - @gamekit/game-runtime@0.1.0-alpha.5
+  - @gamekit/data@0.1.0-alpha.5
+  - @gamekit/tca@0.1.0-alpha.5
+  - @gamekit/gas@0.1.0-alpha.5
+  - @gamekit/input-core@0.1.0-alpha.5
+  - @gamekit/camera-core@0.1.0-alpha.5
+  - @gamekit/physics-core@0.1.0-alpha.5
+  - @gamekit/driver-core@0.1.0-alpha.5
+  - @gamekit/devtools@0.1.0-alpha.5
+  - @gamekit/ui-core@0.1.0-alpha.5
+  - @gamekit/asset@0.1.0-alpha.5
+  - @gamekit/save@0.1.0-alpha.5
+
 ## 0.1.0-alpha.4
 
 ### Patch Changes

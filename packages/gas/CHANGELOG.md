@@ -1,5 +1,16 @@
 # @gamekit/gas
 
+## 0.1.0-alpha.5
+
+### Patch Changes
+
+- @gamekit/core@0.1.0-alpha.5
+- @gamekit/event-bus@0.1.0-alpha.5
+- @gamekit/world@0.1.0-alpha.5
+- @gamekit/game-runtime@0.1.0-alpha.5
+- @gamekit/data@0.1.0-alpha.5
+- @gamekit/tca@0.1.0-alpha.5
+
 ## 0.1.0-alpha.4
 
 ### Patch Changes

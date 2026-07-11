@@ -36,7 +36,24 @@
     "@gamekit/world-koota": "0.1.0-alpha.0",
     "physics-2d-lab": "0.1.0",
     "physics-3d-lab": "0.1.0",
-    "three-demo": "0.1.0"
+    "three-demo": "0.1.0",
+    "multiplayer-demo": "0.1.0",
+    "@gamekit/multiplayer-colyseus": "0.1.0-alpha.3",
+    "@gamekit/multiplayer-core": "0.1.0-alpha.3",
+    "@gamekit/multiplayer-memory": "0.1.0-alpha.3"
   },
-  "changesets": ["auto-4124991c", "auto-pr-12", "auto-pr-14", "three-driver"]
+  "changesets": [
+    "auto-4124991c",
+    "auto-pr-12",
+    "auto-pr-14",
+    "multiplayer-authority-action-queue",
+    "multiplayer-authority-peer-release",
+    "multiplayer-authority-snapshot-publisher",
+    "multiplayer-colyseus-schema-state",
+    "multiplayer-prediction-buffer",
+    "multiplayer-presentation-helper",
+    "multiplayer-usable-baseline",
+    "standard-physics-and-multiplayer-modules",
+    "three-driver"
+  ]
 }
