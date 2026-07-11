@@ -6,6 +6,7 @@ const packageRoot = process.cwd();
 const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
 const shouldBundleDts = manifest.gamekitBuild?.bundleDts !== false;
 const copyEntries = manifest.gamekitBuild?.copy ?? [];
+const entryPoints = manifest.gamekitBuild?.entries ?? ["src/index.ts"];
 
 function removeBuildInfo(path) {
   try {
@@ -68,7 +69,7 @@ removeBuildInfo(packageRoot);
 execFileSync(
   "tsdown",
   [
-    "src/index.ts",
+    ...entryPoints,
     "--format",
     "esm",
     "--target",

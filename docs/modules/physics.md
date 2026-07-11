@@ -20,6 +20,8 @@ Physics 是统一物理 facade 和 GameModule toolkit。它负责把刚体、碰
 
 Physics 不是 App Host 默认标准服务。物理模拟需要 world、tick、entity binding、gameplay filter、save contributor 和 session lifecycle，应通过 `createPhysicsModule(...)` 这类标准 GameModule helper 安装。App Host 或 profile 可以提供 backend factory、driver adapter、DataRegistry、DevTools 和 SaveManager，但不直接拥有 gameplay physics scene。
 
+使用 configured App Host 时，可以通过 `profile.standard.game.standardModules.physics` 声明 backend、scene、handle、bindings 和 trace policy。App Host helper 只解析这些 profile value 并调用 `@gamekit/physics-core` 的 `createPhysicsModule(...)`；live scene、fixed step、World sync 和 cleanup 仍完全属于 Physics GameModule。
+
 ## 非目标
 
 - 不从零实现完整物理引擎。
@@ -570,6 +572,7 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
 ### 模块集成
 
 - Physics 作为 GameModule 集成，随 GameRuntime tick 推进；不要把 gameplay physics scene 默认注册成 App Host standard service。
+- 使用 App Host 标准组合时优先声明 `standardModules.physics`；需要自定义安装顺序或多 scene 时，仍可在 `game.modules` 中直接调用 `createPhysicsModule(...)`。
 - App Host/profile 可以准备 backend factory、driver physics adapter、DataRegistry、SaveManager 和 DevToolsRuntime，但 Physics scene 生命周期跟随 GameRuntime。
 - 组合层为每个 live physics scene 创建一个具名 `PhysicsHandle`，并把它同时注入 `createPhysicsModule(...)` 和需要查询的 gameplay module；handle 不拥有 scene，只由 Physics module 绑定和解绑。
 - 独立物理库进入 `physics-*` adapter 包；绑定完整外部 scene runtime 的物理能力由对应 Driver 暴露 runtime slice。

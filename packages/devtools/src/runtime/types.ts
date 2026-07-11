@@ -11,6 +11,7 @@ export type DevToolsDataSourceKind =
   | "asset"
   | "renderer"
   | "input"
+  | "multiplayer"
   | "camera"
   | "tca"
   | "gas"
@@ -20,6 +21,7 @@ export type DevToolsDataSourceKind =
 
 export type DevToolsTraceKind =
   | "input"
+  | "multiplayer"
   | "event"
   | "tca"
   | "gas"

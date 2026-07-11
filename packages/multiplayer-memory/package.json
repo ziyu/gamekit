@@ -1,0 +1,29 @@
+{
+  "name": "@gamekit/multiplayer-memory",
+  "version": "0.1.0-alpha.3",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-library-package.mjs",
+    "test": "vitest run --root ../.. --config vitest.config.ts packages/multiplayer-memory/test --passWithNoTests",
+    "lint": "oxlint ."
+  },
+  "dependencies": {
+    "@gamekit/multiplayer-core": "workspace:*"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -25,6 +25,7 @@ DevTools 负责可解释性、可观察性和调试工作台。GameKit 越依赖
 - `@gamekit/physics-core`
 - `@gamekit/tca`
 - `@gamekit/gas`
+- `@gamekit/multiplayer-core`
 - `@gamekit/save`
 
 DevTools 是 App Service / tooling，不是 GameModule，不进入 gameplay loop，不改变正式玩法结果。它可以观察 GameRuntime、Host services、trace store、diagnostics 和 snapshots；只有显式 debug command / editor command 才能改变状态。
@@ -128,7 +129,7 @@ const profile = createStandardAppProfile({
 });
 ```
 
-`devtools: true` 等价于启用标准 preset。标准 preset 由 App Host 自动注册已经存在的标准服务数据源，例如 Host、Platform、Drivers、Data、Assets、Renderer、Input、GameRuntime、UI 和 Save。缺失的服务不会生成空数据源。
+`devtools: true` 等价于启用标准 preset。标准 preset 由 App Host 自动注册已经存在的标准服务数据源，例如 Host、Platform、Drivers、Data、Assets、Renderer、Input、Multiplayer、GameRuntime、UI 和 Save。缺失的服务不会生成空数据源。
 
 在标准 Web bootstrap 中，`devtools: true` 还表示“开发环境启用 DevTools 可视入口”：当应用安装并挂载 `@gamekit/devtools-ui` 且存在 `ui` service 时，页面应自动出现 DevTools launcher，并可以显示标准 pinned widgets。点击 launcher 打开完整 DevTools shell；DevTools shell 读取 `services.devtools` snapshot 和 UI Runtime panel metadata，不要求普通游戏手写入口。
 

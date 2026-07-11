@@ -1,0 +1,38 @@
+import { createMultiplayerModule, type MultiplayerModuleOptions } from "@gamekit/multiplayer-core";
+import type { GameInstallContext } from "@gamekit/game-runtime";
+import { resolveStandardValue } from "../resolve";
+import type { StandardMultiplayerGameModuleOptions, StandardServiceBuildContext } from "../types";
+
+export function createStandardMultiplayerModule<TContext>(
+  ctx: StandardServiceBuildContext<TContext>,
+  options: StandardMultiplayerGameModuleOptions<TContext>
+) {
+  const runtime =
+    options.runtime === undefined
+      ? ctx.state.multiplayer
+      : resolveStandardValue(ctx, options.runtime);
+  if (!runtime) {
+    throw new Error("Standard multiplayer game module requires the multiplayer service");
+  }
+
+  const moduleOptions: MultiplayerModuleOptions<GameInstallContext> = {
+    runtime
+  };
+  if (options.handleCommand !== undefined) {
+    moduleOptions.handleCommand = options.handleCommand;
+  }
+  if (options.id !== undefined) {
+    moduleOptions.id = options.id;
+  }
+  if (options.commandKinds !== undefined) {
+    moduleOptions.commandKinds = options.commandKinds;
+  }
+  if (options.authority !== undefined) {
+    moduleOptions.authority = options.authority;
+  }
+  if (options.presentation !== undefined) {
+    moduleOptions.presentation = resolveStandardValue(ctx, options.presentation);
+  }
+
+  return createMultiplayerModule<GameInstallContext>(moduleOptions);
+}

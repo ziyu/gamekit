@@ -11,7 +11,7 @@
 
 ## 模块最佳实践索引
 
-已实现模块的专属实践入口：
+模块专属实践入口：
 
 - Core / EventBus / GameRuntime：`docs/modules/core-runtime.md`
 - World / ECS Adapter：`docs/modules/world.md`
@@ -25,6 +25,7 @@
 - Physics：`docs/modules/physics.md`
 - TCA：`docs/modules/tca.md`
 - GAS：`docs/modules/gas.md`
+- Multiplayer：`docs/modules/multiplayer.md`
 - UI Core / React UI：`docs/modules/ui.md`
 - App Host：`docs/modules/app-host.md`
 - Save：`docs/modules/save.md`
@@ -38,13 +39,14 @@
 - 先判断能力归属：管理外部 runtime、平台能力、资源句柄、输入来源、UI shell、存储和诊断的能力通常是 App Service；需要 world、tick、actor、rule、ability、camera rig、physics scene 或 gameplay context 的能力通常是 GameModule。
 - 第三方库进入 Driver、Adapter、app/profile 或 app-specific presentation/tooling 层，不进入核心 facade、DataType、可复用 GameModule 公共 API 或 gameplay 包。
 - Driver 持有跨多个协议的外部 runtime，例如 Phaser Game 或 Three renderer/scene；Adapter 只把单个 GameKit 协议映射到 Driver 暴露的 runtime slice。
+- Multiplayer backend adapter 应优先接入成熟多人方案，例如 Colyseus、Nakama、PartyKit 或平台联机 SDK，并持有网络 SDK、room、matchmaker、state sync 或平台联机 runtime；App Host 管理连接 lifecycle，GameModule bridge 只消费归一化 session/message/authority 事实。
 - 具体 app presentation、Editor 后端专属面板和 DevTools renderer plugin 可以通过 typed native handle 使用底层 renderer API；这些依赖不能进入 Data、Save、core facade 或可复用 gameplay module。
-- GameRuntime 只负责模块安装、clock、system tick 和 lifecycle，不直接拥有 Platform、Driver、Renderer、Input、Camera、Physics backend provider、Data、Asset、UI 或 Save store。
+- GameRuntime 只负责模块安装、clock、system tick 和 lifecycle，不直接拥有 Platform、Driver、Renderer、Input、Camera、Physics backend provider、Data、Asset、UI、Save store 或 multiplayer connection。
 
 使用实践：
 
 - EventBus 只承载低频事实。高频 position、camera target、physics contact manifold、render patch、held input、UI hover 等状态留在对应 runtime state 或 system 内。
-- Renderer、Input、Camera、Physics、UI、TCA、GAS 和 Save 都需要 trace/diagnostic 入口，但诊断不能反向成为业务逻辑依赖。
+- Renderer、Input、Camera、Physics、UI、TCA、GAS、Save 和 Multiplayer 都需要 trace/diagnostic 入口，但诊断不能反向成为业务逻辑依赖。
 
 ## 生命周期
 
@@ -54,6 +56,7 @@
 - GameModule 的订阅、system、trace store、controller runtime 和 cleanup 跟随 GameRuntime lifecycle；`stop()` 停 tick，`dispose()` 释放订阅和长期句柄。
 - Driver 先 boot，再派生 renderer/asset/input/camera/physics adapter；adapter 不单独创建同一套外部 runtime。
 - Save/load、asset preload、data registration 和 renderer boot 应由 App Host 或 app profile 编排顺序，不藏在 GameRuntime 内部。
+- Multiplayer create/join/reconnect/leave 应由 App Host、lobby UI、server host 或测试夹具显式触发；GameModule 不隐式创建 socket、Colyseus Room、Nakama match 或 provider room。
 - Headless 测试应能用 memory platform、memory renderer、memory save store、deterministic clock、fake asset loader 和 fake physics backend 启动主要组合路径。
 
 ## 数据驱动
@@ -89,6 +92,11 @@
 - Facade 要有契约测试；Adapter 先跑 facade conformance，再补底层库专属行为测试。
 - 数据驱动模块必须覆盖 duplicate、unknown type、missing reference、schema/path error、trace/diagnostic。
 - GameRuntime、Camera、Input、Physics、TCA、GAS、Save 等有顺序语义的模块必须覆盖顺序、幂等、stop/dispose 和 cleanup。
+- Multiplayer backend adapter 必须覆盖 provider facade 的 connect、create-or-join/leave、message routing、peer summary、disconnect、reconnect 降级、payload validation、dispose cleanup 和 diagnostics；provider 自己拥有的 room/matchmaker/state sync 逻辑不要在 GameKit core 中重写。
+- Multiplayer app/demo 集成测试不能只断言 peer count 或 presence；必须至少断言一条 lifecycle、input、snapshot、patch 或 command result 来自同一个 authority state，并验证非 authority snapshot/patch 不会被 client 应用。
+- Multiplayer 输入先区分 continuous state 和 discrete command：移动、瞄准、驾驶采用 latest-per-source coalescing、持有状态和明确 timeout；交互、购买、一次性技能采用 authority loop 提供的 per-source bounded FIFO/action，并配置每 tick 消费与积压上限。生产频率与消费频率相同的 continuous input 不能进入逐条 FIFO，否则 jitter 会永久转化为远端表现延迟；app 也不能绕过底层保护另建无界 action 队列。
+- Multiplayer peer 离开或断线时，host/server presence 组合层必须调用 authority loop 的 peer release 入口，清掉该 peer 尚未消费的 action/input 和 sequence epoch。是否保留 actor、slot 或本局统计属于 gameplay policy，不能靠保留旧网络队列来实现。
+- 离线单机和多人模式应共享同一套 gameplay orchestration。测试应能用同一 input/action log 在 local authority 和 host/server authority fixture 中得到等价稳定 snapshot，避免维护两套规则实现。
 - Sandbox、demo 或 headless host 的集成测试应覆盖长链路：Data → Asset → App Host → GameRuntime → World → Physics → TCA/GAS → Renderer/Input/Camera → Snapshot/Timeline。
 - 固定 seed 测试只比较稳定 snapshot，不比较 DOM、native handle、绝对时间或底层库对象。
 
@@ -142,6 +150,7 @@
 - package build helper 复制 CSS 或其他静态发布入口时，应在 bundler clean 和 JS/d.ts 输出完成后执行，避免 `dist` 被后续 clean 步骤清空。
 - 单包发布构建不能递归 emit project references，否则后构建的聚合包可能覆盖前序包已经 bundler 处理过的 `dist`。包内 build helper 应只检查或生成当前包产物；全仓库 `tsc -b` 留给根级 build/test 门禁。
 - declaration bundler 遇到复杂类型递归时，可以为该包显式保留 tsc declaration tree，同时用 bundler 只输出入口 JS；这种例外要通过包级 build metadata 标记，并继续经过 tarball 和外部安装 smoke。
+- composite project reference 指向多入口 package 时，不能让 declaration bundler 用内部 chunk 覆盖 `tsc` 期望的 declaration tree；这类 package 应设置 `gamekitBuild.bundleDts: false`，保留与源码入口结构一致的 `.d.ts`，并用 app 的 `tsc -b` 验证跨包类型推断。
 - 发布 staging 目录每轮必须先清理目标包目录，再复制当前 `dist`，并在 staging 侧再次清理 `.tsbuildinfo`，避免固定 release 目录带入旧文件。
 - 发布验证中的 npm cache/logs 应隔离到 release 目录，避免用户级 `~/.npm` 权限或缓存状态影响 `npm pack`。
 - scoped package 通过 token fallback 发布时必须显式传递 `--access public`；仅保留 manifest `publishConfig.access` 可能会被 registry 当作 private scoped package。
@@ -197,7 +206,7 @@
 
 - 性能判断必须有数据，先用 benchmark 或 profiler 记录基线。
 - 新增 adapter、renderer sync、TCA runner、asset loader 时应补最小 benchmark 或 profile 入口。
-- benchmark 结果只作为趋势参考，不写死成易碎测试。
+- benchmark 的细微变化只作为趋势参考，不写死成易碎测试；已经稳定的热点模块可以在定时或手动 performance workflow 使用留有足够机器波动余量的粗粒度预算，观察数量级退化、无界队列和 retained heap 持续增长。常规 PR CI 只保留确定性的正确性门禁；性能检查不能代替 profiler，也不能因为共享 runner 噪声阻塞合并。
 - DevTools Performance 面板只展示 GameKit 级 frame/system/service/adapter 归因，不替代浏览器 profiler；需要 CPU flamegraph、layout、paint、GPU 信息时仍使用浏览器或引擎原生工具。
 - 默认只开启低成本 summary；深度 span、单帧详情、完整 payload 展开必须由用户显式开启或在测试夹具中启用。
 - 每个热点模块都应定义自己的预算语义，例如 runtime tick、render sync、asset load group、service boot、UI refresh；预算超限只产生诊断，不改变 gameplay。

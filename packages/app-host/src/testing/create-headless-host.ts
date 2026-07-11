@@ -1,5 +1,6 @@
 import { createAssetManager, type AssetDefinition, type AssetLoaderAdapter } from "@gamekit/asset";
 import { createDataRegistry, type DataPack, type DataTypeDefinition } from "@gamekit/data";
+import type { MultiplayerRuntime } from "@gamekit/multiplayer-core";
 import type {
   RenderNodePath,
   RenderObjectDefinition,
@@ -19,6 +20,7 @@ export type CreateHeadlessHostOptions = {
   dataPacks?: DataPack[] | undefined;
   preloadGroups?: string[] | undefined;
   saveStore?: SaveStore | undefined;
+  multiplayer?: MultiplayerRuntime | undefined;
   devtools?: boolean | undefined;
   services?: Array<AppServiceBinding> | undefined;
   configSources?: CreateAppHostOptions["configSources"] | undefined;
@@ -39,6 +41,7 @@ export function createHeadlessHost(options: CreateHeadlessHostOptions = {}): App
       { id: "data" },
       { id: "renderer" },
       { id: "assets" },
+      ...(options.multiplayer === undefined ? [] : [{ id: "multiplayer" }]),
       ...(options.saveStore === undefined ? [] : [{ id: "save", dependencies: ["data"] }]),
       ...(options.devtools === true ? [{ id: "devtools", dependencies: ["data", "assets"] }] : []),
       ...extensionServices.map((binding) => ({
@@ -72,6 +75,13 @@ export function createHeadlessHost(options: CreateHeadlessHostOptions = {}): App
               appId,
               gameId: appId,
               gameVersion: "0.1.0"
+            }
+          }),
+      ...(options.multiplayer === undefined
+        ? {}
+        : {
+            multiplayer: {
+              runtime: options.multiplayer
             }
           }),
       ...(options.devtools === true

@@ -4,6 +4,13 @@
 
 MVP 阶段已经关闭，历史阶段文档只作为归档证据保留。常态开发阶段允许多个工作流并行，每个工作流应独立记录、独立关闭。
 
+## Active Workflows
+
+- `multiplayer-package-planning.md`
+- `multiplayer-first-usable-version.md`
+- `multiplayer-demo-validation.md`
+- `multiplayer-realtime-game-demo.md`
+
 ## 职责边界
 
 - 长期项目定位仍放在 `../project-design.md`。

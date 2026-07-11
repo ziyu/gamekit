@@ -11,6 +11,7 @@ import {
   DRIVER_SERVICE,
   GAME_SERVICE,
   INPUT_SERVICE,
+  MULTIPLAYER_SERVICE,
   PLATFORM_SERVICE,
   RENDERER_SERVICE,
   SAVE_SERVICE,
@@ -332,6 +333,37 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
       }
     );
   },
+  multiplayer<TContext>(
+    profile: AppProfile<TContext>,
+    stateByContext: Map<TContext, StandardAppServiceState>
+  ) {
+    return createManagedStandardServiceFactory(
+      profile,
+      stateByContext,
+      profile.standard?.multiplayer,
+      (ctx, options) => {
+        const runtime = resolveStandardValue(ctx, options.runtime);
+        ctx.state.multiplayer = runtime;
+        return {
+          key: MULTIPLAYER_SERVICE,
+          service: runtime,
+          standard: "multiplayer",
+          lifecycle: {
+            id: MULTIPLAYER_SERVICE.id,
+            dependencies: ctx.service.dependencies,
+            async dispose() {
+              if (options.dispose !== false) {
+                await runtime.dispose();
+              }
+            },
+            snapshot() {
+              return runtime.snapshot();
+            }
+          }
+        };
+      }
+    );
+  },
   ui<TContext>(
     profile: AppProfile<TContext>,
     stateByContext: Map<TContext, StandardAppServiceState>
@@ -590,6 +622,7 @@ const saveServiceContextResolvers: Record<
   assets: (state) => state.assets,
   renderer: (state) => state.renderer,
   input: (state) => state.input,
+  multiplayer: (state) => state.multiplayer,
   game: (state) => state.game,
   ui: (state) => state.ui,
   devtools: (state) => state.devtools

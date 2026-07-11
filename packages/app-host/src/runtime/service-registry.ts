@@ -5,6 +5,7 @@ import {
   DRIVER_SERVICE,
   GAME_SERVICE,
   INPUT_SERVICE,
+  MULTIPLAYER_SERVICE,
   PLATFORM_SERVICE,
   RENDERER_SERVICE,
   SAVE_SERVICE,
@@ -126,6 +127,9 @@ function assignStandardService(
   if (standard === "input") {
     registry.input = binding.service as never;
   }
+  if (standard === "multiplayer") {
+    registry.multiplayer = binding.service as never;
+  }
   if (standard === "game") {
     registry.game = binding.service as never;
   }
@@ -162,6 +166,9 @@ function standardFromKey(key: AppServiceKey<unknown>): AppStandardServiceId | un
   }
   if (key.id === INPUT_SERVICE.id) {
     return "input";
+  }
+  if (key.id === MULTIPLAYER_SERVICE.id) {
+    return "multiplayer";
   }
   if (key.id === GAME_SERVICE.id) {
     return "game";
