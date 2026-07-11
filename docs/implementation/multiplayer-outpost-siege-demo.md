@@ -331,7 +331,7 @@ Diagnostics 只保存固定窗口聚合值和 bounded recent samples，不保留
 - 预热后 retained heap 应进入稳定区间；最后 30 分钟不能呈持续单调增长。
 - Active tracks、entity registry、peer binding、listener、timer、action queue 和 Schema collection 在 despawn/leave/room dispose 后回到预期基线。
 
-网络 bandwidth 的硬预算不在文档阶段猜测。Wave 2 先记录 field-level Schema 的 p50/p95/p99 和 bytes/sec 基线，再把实测预算写入 benchmark budget；之后 CI 只做稳定、可重复的粗粒度 regression gate，完整压力测试由手动或定时任务运行。
+网络 bandwidth 的硬预算不在文档阶段猜测。Wave 2 先记录 field-level Schema 的 p50/p95/p99 和 bytes/sec 基线，再把实测预算写入 benchmark budget；之后定时或手动 performance workflow 只做稳定、可重复的粗粒度 regression 观察，完整压力测试继续由专门的手动或定时任务运行，常规 PR CI 不以性能数值阻塞合并。
 
 ## Network Fault Matrix
 
@@ -485,7 +485,7 @@ Status: Planned.
 - 真实 Colyseus integration、browser E2E、负载和 60 分钟 soak 都有证据。
 - Tick、frame、patch、bandwidth、queue、correction、GC 和 memory 都可观测。
 - 所有高频队列、buffer、track、listener 和 entity registry 有界且可释放。
-- 实测性能预算进入 `bench:multiplayer` regression gate，而不是只留在人工报告。
+- 实测性能预算进入 `bench:multiplayer` 定时/手动 regression workflow，而不是只留在人工报告或进入常规 PR merge gate。
 - 通用结论已经迁移到长期模块文档/ADR，本文件状态关闭。
 
 ## Open Decisions For Wave 0

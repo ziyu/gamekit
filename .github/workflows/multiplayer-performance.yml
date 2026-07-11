@@ -1,19 +1,22 @@
-name: CI
+name: Multiplayer Performance
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * *"
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: multiplayer-performance
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: Test, Build, Lint, Format
+  benchmark:
+    name: Multiplayer Performance
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,14 +32,11 @@ jobs:
       - name: Install
         run: corepack pnpm install --frozen-lockfile
 
-      - name: Test
-        run: corepack pnpm test
-
       - name: Build
         run: corepack pnpm build
 
-      - name: Lint
-        run: corepack pnpm lint
+      - name: Performance budgets
+        run: corepack pnpm bench:multiplayer:check
 
-      - name: Format
-        run: corepack pnpm format
+      - name: Retained heap stability
+        run: corepack pnpm bench:multiplayer:stability

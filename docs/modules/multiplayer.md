@@ -531,7 +531,7 @@ Multiplayer diagnostics 应回答：
 - 接入 realtime game demo 或真实游戏时，优先使用 multiplayer core 的 authority binding / replication helper；只有 provider-native state sync 或特殊 netcode 需求明确时，才通过 typed native bridge 替换默认复制策略。
 - 离线单机、local preview 和 multiplayer room 应共享 gameplay orchestration；差异应收敛为 authority endpoint 和 transport/delivery adapter，而不是分叉玩法代码。
 - 多客户端 headless test 不能只断言 peer count；必须断言同一 lifecycle、input 或 snapshot 来自同一个 authority state。
-- 改动多人高频路径时运行并按需扩展 `bench:multiplayer`。模块级 benchmark 应覆盖 envelope normalization、authority receiver source gate、host/local authority loop、latest-input coalescing、prediction reconciliation/presentation、snapshot playback 和 presentation projection；CI 使用宽松预算拦截数量级回归，并用模拟长时序 + GC 后 retained heap 检查有界缓存。provider-native backend 可在对应 adapter 包中补独立 benchmark。
+- 改动多人高频路径时运行并按需扩展 `bench:multiplayer`。模块级 benchmark 应覆盖 envelope normalization、authority receiver source gate、host/local authority loop、latest-input coalescing、prediction reconciliation/presentation、snapshot playback 和 presentation projection；定时或手动 performance workflow 使用宽松预算观察数量级回归，并用模拟长时序 + GC 后 retained heap 检查有界缓存，不作为常规 PR merge gate。provider-native backend 可在对应 adapter 包中补独立 benchmark。
 
 ### 模块使用
 

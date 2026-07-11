@@ -367,7 +367,7 @@ Status: Implemented; temporal snapshot interpolation buffer, local prediction/co
 5. 已增加 forged stale input debug control，用于验证 authority rejection。
 6. 已将 realtime movement input 明确为 continuous state：core authority loop 使用 `latest` 模式按 peer 合并尚未消费的 burst，simulation 保持最后应用的移动状态直到更新或 `250ms` timeout，ack 在 latest state 被本次 tick 采用后推进；`interact` 已从 movement frame 拆到独立 action FIFO，在 authority tick 中逐次应用，不会被状态合并覆盖。旧的等速 FIFO 方案会把 jitter 永久转化为远端延迟，已移除。
 7. 已将远端固定 `100ms` interpolation delay 改为以 `50ms` 为基线、`150ms` 为上限的 adaptive jitter delay，并在 HUD 展示 current delay 和 estimated jitter；稳定网络降低远端视角延迟，抖动增大时自动扩大缓冲。
-8. 已将 demo 正式 Canvas 帧循环改为 reusable presentation frame + `vector2Into` direct-write，不再每帧 materialize 完整 cloned gameplay snapshot；同时加入覆盖全部 multiplayer benchmark suite 的 CI 粗粒度预算和 30 分钟模拟 retained heap 稳定性检查。
+8. 已将 demo 正式 Canvas 帧循环改为 reusable presentation frame + `vector2Into` direct-write，不再每帧 materialize 完整 cloned gameplay snapshot；同时加入覆盖全部 multiplayer benchmark suite 的定时/手动粗粒度预算和 30 分钟模拟 retained heap 稳定性检查，不作为常规 PR merge gate。
 
 验收：
 
@@ -380,7 +380,7 @@ Status: Implemented; temporal snapshot interpolation buffer, local prediction/co
 
 - `corepack pnpm test`：62 个 workspace task 全部通过；multiplayer core 32 tests、demo 52 tests，覆盖 adaptive jitter delay、direct-write frame 复用、fixed-step sampling、无误差 reconcile 连续性、moving-target correction、latest-per-source burst coalescing、FIFO queue overflow、movement hold/release/timeout、独立 interact action、掉帧追帧和 120Hz 十分钟模拟。
 - `corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format`、`git diff --check`：全部通过。
-- `corepack pnpm bench:multiplayer:check`：9 个粗粒度 CI budget 全部通过；本机 32 clients authority host loop 为 `0.0146 ms/tick`；32 clients、每 tick 每端 burst 4 的 latest coalescing 共接收 640000 inputs、应用 160000、合并 480000、queue peak 32，为 `0.0360 ms/tick`；120Hz prediction presentation 为 `0.1155 us/frame`，5000 tracks direct-write projection 为 `1.5169 ms/frame`。
+- `corepack pnpm bench:multiplayer:check`：9 个粗粒度 budget 全部通过；本机 32 clients authority host loop 为 `0.0146 ms/tick`；32 clients、每 tick 每端 burst 4 的 latest coalescing 共接收 640000 inputs、应用 160000、合并 480000、queue peak 32，为 `0.0360 ms/tick`；120Hz prediction presentation 为 `0.1155 us/frame`，5000 tracks direct-write projection 为 `1.5169 ms/frame`。
 - `corepack pnpm bench:multiplayer:stability`：60Hz / 20 snapshot TPS / 32 tracks 的 30 分钟模拟共 108000 frames；GC 后 retained heap 增长 `0.076 MiB`、peak growth `0.0842 MiB`，snapshot buffer 保持 24，prediction pending 保持 2。
 - `corepack pnpm bench:world`：10k entity 场景通过，spawn/add `11.06ms`、query/update `7.32ms`；本轮 multiplayer hot-path 改动未引入 world hot-path 回归。
 - 自动化已覆盖 protocol、authority、prediction 和长时序稳定性；真实浏览器双窗口的视觉手感仍需作为 browser smoke 单独确认。
