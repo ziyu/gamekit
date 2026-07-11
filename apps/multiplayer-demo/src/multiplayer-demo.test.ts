@@ -10,6 +10,7 @@ import {
 } from "./realtime/protocol";
 import type { LocalMultiplayerDemoHost } from "./server/create-local-demo-server";
 import {
+  createLocalMultiplayerDemoServer,
   createLocalMultiplayerDemoHost,
   MULTIPLAYER_DEMO_ROOM_NAME
 } from "./server/create-local-demo-server";
@@ -547,6 +548,82 @@ describe("multiplayer-demo", () => {
       await colyseus.dispose();
     }
   });
+
+  it("synchronizes the same arena view model through Colyseus Schema state", async () => {
+    const host = await createLocalMultiplayerDemoServer({
+      roomName: `${MULTIPLAYER_DEMO_ROOM_NAME}_schema_${Date.now()}`,
+      sessionId: "schema-realtime-room",
+      authoritativePath: "colyseus-schema"
+    });
+    const clientA = createClient(host, "schema-client-a", "Schema A");
+    const clientB = createClient(host, "schema-client-b", "Schema B");
+
+    try {
+      await clientA.connect();
+      await clientB.connect();
+      host.tick(50);
+      await waitFor(
+        () =>
+          clientA.latestRealtimeSnapshot()?.snapshot.players.length === 2 &&
+          clientB.latestRealtimeSnapshot()?.snapshot.players.length === 2
+      );
+
+      expect(clientA.authoritativePath).toBe("colyseus-schema");
+      expect(clientA.nativeStateDiagnostics()).toMatchObject({
+        authoritativePath: "colyseus-schema",
+        appliedUpdates: expect.any(Number),
+        rejectedUpdates: 0
+      });
+      expect(clientA.nativeStateDiagnostics()!.appliedUpdates).toBeGreaterThan(0);
+      expect(
+        host.hostMessages.some((message) => message.kind === REALTIME_ARENA_SNAPSHOT_KIND)
+      ).toBe(false);
+
+      await clientA.sendRealtimeAction({ type: "ready", ready: true });
+      await clientB.sendRealtimeAction({ type: "ready", ready: true });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_ACTION_KIND, 2);
+      host.tick(50);
+      await clientA.sendRealtimeAction({ type: "start" });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_ACTION_KIND, 3);
+      host.tick(50);
+      host.tick(1800);
+      await waitFor(
+        () =>
+          clientA.latestRealtimeSnapshot()?.snapshot.phase === "running" &&
+          clientB.latestRealtimeSnapshot()?.snapshot.phase === "running"
+      );
+
+      const beforeX = findSnapshotPlayer(clientB.latestRealtimeSnapshot()!.snapshot, clientA.peerId)
+        .position.x;
+      await clientA.sendRealtimeInput({
+        sequence: 1,
+        clientTime: 0,
+        moveX: 1,
+        moveY: 0,
+        sprint: false
+      });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_INPUT_KIND, 1);
+      host.tick(50);
+      await waitFor(
+        () =>
+          findSnapshotPlayer(clientB.latestRealtimeSnapshot()!.snapshot, clientA.peerId).position
+            .x > beforeX
+      );
+
+      expect(clientA.latestRealtimeSnapshot()).toEqual(clientB.latestRealtimeSnapshot());
+      const nativeDiagnostics = clientB.nativeStateDiagnostics();
+      expect(nativeDiagnostics).toMatchObject({
+        appliedUpdates: expect.any(Number),
+        lastStateVersion: expect.any(Number),
+        lastVersion: "realtime-arena.v1"
+      });
+      expect(nativeDiagnostics?.rejectedUpdates, JSON.stringify(nativeDiagnostics)).toBe(0);
+    } finally {
+      await clientA.dispose();
+      await clientB.dispose();
+      await host.dispose();
+    }
+  });
 });
 
 function createClient(
@@ -560,7 +637,8 @@ function createClient(
     sessionId: host.sessionId,
     hostPeerId: host.hostPeerId,
     peerId,
-    displayName
+    displayName,
+    authoritativePath: host.authoritativePath
   });
 }
 

@@ -759,13 +759,15 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     participant?: RealtimeArenaParticipant,
     participantSummary?: RealtimeArenaParticipantSummary
   ): RealtimeArenaUiDiagnostics {
+    const nativeState = client?.nativeStateDiagnostics();
     return {
       ...diagnostics,
       presentation: presentation.diagnostics(),
       ...(prediction === undefined ? {} : { prediction }),
       ...(authorityInput === undefined ? {} : { authorityInput }),
       ...(participant === undefined ? {} : { participant }),
-      ...(participantSummary === undefined ? {} : { participantSummary })
+      ...(participantSummary === undefined ? {} : { participantSummary }),
+      ...(nativeState === undefined ? {} : { nativeState })
     };
   }
 
@@ -881,7 +883,8 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
       sessionId: hosted.sessionId,
       hostPeerId: hosted.hostPeerId,
       peerId: localPeerId,
-      displayName: playerName
+      displayName: playerName,
+      authoritativePath: hosted.authoritativePath
     });
     try {
       await nextClient.connect();

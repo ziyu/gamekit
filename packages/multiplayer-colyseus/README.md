@@ -229,6 +229,10 @@ import { createMultiplayerAuthorityBindingStore } from "@gamekit/multiplayer-cor
 const backend = createColyseusMultiplayerBackend({
   endpoint: "http://localhost:2567",
   roomName: "relay_arena",
+  nativeStateSync: {
+    enabled: true,
+    schemaVersion: "arena.v1"
+  },
   nativeCapabilities: {
     authoritativePath: "colyseus-schema",
     stateSync: {
@@ -260,9 +264,28 @@ const stateBridge = backend.native().createStateBridge({
     console.log(ctx.tick, state);
   }
 });
+
+const unsubscribe = backend.native().subscribeState((update) => {
+  stateBridge.receiveState(update);
+});
 ```
 
-The bridge records provider-neutral diagnostics for state version, tick, source endpoint, state size, resync and rejected updates. It does not make Colyseus Schema a `multiplayer-core` type.
+The authority publisher can write the app-owned snapshot through the same native boundary:
+
+```ts
+backend.native().publishState({
+  sessionId: "relay-arena-session",
+  sourcePeerId: "host",
+  tick: snapshot.tick,
+  version: "arena.v1",
+  timestamp: Date.now(),
+  state: snapshot
+});
+```
+
+The server room must enable the matching lane with `roomOptions.nativeStateSync`. `GameKitColyseusNativeState` is a small versioned Schema carrier: it stores identity, tick, schema version, timestamp, encoded app state, byte size and a monotonic provider `updateCount`. Gameplay state remains app-owned. The adapter suppresses duplicate provider callbacks for one `updateCount`; the bridge rejects stale versions, wrong sessions, wrong authority sources, invalid state and oversized state.
+
+The bridge records provider-neutral diagnostics for provider state version, gameplay tick, schema version, source endpoint, state size, resync and rejected updates. It does not make Colyseus Schema a `multiplayer-core` type.
 
 ## App Host Integration
 

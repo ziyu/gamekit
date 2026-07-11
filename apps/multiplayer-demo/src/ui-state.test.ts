@@ -95,17 +95,32 @@ describe("multiplayer-demo UI state", () => {
         round: 2,
         waiting: 1,
         disconnected: 0
+      },
+      nativeState: {
+        authoritativePath: "colyseus-schema",
+        sourceEndpointId: "colyseus-schema",
+        receivedUpdates: 9,
+        appliedUpdates: 9,
+        rejectedUpdates: 0,
+        resyncs: 0,
+        lastAppliedTick: 12,
+        lastStateVersion: 9,
+        lastVersion: "realtime-arena.v1",
+        lastStateBytes: 3072
       }
     } as const;
 
     expect(formatRealtimeArenaDiagnostics(diagnostics)).toBe(
-      "12 / 20hz / 19tps / 58fps / d72 / j15 / q0 / p2/2 / c0"
+      "12 / 20hz / 19tps / 58fps / d72 / j15 / q0 / p2/2 / c0 / sv9"
     );
     expect(formatRealtimeArenaDiagnosticsTitle(diagnostics)).toContain("interpolated");
     expect(formatRealtimeArenaDiagnosticsTitle(diagnostics)).toContain("jitter 15ms");
     expect(formatRealtimeArenaDiagnosticsTitle(diagnostics)).toContain("coalesced 7");
     expect(formatRealtimeArenaDiagnosticsTitle(diagnostics)).toContain(
       "participants active 2; tracked 3; round 2; waiting 1; disconnected 0"
+    );
+    expect(formatRealtimeArenaDiagnosticsTitle(diagnostics)).toContain(
+      "authority state colyseus-schema; version 9; schema realtime-arena.v1; bytes 3072"
     );
   });
 

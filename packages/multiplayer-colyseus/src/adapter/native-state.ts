@@ -4,6 +4,8 @@ import type {
   MultiplayerAuthorityDecision
 } from "@gamekit/multiplayer-core";
 
+export const GAMEKIT_COLYSEUS_NATIVE_STATE_MESSAGE = "gamekit.native-state";
+
 export type ColyseusAuthorityPath = "gamekit-envelope" | "colyseus-schema" | "provider-native";
 
 export type ColyseusNativeStateSyncCapability = {
@@ -51,9 +53,12 @@ export type ColyseusNativeStateUpdate<TState = unknown> = {
   sourcePeerId?: string;
   sourceEndpointId?: string;
   tick?: number;
+  stateVersion?: number;
   version?: string;
   timestamp?: number;
 };
+
+export type ColyseusNativeStateListener = (update: ColyseusNativeStateUpdate<unknown>) => void;
 
 export type ColyseusNativeStateApplyContext = {
   binding: MultiplayerAuthorityBinding;
@@ -61,6 +66,7 @@ export type ColyseusNativeStateApplyContext = {
   sourceEndpointId: string;
   sourcePeerId?: string;
   tick?: number;
+  stateVersion?: number;
   version?: string;
   stateBytes?: number;
   ageMs?: number;
@@ -82,6 +88,7 @@ export type ColyseusNativeStateBridgeDiagnostics = {
   rejectedUpdates: number;
   resyncs: number;
   lastAppliedTick?: number;
+  lastStateVersion?: number;
   lastVersion?: string;
   lastStateBytes?: number;
   lastStateAgeMs?: number;
@@ -175,6 +182,27 @@ export function createColyseusNativeStateBridge<TProviderState, TViewState = TPr
       reject(update, sourceDecision.code, sourceDecision.reason);
       return sourceDecision;
     }
+    const staleStateVersion =
+      update.stateVersion !== undefined &&
+      diagnostics.lastStateVersion !== undefined &&
+      update.stateVersion <= diagnostics.lastStateVersion;
+    const staleTickWithoutStateVersion =
+      update.stateVersion === undefined &&
+      update.tick !== undefined &&
+      diagnostics.lastAppliedTick !== undefined &&
+      update.tick <= diagnostics.lastAppliedTick;
+    if (binding.status !== "resyncing" && (staleStateVersion || staleTickWithoutStateVersion)) {
+      const duplicate =
+        update.stateVersion !== undefined
+          ? update.stateVersion === diagnostics.lastStateVersion
+          : update.tick === diagnostics.lastAppliedTick;
+      const decision = deny(
+        duplicate ? "duplicate-native-state" : "stale-native-state",
+        "Colyseus native state version must advance monotonically."
+      );
+      reject(update, decision.code, decision.reason);
+      return decision;
+    }
 
     const state = options.readState
       ? options.readState(update.state, update)
@@ -220,6 +248,11 @@ export function createColyseusNativeStateBridge<TProviderState, TViewState = TPr
       delete diagnostics.lastAppliedTick;
     } else {
       diagnostics.lastAppliedTick = update.tick;
+    }
+    if (update.stateVersion === undefined) {
+      delete diagnostics.lastStateVersion;
+    } else {
+      diagnostics.lastStateVersion = update.stateVersion;
     }
     if (update.version === undefined) {
       delete diagnostics.lastVersion;
@@ -274,6 +307,22 @@ function acceptsNativeStateUpdate(
     return deny("session-mismatch", `Colyseus native state session mismatch: ${update.sessionId}.`);
   }
 
+  if (
+    (update.tick !== undefined && (!Number.isSafeInteger(update.tick) || update.tick < 0)) ||
+    (update.stateVersion !== undefined &&
+      (!Number.isSafeInteger(update.stateVersion) || update.stateVersion < 1)) ||
+    (update.timestamp !== undefined && (!Number.isFinite(update.timestamp) || update.timestamp < 0))
+  ) {
+    return deny("invalid-native-state-metadata", "Colyseus native state metadata is invalid.");
+  }
+
+  if (binding.snapshotVersion !== undefined && update.version !== binding.snapshotVersion) {
+    return deny(
+      "snapshot-version-mismatch",
+      `Colyseus native state schema mismatch: ${update.version ?? "missing"}.`
+    );
+  }
+
   if (binding.authorityEndpoint?.id && binding.authorityEndpoint.id !== sourceEndpointId) {
     return deny(
       "authority-endpoint-mismatch",
@@ -281,11 +330,7 @@ function acceptsNativeStateUpdate(
     );
   }
 
-  if (
-    binding.authorityPeerId &&
-    update.sourcePeerId !== undefined &&
-    update.sourcePeerId !== binding.authorityPeerId
-  ) {
+  if (binding.authorityPeerId && update.sourcePeerId !== binding.authorityPeerId) {
     return deny(
       "non-authority-source",
       `Rejected non-authority Colyseus native state source: ${update.sourcePeerId}.`
@@ -294,7 +339,6 @@ function acceptsNativeStateUpdate(
 
   if (
     binding.authorityEndpoint?.peerId &&
-    update.sourcePeerId !== undefined &&
     update.sourcePeerId !== binding.authorityEndpoint.peerId
   ) {
     return deny(
@@ -319,6 +363,7 @@ function createApplyContext(
     sourceEndpointId,
     ...(update.sourcePeerId === undefined ? {} : { sourcePeerId: update.sourcePeerId }),
     ...(update.tick === undefined ? {} : { tick: update.tick }),
+    ...(update.stateVersion === undefined ? {} : { stateVersion: update.stateVersion }),
     ...(update.version === undefined ? {} : { version: update.version }),
     stateBytes: measured.stateBytes,
     ...(measured.ageMs === undefined ? {} : { ageMs: measured.ageMs })
@@ -377,6 +422,9 @@ function cloneDiagnostics(
     ...(diagnostics.lastAppliedTick === undefined
       ? {}
       : { lastAppliedTick: diagnostics.lastAppliedTick }),
+    ...(diagnostics.lastStateVersion === undefined
+      ? {}
+      : { lastStateVersion: diagnostics.lastStateVersion }),
     ...(diagnostics.lastVersion === undefined ? {} : { lastVersion: diagnostics.lastVersion }),
     ...(diagnostics.lastStateBytes === undefined
       ? {}

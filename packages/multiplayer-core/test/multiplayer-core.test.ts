@@ -348,6 +348,42 @@ describe("multiplayer authority helpers", () => {
     });
   });
 
+  it("publishes captured snapshots through a provider-native writer", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "native-snapshot-host",
+      backend: fake.backend,
+      clock: () => 200
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "host-authoritative",
+      localPeer: { id: "host", role: "host" }
+    });
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: "session-1",
+      mode: "host-authoritative",
+      authorityPeerId: "host"
+    });
+    const published: SnapshotPayload[] = [];
+    const loop = createMultiplayerAuthorityHostLoop<never, never, SnapshotPayload>({
+      runtime,
+      binding,
+      captureSnapshot({ tick }) {
+        return { started: true, x: 3, tick };
+      },
+      publishSnapshot(snapshot) {
+        published.push(snapshot);
+      }
+    });
+
+    loop.tick(16);
+    await waitFor(() => loop.diagnostics().sentSnapshots === 1);
+
+    expect(published).toEqual([{ started: true, x: 3, tick: 1 }]);
+    expect(fake.sent).toEqual([]);
+  });
+
   it("bounds discrete action queues and consumption per source", async () => {
     const fake = createFakeBackend();
     const runtime = createMultiplayerRuntime({

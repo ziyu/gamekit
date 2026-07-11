@@ -29,6 +29,14 @@ Multiplayer Demo 是 `@gamekit/multiplayer-core` 与 `@gamekit/multiplayer-colys
 corepack pnpm --filter multiplayer-demo dev
 ```
 
+用真实 Colyseus Schema state sync 运行同一个 Demo：
+
+```bash
+MULTIPLAYER_DEMO_AUTHORITY_PATH=colyseus-schema corepack pnpm --filter multiplayer-demo dev
+```
+
+dev server 在每个 session 创建时固定 authoritative path，并通过 session response 交给 browser client；浏览器不自行选择或双写同步路径。Backend 标签和 arena diagnostics 会显示当前 lane、Schema version、provider state version、状态大小、applied/rejected update 与 resync 次数。
+
 基础多人验证：
 
 - 打开两个浏览器窗口，输入同一个 GameKit session id。

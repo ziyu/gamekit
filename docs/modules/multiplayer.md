@@ -324,6 +324,7 @@ client action / input
 - 游戏仍然定义 input frame、action type、simulation、collision、score、round lifecycle、snapshot shape 和 validation policy。
 - Local authority 不等于绕过 multiplayer contract。它只是把 transport 替换为 in-process delivery，玩法 state 仍由 authority loop 推进，并通过 snapshot/patch/result 驱动 presentation。
 - Provider-native state sync 仍可使用，例如 Colyseus Schema；但必须声明它是否是 authority source，并通过 typed native bridge 或 adapter mapping 暴露 provider-neutral diagnostics。
+- 标准 authority loop 可以把已捕获的 authoritative snapshot 委托给 app 选择的 provider publisher；publisher 只能替换 snapshot delivery，不能绕过固定 tick、app-owned simulation、capture、authority diagnostics 或 error boundary。
 - Client prediction、reconciliation 和 interpolation 是表现层或可回滚缓存，不是 authority state。
 - Backend adapter 不应 hard-code 具体游戏 interpolation。Colyseus、Nakama 等 provider 可以提供 state sync、server tick 和 snapshot/version source；GameKit core 提供 provider-neutral presentation timing、declared `Network*` track projection 与低成本 interpolation primitives；游戏或 demo 负责声明字段映射和 snap policy。
 
@@ -360,6 +361,7 @@ Authoritative snapshot 通常以固定 tick 或 provider state update 到达，�
 
 - Provider-native state sync 与 GameKit envelope snapshot/patch 不能双写同一份 authority state。一个 app 必须声明当前 authoritative path，并把另一条路径降级为 diagnostics、summary 或迁移通道。
 - Backend package 可以提供 provider-specific helper，例如 Colyseus Schema authority bridge；helper 输出应能连接到 GameKit authority binding、receiver diagnostics 和 conformance tests。
+- Provider-native receiver 应优先使用 provider 的单调 state/update version 排序，gameplay tick 只表示 simulation 时间。一个 gameplay tick 内允许发布多次合法状态；重复 provider callback 应在 adapter 边界去重，真正的 stale/duplicate update 仍由 authority bridge 拒绝并记录。
 - 如果一个 provider 支持核心 baseline 之外的能力，adapter capabilities 应明确声明支持等级和限制；调用方必须按 capability 检测启用，而不是假设所有 backend 等价。
 - 完整 backend adapter 测试除 core conformance 外，还应覆盖 provider-native bridge 的 source gate、resync、reconnect cleanup、room isolation、redaction 和 dispose。
 

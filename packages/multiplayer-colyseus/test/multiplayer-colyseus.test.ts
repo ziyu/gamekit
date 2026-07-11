@@ -7,7 +7,11 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { createColyseusMultiplayerBackend, createColyseusNativeStateBridge } from "../src";
-import { createGameKitColyseusServer } from "../src/server";
+import {
+  createGameKitColyseusServer,
+  GameKitColyseusRoom,
+  type GameKitColyseusRoomOptions
+} from "../src/server";
 
 describe("@gamekit/multiplayer-colyseus", () => {
   it("passes the multiplayer backend conformance against a local Colyseus room", async () => {
@@ -282,6 +286,140 @@ describe("@gamekit/multiplayer-colyseus", () => {
     expect(backend.snapshot().metadata?.endpoint).toBe("http://127.0.0.1:2567/");
   });
 
+  it("publishes host-owned state through a real Colyseus Schema room", async () => {
+    const roomName = uniqueRoomName("schema-state");
+    const roomInstances: GameKitColyseusRoom[] = [];
+    class SchemaTestRoom extends GameKitColyseusRoom {
+      override onCreate(options: GameKitColyseusRoomOptions = {}): void {
+        super.onCreate(options);
+        roomInstances.push(this);
+      }
+    }
+    const server = await createGameKitColyseusServer({
+      roomName,
+      roomClass: SchemaTestRoom,
+      roomOptions: {
+        authority: "host-authoritative",
+        nativeStateSync: {
+          enabled: true,
+          schemaVersion: "arena.v1"
+        },
+        nativeCapabilities: {
+          authoritativePath: "colyseus-schema"
+        }
+      }
+    });
+    const hostBackend = createColyseusMultiplayerBackend({
+      endpoint: server.endpoint,
+      roomName,
+      nativeCapabilities: { authoritativePath: "colyseus-schema" },
+      nativeStateSync: { enabled: true, schemaVersion: "arena.v1" }
+    });
+    const clientBackend = createColyseusMultiplayerBackend({
+      endpoint: server.endpoint,
+      roomName,
+      joinByIdFallback: true,
+      nativeCapabilities: { authoritativePath: "colyseus-schema" },
+      nativeStateSync: { enabled: true, schemaVersion: "arena.v1" }
+    });
+    const host = await hostBackend.connect({
+      runtimeId: "schema.host",
+      localPeer: { id: "host", role: "host" }
+    });
+    const client = await clientBackend.connect({
+      runtimeId: "schema.client",
+      localPeer: { id: "client", role: "client" }
+    });
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: "schema-session",
+      mode: "host-authoritative",
+      authorityPeerId: "host",
+      authorityEndpoint: { kind: "server", id: "colyseus-schema", peerId: "host" },
+      snapshotVersion: "arena.v1"
+    });
+    const applied: number[] = [];
+    const bridge = clientBackend.native().createStateBridge<{ x: number }>({
+      binding,
+      sourceEndpointId: "colyseus-schema",
+      readState(state) {
+        return isRecord(state) && typeof state.x === "number" ? { x: state.x } : undefined;
+      },
+      applyState(state) {
+        applied.push(state.x);
+      }
+    });
+    const unsubscribe = clientBackend.native().subscribeState((update) => {
+      bridge.receiveState(update);
+    });
+
+    try {
+      await host.createSession({
+        id: "schema-session",
+        authority: "host-authoritative",
+        localPeer: { id: "host", role: "host" }
+      });
+      await client.joinSession({
+        sessionId: "schema-session",
+        localPeer: { id: "client", role: "client" }
+      });
+
+      hostBackend.native().publishState({
+        sessionId: "schema-session",
+        sourcePeerId: "host",
+        tick: 1,
+        version: "arena.v2",
+        timestamp: 90,
+        state: { x: 6 }
+      });
+      hostBackend.native().publishState({
+        sessionId: "schema-session",
+        sourcePeerId: "host",
+        tick: 1,
+        version: "arena.v1",
+        timestamp: 100,
+        state: { x: 7 }
+      });
+      await waitFor(() => applied.includes(7));
+
+      clientBackend.native().publishState({
+        sessionId: "schema-session",
+        sourcePeerId: "client",
+        tick: 2,
+        version: "arena.v1",
+        timestamp: 110,
+        state: { x: 99 }
+      });
+      hostBackend.native().publishState({
+        sessionId: "schema-session",
+        sourcePeerId: "host",
+        tick: 2,
+        version: "arena.v1",
+        timestamp: 120,
+        state: { x: 8 }
+      });
+      await waitFor(() => applied.includes(8));
+
+      expect(applied).toEqual([7, 8]);
+      expect(bridge.diagnostics()).toMatchObject({
+        authoritativePath: "colyseus-schema",
+        appliedUpdates: 2,
+        rejectedUpdates: 0,
+        lastAppliedTick: 2,
+        lastStateVersion: 2,
+        lastVersion: "arena.v1"
+      });
+      expect(roomInstances[0]?.diagnostics()).toMatchObject({
+        invalidNativeStateUpdates: 2,
+        nativeStateUpdates: 2
+      });
+    } finally {
+      unsubscribe();
+      await client.close("test cleanup");
+      await host.close("test cleanup");
+      await server.dispose();
+    }
+  });
+
   it("declares provider-native capability lanes without exposing room handles in snapshots", () => {
     const backend = createColyseusMultiplayerBackend({
       endpoint: "http://127.0.0.1:2567",
@@ -396,19 +534,37 @@ describe("@gamekit/multiplayer-colyseus", () => {
       tick: 3,
       snapshotVersion: "arena.v1"
     });
+    expect(
+      bridge.receiveState({
+        sessionId: "native-session",
+        state: { x: 8 },
+        tick: 4,
+        version: "arena.v2",
+        timestamp: 100
+      })
+    ).toMatchObject({ allowed: false, code: "snapshot-version-mismatch" });
+    expect(
+      bridge.receiveState({
+        sessionId: "native-session",
+        state: { x: 6 },
+        tick: 2,
+        version: "arena.v1",
+        timestamp: 100
+      })
+    ).toMatchObject({ allowed: false, code: "stale-native-state" });
     expect(bridge.diagnostics()).toMatchObject({
       authoritativePath: "colyseus-schema",
       sourceEndpointId: "colyseus-schema",
-      receivedUpdates: 3,
+      receivedUpdates: 5,
       appliedUpdates: 1,
-      rejectedUpdates: 2,
+      rejectedUpdates: 4,
       lastAppliedTick: 3,
       lastVersion: "arena.v1",
       lastStateAgeMs: 50,
       lastRejected: {
-        code: "authority-endpoint-mismatch",
+        code: "stale-native-state",
         sessionId: "native-session",
-        sourceEndpointId: "other-endpoint"
+        sourceEndpointId: "colyseus-schema"
       }
     });
   });

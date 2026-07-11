@@ -1,5 +1,7 @@
 import type { MultiplayerDemoAppSnapshot } from "./domain";
 import type { MultiplayerDemoClient } from "./client";
+import type { ColyseusNativeStateBridgeDiagnostics } from "@gamekit/multiplayer-colyseus";
+import type { RealtimeArenaAuthorityPath } from "./realtime/authority-path";
 import type { RealtimeArenaSnapshot, RealtimeArenaState } from "./realtime/domain";
 import type { RealtimeLocalGameDiagnostics } from "./realtime/local-game";
 import type { RealtimeArenaPresentationDiagnostics } from "./realtime/presentation";
@@ -53,12 +55,14 @@ export type RealtimeArenaUiDiagnostics = RealtimeLocalGameDiagnostics & {
   authorityInput?: RealtimeArenaAuthorityInputDiagnostics;
   participant?: RealtimeArenaParticipant;
   participantSummary?: RealtimeArenaParticipantSummary;
+  nativeState?: ColyseusNativeStateBridgeDiagnostics;
 };
 
 export type MultiplayerDemoConfig = {
   endpoint: string;
   roomName: string;
   defaultSessionId: string;
+  authoritativePath: RealtimeArenaAuthorityPath;
   sessions: string[];
 };
 
@@ -67,6 +71,7 @@ export type MultiplayerDemoSessionInfo = {
   roomName: string;
   sessionId: string;
   hostPeerId: string;
+  authoritativePath: RealtimeArenaAuthorityPath;
   snapshot: MultiplayerDemoAppSnapshot;
 };
 
@@ -304,7 +309,7 @@ export function renderRealtimeNetworkConditionSettings(
 export function renderServerReady(ui: MultiplayerDemoUi, config: MultiplayerDemoConfig): void {
   ui.status.textContent = "Server ready";
   ui.mode.textContent = runModeLabel("local-offline");
-  ui.backend.textContent = "colyseus";
+  ui.backend.textContent = formatAuthorityBackend(config.authoritativePath);
   ui.session.textContent = ui.roomInput.value.trim() || config.defaultSessionId;
   ui.peers.textContent = "0";
   ui.peers.title = "0 active / 0 tracked";
@@ -335,6 +340,9 @@ export function renderClientState(
 
   ui.root.dataset.multiplayerMode = options.mode;
   ui.mode.textContent = runModeLabel(options.mode);
+  if (client) {
+    ui.backend.textContent = formatAuthorityBackend(client.authoritativePath);
+  }
   ui.disconnectButton.textContent = options.mode === "host" ? "Close Host" : "Leave";
   ui.hostButton.disabled = !controls.host;
   ui.connectButton.disabled = !controls.join;
@@ -416,7 +424,11 @@ export function formatRealtimeArenaDiagnostics(diagnostics: RealtimeArenaUiDiagn
     ack === undefined ? `${diagnostics.inputSequence}` : `${diagnostics.inputSequence}->${ack}`;
   const participantText =
     participants === undefined ? "" : ` / p${participants.active}/${participants.round}`;
-  return `${sequence} / ${diagnostics.inputSendRate}hz / ${diagnostics.serverTickRate}tps / ${frameRate}fps / d${delay} / j${jitter} / q${queuedInputs}${participantText} / c${Math.round(correction)}`;
+  const nativeStateText =
+    diagnostics.nativeState?.lastStateVersion === undefined
+      ? ""
+      : ` / sv${diagnostics.nativeState.lastStateVersion}`;
+  return `${sequence} / ${diagnostics.inputSendRate}hz / ${diagnostics.serverTickRate}tps / ${frameRate}fps / d${delay} / j${jitter} / q${queuedInputs}${participantText} / c${Math.round(correction)}${nativeStateText}`;
 }
 
 export function formatRealtimeArenaDiagnosticsTitle(
@@ -465,7 +477,16 @@ export function formatRealtimeArenaDiagnosticsTitle(
           `prediction phase ${Math.round(prediction.presentationAlpha * 100)}% (${formatOptionalMs(prediction.presentationElapsedMs)})`,
           `presentation clamps ${prediction.clampedPresentationFrames}`
         ].join("; ");
-  return `presentation ${status}; ${presentation.bufferLength} buffered; ${age}; ${delay}; ${jitter}; ${authorityInputText}; ${participantText}; ${predictionText}`;
+  const nativeState = diagnostics.nativeState;
+  const nativeStateText =
+    nativeState === undefined
+      ? "authority state gamekit-envelope"
+      : `authority state ${nativeState.authoritativePath}; version ${nativeState.lastStateVersion ?? "--"}; schema ${nativeState.lastVersion ?? "--"}; bytes ${nativeState.lastStateBytes ?? "--"}; applied ${nativeState.appliedUpdates}; rejected ${nativeState.rejectedUpdates}; resyncs ${nativeState.resyncs}`;
+  return `presentation ${status}; ${presentation.bufferLength} buffered; ${age}; ${delay}; ${jitter}; ${authorityInputText}; ${participantText}; ${predictionText}; ${nativeStateText}`;
+}
+
+function formatAuthorityBackend(authoritativePath: RealtimeArenaAuthorityPath): string {
+  return authoritativePath === "colyseus-schema" ? "colyseus / schema" : "colyseus / envelope";
 }
 
 function formatOptionalMs(value: number | undefined): string {

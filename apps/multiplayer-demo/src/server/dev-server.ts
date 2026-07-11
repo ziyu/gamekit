@@ -11,17 +11,36 @@ import {
   createMultiplayerDemoSessionRegistry,
   MultiplayerDemoSessionConflictError
 } from "./session-registry";
+import {
+  readRealtimeArenaAuthorityPath,
+  REALTIME_ARENA_DEFAULT_AUTHORITY_PATH,
+  REALTIME_ARENA_SCHEMA_VERSION
+} from "../realtime/authority-path";
 
 const HOST = "127.0.0.1";
 const DEFAULT_PORT = 5177;
 const MAX_REQUEST_BYTES = 4 * 1024;
+const authoritativePath =
+  readRealtimeArenaAuthorityPath(process.env.MULTIPLAYER_DEMO_AUTHORITY_PATH) ??
+  REALTIME_ARENA_DEFAULT_AUTHORITY_PATH;
+const schemaStateSync = authoritativePath === "colyseus-schema";
 
 const colyseus = await createGameKitColyseusServer({
-  roomName: `${MULTIPLAYER_DEMO_ROOM_NAME}_dev_${Date.now()}`
+  roomName: `${MULTIPLAYER_DEMO_ROOM_NAME}_dev_${Date.now()}`,
+  roomOptions: schemaStateSync
+    ? {
+        nativeStateSync: {
+          enabled: true,
+          schemaVersion: REALTIME_ARENA_SCHEMA_VERSION
+        },
+        nativeCapabilities: { authoritativePath }
+      }
+    : {}
 });
 const sessions = createMultiplayerDemoSessionRegistry({
   endpoint: colyseus.endpoint,
-  roomName: colyseus.roomNames[0] ?? MULTIPLAYER_DEMO_ROOM_NAME
+  roomName: colyseus.roomNames[0] ?? MULTIPLAYER_DEMO_ROOM_NAME,
+  authoritativePath
 });
 const tickInterval = setInterval(() => {
   for (const session of sessions.hosts()) {
@@ -56,6 +75,7 @@ await vite.listen();
 vite.printUrls();
 console.log(`  Colyseus: ${colyseus.endpoint}`);
 console.log(`  Room type: ${colyseus.roomNames.join(", ")}`);
+console.log(`  Authority path: ${authoritativePath}`);
 
 process.once("SIGINT", () => {
   void shutdown();
@@ -84,6 +104,7 @@ async function handleApiRequest(
       endpoint: colyseus.endpoint,
       roomName: colyseus.roomNames[0] ?? MULTIPLAYER_DEMO_ROOM_NAME,
       defaultSessionId: MULTIPLAYER_DEMO_SESSION_ID,
+      authoritativePath,
       sessions: sessions.sessionIds()
     });
     return;
@@ -166,6 +187,7 @@ function createSessionResponse(session: LocalMultiplayerDemoHost) {
     roomName: session.roomName,
     sessionId: session.sessionId,
     hostPeerId: session.hostPeerId,
+    authoritativePath: session.authoritativePath,
     snapshot: session.app.snapshot()
   };
 }

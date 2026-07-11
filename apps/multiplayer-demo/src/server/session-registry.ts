@@ -3,10 +3,12 @@ import {
   MULTIPLAYER_DEMO_ROOM_NAME,
   type LocalMultiplayerDemoHost
 } from "./create-local-demo-server";
+import type { RealtimeArenaAuthorityPath } from "../realtime/authority-path";
 
 export type MultiplayerDemoSessionRegistryOptions = {
   endpoint: string;
   roomName?: string;
+  authoritativePath?: RealtimeArenaAuthorityPath;
 };
 
 export type MultiplayerDemoHostSessionResult = {
@@ -81,7 +83,10 @@ export function createMultiplayerDemoSessionRegistry(
       const created = createLocalMultiplayerDemoHost({
         endpoint: options.endpoint,
         roomName,
-        sessionId
+        sessionId,
+        ...(options.authoritativePath === undefined
+          ? {}
+          : { authoritativePath: options.authoritativePath })
       }).then((session) => {
         const record = { session, hostOwnerId };
         sessions.set(sessionId, record);

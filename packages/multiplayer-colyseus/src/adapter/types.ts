@@ -10,7 +10,9 @@ import type {
   ColyseusNativeCapabilityInput,
   ColyseusNativeCapabilitySummary,
   ColyseusNativeStateBridge,
-  ColyseusNativeStateBridgeOptions
+  ColyseusNativeStateBridgeOptions,
+  ColyseusNativeStateListener,
+  ColyseusNativeStateUpdate
 } from "./native-state";
 
 export type ColyseusMessageType = string | number;
@@ -39,6 +41,13 @@ export type ColyseusMultiplayerBackendOptions = {
   maxPayloadBytes?: number;
   metadata?: Record<string, unknown>;
   nativeCapabilities?: ColyseusNativeCapabilityInput;
+  nativeStateSync?: {
+    enabled?: boolean;
+    messageType?: ColyseusMessageType;
+    sourceEndpointId?: string;
+    schemaVersion?: string;
+    maxStateBytes?: number;
+  };
   createOptions?: Record<string, unknown>;
   joinOptions?: Record<string, unknown>;
   joinByIdFallback?: boolean;
@@ -50,11 +59,13 @@ export type ColyseusMultiplayerNative = {
   readonly roomName: string;
   currentRoom(): ColyseusRoom | undefined;
   capabilities(): ColyseusNativeCapabilitySummary;
+  publishState(update: ColyseusNativeStateUpdate): void;
+  subscribeState(listener: ColyseusNativeStateListener): () => void;
   createStateBridge<TProviderState, TViewState = TProviderState>(
     options: ColyseusNativeStateBridgeOptions<TProviderState, TViewState>
   ): ColyseusNativeStateBridge;
 };
 
-export type ColyseusMultiplayerBackendAdapter = MultiplayerBackendAdapter & {
+export type ColyseusMultiplayerBackendAdapter = Omit<MultiplayerBackendAdapter, "native"> & {
   native(): ColyseusMultiplayerNative;
 };

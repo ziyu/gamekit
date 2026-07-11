@@ -1,4 +1,7 @@
-import { createColyseusMultiplayerBackend } from "@gamekit/multiplayer-colyseus";
+import {
+  createColyseusMultiplayerBackend,
+  type ColyseusNativeStateBridgeDiagnostics
+} from "@gamekit/multiplayer-colyseus";
 import {
   createMultiplayerAuthorityBindingStore,
   createMultiplayerAuthorityReceiver,
@@ -13,6 +16,11 @@ import {
   type MultiplayerDemoCommand
 } from "./domain";
 import type { RealtimeInputFrame } from "./realtime/domain";
+import {
+  REALTIME_ARENA_DEFAULT_AUTHORITY_PATH,
+  REALTIME_ARENA_SCHEMA_VERSION,
+  type RealtimeArenaAuthorityPath
+} from "./realtime/authority-path";
 import {
   readRealtimeArenaSnapshotPayload,
   REALTIME_ARENA_ACTION_KIND,
@@ -31,13 +39,16 @@ export type MultiplayerDemoClientOptions = {
   peerId?: string;
   displayName?: string;
   joinByIdFallback?: boolean;
+  authoritativePath?: RealtimeArenaAuthorityPath;
 };
 
 export type MultiplayerDemoClient = {
   runtime: MultiplayerRuntime;
   peerId: string;
+  authoritativePath: RealtimeArenaAuthorityPath;
   messages: MultiplayerMessageEnvelope[];
   latestRealtimeSnapshot(): RealtimeArenaSnapshotPayload | undefined;
+  nativeStateDiagnostics(): ColyseusNativeStateBridgeDiagnostics | undefined;
   connect(): Promise<void>;
   sendCommand(command: MultiplayerDemoCommand): Promise<void>;
   sendRealtimeAction(action: RealtimeArenaNetworkAction): Promise<void>;
@@ -49,15 +60,30 @@ export function createMultiplayerDemoClient(
   options: MultiplayerDemoClientOptions
 ): MultiplayerDemoClient {
   const peerId = options.peerId ?? createBrowserPeerId();
+  const authoritativePath = options.authoritativePath ?? REALTIME_ARENA_DEFAULT_AUTHORITY_PATH;
+  const schemaStateSync = authoritativePath === "colyseus-schema";
   const messages: MultiplayerMessageEnvelope[] = [];
   let latestRealtimeSnapshot: RealtimeArenaSnapshotPayload | undefined;
+  const backend = createColyseusMultiplayerBackend({
+    endpoint: options.endpoint,
+    roomName: options.roomName,
+    joinByIdFallback: options.joinByIdFallback ?? false,
+    nativeCapabilities: {
+      authoritativePath,
+      stateSync: {
+        available: schemaStateSync,
+        lane: "colyseus-schema",
+        schemaVersion: REALTIME_ARENA_SCHEMA_VERSION
+      }
+    },
+    nativeStateSync: {
+      enabled: schemaStateSync,
+      schemaVersion: REALTIME_ARENA_SCHEMA_VERSION
+    }
+  });
   const runtime = createMultiplayerRuntime({
     id: `multiplayer-demo.client.${peerId}`,
-    backend: createColyseusMultiplayerBackend({
-      endpoint: options.endpoint,
-      roomName: options.roomName,
-      joinByIdFallback: options.joinByIdFallback ?? false
-    }),
+    backend,
     connectContext: {
       localPeer: {
         id: peerId,
@@ -72,21 +98,42 @@ export function createMultiplayerDemoClient(
     mode: "host-authoritative",
     authorityPeerId: options.hostPeerId,
     authorityEndpoint: {
-      kind: "peer",
-      id: options.hostPeerId,
+      kind: schemaStateSync ? "server" : "peer",
+      id: schemaStateSync ? "colyseus-schema" : options.hostPeerId,
       peerId: options.hostPeerId
     },
+    snapshotVersion: REALTIME_ARENA_SCHEMA_VERSION,
     localPlayerId: peerId
   });
-  const receiver = createMultiplayerAuthorityReceiver<RealtimeArenaSnapshotPayload>({
-    runtime,
-    binding: authorityBinding,
-    snapshotKind: REALTIME_ARENA_SNAPSHOT_KIND,
-    readSnapshot: readRealtimeArenaSnapshotPayload,
-    applySnapshot(snapshot) {
-      latestRealtimeSnapshot = snapshot;
-    }
-  });
+  const receiver = schemaStateSync
+    ? undefined
+    : createMultiplayerAuthorityReceiver<RealtimeArenaSnapshotPayload>({
+        runtime,
+        binding: authorityBinding,
+        snapshotKind: REALTIME_ARENA_SNAPSHOT_KIND,
+        readSnapshot: readRealtimeArenaSnapshotPayload,
+        applySnapshot(snapshot) {
+          latestRealtimeSnapshot = snapshot;
+        }
+      });
+  const nativeStateBridge = schemaStateSync
+    ? backend.native().createStateBridge<RealtimeArenaSnapshotPayload>({
+        binding: authorityBinding,
+        authoritativePath,
+        sourceEndpointId: "colyseus-schema",
+        maxStateBytes: 256 * 1024,
+        readState: readRealtimeArenaSnapshotPayload,
+        applyState(snapshot) {
+          latestRealtimeSnapshot = snapshot;
+        }
+      })
+    : undefined;
+  const unsubscribeNativeState =
+    nativeStateBridge === undefined
+      ? undefined
+      : backend.native().subscribeState((update) => {
+          nativeStateBridge.receiveState(update);
+        });
   const unsubscribe = runtime.subscribe((message) => {
     if (message.kind === REALTIME_ARENA_SNAPSHOT_KIND) {
       return;
@@ -101,9 +148,13 @@ export function createMultiplayerDemoClient(
   return {
     runtime,
     peerId,
+    authoritativePath,
     messages,
     latestRealtimeSnapshot() {
       return latestRealtimeSnapshot;
+    },
+    nativeStateDiagnostics() {
+      return nativeStateBridge?.diagnostics();
     },
     async connect() {
       const session = await runtime.joinSession({
@@ -119,10 +170,11 @@ export function createMultiplayerDemoClient(
         mode: "host-authoritative",
         authorityPeerId: options.hostPeerId,
         authorityEndpoint: {
-          kind: "peer",
-          id: options.hostPeerId,
+          kind: schemaStateSync ? "server" : "peer",
+          id: schemaStateSync ? "colyseus-schema" : options.hostPeerId,
           peerId: options.hostPeerId
         },
+        snapshotVersion: REALTIME_ARENA_SCHEMA_VERSION,
         localPlayerId: peerId
       });
     },
@@ -154,7 +206,8 @@ export function createMultiplayerDemoClient(
       });
     },
     async dispose() {
-      receiver.dispose();
+      receiver?.dispose();
+      unsubscribeNativeState?.();
       unsubscribe();
       await runtime.dispose();
     }

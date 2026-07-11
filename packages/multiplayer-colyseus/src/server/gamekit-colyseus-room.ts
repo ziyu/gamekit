@@ -13,9 +13,16 @@ import {
   estimatePayloadBytes,
   isMultiplayerMessageEnvelope
 } from "../adapter/messages";
-import { createColyseusNativeCapabilitySummary } from "../adapter/native-state";
+import {
+  createColyseusNativeCapabilitySummary,
+  GAMEKIT_COLYSEUS_NATIVE_STATE_MESSAGE
+} from "../adapter/native-state";
 import type { ColyseusMessageType } from "../adapter/types";
 import type { GameKitColyseusRoomOptions } from "./types";
+import {
+  GameKitColyseusNativeState,
+  type GameKitColyseusNativeStateMessage
+} from "./native-state-schema";
 
 const HOST_AUTHORITY_LEFT_CLOSE_CODE = 4001;
 
@@ -25,7 +32,10 @@ type GameKitColyseusClient = Client<{
   };
 }>;
 
-export class GameKitColyseusRoom extends Room<{ client: GameKitColyseusClient }> {
+export class GameKitColyseusRoom extends Room<{
+  client: GameKitColyseusClient;
+  state: GameKitColyseusNativeState;
+}> {
   private messageType: ColyseusMessageType = "gamekit.message";
   private presenceType: ColyseusMessageType = "gamekit.presence";
   private gamekitSessionId: string | undefined;
@@ -33,9 +43,14 @@ export class GameKitColyseusRoom extends Room<{ client: GameKitColyseusClient }>
   private authority: MultiplayerSession["authority"] = "server-authoritative";
   private sessionMetadata: Record<string, unknown> | undefined;
   private maxPayloadBytes = 32 * 1024;
+  private nativeStateMessageType: ColyseusMessageType = GAMEKIT_COLYSEUS_NATIVE_STATE_MESSAGE;
+  private nativeStateSchemaVersion = "gamekit.native-state.v1";
+  private nativeStateMaxBytes = 256 * 1024;
+  private nativeStateEnabled = false;
   private peers = new Map<string, MultiplayerPeer>();
   private peerIdsBySessionId = new Map<string, string>();
   private invalidMessages = 0;
+  private invalidNativeStateUpdates = 0;
 
   onCreate(options: GameKitColyseusRoomOptions = {}): void {
     if (typeof options.roomId === "string" && options.roomId.length > 0) {
@@ -50,7 +65,37 @@ export class GameKitColyseusRoom extends Room<{ client: GameKitColyseusClient }>
     this.sessionMetadata = cloneRecord(options.metadata);
     this.maxPayloadBytes = options.maxPayloadBytes ?? this.maxPayloadBytes;
     this.maxClients = options.maxClients ?? this.maxClients;
-    const nativeCapabilities = createColyseusNativeCapabilitySummary(options.nativeCapabilities);
+    this.nativeStateEnabled = options.nativeStateSync?.enabled === true;
+    this.nativeStateMessageType =
+      options.nativeStateSync?.messageType ?? this.nativeStateMessageType;
+    this.nativeStateSchemaVersion =
+      options.nativeStateSync?.schemaVersion ?? this.nativeStateSchemaVersion;
+    this.nativeStateMaxBytes = options.nativeStateSync?.maxStateBytes ?? this.nativeStateMaxBytes;
+    if (this.nativeStateEnabled) {
+      const nativeState = new GameKitColyseusNativeState();
+      nativeState.sessionId = "";
+      nativeState.sourcePeerId = "";
+      nativeState.tick = 0;
+      nativeState.version = this.nativeStateSchemaVersion;
+      nativeState.timestamp = 0;
+      nativeState.stateJson = "";
+      nativeState.stateBytes = 0;
+      nativeState.updateCount = 0;
+      this.state = nativeState;
+    }
+    const nativeCapabilities = createColyseusNativeCapabilitySummary({
+      ...options.nativeCapabilities,
+      ...(this.nativeStateEnabled
+        ? {
+            stateSync: {
+              ...options.nativeCapabilities?.stateSync,
+              available: true,
+              lane: "colyseus-schema" as const,
+              schemaVersion: this.nativeStateSchemaVersion
+            }
+          }
+        : {})
+    });
     this.metadata = {
       gamekit: {
         kind: this.sessionKind,
@@ -62,6 +107,14 @@ export class GameKitColyseusRoom extends Room<{ client: GameKitColyseusClient }>
     this.onMessage<MultiplayerMessageEnvelope>(this.messageType, (client, message) => {
       this.handleGameKitMessage(client as GameKitColyseusClient, message);
     });
+    if (this.nativeStateEnabled) {
+      this.onMessage<GameKitColyseusNativeStateMessage>(
+        this.nativeStateMessageType,
+        (client, message) => {
+          this.handleNativeStateMessage(client as GameKitColyseusClient, message);
+        }
+      );
+    }
   }
 
   onJoin(client: GameKitColyseusClient, options: GameKitColyseusRoomOptions = {}): void {
@@ -101,9 +154,16 @@ export class GameKitColyseusRoom extends Room<{ client: GameKitColyseusClient }>
     return this.createSessionSummary();
   }
 
-  diagnostics(): { invalidMessages: number; peers: MultiplayerPeer[] } {
+  diagnostics(): {
+    invalidMessages: number;
+    invalidNativeStateUpdates: number;
+    nativeStateUpdates: number;
+    peers: MultiplayerPeer[];
+  } {
     return {
       invalidMessages: this.invalidMessages,
+      invalidNativeStateUpdates: this.invalidNativeStateUpdates,
+      nativeStateUpdates: this.state?.updateCount ?? 0,
       peers: [...this.peers.values()].map(clonePeer)
     };
   }
@@ -142,6 +202,39 @@ export class GameKitColyseusRoom extends Room<{ client: GameKitColyseusClient }>
     for (const target of targets) {
       target.send(this.messageType, outbound);
     }
+  }
+
+  private handleNativeStateMessage(
+    client: GameKitColyseusClient,
+    message: GameKitColyseusNativeStateMessage
+  ): void {
+    const peer = client.userData?.peer;
+    if (
+      !peer ||
+      peer.role !== "host" ||
+      !isNativeStateMessage(message) ||
+      message.sessionId !== this.sessionId ||
+      message.sourcePeerId !== peer.id ||
+      message.version !== this.nativeStateSchemaVersion
+    ) {
+      this.invalidNativeStateUpdates += 1;
+      return;
+    }
+
+    const stateBytes = new TextEncoder().encode(message.stateJson).byteLength;
+    if (stateBytes > this.nativeStateMaxBytes) {
+      this.invalidNativeStateUpdates += 1;
+      return;
+    }
+
+    this.state.sessionId = message.sessionId;
+    this.state.sourcePeerId = message.sourcePeerId;
+    this.state.tick = message.tick;
+    this.state.version = message.version || this.nativeStateSchemaVersion;
+    this.state.timestamp = message.timestamp;
+    this.state.stateJson = message.stateJson;
+    this.state.stateBytes = stateBytes;
+    this.state.updateCount += 1;
   }
 
   private resolveTargets(message: MultiplayerMessageEnvelope): GameKitColyseusClient[] {
@@ -195,6 +288,25 @@ export class GameKitColyseusRoom extends Room<{ client: GameKitColyseusClient }>
 
     return false;
   }
+}
+
+function isNativeStateMessage(value: unknown): value is GameKitColyseusNativeStateMessage {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const message = value as Record<string, unknown>;
+  return (
+    typeof message.sessionId === "string" &&
+    typeof message.sourcePeerId === "string" &&
+    typeof message.tick === "number" &&
+    Number.isSafeInteger(message.tick) &&
+    message.tick >= 0 &&
+    typeof message.version === "string" &&
+    typeof message.timestamp === "number" &&
+    Number.isFinite(message.timestamp) &&
+    message.timestamp >= 0 &&
+    typeof message.stateJson === "string"
+  );
 }
 
 function toPeer(

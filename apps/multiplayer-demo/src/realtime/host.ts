@@ -70,6 +70,7 @@ export type RealtimeArenaHostOptions = {
   sessionId: string;
   hostPeerId: string;
   clock?: () => number;
+  publishSnapshot?(snapshot: RealtimeArenaSnapshotPayload, tick: number): void | Promise<void>;
 };
 
 type PresencePayload = {
@@ -160,6 +161,13 @@ export function createRealtimeArenaHost(options: RealtimeArenaHostOptions): Real
     captureSnapshot() {
       return createSnapshotPayload();
     },
+    ...(options.publishSnapshot === undefined
+      ? {}
+      : {
+          publishSnapshot(snapshot: RealtimeArenaSnapshotPayload, context: { tick: number }) {
+            return options.publishSnapshot?.(snapshot, context.tick);
+          }
+        }),
     onRejected(rejection) {
       diagnostics.lastAction = {
         accepted: false,

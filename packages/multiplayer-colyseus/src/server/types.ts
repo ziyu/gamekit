@@ -16,6 +16,12 @@ export type GameKitColyseusRoomOptions = GameKitColyseusRoomJoinOptions & {
   maxPayloadBytes?: number;
   maxClients?: number;
   nativeCapabilities?: ColyseusNativeCapabilityInput;
+  nativeStateSync?: {
+    enabled?: boolean;
+    messageType?: ColyseusMessageType;
+    schemaVersion?: string;
+    maxStateBytes?: number;
+  };
 };
 
 export type ColyseusRoomClass = new () => Room;

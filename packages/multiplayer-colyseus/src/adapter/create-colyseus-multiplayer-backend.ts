@@ -28,7 +28,10 @@ import {
 import {
   cloneColyseusNativeCapabilitySummary,
   createColyseusNativeCapabilitySummary,
-  createColyseusNativeStateBridge
+  createColyseusNativeStateBridge,
+  GAMEKIT_COLYSEUS_NATIVE_STATE_MESSAGE,
+  type ColyseusNativeStateListener,
+  type ColyseusNativeStateUpdate
 } from "./native-state";
 import type {
   ColyseusMessageType,
@@ -47,6 +50,8 @@ type ColyseusConnectionState = {
   listeners: Set<MultiplayerBackendListener>;
   messageUnsubscribe?: () => void;
   presenceUnsubscribe?: () => void;
+  nativeStateHandler?: (roomState: unknown) => void;
+  lastNativeStateVersion?: number;
   leaveHandler?: (code: number, reason?: string) => void;
   dropHandler?: (code: number, reason?: string) => void;
   reconnectHandler?: () => void;
@@ -65,10 +70,33 @@ export function createColyseusMultiplayerBackend(
   const messageType = options.messageType ?? "gamekit.message";
   const presenceType = options.presenceType ?? "gamekit.presence";
   const maxPayloadBytes = options.maxPayloadBytes ?? 32 * 1024;
+  const nativeStateSyncEnabled = options.nativeStateSync?.enabled === true;
+  const nativeStateMessageType =
+    options.nativeStateSync?.messageType ?? GAMEKIT_COLYSEUS_NATIVE_STATE_MESSAGE;
+  const nativeStateSourceEndpointId =
+    options.nativeStateSync?.sourceEndpointId ?? "colyseus-schema";
+  const nativeStateSchemaVersion =
+    options.nativeStateSync?.schemaVersion ?? "gamekit.native-state.v1";
+  const nativeStateMaxBytes = options.nativeStateSync?.maxStateBytes ?? 256 * 1024;
   const client = options.client ?? new ColyseusClient(options.endpoint, options.clientOptions);
   const connections = new Set<ColyseusConnectionState>();
+  const nativeStateListeners = new Set<ColyseusNativeStateListener>();
   const providerRoomIds = new Map<string, string>();
-  const nativeCapabilities = createColyseusNativeCapabilitySummary(options.nativeCapabilities);
+  const nativeCapabilities = createColyseusNativeCapabilitySummary({
+    ...options.nativeCapabilities,
+    ...(nativeStateSyncEnabled
+      ? {
+          stateSync: {
+            ...options.nativeCapabilities?.stateSync,
+            available: true,
+            lane: "colyseus-schema" as const,
+            ...(options.nativeStateSync?.schemaVersion === undefined
+              ? {}
+              : { schemaVersion: options.nativeStateSync.schemaVersion })
+          }
+        }
+      : {})
+  });
 
   const capabilities: MultiplayerBackendCapabilities = {
     channels: options.channels ?? defaultChannels(maxPayloadBytes),
@@ -96,6 +124,59 @@ export function createColyseusMultiplayerBackend(
     },
     capabilities() {
       return cloneColyseusNativeCapabilitySummary(nativeCapabilities);
+    },
+    publishState(update) {
+      const state = findActiveConnection(connections, update.sessionId, update.sourcePeerId);
+      if (!state?.room || !state.session || !state.localPeer) {
+        throw createMultiplayerError(
+          multiplayerErrorCodes.missingSession,
+          "Cannot publish Colyseus native state without a joined room."
+        );
+      }
+      if (
+        update.sessionId !== state.session.id ||
+        (update.sourcePeerId !== undefined && update.sourcePeerId !== state.localPeer.id)
+      ) {
+        throw createMultiplayerError(
+          multiplayerErrorCodes.invalidMessage,
+          "Colyseus native state source or session does not match the active connection."
+        );
+      }
+
+      let stateJson: string | undefined;
+      try {
+        stateJson = JSON.stringify(update.state);
+      } catch {
+        stateJson = undefined;
+      }
+      if (typeof stateJson !== "string") {
+        throw createMultiplayerError(
+          multiplayerErrorCodes.invalidMessage,
+          "Colyseus native state must be JSON serializable."
+        );
+      }
+      const stateBytes = new TextEncoder().encode(stateJson).byteLength;
+      if (stateBytes > nativeStateMaxBytes) {
+        throw createMultiplayerError(
+          multiplayerErrorCodes.invalidMessage,
+          `Colyseus native state exceeds max bytes: ${nativeStateMaxBytes}.`,
+          { stateBytes, maxStateBytes: nativeStateMaxBytes }
+        );
+      }
+      state.room.send(nativeStateMessageType, {
+        sessionId: update.sessionId,
+        sourcePeerId: update.sourcePeerId ?? state.localPeer.id,
+        tick: update.tick ?? 0,
+        version: update.version ?? nativeStateSchemaVersion,
+        timestamp: update.timestamp ?? state.clock(),
+        stateJson
+      });
+    },
+    subscribeState(listener) {
+      nativeStateListeners.add(listener);
+      return () => {
+        nativeStateListeners.delete(listener);
+      };
     },
     createStateBridge(bridgeOptions) {
       return createColyseusNativeStateBridge(bridgeOptions);
@@ -158,7 +239,18 @@ export function createColyseusMultiplayerBackend(
           );
           const sessionId = requestedSessionId ?? room.roomId;
           providerRoomIds.set(sessionId, room.roomId);
-          attachRoom(state, room, messageType, presenceType, maxPayloadBytes);
+          attachRoom(
+            state,
+            room,
+            messageType,
+            presenceType,
+            maxPayloadBytes,
+            nativeStateSyncEnabled,
+            nativeStateSourceEndpointId,
+            nativeStateSchemaVersion,
+            nativeStateMaxBytes,
+            nativeStateListeners
+          );
           state.localPeer = toPeer(
             request.localPeer ?? ctx.localPeer,
             room.sessionId,
@@ -185,7 +277,18 @@ export function createColyseusMultiplayerBackend(
             fallback: options.joinByIdFallback === true
           });
           providerRoomIds.set(request.sessionId, room.roomId);
-          attachRoom(state, room, messageType, presenceType, maxPayloadBytes);
+          attachRoom(
+            state,
+            room,
+            messageType,
+            presenceType,
+            maxPayloadBytes,
+            nativeStateSyncEnabled,
+            nativeStateSourceEndpointId,
+            nativeStateSchemaVersion,
+            nativeStateMaxBytes,
+            nativeStateListeners
+          );
           state.localPeer = toPeer(
             request.localPeer ?? ctx.localPeer,
             room.sessionId,
@@ -255,7 +358,12 @@ function attachRoom(
   room: ColyseusRoom,
   messageType: ColyseusMessageType,
   presenceType: ColyseusMessageType,
-  maxPayloadBytes: number
+  maxPayloadBytes: number,
+  nativeStateSyncEnabled: boolean,
+  nativeStateSourceEndpointId: string,
+  nativeStateSchemaVersion: string,
+  nativeStateMaxBytes: number,
+  nativeStateListeners: Set<ColyseusNativeStateListener>
 ): void {
   state.room = room;
   state.messageUnsubscribe = room.onMessage(messageType, (message) => {
@@ -264,6 +372,29 @@ function attachRoom(
   state.presenceUnsubscribe = room.onMessage(presenceType, (message) => {
     receivePresence(state, message);
   });
+  if (nativeStateSyncEnabled) {
+    state.nativeStateHandler = (roomState) => {
+      const update = readNativeRoomState(
+        roomState,
+        nativeStateSourceEndpointId,
+        nativeStateSchemaVersion,
+        nativeStateMaxBytes
+      );
+      if (update) {
+        if (update.stateVersion !== undefined) {
+          if (update.stateVersion === state.lastNativeStateVersion) {
+            return;
+          }
+          state.lastNativeStateVersion = update.stateVersion;
+        }
+        for (const listener of Array.from(nativeStateListeners)) {
+          listener(update);
+        }
+      }
+    };
+    room.onStateChange(state.nativeStateHandler);
+    state.nativeStateHandler(room.state);
+  }
   state.leaveHandler = (_code, reason) => {
     setLastReason(state, reason);
     state.phase = state.closed ? "closed" : "connected";
@@ -286,6 +417,9 @@ async function detachRoom(state: ColyseusConnectionState, reason: string): Promi
   const room = state.room;
   state.messageUnsubscribe?.();
   state.presenceUnsubscribe?.();
+  if (room && state.nativeStateHandler) {
+    room.onStateChange.remove(state.nativeStateHandler);
+  }
   if (room && state.leaveHandler) {
     room.onLeave.remove(state.leaveHandler);
   }
@@ -297,6 +431,8 @@ async function detachRoom(state: ColyseusConnectionState, reason: string): Promi
   }
   delete state.messageUnsubscribe;
   delete state.presenceUnsubscribe;
+  delete state.nativeStateHandler;
+  delete state.lastNativeStateVersion;
   delete state.leaveHandler;
   delete state.dropHandler;
   delete state.reconnectHandler;
@@ -350,6 +486,75 @@ function receivePresence(state: ColyseusConnectionState, message: unknown): void
     }
   }
   receiveMessage(state, message, Number.POSITIVE_INFINITY);
+}
+
+function readNativeRoomState(
+  value: unknown,
+  sourceEndpointId: string,
+  schemaVersion: string,
+  maxStateBytes: number
+): ColyseusNativeStateUpdate<unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const state = value as Record<string, unknown>;
+  if (
+    typeof state.sessionId !== "string" ||
+    state.sessionId.length === 0 ||
+    typeof state.sourcePeerId !== "string" ||
+    state.sourcePeerId.length === 0 ||
+    typeof state.tick !== "number" ||
+    !Number.isSafeInteger(state.tick) ||
+    state.tick < 0 ||
+    typeof state.updateCount !== "number" ||
+    !Number.isSafeInteger(state.updateCount) ||
+    state.updateCount < 1 ||
+    typeof state.version !== "string" ||
+    state.version !== schemaVersion ||
+    typeof state.timestamp !== "number" ||
+    !Number.isFinite(state.timestamp) ||
+    typeof state.stateJson !== "string" ||
+    state.stateJson.length === 0 ||
+    typeof state.stateBytes !== "number" ||
+    !Number.isSafeInteger(state.stateBytes) ||
+    state.stateBytes < 0 ||
+    state.stateBytes > maxStateBytes
+  ) {
+    return undefined;
+  }
+
+  try {
+    return {
+      sessionId: state.sessionId,
+      sourcePeerId: state.sourcePeerId,
+      sourceEndpointId,
+      tick: state.tick,
+      stateVersion: state.updateCount,
+      version: state.version,
+      timestamp: state.timestamp,
+      state: JSON.parse(state.stateJson) as unknown
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function findActiveConnection(
+  connections: Set<ColyseusConnectionState>,
+  sessionId: string,
+  sourcePeerId: string | undefined
+): ColyseusConnectionState | undefined {
+  for (const connection of connections) {
+    if (
+      connection.room &&
+      connection.session?.id === sessionId &&
+      connection.localPeer &&
+      (sourcePeerId === undefined || connection.localPeer.id === sourcePeerId)
+    ) {
+      return connection;
+    }
+  }
+  return undefined;
 }
 
 function validateOutgoingMessage(

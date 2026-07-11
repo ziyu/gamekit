@@ -59,6 +59,10 @@ export type MultiplayerAuthorityHostLoopOptions<TAction, TInput, TSnapshot> = {
   ): MultiplayerAuthorityDecision | void;
   tick?(ctx: MultiplayerAuthorityTickContext): void;
   captureSnapshot(ctx: MultiplayerAuthoritySnapshotContext): TSnapshot;
+  publishSnapshot?(
+    snapshot: TSnapshot,
+    ctx: MultiplayerAuthoritySnapshotContext
+  ): void | Promise<void>;
   onRejected?(rejection: MultiplayerAuthorityRejectedPayload): void;
 };
 
@@ -453,22 +457,27 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
     }
 
     const binding = options.binding.current();
-    const payload = options.captureSnapshot({
+    const context = {
       binding,
       tick: diagnostics.tick
-    });
+    };
+    const payload = options.captureSnapshot(context);
     try {
-      await options.runtime.send({
-        channel,
-        kind: snapshotKind,
-        tick: diagnostics.tick,
-        ...(options.snapshotVersion === undefined
-          ? binding.snapshotVersion === undefined
-            ? {}
-            : { schemaVersion: binding.snapshotVersion }
-          : { schemaVersion: options.snapshotVersion }),
-        payload
-      });
+      if (options.publishSnapshot) {
+        await options.publishSnapshot(payload, context);
+      } else {
+        await options.runtime.send({
+          channel,
+          kind: snapshotKind,
+          tick: diagnostics.tick,
+          ...(options.snapshotVersion === undefined
+            ? binding.snapshotVersion === undefined
+              ? {}
+              : { schemaVersion: binding.snapshotVersion }
+            : { schemaVersion: options.snapshotVersion }),
+          payload
+        });
+      }
       diagnostics.sentSnapshots += 1;
       delete diagnostics.lastBroadcastError;
     } catch (error) {

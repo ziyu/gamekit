@@ -7,6 +7,11 @@ import {
 } from "@gamekit/multiplayer-core";
 import { createMultiplayerDemoRuntime, type MultiplayerDemoRuntime } from "../domain";
 import { createRealtimeArenaHost, type RealtimeArenaHost } from "../realtime/host";
+import {
+  REALTIME_ARENA_DEFAULT_AUTHORITY_PATH,
+  REALTIME_ARENA_SCHEMA_VERSION,
+  type RealtimeArenaAuthorityPath
+} from "../realtime/authority-path";
 
 export const MULTIPLAYER_DEMO_ROOM_NAME = "gamekit_multiplayer_demo";
 export const MULTIPLAYER_DEMO_SESSION_ID = "multiplayer-demo-session";
@@ -17,12 +22,14 @@ export type LocalMultiplayerDemoHostOptions = {
   roomName: string;
   sessionId?: string;
   hostPeerId?: string;
+  authoritativePath?: RealtimeArenaAuthorityPath;
 };
 
 export type LocalMultiplayerDemoServerOptions = {
   roomName?: string;
   sessionId?: string;
   hostPeerId?: string;
+  authoritativePath?: RealtimeArenaAuthorityPath;
   port?: number;
 };
 
@@ -31,6 +38,7 @@ export type LocalMultiplayerDemoHost = {
   roomName: string;
   sessionId: string;
   hostPeerId: string;
+  authoritativePath: RealtimeArenaAuthorityPath;
   app: MultiplayerDemoRuntime;
   realtime: RealtimeArenaHost;
   host: MultiplayerRuntime;
@@ -48,12 +56,29 @@ export async function createLocalMultiplayerDemoServer(
   const roomName = options.roomName ?? MULTIPLAYER_DEMO_ROOM_NAME;
   const sessionId = options.sessionId ?? MULTIPLAYER_DEMO_SESSION_ID;
   const hostPeerId = options.hostPeerId ?? MULTIPLAYER_DEMO_HOST_PEER_ID;
+  const authoritativePath = options.authoritativePath ?? REALTIME_ARENA_DEFAULT_AUTHORITY_PATH;
   const colyseus = await createGameKitColyseusServer({
     roomName,
     ...(options.port === undefined ? {} : { port: options.port }),
     roomOptions: {
       maxClients: 12,
-      authority: "host-authoritative"
+      authority: "host-authoritative",
+      ...(authoritativePath === "colyseus-schema"
+        ? {
+            nativeStateSync: {
+              enabled: true,
+              schemaVersion: REALTIME_ARENA_SCHEMA_VERSION
+            },
+            nativeCapabilities: {
+              authoritativePath,
+              stateSync: {
+                available: true,
+                lane: "colyseus-schema" as const,
+                schemaVersion: REALTIME_ARENA_SCHEMA_VERSION
+              }
+            }
+          }
+        : {})
     }
   });
 
@@ -61,7 +86,8 @@ export async function createLocalMultiplayerDemoServer(
     endpoint: colyseus.endpoint,
     roomName,
     sessionId,
-    hostPeerId
+    hostPeerId,
+    authoritativePath
   });
   let disposed = false;
 
@@ -84,13 +110,46 @@ export async function createLocalMultiplayerDemoHost(
 ): Promise<LocalMultiplayerDemoHost> {
   const sessionId = options.sessionId ?? MULTIPLAYER_DEMO_SESSION_ID;
   const hostPeerId = options.hostPeerId ?? MULTIPLAYER_DEMO_HOST_PEER_ID;
+  const authoritativePath = options.authoritativePath ?? REALTIME_ARENA_DEFAULT_AUTHORITY_PATH;
+  const schemaStateSync = authoritativePath === "colyseus-schema";
+  const backend = createColyseusMultiplayerBackend({
+    endpoint: options.endpoint,
+    roomName: options.roomName,
+    joinByIdFallback: true,
+    nativeCapabilities: {
+      authoritativePath,
+      stateSync: {
+        available: schemaStateSync,
+        lane: "colyseus-schema",
+        schemaVersion: REALTIME_ARENA_SCHEMA_VERSION
+      }
+    },
+    nativeStateSync: {
+      enabled: schemaStateSync,
+      schemaVersion: REALTIME_ARENA_SCHEMA_VERSION
+    },
+    ...(schemaStateSync
+      ? {
+          createOptions: {
+            nativeStateSync: {
+              enabled: true,
+              schemaVersion: REALTIME_ARENA_SCHEMA_VERSION
+            },
+            nativeCapabilities: {
+              authoritativePath,
+              stateSync: {
+                available: true,
+                lane: "colyseus-schema",
+                schemaVersion: REALTIME_ARENA_SCHEMA_VERSION
+              }
+            }
+          }
+        }
+      : {})
+  });
   const host = createMultiplayerRuntime({
     id: `multiplayer-demo.host.${sessionId}`,
-    backend: createColyseusMultiplayerBackend({
-      endpoint: options.endpoint,
-      roomName: options.roomName,
-      joinByIdFallback: true
-    }),
+    backend,
     connectContext: {
       localPeer: {
         id: hostPeerId,
@@ -119,7 +178,25 @@ export async function createLocalMultiplayerDemoHost(
       role: "host"
     }
   });
-  const realtime = createRealtimeArenaHost({ runtime: host, sessionId, hostPeerId });
+  const realtime = createRealtimeArenaHost({
+    runtime: host,
+    sessionId,
+    hostPeerId,
+    ...(schemaStateSync
+      ? {
+          publishSnapshot(snapshot: unknown, tick: number) {
+            backend.native().publishState({
+              sessionId,
+              sourcePeerId: hostPeerId,
+              tick,
+              version: REALTIME_ARENA_SCHEMA_VERSION,
+              timestamp: Date.now(),
+              state: snapshot
+            });
+          }
+        }
+      : {})
+  });
   app.runtime.start();
 
   let hostDisposed = false;
@@ -142,6 +219,7 @@ export async function createLocalMultiplayerDemoHost(
     roomName: options.roomName,
     sessionId,
     hostPeerId,
+    authoritativePath,
     app,
     realtime,
     host,
