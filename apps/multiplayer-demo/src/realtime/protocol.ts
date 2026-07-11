@@ -101,9 +101,9 @@ export function readRealtimeArenaSnapshotPayload(
 ): RealtimeArenaSnapshotPayload | undefined {
   if (
     !isRecord(value) ||
-    !isRecord(value.snapshot) ||
+    !isRealtimeArenaSnapshot(value.snapshot) ||
     !isRecord(value.playersByPeerId) ||
-    typeof value.serverTime !== "number"
+    !isFiniteNumber(value.serverTime)
   ) {
     return undefined;
   }
@@ -141,7 +141,7 @@ export function readRealtimeArenaSnapshotPayload(
   }
 
   return {
-    snapshot: value.snapshot as RealtimeArenaSnapshot,
+    snapshot: value.snapshot,
     playersByPeerId,
     inputAcksByPeerId,
     serverTime: value.serverTime,
@@ -255,14 +255,193 @@ function isRealtimeInputFrame(value: unknown): value is RealtimeInputFrame {
   }
 
   return (
-    typeof value.sequence === "number" &&
-    Number.isInteger(value.sequence) &&
-    value.sequence >= 0 &&
-    typeof value.clientTime === "number" &&
+    isNonNegativeSafeInteger(value.sequence) &&
+    isNonNegativeFiniteNumber(value.clientTime) &&
     isAxis(value.moveX) &&
     isAxis(value.moveY) &&
     typeof value.sprint === "boolean"
   );
+}
+
+function isRealtimeArenaSnapshot(value: unknown): value is RealtimeArenaSnapshot {
+  return (
+    isRecord(value) &&
+    isArenaPhase(value.phase) &&
+    isNonNegativeSafeInteger(value.tick) &&
+    isNonNegativeFiniteNumber(value.phaseElapsedMs) &&
+    isNonNegativeFiniteNumber(value.roundElapsedMs) &&
+    isBounds(value.bounds) &&
+    isRules(value.rules) &&
+    Array.isArray(value.players) &&
+    value.players.every(isPlayer) &&
+    Array.isArray(value.cores) &&
+    value.cores.every(isCore) &&
+    Array.isArray(value.relayNodes) &&
+    value.relayNodes.every(isRelayNode) &&
+    Array.isArray(value.walls) &&
+    value.walls.every(isWall) &&
+    isScore(value.score) &&
+    Array.isArray(value.events) &&
+    value.events.every(isArenaEvent) &&
+    (value.result === undefined || isRoundResult(value.result))
+  );
+}
+
+function isArenaPhase(value: unknown): boolean {
+  return (
+    value === "lobby" ||
+    value === "countdown" ||
+    value === "running" ||
+    value === "ending" ||
+    value === "results"
+  );
+}
+
+function isBounds(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNonNegativeFiniteNumber(value.width) &&
+    isNonNegativeFiniteNumber(value.height)
+  );
+}
+
+function isRules(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return [
+    value.countdownMs,
+    value.roundDurationMs,
+    value.endingDurationMs,
+    value.scoreLimit,
+    value.playerRadius,
+    value.playerSpeedPerSecond,
+    value.inputTimeoutMs,
+    value.sprintMultiplier,
+    value.sprintDurationMs,
+    value.sprintCooldownMs,
+    value.pickupRadius,
+    value.deliverRadius,
+    value.maxEvents
+  ].every(isNonNegativeFiniteNumber);
+}
+
+function isPlayer(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.label === "string" &&
+    typeof value.teamId === "string" &&
+    isNonNegativeSafeInteger(value.slot) &&
+    typeof value.ready === "boolean" &&
+    typeof value.connected === "boolean" &&
+    isVector(value.spawn) &&
+    isVector(value.position) &&
+    isVector(value.velocity) &&
+    isNonNegativeSafeInteger(value.lastInputSequence) &&
+    isNonNegativeFiniteNumber(value.inputStateAgeMs) &&
+    isNonNegativeFiniteNumber(value.sprintRemainingMs) &&
+    isNonNegativeFiniteNumber(value.sprintCooldownMs) &&
+    isNonNegativeSafeInteger(value.deliveredCores) &&
+    isNonNegativeSafeInteger(value.rejectedInputs) &&
+    (value.carryingCoreId === undefined || typeof value.carryingCoreId === "string") &&
+    (value.inputState === undefined || isRealtimeInputFrame(value.inputState))
+  );
+}
+
+function isCore(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    isVector(value.spawn) &&
+    isVector(value.position) &&
+    isNonNegativeFiniteNumber(value.radius) &&
+    (value.carriedByPlayerId === undefined || typeof value.carriedByPlayerId === "string")
+  );
+}
+
+function isRelayNode(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.teamId === "string" &&
+    isVector(value.position) &&
+    isNonNegativeFiniteNumber(value.radius)
+  );
+}
+
+function isWall(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    isFiniteNumber(value.x) &&
+    isFiniteNumber(value.y) &&
+    isNonNegativeFiniteNumber(value.width) &&
+    isNonNegativeFiniteNumber(value.height)
+  );
+}
+
+function isVector(value: unknown): boolean {
+  return isRecord(value) && isFiniteNumber(value.x) && isFiniteNumber(value.y);
+}
+
+function isScore(value: unknown): boolean {
+  return isRecord(value) && Object.values(value).every(isNonNegativeFiniteNumber);
+}
+
+function isArenaEvent(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNonNegativeSafeInteger(value.id) &&
+    isNonNegativeSafeInteger(value.tick) &&
+    isArenaEventType(value.type) &&
+    (value.playerId === undefined || typeof value.playerId === "string") &&
+    (value.teamId === undefined || typeof value.teamId === "string") &&
+    (value.coreId === undefined || typeof value.coreId === "string") &&
+    (value.code === undefined || typeof value.code === "string") &&
+    typeof value.label === "string"
+  );
+}
+
+function isArenaEventType(value: unknown): boolean {
+  return (
+    value === "player.joined" ||
+    value === "player.disconnected" ||
+    value === "player.reconnected" ||
+    value === "player.left" ||
+    value === "player.name" ||
+    value === "player.ready" ||
+    value === "round.countdown" ||
+    value === "round.started" ||
+    value === "round.ending" ||
+    value === "round.results" ||
+    value === "round.rematch" ||
+    value === "core.picked" ||
+    value === "core.delivered" ||
+    value === "input.rejected"
+  );
+}
+
+function isRoundResult(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.reason === "score-limit" || value.reason === "time-limit" || value.reason === "draw") &&
+    isScore(value.score) &&
+    isNonNegativeFiniteNumber(value.durationMs) &&
+    (value.winnerTeamId === undefined || typeof value.winnerTeamId === "string")
+  );
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return isFiniteNumber(value) && value >= 0;
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 function isAxis(value: unknown): value is -1 | 0 | 1 {

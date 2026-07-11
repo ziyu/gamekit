@@ -65,6 +65,8 @@ import { createMultiplayerAuthorityHostLoop } from "@gamekit/multiplayer-core";
 const loop = createMultiplayerAuthorityHostLoop({
   runtime: hostRuntime,
   binding: hostBinding,
+  maxActionsPerSourcePerTick: 4,
+  maxQueuedActionsPerSource: 16,
   readInput: decodeInput,
   inputSequence: (input) => input.sequence,
   inputSequenceKey: (input) => input.playerId,
@@ -81,7 +83,9 @@ const loop = createMultiplayerAuthorityHostLoop({
 });
 ```
 
-Choose queue semantics from the input model. Discrete commands that must all execute use the default `fifo` mode; `maxInputsPerSourcePerTick: 1` prevents a burst from advancing one player multiple simulation steps inside one authority tick, and `maxQueuedInputsPerSource` bounds hostile or jittery senders. Continuously sampled movement, aim or steering state uses `inputQueueMode: "latest"`: a newer state replaces an older unconsumed state from the same source, queue depth stays bounded by active sources, and diagnostics report `queuedInputs`, `maxQueuedInputs` and `coalescedInputs`. The simulation may hold the last applied state until a newer state or game-owned timeout replaces it. Its acknowledgement advances only after that latest state has been adopted by an authoritative simulation tick; superseded samples need not execute individually.
+Discrete `game.action` commands use a per-source bounded FIFO. The host loop defaults to at most 8 actions from one source per authority tick and 32 queued actions per source; apps can tighten those limits with `maxActionsPerSourcePerTick` and `maxQueuedActionsPerSource`. Overflow is rejected as `action-queue-full`, while diagnostics report `queuedActions` and `maxQueuedActions`.
+
+Choose `game.input` queue semantics from the input model. Discrete input samples that must all execute use the default `fifo` mode; `maxInputsPerSourcePerTick: 1` prevents a burst from advancing one player multiple simulation steps inside one authority tick, and `maxQueuedInputsPerSource` bounds hostile or jittery senders. Continuously sampled movement, aim or steering state uses `inputQueueMode: "latest"`: a newer state replaces an older unconsumed state from the same source, queue depth stays bounded by active sources, and diagnostics report `queuedInputs`, `maxQueuedInputs` and `coalescedInputs`. The simulation may hold the last applied state until a newer state or game-owned timeout replaces it. Its acknowledgement advances only after that latest state has been adopted by an authoritative simulation tick; superseded samples need not execute individually.
 
 When presence reports that a peer left or disconnected, the host composition layer must call `loop.releasePeer(peerId)`. The loop then discards that peer's queued actions and inputs and forgets its input sequence keys, so a restored peer can start a fresh input stream without executing pre-disconnect work or being rejected against an old sequence. Player actor, slot and round-stat retention remain game-owned policy.
 

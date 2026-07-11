@@ -82,15 +82,48 @@ describe("multiplayer-demo session registry e2e", () => {
     });
     const sessionId = "recreate-session";
     const firstHost = (await registry.hostSession(sessionId, "owner-a")).session;
+    const firstClient = createClient(firstHost, "client-reused");
     let client: MultiplayerDemoClient | undefined;
 
     try {
+      await firstClient.connect();
+      await waitFor(() => countActivePeers(firstHost) === 2);
+      await firstClient.sendRealtimeAction({ type: "ready", ready: true });
+      await waitFor(() =>
+        firstHost.hostMessages.some(
+          (message) =>
+            message.sourcePeerId === "client-reused" &&
+            typeof message.payload === "object" &&
+            message.payload !== null &&
+            "type" in message.payload &&
+            message.payload.type === "ready"
+        )
+      );
+      firstHost.tick(50);
+      await waitFor(
+        () =>
+          firstHost.realtime
+            .snapshot()
+            .snapshot.players.find((player) => player.id === "client-reused")?.ready === true
+      );
+
       expect(await registry.closeSession(sessionId)).toBe(true);
+      await waitFor(() => firstClient.runtime.phase() !== "in-session");
 
       const secondHost = (await registry.hostSession(sessionId, "owner-b")).session;
-      client = createClient(secondHost, "client-after-recreate");
+      expect(secondHost.realtime.snapshot()).toMatchObject({
+        playersByPeerId: {},
+        inputAcksByPeerId: {},
+        participantsByPeerId: {},
+        snapshot: { players: [] }
+      });
+
+      client = createClient(secondHost, "client-reused");
       await client.connect();
       await waitFor(() => countActivePeers(secondHost) === 2);
+      await waitFor(
+        () => secondHost.realtime.snapshot().playersByPeerId["client-reused"] === "client-reused"
+      );
 
       expect(secondHost).not.toBe(firstHost);
       expect(registry.sessionIds()).toEqual([sessionId]);
@@ -99,9 +132,19 @@ describe("multiplayer-demo session registry e2e", () => {
           .peers()
           .map((peer) => peer.id)
           .sort()
-      ).toEqual(["client-after-recreate", secondHost.hostPeerId]);
+      ).toEqual(["client-reused", secondHost.hostPeerId]);
+      expect(secondHost.realtime.snapshot()).toMatchObject({
+        inputAcksByPeerId: { "client-reused": 0 },
+        participantsByPeerId: {
+          "client-reused": { status: "active", playerId: "client-reused" }
+        },
+        snapshot: {
+          players: [expect.objectContaining({ id: "client-reused", ready: false })]
+        }
+      });
     } finally {
       await client?.dispose();
+      await firstClient.dispose();
       await registry.dispose();
       await colyseus.dispose();
     }

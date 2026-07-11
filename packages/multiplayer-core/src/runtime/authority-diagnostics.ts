@@ -40,6 +40,8 @@ export type MultiplayerAuthorityDiagnostics = {
   receivedActions: number;
   acceptedActions: number;
   rejectedActions: number;
+  queuedActions: number;
+  maxQueuedActions: number;
   receivedInputs: number;
   acceptedInputs: number;
   rejectedInputs: number;
@@ -99,6 +101,8 @@ export function createMultiplayerAuthorityDiagnostics(
     receivedActions: loop?.receivedActions ?? 0,
     acceptedActions: loop?.acceptedActions ?? 0,
     rejectedActions: loop?.rejectedActions ?? 0,
+    queuedActions: loop?.queuedActions ?? 0,
+    maxQueuedActions: loop?.maxQueuedActions ?? 0,
     receivedInputs: loop?.receivedInputs ?? 0,
     acceptedInputs: loop?.acceptedInputs ?? 0,
     rejectedInputs: loop?.rejectedInputs ?? 0,

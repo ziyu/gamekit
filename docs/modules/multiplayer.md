@@ -478,7 +478,7 @@ Multiplayer diagnostics 应回答：
 - 当前 authority binding 状态、authority peer/server、local player/slot、last applied tick 和 snapshot source。
 - 本地 peer 与其他 peer 的 presence 状态。
 - 最近连接、重连、断线、房间关闭原因。
-- message 计数、队列长度、延迟摘要、丢弃/拒绝原因。
+- message 计数、action/input 当前与峰值队列长度、延迟摘要、丢弃/拒绝原因。
 - command accept / reject / forward / apply 链路。
 - snapshot / patch 的版本、大小、source gate、contributor、age 和应用结果。
 
@@ -533,7 +533,7 @@ Multiplayer diagnostics 应回答：
 
 - 游戏代码发送语义命令，不发送 backend frame。命令应小、可序列化、可验证，并能关联 tick、peer、player 和 correlation id。
 - 线上权威玩法默认使用 host/server validation；客户端预测只影响本地表现，不直接写入长期权威状态。
-- 连续移动/瞄准输入按 latest state 复制并由 authority 在新状态或超时前保持；不能把 20Hz 输入采样作为与 20Hz simulation 等速的 FIFO command 队列。必须逐条执行的交互、购买和一次性技能使用有界 FIFO 或独立 action contract。
+- 连续移动/瞄准输入按 latest state 复制并由 authority 在新状态或超时前保持；不能把 20Hz 输入采样作为与 20Hz simulation 等速的 FIFO command 队列。必须逐条执行的交互、购买和一次性技能使用底层 action contract 的 per-source 有界 FIFO，并按玩法风险收紧每 tick 消费上限和队列上限；不能在 app 中另建无界 command 数组。
 - 使用 core snapshot playback、declared `Network*` presentation tracks 或明确的 presentation cache 连接 authoritative snapshot 和 renderer frame；通过 App Host standard multiplayer module 启动的游戏，应优先把 latest authoritative snapshot source、track declaration 和 apply hook 挂到 module presentation binding，让底层随 GameRuntime tick 自动推进 playback 并产出 typed presented values。不要让 renderer 直接按低频网络 tick 跳变，不要在 app 层重复实现通用 playback clock，也不要把 presented position 写回 authority state。
 - 本地预测使用 core prediction buffer 的 `present()` 读取 render-only state，并为 fixed tick 预测声明 prediction step duration、起点/终点插值和 correction offset policy；不要把 `state()` 返回的 raw predicted endpoint 直接写入 renderer，也不要对 endpoint 再做一整步向前 extrapolate。`reconcile()` 立即更新 prediction simulation，但小 correction 的表现误差应作为移动 target 上的 offset 在短窗口内收敛；大 correction、teleport、binding/session change、hard phase transition 和 resync 直接 snap/reset prediction presentation。
 - UI 和 gameplay 代码应读取 authority binding / last authoritative snapshot 来决定是否显示联网游戏状态；未绑定时只能显示连接中、观战、离线练习或等待同步。

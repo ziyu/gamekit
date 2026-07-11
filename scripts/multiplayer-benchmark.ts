@@ -8,6 +8,7 @@ import {
   createSnapshotPlayback,
   createSnapshotPresentationProjector,
   defineSnapshotVector2Track,
+  MULTIPLAYER_ACTION_KIND,
   MULTIPLAYER_INPUT_KIND,
   MULTIPLAYER_SNAPSHOT_KIND,
   normalizeOutgoingMessage,
@@ -37,6 +38,10 @@ type BenchmarkInput = {
   sequence: number;
   dx: number;
   dy: number;
+};
+
+type BenchmarkAction = {
+  command: number;
 };
 
 type BenchmarkPayload = {
@@ -75,6 +80,7 @@ const suites: BenchmarkSuite[] = [
   runEnvelopeNormalizationBenchmark(),
   runAuthorityReceiverBenchmark(),
   runHostAuthorityLoopBenchmark(),
+  runHostActionQueueBenchmark(),
   runLatestInputCoalescingBenchmark(),
   runLocalAuthorityLoopBenchmark(),
   runPredictionReconciliationBenchmark(),
@@ -354,6 +360,75 @@ function runLatestInputCoalescingBenchmark(): BenchmarkSuite {
 
   return {
     suite: "authority-latest-input-coalescing",
+    cases
+  };
+}
+
+function runHostActionQueueBenchmark(): BenchmarkSuite {
+  const cases = [8, 32].map((clients) => {
+    const ticks = 5_000;
+    const actionsPerClientPerTick = 2;
+    const runtime = createBenchmarkRuntime(clients);
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: SESSION_ID,
+      mode: "host-authoritative",
+      status: "bound",
+      authorityEndpoint: {
+        kind: "peer",
+        id: AUTHORITY_PEER_ID,
+        peerId: AUTHORITY_PEER_ID
+      },
+      authorityPeerId: AUTHORITY_PEER_ID
+    });
+    let checksum = 0;
+    const loop = createMultiplayerAuthorityHostLoop<BenchmarkAction, never, BenchmarkPayload>({
+      runtime,
+      binding,
+      readAction(payload) {
+        return isBenchmarkAction(payload) ? payload : undefined;
+      },
+      maxActionsPerSourcePerTick: actionsPerClientPerTick,
+      maxQueuedActionsPerSource: actionsPerClientPerTick * 4,
+      handleAction(ctx) {
+        checksum += ctx.payload.command;
+      },
+      captureSnapshot(ctx) {
+        return { tick: ctx.tick, x: checksum };
+      }
+    });
+
+    for (let tick = 0; tick < 200; tick += 1) {
+      emitClientActions(runtime, clients, tick, actionsPerClientPerTick);
+      loop.tick(TICK_MS);
+    }
+    const before = loop.diagnostics();
+
+    const start = performance.now();
+    for (let tick = 0; tick < ticks; tick += 1) {
+      emitClientActions(runtime, clients, tick + 200, actionsPerClientPerTick);
+      loop.tick(TICK_MS);
+    }
+    const durationMs = performance.now() - start;
+    const diagnostics = loop.diagnostics();
+    const actions = ticks * clients * actionsPerClientPerTick;
+    loop.dispose();
+
+    return {
+      clients,
+      ticks,
+      actionsPerClientPerTick,
+      actions,
+      acceptedActions: diagnostics.acceptedActions - before.acceptedActions,
+      maxQueuedActions: diagnostics.maxQueuedActions,
+      durationMs: round(durationMs),
+      microsecondsPerAction: round((durationMs * 1000) / actions),
+      msPerTick: round(durationMs / ticks),
+      checksum
+    };
+  });
+
+  return {
+    suite: "authority-host-action-queue",
     cases
   };
 }
@@ -831,6 +906,28 @@ function emitClientInputBurst(
   }
 }
 
+function emitClientActions(
+  runtime: BenchmarkRuntime,
+  clients: number,
+  tick: number,
+  actionsPerClient: number
+): void {
+  for (let clientIndex = 0; clientIndex < clients; clientIndex += 1) {
+    for (let actionIndex = 0; actionIndex < actionsPerClient; actionIndex += 1) {
+      runtime.emit({
+        id: `action-${tick}-${clientIndex}-${actionIndex}`,
+        sessionId: SESSION_ID,
+        channel: RELIABLE_CHANNEL,
+        kind: MULTIPLAYER_ACTION_KIND,
+        sourcePeerId: `client-${clientIndex}`,
+        tick,
+        timestamp: tick,
+        payload: { command: actionIndex + 1 }
+      });
+    }
+  }
+}
+
 function createBenchmarkInput(sequence: number, playerIndex = 0): BenchmarkInput {
   return {
     playerId: `player-${playerIndex}`,
@@ -862,6 +959,15 @@ function isBenchmarkInput(value: unknown): value is BenchmarkInput {
     typeof value.sequence === "number" &&
     typeof value.dx === "number" &&
     typeof value.dy === "number"
+  );
+}
+
+function isBenchmarkAction(value: unknown): value is BenchmarkAction {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "command" in value &&
+    typeof value.command === "number"
   );
 }
 

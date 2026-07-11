@@ -40,6 +40,12 @@ const BUDGETS: MultiplayerBenchmarkBudget[] = [
     maximum: 1
   },
   {
+    suite: "authority-host-action-queue",
+    where: { clients: 32, actionsPerClientPerTick: 2 },
+    metric: "msPerTick",
+    maximum: 1.5
+  },
+  {
     suite: "authority-latest-input-coalescing",
     where: { clients: 32, burstSize: 4 },
     metric: "msPerTick",

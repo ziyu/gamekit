@@ -238,6 +238,28 @@ describe("realtime arena domain", () => {
     expect(state.events.filter((event) => event.type === "core.picked")).toHaveLength(1);
   });
 
+  it("keeps pickup authority on the server when the player is out of range", () => {
+    const state = createRealtimeArenaState({
+      layout: {
+        bounds: { width: 200, height: 120 },
+        spawnPoints: { green: { x: 20, y: 60 } },
+        relayNodes: [],
+        cores: [{ id: "core-distant", position: { x: 180, y: 60 }, radius: 8 }],
+        walls: []
+      },
+      rules: { countdownMs: 0, pickupRadius: 24 },
+      players: [{ id: "runner", teamId: "green" }]
+    });
+
+    readyAndStart(state, ["runner"]);
+    expectAccepted(applyRealtimeArenaPlayerInteract(state, "runner"));
+    tickRealtimeArena(state, 16);
+
+    expect(getPlayer(state, "runner").carryingCoreId).toBeUndefined();
+    expect(state.cores[0]?.carriedByPlayerId).toBeUndefined();
+    expect(state.events.some((event) => event.type === "core.picked")).toBe(false);
+  });
+
   it("removes a player and releases carried cores when the player leaves", () => {
     const state = createRealtimeArenaState({
       layout: deliveryLayout,

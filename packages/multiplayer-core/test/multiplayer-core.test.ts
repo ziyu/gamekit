@@ -348,6 +348,112 @@ describe("multiplayer authority helpers", () => {
     });
   });
 
+  it("bounds discrete action queues and consumption per source", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "bounded-action-host",
+      backend: fake.backend,
+      clock: () => 200
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "host-authoritative",
+      localPeer: { id: "host", role: "host" }
+    });
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: "session-1",
+      mode: "host-authoritative",
+      authorityPeerId: "host"
+    });
+    const processed: string[] = [];
+    const loop = createMultiplayerAuthorityHostLoop<ActionPayload, never, { tick: number }>({
+      runtime,
+      binding,
+      readAction,
+      maxActionsPerSourcePerTick: 1,
+      maxQueuedActionsPerSource: 2,
+      handleAction({ message }) {
+        processed.push(message.sourcePeerId);
+      },
+      captureSnapshot({ tick }) {
+        return { tick };
+      }
+    });
+
+    fake.emit(messageFrom("client-a", MULTIPLAYER_ACTION_KIND, { type: "start" }));
+    fake.emit(messageFrom("client-a", MULTIPLAYER_ACTION_KIND, { type: "start" }));
+    fake.emit(messageFrom("client-a", MULTIPLAYER_ACTION_KIND, { type: "start" }));
+    fake.emit(messageFrom("client-b", MULTIPLAYER_ACTION_KIND, { type: "start" }));
+    fake.emit(messageFrom("client-b", MULTIPLAYER_ACTION_KIND, { type: "start" }));
+
+    expect(loop.diagnostics()).toMatchObject({
+      receivedActions: 5,
+      rejectedActions: 1,
+      queuedActions: 4,
+      maxQueuedActions: 4,
+      lastRejected: { code: "action-queue-full" }
+    });
+
+    loop.tick(50);
+    expect(processed).toEqual(["client-a", "client-b"]);
+    expect(loop.diagnostics()).toMatchObject({
+      acceptedActions: 2,
+      queuedActions: 2
+    });
+
+    loop.tick(50);
+    expect(processed).toEqual(["client-a", "client-b", "client-a", "client-b"]);
+    expect(loop.diagnostics()).toMatchObject({
+      acceptedActions: 4,
+      queuedActions: 0
+    });
+  });
+
+  it("protects action processing with bounded defaults", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "default-bounded-action-host",
+      backend: fake.backend,
+      clock: () => 200
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "host-authoritative",
+      localPeer: { id: "host", role: "host" }
+    });
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: "session-1",
+      mode: "host-authoritative",
+      authorityPeerId: "host"
+    });
+    const loop = createMultiplayerAuthorityHostLoop<ActionPayload, never, { tick: number }>({
+      runtime,
+      binding,
+      readAction,
+      captureSnapshot({ tick }) {
+        return { tick };
+      }
+    });
+
+    for (let index = 0; index < 33; index += 1) {
+      fake.emit(messageFrom("client-a", MULTIPLAYER_ACTION_KIND, { type: "start" }));
+    }
+
+    expect(loop.diagnostics()).toMatchObject({
+      receivedActions: 33,
+      rejectedActions: 1,
+      queuedActions: 32,
+      maxQueuedActions: 32,
+      lastRejected: { code: "action-queue-full" }
+    });
+
+    loop.tick(50);
+    expect(loop.diagnostics()).toMatchObject({
+      acceptedActions: 8,
+      queuedActions: 24
+    });
+  });
+
   it("bounds realtime input consumption per source at each authority tick", async () => {
     const fake = createFakeBackend();
     const runtime = createMultiplayerRuntime({
@@ -542,10 +648,10 @@ describe("multiplayer authority helpers", () => {
     fake.emit(messageFrom("client-a", MULTIPLAYER_ACTION_KIND, { type: "start" }));
     fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 8, dx: 1 }));
     fake.emit(messageFrom("client-b", MULTIPLAYER_INPUT_KIND, { sequence: 1, dx: 1 }));
-    expect(loop.diagnostics().queuedInputs).toBe(2);
+    expect(loop.diagnostics()).toMatchObject({ queuedActions: 1, queuedInputs: 2 });
 
     loop.releasePeer("client-a");
-    expect(loop.diagnostics().queuedInputs).toBe(1);
+    expect(loop.diagnostics()).toMatchObject({ queuedActions: 0, queuedInputs: 1 });
     loop.tick(50);
     expect(processed).toEqual(["client-a:input:7", "client-b:input:1"]);
 
@@ -625,9 +731,14 @@ describe("multiplayer authority helpers", () => {
         receivedActions: 2,
         acceptedActions: 1,
         rejectedActions: 1,
+        queuedActions: 1,
+        maxQueuedActions: 2,
         receivedInputs: 3,
         acceptedInputs: 2,
         rejectedInputs: 1,
+        coalescedInputs: 0,
+        queuedInputs: 1,
+        maxQueuedInputs: 2,
         sentSnapshots: 4,
         rejectedMessages: 2,
         lastRejected: { code: "stale-input", reason: "Input was stale." },
