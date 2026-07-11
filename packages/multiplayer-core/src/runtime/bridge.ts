@@ -78,7 +78,7 @@ export type MultiplayerPresentationBridgeOptions<
   applySample(ctx: MultiplayerPresentationApplyContext<TSnapshot, TInstallContext>): void;
 };
 
-export type CreateMultiplayerBridgeModuleOptions<
+export type MultiplayerModuleOptions<
   TInstallContext extends MultiplayerBridgeInstallContext,
   TSnapshot = any
 > = {
@@ -90,12 +90,16 @@ export type CreateMultiplayerBridgeModuleOptions<
   presentation?: MultiplayerPresentationBridgeOptions<TSnapshot, TInstallContext>;
 };
 
-export function createMultiplayerBridgeModule<
+/** @deprecated Use MultiplayerModuleOptions. */
+export type CreateMultiplayerBridgeModuleOptions<
+  TInstallContext extends MultiplayerBridgeInstallContext,
+  TSnapshot = any
+> = MultiplayerModuleOptions<TInstallContext, TSnapshot>;
+
+export function createMultiplayerModule<
   TInstallContext extends MultiplayerBridgeInstallContext = MultiplayerBridgeInstallContext,
   TSnapshot = any
->(
-  options: CreateMultiplayerBridgeModuleOptions<TInstallContext, TSnapshot>
-): GameModule<TInstallContext> {
+>(options: MultiplayerModuleOptions<TInstallContext, TSnapshot>): GameModule<TInstallContext> {
   const moduleId = options.id ?? "gamekit.multiplayer.bridge";
   const commandKinds = new Set(options.commandKinds ?? ["game.command"]);
 
@@ -204,4 +208,14 @@ export function createMultiplayerBridgeModule<
       };
     }
   };
+}
+
+/** @deprecated Use createMultiplayerModule. */
+export function createMultiplayerBridgeModule<
+  TInstallContext extends MultiplayerBridgeInstallContext = MultiplayerBridgeInstallContext,
+  TSnapshot = any
+>(
+  options: CreateMultiplayerBridgeModuleOptions<TInstallContext, TSnapshot>
+): GameModule<TInstallContext> {
+  return createMultiplayerModule<TInstallContext, TSnapshot>(options);
 }

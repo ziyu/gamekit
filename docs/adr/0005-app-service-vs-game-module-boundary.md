@@ -30,6 +30,8 @@ Game Module 的判断标准：
 - 需要知道具体游戏上下文、规则、actor、camera rig、ability、save slot 等。
 - 应通过 `GameModule` 安装，并在 GameRuntime dispose 时清理订阅和 runtime 状态。
 
+Game Module 的实现归属对应 domain package。Domain package 导出可脱离 App Host 直接使用的 canonical factory，并拥有 system、EventBus、World、tick 和 cleanup 逻辑。App Host 可以提供 standard module wrapper，但 wrapper 只解析 service/profile value、补充标准默认值并调用 domain factory，不复制或拥有 domain runtime。
+
 长期归属：
 
 - Platform、Data、Asset、Renderer、Input source adapters、UI shell、DevTools shell 属于 App Service。
@@ -40,11 +42,14 @@ TCA 不作为 App Host 标准服务。它应提供 `createTcaModule(...)` 这样
 
 Camera 不作为长期 App Host 标准服务。它应提供 `createCameraModule(...)` 或 camera rig helper，把 input action、camera controller、renderer camera adapter sync 和 cleanup 封装在 GameModule lifecycle 里。
 
+Physics 的 live scene 和 Multiplayer 的 command/authority/presentation bridge 同样由各自 domain package 的 GameModule factory 持有。App Host 的 `standardModules.physics` / `standardModules.multiplayer` 只是可选的标准组合入口；高级使用者仍可直接安装 domain factory，调整模块顺序或组合多个实例。
+
 ## Consequences
 
 收益：
 
 - App Host 继续专注应用组合、服务生命周期、配置和诊断。
+- Domain package 可以独立于 App Host 使用和测试，不会产生两套 GameModule 行为实现。
 - GameRuntime 继续保持薄内核，只提供 GameModule lifecycle，而不直接理解 Camera/TCA/GAS。
 - Camera、TCA、GAS 等玩法会话能力仍能无痛启动，但跟随 GameRuntime dispose 清理。
 - DevTools 可以同时观察 App Host services 和 gameplay module trace，而不要求所有 trace runtime 都是 App Service。

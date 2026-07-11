@@ -36,6 +36,7 @@
     "access": "public"
   },
   "gamekitBuild": {
+    "bundleDts": false,
     "entries": [
       "src/index.ts",
       "src/server/index.ts"

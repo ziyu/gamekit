@@ -10,6 +10,7 @@ import type {
 import { createStandardCameraModule } from "./camera-module";
 import { createStandardGasModule } from "./gas-module";
 import { createStandardMultiplayerModule } from "./multiplayer-module";
+import { createStandardPhysicsModule } from "./physics-module";
 import { createStandardTcaModule } from "./tca-module";
 
 export function createStandardGameModules<TContext>(
@@ -29,6 +30,10 @@ export function createStandardGameModules<TContext>(
 
   if (standardModules?.multiplayer) {
     modules.push(createStandardMultiplayerModule(ctx, standardModules.multiplayer));
+  }
+
+  if (standardModules?.physics) {
+    modules.push(createStandardPhysicsModule(ctx, standardModules.physics));
   }
 
   if (standardModules?.camera) {

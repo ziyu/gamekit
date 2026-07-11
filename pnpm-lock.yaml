@@ -411,6 +411,9 @@ importers:
       '@gamekit/multiplayer-core':
         specifier: workspace:*
         version: link:../multiplayer-core
+      '@gamekit/physics-core':
+        specifier: workspace:*
+        version: link:../physics-core
       '@gamekit/platform-core':
         specifier: workspace:*
         version: link:../platform-core

@@ -41,7 +41,7 @@ apps/multiplayer-demo
   -> local Colyseus server
   -> @gamekit/multiplayer-colyseus backend
   -> host MultiplayerRuntime
-  -> GameRuntime + createMultiplayerBridgeModule()
+  -> GameRuntime + createMultiplayerModule()
   -> demo authority / command handler / EventBus
   -> Vite browser console + client MultiplayerRuntime
 ```

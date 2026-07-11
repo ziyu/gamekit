@@ -369,6 +369,8 @@ Authoritative snapshot 通常以固定 tick 或 provider state update 到达，�
 
 Multiplayer GameModule bridge 把 App Service 的连接事实接入 GameRuntime：
 
+`@gamekit/multiplayer-core` 通过 `createMultiplayerModule(...)` 持有真正的 GameModule 实现。`@gamekit/app-host` 的 standard multiplayer helper 只从 `services.multiplayer` 或 profile 解析 runtime/presentation options，再调用这个 domain factory；它不在 App Host 内复制 command、authority 或 presentation runtime。旧的 `createMultiplayerBridgeModule(...)` 仅作为兼容别名保留。
+
 ```txt
 backend message
 → MultiplayerFacade

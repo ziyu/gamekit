@@ -1,7 +1,7 @@
 import { createEventBus, type GameEvent } from "@gamekit/event-bus";
 import { createGame, type GameRuntime } from "@gamekit/game-runtime";
 import {
-  createMultiplayerBridgeModule,
+  createMultiplayerModule,
   type MultiplayerRuntime,
   type MultiplayerSnapshot
 } from "@gamekit/multiplayer-core";
@@ -58,7 +58,7 @@ export function createMultiplayerDemoRuntime(
     world: createKootaWorld(),
     eventBus,
     modules: [
-      createMultiplayerBridgeModule({
+      createMultiplayerModule({
         id: "multiplayer-demo.bridge",
         runtime: options.multiplayer,
         authority: createMultiplayerDemoAuthority(state),

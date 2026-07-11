@@ -103,7 +103,7 @@ Sandbox 的长期演示设计见 `docs/apps/sandbox.md`。具体工作流状态�
 
 ```txt
 apps/* → packages/*
-app-host → core / event-bus / game-runtime / platform-core / data / asset / renderer-core / input-core / camera-core / save / multiplayer-core
+app-host → core / event-bus / game-runtime / platform-core / data / asset / renderer-core / input-core / camera-core / physics-core / save / multiplayer-core
 adapter packages → facade packages
 driver packages → core protocol packages / external runtime
 game-runtime → core / world / event-bus
@@ -161,7 +161,7 @@ GameKit 必须区分 App Service 和 Game Module，避免 App Host 变成玩法�
 - 需要知道具体游戏上下文、规则、actor、camera rig、ability、save slot 等。
 - 应通过 `GameModule` 安装，并在 GameRuntime dispose 时清理订阅和 runtime 状态。
 
-App Host 可以提供“标准游戏模块”装配入口，但标准游戏模块仍属于 GameRuntime lifecycle。它们不进入 `services.xxx`，而是在 `game` service 创建 runtime 时作为 `GameModule[]` 注入。Camera action bridge、TCA runtime、未来 GAS runtime 都应优先走这个路径。
+App Host 可以提供“标准游戏模块”装配入口，但标准游戏模块仍属于 GameRuntime lifecycle。它们不进入 `services.xxx`，而是在 `game` service 创建 runtime 时作为 `GameModule[]` 注入。模块的完整 runtime 实现和直接创建 factory 归属对应 domain package；App Host 只提供解析 service/profile 依赖并调用 domain factory 的薄 wrapper。Camera、TCA、GAS、Physics 和 Multiplayer gameplay bridge 都应遵守这个路径。
 
 判断一个包更像 Adapter：
 

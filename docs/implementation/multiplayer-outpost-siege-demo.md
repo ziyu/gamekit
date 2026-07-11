@@ -214,7 +214,7 @@ Discrete action 使用 bounded FIFO：
 - dash、ability、build、interact、ready、start 和 rematch 每份只消费一次。
 - 每 peer 和每 room 都有容量、每 tick 消费上限和 overflow policy。
 - Accepted/rejected/overflow/coalesced/expired 必须进入低成本 diagnostics。
-- `createMultiplayerBridgeModule()` 的通用 command queue 在进入本 Demo 高频路径前，必须改为 bounded deque/ring buffer，或明确证明它只承载低频 control fact；不能把当前无界 `Array.shift()` 队列用于战斗 action。
+- `createMultiplayerModule()` 的通用 command queue 在进入本 Demo 高频路径前，必须改为 bounded deque/ring buffer，或明确证明它只承载低频 control fact；不能把当前无界 `Array.shift()` 队列用于战斗 action。
 
 ## Provider-native Schema Boundary
 

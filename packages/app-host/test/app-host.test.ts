@@ -21,6 +21,7 @@ import {
   type NetworkVector2
 } from "@gamekit/multiplayer-core";
 import { createMemoryMultiplayerBackend } from "@gamekit/multiplayer-memory";
+import { createMemoryPhysicsBackend, createPhysicsHandle } from "@gamekit/physics-core";
 import { createMemorySaveStore } from "@gamekit/save";
 import { type GameWorld } from "@gamekit/world";
 import { createTcaRuleDataType } from "@gamekit/tca";
@@ -758,6 +759,48 @@ describe("configured app host", () => {
       "gamekit.gas",
       "gamekit.camera"
     ]);
+  });
+
+  it("injects and disposes the standard physics game module", async () => {
+    const physics = createPhysicsHandle({ id: "standard.physics" });
+    const app = defineGameApp({
+      id: "standard-physics-module",
+      services: [{ id: "game" }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        game: {
+          standardModules: {
+            physics: {
+              backend: createMemoryPhysicsBackend(),
+              handle: physics,
+              fixedDeltaMs: 20,
+              scene: { gravity: { x: 0, y: 0 } }
+            }
+          },
+          createRuntime(_ctx, modules) {
+            expect(modules.map((module) => module.id)).toEqual(["gamekit.physics"]);
+            return createGame({
+              modules,
+              world: createMemoryWorld(),
+              eventBus: createEventBus({ clock: () => 1 }),
+              seed: "standard-physics"
+            });
+          }
+        }
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+
+    expect(physics.isBound()).toBe(true);
+    await configured.host.start();
+    configured.host.tick(20, 20);
+    expect(physics.snapshot()).toMatchObject({ backend: "memory-physics" });
+
+    await configured.host.dispose();
+    expect(physics.isBound()).toBe(false);
   });
 
   it("processes memory multiplayer commands through the standard bridge on runtime ticks", async () => {

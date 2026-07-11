@@ -1,7 +1,4 @@
-import {
-  createMultiplayerBridgeModule,
-  type CreateMultiplayerBridgeModuleOptions
-} from "@gamekit/multiplayer-core";
+import { createMultiplayerModule, type MultiplayerModuleOptions } from "@gamekit/multiplayer-core";
 import type { GameInstallContext } from "@gamekit/game-runtime";
 import { resolveStandardValue } from "../resolve";
 import type { StandardMultiplayerGameModuleOptions, StandardServiceBuildContext } from "../types";
@@ -18,24 +15,24 @@ export function createStandardMultiplayerModule<TContext>(
     throw new Error("Standard multiplayer game module requires the multiplayer service");
   }
 
-  const bridgeOptions: CreateMultiplayerBridgeModuleOptions<GameInstallContext> = {
+  const moduleOptions: MultiplayerModuleOptions<GameInstallContext> = {
     runtime
   };
   if (options.handleCommand !== undefined) {
-    bridgeOptions.handleCommand = options.handleCommand;
+    moduleOptions.handleCommand = options.handleCommand;
   }
   if (options.id !== undefined) {
-    bridgeOptions.id = options.id;
+    moduleOptions.id = options.id;
   }
   if (options.commandKinds !== undefined) {
-    bridgeOptions.commandKinds = options.commandKinds;
+    moduleOptions.commandKinds = options.commandKinds;
   }
   if (options.authority !== undefined) {
-    bridgeOptions.authority = options.authority;
+    moduleOptions.authority = options.authority;
   }
   if (options.presentation !== undefined) {
-    bridgeOptions.presentation = resolveStandardValue(ctx, options.presentation);
+    moduleOptions.presentation = resolveStandardValue(ctx, options.presentation);
   }
 
-  return createMultiplayerBridgeModule<GameInstallContext>(bridgeOptions);
+  return createMultiplayerModule<GameInstallContext>(moduleOptions);
 }

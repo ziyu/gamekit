@@ -16,6 +16,7 @@
     { "path": "../game-runtime" },
     { "path": "../input-core" },
     { "path": "../multiplayer-core" },
+    { "path": "../physics-core" },
     { "path": "../platform-core" },
     { "path": "../renderer-core" },
     { "path": "../save" },

@@ -2,6 +2,7 @@ import { createEventBus } from "@gamekit/event-bus";
 import { describe, expect, it } from "vitest";
 import {
   createMultiplayerBridgeModule,
+  createMultiplayerModule,
   createMultiplayerAuthorityBindingStore,
   createMultiplayerAuthorityDiagnostics,
   createMultiplayerAuthorityHostLoop,
@@ -1620,7 +1621,18 @@ describe("createSnapshotBuffer", () => {
   });
 });
 
-describe("createMultiplayerBridgeModule", () => {
+describe("createMultiplayerModule", () => {
+  it("keeps the bridge factory as a compatibility alias", () => {
+    const runtime = createMultiplayerRuntime({
+      id: "runtime",
+      backend: createFakeBackend().backend
+    });
+
+    expect(createMultiplayerBridgeModule({ runtime }).id).toBe(
+      createMultiplayerModule({ runtime }).id
+    );
+  });
+
   it("queues commands until the game system tick", async () => {
     const fake = createFakeBackend();
     const runtime = createMultiplayerRuntime({
@@ -1633,7 +1645,7 @@ describe("createMultiplayerBridgeModule", () => {
     const events: string[] = [];
     eventBus.onAny((event) => events.push(event.type));
 
-    const module = createMultiplayerBridgeModule({
+    const module = createMultiplayerModule({
       runtime,
       handleCommand({ message }) {
         handled.push(message);
@@ -1680,7 +1692,7 @@ describe("createMultiplayerBridgeModule", () => {
     const events: unknown[] = [];
     eventBus.on("multiplayer.command.rejected", (event) => events.push(event.payload));
 
-    const module = createMultiplayerBridgeModule({
+    const module = createMultiplayerModule({
       runtime,
       authority() {
         return { allowed: false, code: "not_authorized", reason: "client cannot act" };
@@ -1745,7 +1757,7 @@ describe("createMultiplayerBridgeModule", () => {
       position: NetworkVector2;
     }> = [];
 
-    const module = createMultiplayerBridgeModule({
+    const module = createMultiplayerModule({
       runtime,
       presentation: {
         interpolationDelayMs: 50,

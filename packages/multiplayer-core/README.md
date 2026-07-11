@@ -314,6 +314,8 @@ const profile = createStandardAppProfile({
 
 App Host owns connection lifecycle and service disposal. The GameModule bridge only handles normalized messages at the GameRuntime tick boundary; it does not create rooms or sockets.
 
+The GameModule implementation is owned by `@gamekit/multiplayer-core` and exposed as `createMultiplayerModule()`. App Host only resolves the standard service/profile dependencies before calling that factory. `createMultiplayerBridgeModule()` remains as a compatibility alias.
+
 ## Conformance
 
 Backend packages should run both conformance helpers:
