@@ -57,6 +57,7 @@
 - `renderer.md`：RenderObject、RenderNode、RenderCommand、Renderer Adapter。
 - `input.md`：Input Core、DOM/Phaser/Tauri input adapter、Action Mapping。
 - `camera.md`：Camera Core、Camera Rig、Renderer Camera Adapter。
+- `physics.md`：Physics Core、body/collider/query/contact、Backend Adapter。
 - `platform.md`：Platform Core、Web/Tauri adapter、权限与文件系统。
 - `data.md`：DataType、DataPack、DataRef、自由游戏数据模型、数据校验。
 - `assets.md`：AssetRef、AssetDefinition、AssetManager、资源来源和加载状态。

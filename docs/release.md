@@ -120,20 +120,24 @@ GitHub repository 设置：
 - `Release` workflow 需要 `id-token: write`，用于 npm Trusted Publishing/OIDC。
 - 每个要发布的 `@gamekits/*` 包都应在 npm package settings 中配置 Trusted Publisher：
   `ziyu/gamekit` + `release.yml`。
-- `npm-release` 环境可以配置 `NPM_TOKEN` secret 作为 fallback；没有 Trusted Publisher 或
-  OIDC 授权失败时才使用 token。
+- `npm-release` 环境必须配置 `NPM_TOKEN` secret 作为新包首发 bootstrap 和 fallback；没有
+  Trusted Publisher、OIDC 授权失败或 package 尚未存在于 npm registry 时才使用 token。
 
 npm token fallback 要求：
 
-- 对 `@gamekits` scope 有 publish 权限。
+- 对 `@gamekits` scope 有创建 package 和 publish 权限。
 - 可以发布 public scoped package。
 - 如果 npm 账号启用了 2FA，token 必须能 bypass 2FA；否则 CI 会报 OTP 相关错误。
 
-当前发布脚本优先通过 npm CLI 使用 Trusted Publishing/OIDC 发布 package。若 OIDC 环境不存在、
-包没有对应 Trusted Publisher、或 npm CLI 返回认证失败，并且存在 `NPM_TOKEN`，才回退到 registry
-HTTP API 发布。已经发布版本的后置 dist-tag 修改可能需要传统 npm 写认证；prerelease 不再通过
-自动化同步 `latest`，稳定默认入口应直接发布不带 prerelease 后缀的版本并使用 `dist-tag=latest`。
-不要把 npm token 写入仓库、日志、命令参数、PR 描述或 issue。
+当前发布脚本会在发布前检查 npm registry。尚不存在的 `@gamekits/*` 新包会排在已有包之前，
+通过 `NPM_TOKEN` 和 npm CLI 首发；如果发现新包但没有 token，workflow 会在发布任何包之前失败。
+已有包优先通过 npm CLI 使用 Trusted Publishing/OIDC 发布；若 OIDC 环境不存在、包没有对应
+Trusted Publisher 或 npm CLI 返回认证失败，并且存在 `NPM_TOKEN`，才回退到 token publish /
+dist-tag。token 只写入发布 job 的临时 npm userconfig，不能写入仓库、日志、命令参数、PR 描述或
+issue。
+
+新包首发通常不会带 Trusted Publishing provenance；首发后仍建议在 npm package settings 中补
+Trusted Publisher。未补 Trusted Publisher 的包后续版本仍会依赖 `NPM_TOKEN` fallback 发布。
 
 Trusted Publishing 会校验 npm provenance。发布 staging 生成的 package manifest 必须包含
 `repository.url: "https://github.com/ziyu/gamekit"`；否则 npm 会因为 provenance 中的仓库来源和
@@ -187,6 +191,8 @@ npm 页面显示旧版本：
 Publish job 报 OTP、401、403 或 404：
 
 - 先确认失败日志是否出现 `Trusted Publisher ... falling back to NPM_TOKEN`。
+- 如果失败包是新包，确认 `npm-release` 的 `NPM_TOKEN` 能在 `@gamekits` scope 下创建 public
+  scoped package；Trusted Publisher 不能替代新包首发 bootstrap。
 - 若期望走 Trusted Publishing，确认失败包也配置了 Trusted Publisher，且 workflow filename 是
   `release.yml`。
 - 若期望走 token fallback，更新 GitHub Environment `npm-release` 的 `NPM_TOKEN`，确认 token

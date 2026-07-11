@@ -3,19 +3,25 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.11.0",
+  "packageManager": "pnpm@11.1.2+sha512.415a1cc25974731e75455c1468371be74c5aa5fb7621b50d4056d222451609f11412f23fd602e6169f1e060466641f798597e1be961a10688836a67b16569499",
   "scripts": {
     "build": "turbo run build",
     "build:game": "turbo run build --filter=abyss-delve",
     "build:three": "turbo run build --filter=three-demo",
+    "build:physics2d": "turbo run build --filter=physics-2d-lab",
+    "build:physics3d": "turbo run build --filter=physics-3d-lab",
     "dev:sandbox": "turbo run dev --filter=sandbox",
     "dev:multiplayer": "turbo run dev --filter=multiplayer-demo",
     "dev:game": "turbo run dev --filter=abyss-delve",
     "dev:three": "turbo run dev --filter=three-demo",
+    "dev:physics2d": "turbo run dev --filter=physics-2d-lab",
+    "dev:physics3d": "turbo run dev --filter=physics-3d-lab",
     "test": "turbo run test",
     "test:multiplayer": "turbo run test --filter=multiplayer-demo",
     "test:game": "turbo run test --filter=abyss-delve",
     "test:three": "turbo run test --filter=three-demo",
+    "test:physics2d": "turbo run test --filter=physics-2d-lab",
+    "test:physics3d": "turbo run test --filter=physics-3d-lab",
     "test:unit": "turbo run test",
     "test:vitest": "turbo run test",
     "lint": "turbo run lint",
@@ -49,5 +55,9 @@
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vitest": "^3.1.3"
-  }
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
 }

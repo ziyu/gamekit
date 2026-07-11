@@ -71,7 +71,7 @@
 
 ## 可解释性从一开始进入设计
 
-Runtime、EventBus、TCA、GAS、Asset、Save 和 DevTools 都必须产生可观察信息。低频事实、规则匹配、能力执行、资源加载、存档操作和性能热点应能被测试或工具解释。
+Runtime、EventBus、Physics、TCA、GAS、Asset、Save 和 DevTools 都必须产生可观察信息。低频事实、物理接触、空间查询、规则匹配、能力执行、资源加载、存档操作和性能热点应能被测试或工具解释。
 
 ## 模块拆分
 

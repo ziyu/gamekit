@@ -23,6 +23,7 @@ Status: Planned on 2026-07-11; implementation has not started.
 - `docs/modules/app-host.md`
 - `docs/modules/driver.md`
 - `docs/modules/devtools.md`
+- `docs/modules/physics.md`
 - `docs/best-practices.md`
 - `docs/adr/0013-standard-authoritative-replication-boundary.md`
 - `docs/adr/0014-multiplayer-presentation-temporal-buffer.md`
@@ -173,11 +174,11 @@ Colyseus server
 - Browser party leader 可以请求开始、rematch 或 close room，但不能因此取得 authority write capability。
 - Room state 与 provider connection handle 不进入 gameplay world 或 Save boundary。
 
-### Physics Decision Gate
+### Physics Integration
 
-Wave 0 必须评估一个成熟、可 headless 运行且不依赖 renderer lifecycle 的 2D collision/physics library。如果引入第三方库，新增 ADR 并通过 app/server adapter 隔离。Phaser physics 不能成为 server authority，因为 browser Driver runtime 不应在 server gameplay 中出现。
+Outpost Siege 使用 `@gamekit/physics-core` 作为稳定 facade，并通过 `@gamekit/physics-rapier2d` 创建可 headless 运行的 server authority scene。Physics scene 由 server GameRuntime 中的标准 Physics GameModule 持有和推进，不进入 App Host standard service，也不依赖 browser Phaser Driver lifecycle。
 
-如果第一版只需要圆形/AABB overlap、位置积分和有限的 sweep test，也必须把范围限制写清楚；不能在 Demo 中逐步长出一个隐含的自研通用物理引擎。
+Browser prediction 只能通过 backend-neutral movement/physics contract 复用必要规则，不能直接 import Rapier native type。Phaser physics 不能成为 server authority；Renderer 只消费 authority/presentation transform，不能反向决定 gameplay collision。
 
 ## Authority And Data Flow
 
@@ -396,7 +397,7 @@ Status: Planned.
 2. 固定 Relay Arena 当前 test、benchmark、Schema bytes 和真实浏览器表现作为基线。
 3. 新增 ADR：Room-owned authority lifecycle 与 browser party leader 分离。
 4. 新增 ADR：app-owned Colyseus Schema mapping extension boundary。
-5. 完成 headless physics/collision library decision；需要第三方依赖时新增 ADR。
+5. 固定 `physics-core + physics-rapier2d` 的 headless server profile、World sync 顺序和 benchmark diagnostics。
 6. 定义功能、单房压力、多房吞吐和 soak profile 的机器可读配置。
 
 完成标准：没有 gameplay 代码，所有高影响边界有文档结论，基线数据可重复获得。
@@ -489,7 +490,6 @@ Status: Planned.
 
 ## Open Decisions For Wave 0
 
-- Headless collision/physics library 选择及 adapter 边界。
 - Authority tick 和 Schema replication rate 的默认组合：先比较 20/15Hz 与 30/20Hz。
 - Projectile 是逐实体复制、事件 + client presentation，还是按数量分层；必须先实测再决定。
 - Disconnect grace 期间 actor 是冻结、无输入停留还是由 server bot 接管。

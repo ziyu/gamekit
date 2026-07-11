@@ -20,6 +20,7 @@ Save 负责游戏长期状态的捕获、序列化、持久化、恢复、版本
 - `@gamekit/asset`
 - `@gamekit/tca`
 - `@gamekit/gas`
+- `@gamekit/physics-core`
 - `@gamekit/ui-core`
 
 Save 不是 DataPack、Content Package、Asset bundle 或编辑器工程文件。Save 保存一次游戏会话的长期运行状态；DataPack / Content Package 保存内容定义和资源分发；编辑器工程保存创作状态。
@@ -28,7 +29,7 @@ Save 不是 DataPack、Content Package、Asset bundle 或编辑器工程文件�
 
 - 统一 save / load / list / delete / migrate / inspect 能力。
 - 支持 Web、Tauri 和未来平台，不直接依赖 localStorage、Tauri FS 或浏览器私有 API。
-- 通过 module contributor 机制保存 World、GameRuntime、TCA、GAS 和游戏自定义状态，避免 `@gamekit/save` 依赖具体 gameplay 包。
+- 通过 module contributor 机制保存 World、GameRuntime、TCA、GAS、Physics 和游戏自定义状态，避免 `@gamekit/save` 依赖具体 gameplay 包。
 - 支持版本迁移，旧存档缺失迁移路径时给出明确错误。
 - 支持固定 seed 下 save/load 后继续 tick 的确定性验证。
 - 支持 slot metadata、diagnostics、checksum / corruption detection 和 DevTools 可见性。
@@ -137,6 +138,7 @@ export type SaveSection<TData = unknown> = {
 - `world`：可保存 entity/component 状态。
 - `tca`：once-rule、cooldown、runtime-local rule state。
 - `gas`：actor attributes、tags、cooldowns、active effects。
+- `physics`：可恢复 body/collider 状态、稳定 entity mapping、sleep state。
 - `camera`：可选镜头状态，通常只保存玩家偏好或当前视角。
 - `ui`：可选 UI layout / open panels，不保存 React component state。
 - `game.*`：具体游戏自定义状态。
@@ -167,13 +169,13 @@ export type SaveContributor<TData = unknown> = {
 
 设计规则：
 
-- Contributor id 必须稳定，例如 `world`, `gas`, `tca`, `game.inventory`。
+- Contributor id 必须稳定，例如 `world`, `physics`, `gas`, `tca`, `game.inventory`。
 - Contributor 应声明 `scope` 和 `tags`，例如 `world`、`gameplay`、`camera`、`ui-preferences`，方便 app、DevTools 或 autosave 策略决定保存范围。
 - `saveByDefault: false` 只用于 debug、presentation、cache 或可重建状态；核心进度默认应可保存。
 - Capture 不应读取 renderer native object、DOM 或 React internal state。
 - Capture 默认不应保存当前选中对象、hover/focus target、确认弹窗状态、按键 held state 等即时交互上下文；这些状态只在游戏明确把它们转化为长期玩法事实时才应进入进度存档。
 - Restore 应可重复推理，不能隐式启动 runtime tick。
-- Restore 顺序按 contributor dependency / order 执行，World 通常早于 GAS/TCA。
+- Restore 顺序按 contributor dependency / order 执行，World 通常早于 Physics、GAS/TCA。
 - 缺失 optional section 可以降级；缺失 required section 必须报错。
 - 高频临时缓存、pathfinding cache、render patch cache 不进入存档，恢复后由系统重建。
 
@@ -182,6 +184,7 @@ export type SaveContributor<TData = unknown> = {
 - `@gamekit/save` 提供 contributor 协议和 manager。
 - `@gamekit/gas` 可以提供 `createGasSaveContributor()`。
 - `@gamekit/tca` 可以提供 `createTcaSaveContributor()`。
+- `@gamekit/physics-core` 可以提供 `createPhysicsSaveContributor()`。
 - `@gamekit/camera-core` 可以提供可选 camera state contributor。
 - 游戏项目提供 `game.*` contributor。
 
@@ -502,6 +505,7 @@ Event payload 不应包含完整存档数据、敏感内容或大对象。详细
 
 - fixed seed save/load/tick continuation。
 - World entity remap。
+- Physics body/collider restore and backend cache rebuild。
 - GAS attributes/tags/effects restore。
 - TCA once-rule/cooldown restore。
 - Platform memory/web store。
@@ -511,6 +515,7 @@ Event payload 不应包含完整存档数据、敏感内容或大对象。详细
 
 - Save 包不依赖 Phaser、React、Koota、Tauri adapter 或具体 game app。
 - Renderer native handle 不进入 save payload。
+- Physics backend native handle、broadphase cache、manifold 和 solver cache 不进入 save payload。
 - Asset/Data 通过 id/version/reference 恢复，不复制完整定义或资源 payload。
 
 ## 最佳实践

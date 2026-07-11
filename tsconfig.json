@@ -11,6 +11,9 @@
     { "path": "./packages/multiplayer-colyseus" },
     { "path": "./packages/renderer-core" },
     { "path": "./packages/renderer-phaser" },
+    { "path": "./packages/physics-core" },
+    { "path": "./packages/physics-rapier2d" },
+    { "path": "./packages/physics-rapier3d" },
     { "path": "./packages/driver-core" },
     { "path": "./packages/driver-phaser" },
     { "path": "./packages/driver-three" },
@@ -19,6 +22,8 @@
     { "path": "./apps/multiplayer-demo" },
     { "path": "./apps/sandbox" },
     { "path": "./apps/abyss-delve" },
-    { "path": "./apps/three-demo" }
+    { "path": "./apps/three-demo" },
+    { "path": "./apps/physics-2d-lab" },
+    { "path": "./apps/physics-3d-lab" }
   ]
 }

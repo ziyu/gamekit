@@ -1,14 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-  writeFileSync
-} from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -40,11 +31,15 @@ if (!trustedPublisher && !token) {
 
 const workDir = mkdtempSync(join(tmpdir(), "gamekits-publish-"));
 
-async function publish(slug) {
-  const name = `@gamekits/${slug}`;
+async function publish(plan) {
+  const { isNewPackage, name, slug } = plan;
   let authMode;
 
-  if (trustedPublisher) {
+  if (isNewPackage) {
+    console.log(`${name} is new in npm registry; bootstrapping first publish with NPM_TOKEN.`);
+    await publishWithToken(slug);
+    authMode = "token";
+  } else if (trustedPublisher) {
     try {
       await publishWithTrustedPublisher(slug);
       authMode = "trusted";
@@ -110,102 +105,74 @@ async function publishWithToken(slug) {
   }
 
   const name = `@gamekits/${slug}`;
-  const encodedName = encodeURIComponent(name).replace("%40", "@");
-  const tarballName = `gamekits-${slug}-${version}.tgz`;
-  const tarballPath = join(releaseDir, "tarballs", tarballName);
-  const manifestPath = join(releaseDir, "packages", slug, "package.json");
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  const tarball = readFileSync(tarballPath);
-  const shasum = createHash("sha1").update(tarball).digest("hex");
-  const integrity = `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
-  const tarballUrl = `${registry}/${encodedName}/-/${tarballName}`;
-  const payloadPath = join(workDir, `${slug}.json`);
-  const responsePath = join(workDir, `${slug}.response.json`);
-  const authConfigPath = join(workDir, `${slug}.curlrc`);
-  const payload = {
-    _id: name,
-    name,
-    access: "public",
-    "dist-tags": {
-      [distTag]: version
-    },
-    versions: {
-      [version]: {
-        ...manifest,
-        dist: {
-          shasum,
-          integrity,
-          tarball: tarballUrl
-        }
-      }
-    },
-    _attachments: {
-      [tarballName]: {
-        content_type: "application/octet-stream",
-        data: tarball.toString("base64"),
-        length: statSync(tarballPath).size
-      }
-    }
-  };
+  const tarballPath = join(releaseDir, "tarballs", `gamekits-${slug}-${version}.tgz`);
+  const userConfigPath = writeNpmTokenConfig(slug, "publish");
 
-  writeFileSync(payloadPath, `${JSON.stringify(payload)}\n`);
-  writeFileSync(authConfigPath, `header = "Authorization: Bearer ${token}"\n`);
-  const status = execFileSync(
-    "curl",
-    [
-      "--config",
-      authConfigPath,
-      "--silent",
-      "--show-error",
-      "--connect-timeout",
-      "20",
-      "--retry",
-      "5",
-      "--retry-all-errors",
-      "--retry-delay",
-      "5",
-      "--output",
-      responsePath,
-      "--write-out",
-      "%{http_code}",
-      "--request",
-      "PUT",
-      "--header",
-      "Content-Type: application/json",
-      "--data-binary",
-      `@${payloadPath}`,
-      `${registry}/${encodedName}`
-    ],
-    { encoding: "utf8" }
-  );
-  const body = readFileSync(responsePath, "utf8");
-  if (!["200", "201"].includes(status)) {
-    if (isAlreadyPublishedResponse(status, body)) {
+  try {
+    execFileSync(
+      "npm",
+      [
+        "publish",
+        tarballPath,
+        "--tag",
+        distTag,
+        "--access",
+        "public",
+        "--registry",
+        registry,
+        "--userconfig",
+        userConfigPath,
+        "--loglevel",
+        "warn"
+      ],
+      {
+        encoding: "utf8",
+        stdio: "pipe"
+      }
+    );
+  } catch (error) {
+    if (isNpmAlreadyPublished(error)) {
       console.log(`${name}@${version} already exists`);
       return;
     }
-    throw new Error(`${name}@${version} publish failed with HTTP ${status}: ${body}`);
+
+    throw new Error(`${name}@${version} publish failed via NPM_TOKEN: ${commandOutput(error)}`);
   }
 
-  console.log(`published ${name}@${version}`);
-}
-
-function isAlreadyPublishedResponse(status, body) {
-  return (
-    (status === "409" && body.includes("cannot modify pre-existing version")) ||
-    (status === "403" && body.includes("previously published versions"))
-  );
+  console.log(`published ${name}@${version} via NPM_TOKEN`);
 }
 
 try {
+  const packagePlans = await resolvePackagePlans(packages);
+  const newPackagePlans = packagePlans.filter((plan) => plan.isNewPackage);
+  const orderedPackagePlans = orderPackagePlans(packagePlans);
+
   console.log(`Publishing ${packages.length} package(s) to npm dist-tag "${distTag}".`);
   if (trustedPublisher) {
-    console.log("Trusted Publisher/OIDC environment detected; trying npm CLI publish first.");
+    console.log(
+      "Trusted Publisher/OIDC environment detected; using it for existing packages when possible."
+    );
   } else {
     console.log("Trusted Publisher/OIDC environment not detected; using NPM_TOKEN publish.");
   }
-  for (const slug of packages) {
-    await publish(slug);
+  if (newPackagePlans.length > 0) {
+    const names = newPackagePlans.map((plan) => plan.name).join(", ");
+    if (!token) {
+      throw new Error(
+        `New npm package(s) require NPM_TOKEN bootstrap before Trusted Publisher can be configured: ${names}.`
+      );
+    }
+
+    verifyTokenAuthentication(`bootstrap new npm package(s): ${names}`);
+    console.log(
+      `Bootstrapping new npm package(s) with NPM_TOKEN before existing packages: ${names}.`
+    );
+  } else if (!trustedPublisher && token) {
+    verifyTokenAuthentication("publish packages without Trusted Publisher/OIDC");
+  }
+
+  for (const plan of orderedPackagePlans) {
+    await publish(plan);
   }
   await syncDeferredDistTags();
 } finally {
@@ -301,47 +268,35 @@ function setDistTagWithToken(name, tag) {
     );
   }
 
-  const payloadPath = join(workDir, `${nameToSlug(name)}-${tag}.dist-tag.json`);
-  const responsePath = join(workDir, `${nameToSlug(name)}-${tag}.dist-tag.response.json`);
-  const authConfigPath = join(workDir, `${nameToSlug(name)}-${tag}.dist-tag.curlrc`);
+  const userConfigPath = writeNpmTokenConfig(nameToSlug(name), `${tag}.dist-tag`);
 
-  writeFileSync(payloadPath, `${JSON.stringify(version)}\n`);
-  writeFileSync(authConfigPath, `header = "Authorization: Bearer ${token}"\n`);
-
-  const status = execFileSync(
-    "curl",
-    [
-      "--config",
-      authConfigPath,
-      "--silent",
-      "--show-error",
-      "--connect-timeout",
-      "20",
-      "--retry",
-      "5",
-      "--retry-all-errors",
-      "--retry-delay",
-      "5",
-      "--output",
-      responsePath,
-      "--write-out",
-      "%{http_code}",
-      "--request",
-      "PUT",
-      "--header",
-      "Content-Type: application/json",
-      "--data-binary",
-      `@${payloadPath}`,
-      registryDistTagUrl(name, tag)
-    ],
-    { encoding: "utf8" }
-  );
-  const body = readFileSync(responsePath, "utf8");
-  if (!["200", "201", "204"].includes(status)) {
-    throw new Error(`${name}@${version} dist-tag "${tag}" failed with HTTP ${status}: ${body}`);
+  try {
+    execFileSync(
+      "npm",
+      [
+        "dist-tag",
+        "add",
+        `${name}@${version}`,
+        tag,
+        "--registry",
+        registry,
+        "--userconfig",
+        userConfigPath,
+        "--loglevel",
+        "warn"
+      ],
+      {
+        encoding: "utf8",
+        stdio: "pipe"
+      }
+    );
+  } catch (error) {
+    throw new Error(
+      `${name}@${version} dist-tag "${tag}" failed via NPM_TOKEN: ${commandOutput(error)}`
+    );
   }
 
-  console.log(`tagged ${name}@${version} as ${tag}`);
+  console.log(`tagged ${name}@${version} as ${tag} via NPM_TOKEN`);
 }
 
 function registryPackageUrl(name) {
@@ -349,13 +304,82 @@ function registryPackageUrl(name) {
   return `${base}${encodeURIComponent(name)}`;
 }
 
-function registryDistTagUrl(name, tag) {
-  const base = registry.endsWith("/") ? registry : `${registry}/`;
-  return `${base}-/package/${encodeURIComponent(name)}/dist-tags/${encodeURIComponent(tag)}`;
-}
-
 function nameToSlug(name) {
   return name.replace(/^@/, "").replace(/\W+/g, "-");
+}
+
+async function resolvePackagePlans(slugs) {
+  const plans = [];
+  for (const slug of slugs) {
+    const name = `@gamekits/${slug}`;
+    const metadata = await fetchPackageMetadata(name);
+    plans.push({
+      isNewPackage: metadata === undefined,
+      name,
+      slug
+    });
+  }
+
+  return plans;
+}
+
+function orderPackagePlans(plans) {
+  return [...plans].sort((a, b) => {
+    if (a.isNewPackage !== b.isNewPackage) {
+      return a.isNewPackage ? -1 : 1;
+    }
+
+    return a.slug.localeCompare(b.slug);
+  });
+}
+
+function verifyTokenAuthentication(reason) {
+  if (!token) {
+    throw new Error(`Cannot ${reason}: NPM_TOKEN is not set.`);
+  }
+
+  const userConfigPath = writeNpmTokenConfig("preflight", "whoami");
+  try {
+    execFileSync(
+      "npm",
+      ["whoami", "--registry", registry, "--userconfig", userConfigPath, "--loglevel", "warn"],
+      {
+        encoding: "utf8",
+        stdio: "pipe"
+      }
+    );
+  } catch (error) {
+    throw new Error(`Cannot ${reason}: NPM_TOKEN authentication failed: ${commandOutput(error)}`);
+  }
+}
+
+function writeNpmTokenConfig(slug, purpose) {
+  const configPath = join(workDir, `${slug}.${purpose}.npmrc`);
+  const registryUrl = normalizedRegistryUrl();
+  writeFileSync(
+    configPath,
+    [
+      `registry=${registryUrl}`,
+      `@gamekits:registry=${registryUrl}`,
+      `${npmAuthConfigKey(registryUrl)}:_authToken=${token}`,
+      "always-auth=true",
+      ""
+    ].join("\n")
+  );
+  return configPath;
+}
+
+function normalizedRegistryUrl() {
+  const url = new URL(registry);
+  if (!url.pathname.endsWith("/")) {
+    url.pathname = `${url.pathname}/`;
+  }
+  return url.toString();
+}
+
+function npmAuthConfigKey(registryUrl) {
+  const url = new URL(registryUrl);
+  return `//${url.host}${url.pathname}`;
 }
 
 function hasTrustedPublisherEnvironment() {

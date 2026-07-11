@@ -36,7 +36,10 @@ type PackageManifest = {
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const releaseRepositoryUrl = "https://github.com/ziyu/gamekit";
-const releaseVersion = process.env.GAMEKITS_RELEASE_VERSION ?? "0.1.0-alpha.0";
+const workspaceVersion = (
+  JSON.parse(readFileSync(join(root, "packages/core/package.json"), "utf8")) as PackageManifest
+).version;
+const releaseVersion = process.env.GAMEKITS_RELEASE_VERSION ?? workspaceVersion;
 const releaseDir =
   process.env.GAMEKITS_RELEASE_DIR ?? mkdtempSync(join(tmpdir(), "gamekits-release-"));
 const shouldCleanReleaseDir = process.env.GAMEKITS_RELEASE_DIR === undefined;
@@ -70,6 +73,9 @@ const wave2SupportPackageSlugs = wave1PackageSlugs.filter(
 const wave2PackageSlugs = [
   "input-core",
   "camera-core",
+  "physics-core",
+  "physics-rapier2d",
+  "physics-rapier3d",
   "driver-core",
   "devtools",
   "ui-core",
@@ -246,6 +252,15 @@ import { createThreeDriver } from "@gamekits/driver-three";
 import { createInputRouter } from "@gamekits/input-core";
 import { createDomInputAdapter } from "@gamekits/input-dom";
 import { createCameraController } from "@gamekits/camera-core";
+import {
+  checkOverlap,
+  createMemoryPhysicsBackend,
+  createPhysicsDataTypes,
+  queryPoint,
+  raycast
+} from "@gamekits/physics-core";
+import { initRapier2dPhysicsBackend } from "@gamekits/physics-rapier2d";
+import { initRapier3dPhysicsBackend } from "@gamekits/physics-rapier3d";
 import { createAssetManager } from "@gamekits/asset";
 import { createMemorySaveStore } from "@gamekits/save";
 import { createDevToolsRuntime } from "@gamekits/devtools";
@@ -292,6 +307,96 @@ if (inputCount !== 0) throw new Error("dom input smoke failed");
 const camera = createCameraController({ viewport: { width: 800, height: 600 } });
 camera.pan(10, 20);
 if (camera.getState().x <= 400) throw new Error("camera smoke failed");
+
+for (const type of createPhysicsDataTypes()) {
+  data.registerType(type);
+}
+
+function assertPhysicsHit(label, results, colliderId) {
+  if (!results.some((hit) => hit.colliderId === colliderId)) {
+    throw new Error(\`\${label} smoke failed\`);
+  }
+}
+
+const memoryPhysics = createMemoryPhysicsBackend({
+  id: "memory-physics-smoke",
+  dimension: "3d"
+});
+const memoryPhysicsScene = memoryPhysics.createScene({
+  dimension: "3d",
+  gravity: { x: 0, y: 0, z: 0 }
+});
+const memoryPhysicsBody = memoryPhysicsScene.createBody({
+  kind: "static",
+  position: { x: 1, y: 0, z: 0 }
+});
+const memoryPhysicsCollider = memoryPhysicsScene.createCollider({
+  bodyId: memoryPhysicsBody,
+  shape: { type: "sphere", radius: 0.5 },
+  filter: { groups: ["actor"], collidesWith: ["query"] }
+});
+assertPhysicsHit(
+  "memory physics point",
+  queryPoint(memoryPhysicsScene, { x: 1, y: 0, z: 0 }),
+  memoryPhysicsCollider
+);
+assertPhysicsHit(
+  "memory physics raycast",
+  raycast(memoryPhysicsScene, { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, {
+    maxDistance: 5,
+    filter: { groups: ["query"], collidesWith: ["actor"] }
+  }),
+  memoryPhysicsCollider
+);
+if (!checkOverlap(memoryPhysicsScene, { type: "sphere", radius: 0.25 }, { x: 1, y: 0, z: 0 })) {
+  throw new Error("memory physics overlap smoke failed");
+}
+memoryPhysicsScene.dispose();
+
+const rapier2dPhysics = await initRapier2dPhysicsBackend({ id: "rapier2d-smoke" });
+const rapier2dScene = rapier2dPhysics.createScene({ gravity: { x: 0, y: 0 } });
+const rapier2dBody = rapier2dScene.createBody({ kind: "static", position: { x: 1, y: 0 } });
+const rapier2dCollider = rapier2dScene.createCollider({
+  bodyId: rapier2dBody,
+  shape: { type: "circle", radius: 0.5 }
+});
+rapier2dScene.step(1000 / 60);
+assertPhysicsHit("rapier2d point", queryPoint(rapier2dScene, { x: 1, y: 0 }), rapier2dCollider);
+assertPhysicsHit(
+  "rapier2d raycast",
+  raycast(rapier2dScene, { x: 0, y: 0 }, { x: 1, y: 0 }, { maxDistance: 5 }),
+  rapier2dCollider
+);
+if (!checkOverlap(rapier2dScene, { type: "circle", radius: 0.25 }, { x: 1, y: 0 })) {
+  throw new Error("rapier2d overlap smoke failed");
+}
+rapier2dScene.dispose();
+
+const rapier3dPhysics = await initRapier3dPhysicsBackend({ id: "rapier3d-smoke" });
+const rapier3dScene = rapier3dPhysics.createScene({ gravity: { x: 0, y: 0, z: 0 } });
+const rapier3dBody = rapier3dScene.createBody({
+  kind: "static",
+  position: { x: 1, y: 0, z: 0 }
+});
+const rapier3dCollider = rapier3dScene.createCollider({
+  bodyId: rapier3dBody,
+  shape: { type: "sphere", radius: 0.5 }
+});
+rapier3dScene.step(1000 / 60);
+assertPhysicsHit(
+  "rapier3d point",
+  queryPoint(rapier3dScene, { x: 1, y: 0, z: 0 }),
+  rapier3dCollider
+);
+assertPhysicsHit(
+  "rapier3d raycast",
+  raycast(rapier3dScene, { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { maxDistance: 5 }),
+  rapier3dCollider
+);
+if (!checkOverlap(rapier3dScene, { type: "sphere", radius: 0.25 }, { x: 1, y: 0, z: 0 })) {
+  throw new Error("rapier3d overlap smoke failed");
+}
+rapier3dScene.dispose();
 
 const assets = createAssetManager({
   adapter: {

@@ -52,6 +52,16 @@ export default defineConfig({
         .pathname,
       "@gamekit/camera-core": new URL("./packages/camera-core/src/index.ts", import.meta.url)
         .pathname,
+      "@gamekit/physics-core": new URL("./packages/physics-core/src/index.ts", import.meta.url)
+        .pathname,
+      "@gamekit/physics-rapier2d": new URL(
+        "./packages/physics-rapier2d/src/index.ts",
+        import.meta.url
+      ).pathname,
+      "@gamekit/physics-rapier3d": new URL(
+        "./packages/physics-rapier3d/src/index.ts",
+        import.meta.url
+      ).pathname,
       "@gamekit/input-core": new URL("./packages/input-core/src/index.ts", import.meta.url)
         .pathname,
       "@gamekit/input-dom": new URL("./packages/input-dom/src/index.ts", import.meta.url).pathname,

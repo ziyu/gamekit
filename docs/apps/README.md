@@ -20,3 +20,5 @@
 - `multiplayer-demo.md`：Multiplayer Colyseus Loopback 独立 demo app。
 - `abyss-delve.md`：Abyss Delve 真实游戏验证应用。
 - `three-demo.md`：Three Driver 独立能力实验台。
+- `physics-2d-lab.md`：Physics Core / Rapier 2D 独立能力实验台。
+- `physics-3d-lab.md`：Physics Core / Rapier 3D 独立能力实验台。

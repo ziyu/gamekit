@@ -1,0 +1,31 @@
+{
+  "name": "physics-3d-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b && vite build",
+    "dev": "vite --host 127.0.0.1",
+    "test": "vitest run --root ../.. --config vitest.config.ts apps/physics-3d-lab/src --passWithNoTests",
+    "lint": "oxlint ."
+  },
+  "dependencies": {
+    "@gamekit/app-host": "workspace:*",
+    "@gamekit/driver-core": "workspace:*",
+    "@gamekit/driver-three": "workspace:*",
+    "@gamekit/event-bus": "workspace:*",
+    "@gamekit/game-runtime": "workspace:*",
+    "@gamekit/physics-core": "workspace:*",
+    "@gamekit/physics-rapier3d": "workspace:*",
+    "@gamekit/platform-core": "workspace:*",
+    "@gamekit/platform-web": "workspace:*",
+    "@gamekit/renderer-core": "workspace:*",
+    "@gamekit/world": "workspace:*",
+    "three": "^0.181.2"
+  },
+  "devDependencies": {
+    "@types/three": "^0.184.1",
+    "vite": "^6.3.5",
+    "vitest": "^3.1.3"
+  }
+}
