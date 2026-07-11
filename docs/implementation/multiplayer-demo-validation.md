@@ -1,6 +1,6 @@
 # Multiplayer Demo Validation
 
-Status: Active; backend gate completed, standalone demo app baseline verified.
+Status: Closed on 2026-07-11; backend gate and standalone Demo baseline were verified. The remaining App Host/DevTools integration pressure has moved to `multiplayer-outpost-siege-demo.md`.
 
 ## Goal
 
@@ -204,7 +204,7 @@ corepack pnpm dev:multiplayer
 
 ### Wave 3: App Host / DevTools Follow-up
 
-Status: Planned.
+Status: Migrated to `multiplayer-outpost-siege-demo.md`; not implemented in this workflow.
 
 目标：在独立 demo app 中补 App Host standard multiplayer service 和 DevTools source dogfood。
 
