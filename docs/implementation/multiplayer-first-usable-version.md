@@ -1,6 +1,6 @@
 # Multiplayer First Usable Version
 
-Status: Active
+Status: Closed on 2026-07-11
 
 ## Goal
 
@@ -44,7 +44,7 @@ Status: Active
 - `@gamekit/multiplayer-colyseus` 已有 Colyseus root adapter、server-only helper、指定 GameKit session join、payload size gate、endpoint redaction、host-authoritative host leave close、native capability summary 和 native state bridge 雏形。
 - `apps/multiplayer-demo` 已有独立 realtime game demo、lobby/countdown/running/results/rematch 流程、双 client authoritative snapshot 测试、player name 去重、host/client/local 状态权限和离开/host close 生命周期测试。
 
-这些基础证明当前方向是对的，但还不足以成为下游可复用版本。剩余风险集中在包级 conformance、统一 diagnostics、peer/player binding、provider-native lane、reconnect 语义、App Host 装配和发布消费。
+这些能力已经通过包级 conformance、统一 diagnostics、peer/player binding、最小 provider-native bridge、明确 reconnect support level、App Host 装配和发布消费验证，构成第一个可供下游 dogfood 的 multiplayer baseline。
 
 ## P0 Gates
 
@@ -86,7 +86,7 @@ corepack pnpm --filter @gamekit/multiplayer-colyseus test
 corepack pnpm --filter multiplayer-demo test
 ```
 
-剩余缺口：out-of-session payload 在各 backend 的统一错误语义仍需随 release smoke 或后续 backend 波次继续收口。
+关闭结论：baseline 对 session mismatch、authority source mismatch 和 disposed lifecycle 提供稳定拒绝语义；新增 backend 若有 provider-specific out-of-session 状态，继续由对应 adapter conformance 收口，不阻塞本工作流。
 
 ### 2. Unified Authority Diagnostics
 
@@ -164,7 +164,7 @@ Status: Implemented As Minimal Native Lane
 
 - `@gamekit/multiplayer-colyseus` 已提供 native capability summary 和 `createColyseusNativeStateBridge()`。
 - Colyseus package 测试覆盖 native lane declaration、endpoint redaction、native state source/session gate、tick/version/size/age diagnostics 和 binding update。
-- 当前最小 native lane 通过 package fixture 证明 provider-native state 可以映射成 app-local view model；demo 切换 native lane 仍作为后续体验增强，不阻塞 core baseline。
+- 当前最小 native lane 通过 package fixture 证明 provider-native state 可以映射成 app-local view model；Demo 级真实 Schema lane 已迁移到 `multiplayer-colyseus-native-lane.md`，不属于本 baseline 的关闭门禁。
 
 ### 5. Reconnect Semantics
 
@@ -268,9 +268,9 @@ corepack pnpm verify:release:gamekits
 - Wave 1 smoke 已覆盖 Node ESM import `@gamekits/multiplayer-core`、`@gamekits/multiplayer-memory`、`@gamekits/multiplayer-colyseus` root entry，以及 `@gamekits/multiplayer-colyseus/server` subpath。
 - 已验证 `corepack pnpm verify:release:gamekits`，wave 1 tarball consumer smoke 通过。
 
-## Recommended Order
+## Execution Order
 
-推荐实现顺序：
+实际按以下顺序完成：
 
 1. P0.1 authority / replication conformance。
 2. P0.2 unified authority diagnostics。
@@ -281,7 +281,7 @@ corepack pnpm verify:release:gamekits
 7. P1.7 public docs。
 8. P1.8 release consumer smoke。
 
-这样先锁住“不会再出现伪多人”的底层门禁，再补成熟 backend 能力和发布消费体验。
+该顺序先锁住“不会再出现伪多人”的底层门禁，再补成熟 backend 能力和发布消费体验。
 
 ## Validation Policy
 
@@ -302,12 +302,23 @@ corepack pnpm verify:release:gamekits
 
 若实现 provider-native realtime state 或 world/adapter 高频同步，再补对应 benchmark 或 profiling 证据。
 
-## Closure Requirements
+## Closure Record
 
-关闭本工作流前必须：
+关闭日期：2026-07-11。
 
-- 标记本文档为 `Closed`。
-- 记录最终验证命令和结果。
-- 记录最终提交号或 PR。
-- 将稳定结论迁移到 `docs/modules/multiplayer.md`、`docs/best-practices.md`、package README 或新的 ADR。
-- 删除或迁移仍有价值的剩余任务，不能把 TODO 留在已关闭记录中。
+最终提交：
+
+- `c2b4371`：建立 multiplayer usable baseline。
+- `cf78f3f`：完成 prediction、reconciliation 和 input pacing。
+- `7d88257`：完成 participant lifecycle、late join、disconnect/rejoin 和 peer release。
+- `d2d3825`：完成 action queue 底层保护、完整 snapshot decoder 和 hardening tests。
+
+最终验证：
+
+- `corepack pnpm test`：62/62 workspace tasks 全部通过，包括真实本地 Colyseus server 和 Demo integration tests。
+- `corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format`、`git diff --check`：全部通过。
+- `corepack pnpm verify:release:gamekits`：外部临时 consumer 安装 Wave 1 tarball，Node/Vite/server subpath 和 test-utils smoke 全部通过。
+- `corepack pnpm bench:multiplayer:check`：10 个性能预算全部通过；32 clients、每端每 tick 2 个 action 的 bounded queue 为约 `0.05 ms/tick`。
+- Browser smoke：真实 host/join、ready/start、countdown/running 和 HUD diagnostics 正常，约 `120fps` / `20tps`，无 console warning/error 或布局重叠。
+
+稳定结论已迁移到 `docs/modules/multiplayer.md`、`docs/best-practices.md`、package README 和 ADR 0013/0014。真实 Colyseus Schema Demo lane、provider reconnect/seat reservation 和 renderer-core dogfood 已迁移到独立后续工作流。
