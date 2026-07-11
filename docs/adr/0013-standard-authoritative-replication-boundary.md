@@ -38,7 +38,7 @@ client input/action
 - 提供 host/server authoritative loop helper，使权威端在固定 tick 边界消费输入、应用 app-owned simulation，并广播 snapshot 或 patch。
 - 提供 local authoritative loop helper，使离线单机和本地测试在同一进程中复用相同 action/input、validation、tick 和 snapshot/apply 路径。
 - 提供 client receiver helper，使客户端默认只接受指定 authority peer/server 发来的 snapshot 或 patch，并把非 authority snapshot 记录为 rejected diagnostics。
-- 提供 player/peer binding helper，明确 `peer.id`、`playerId`、slot、spectator、late join、leave 和 reconnect 的映射边界。
+- 提供 player/peer binding helper 和可配置 participant lifecycle policy resolver，明确 `peer.id`、`playerId`、slot、spectator、next-round、leave、disconnect、reconnect 和 round boundary 的映射边界。Core 只解析静态规则或 app-context callback；玩法 actor、队伍、统计和具体 phase transition 仍由 app/server composition 执行。
 - 提供 conformance tests，覆盖双 client 同 session、start gate、非 authority snapshot 拒绝、重复 peer id、input sequence、disconnect cleanup 和 room isolation。
 
 核心不负责：
@@ -57,6 +57,7 @@ Backend adapter 职责：
 App / game 职责：
 
 - App 定义玩法 state、input/action payload、snapshot/patch payload、规则校验、simulation 和 presentation。
+- App 为 participant policy 提供自己的 phase/capacity/mode context，并执行 core decision 对玩法 actor、slot、team 和 round stats 的影响；不能要求 core 认识 lobby/running 等游戏状态。
 - App 可以选择使用 provider-native state sync、GameKit snapshot stream、lockstep 或 rollback；但必须通过 core 的 authority binding 明确谁是权威源。
 - 离线单机选择 `local` authority binding；它可以使用 in-process delivery 或 memory backend，但不能绕过同一套玩法 action/input、authority validation 和 snapshot presentation contract。
 - Browser/UI 不直接把 local simulation state 当成联网模式的权威状态。连接后本地预测只能作为表现层或可回滚缓存。

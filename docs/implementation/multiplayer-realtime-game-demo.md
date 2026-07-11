@@ -1,6 +1,6 @@
 # Multiplayer Realtime Game Demo
 
-Status: Active; Wave 0 rule domain, Wave 1 stage-first local playable arena, host-authoritative realtime sync, core authority helper dogfood, temporal snapshot presentation buffer and corrected Wave 5 fixed-step prediction/correction diagnostics implemented.
+Status: Active; Wave 0 rule domain, Wave 1 stage-first local playable arena, host-authoritative realtime sync, core authority helper dogfood, temporal snapshot presentation buffer, corrected Wave 5 fixed-step prediction/correction diagnostics and Wave 6 participant lifecycle implemented.
 
 ## Goal
 
@@ -336,7 +336,7 @@ Status: First pass implemented.
 
 ### Wave 4: Colyseus Native Capability Lane
 
-Status: Planned.
+Status: Implemented for the GameKit envelope lane; provider-native reconnect remains explicitly unsupported.
 
 目标：在不污染 `multiplayer-core` 的前提下，验证 Colyseus 的成熟 backend 能力，而不是只把 Colyseus 当作普通 message transport。
 
@@ -390,22 +390,38 @@ Status: Implemented; temporal snapshot interpolation buffer, local prediction/co
 
 ### Wave 6: Multiplayer Feature Completion
 
-Status: Planned.
+Status: Implemented for the GameKit envelope lane; provider-native reconnect remains explicitly unsupported.
 
 目标：补齐作为多人 dogfood 必须具备的真实房间行为。
 
 任务：
 
-1. 迟到加入策略：running 中进入 spectator/next-round，或在规则允许时安全加入。
-2. Leave/disconnect 策略：lobby 中释放 slot，running 中标记 disconnected、AI 接管或剔除出本局。
-3. Reconnect 策略：同 peer 恢复 slot，或明确作为新 peer 加入。
-4. Room reset/dispose 后释放 host runtime、input queue、snapshot buffer 和 listeners。
-5. Diagnostics 展示 active/tracked peers、slot state、round state、reconnect/disconnect facts。
+1. 已实现迟到加入策略：countdown/running/ending/results 中进入 `next-round`，没有当前局 player binding，gameplay action/input 被 authority 拒绝；rematch/reset 重建 lobby 时晋升。
+2. 已实现 Leave/disconnect 策略：lobby 中立即移除 actor 并释放 slot；本局开始后保留 actor/slot/统计，清空输入和速度、释放携带物，并停止 simulation movement。
+3. 已实现 app-level 恢复策略：相同稳定 peer id 在下一次 lobby 前重新 join 时恢复原 player/slot，并重置连接级 input sequence/ack，避免新 client 从 sequence 1 开始时被旧连接进度误判为 stale。该策略不调用也不宣称 provider reconnect；Colyseus runtime capability 仍为 unsupported。
+4. 已复用 room registry、authority loop、peer binding store 与 client receiver dispose/reset 边界；host close 和同名 session recreate 继续创建全新的 runtime/buffer/binding 生命周期。
+5. 已在 authority payload、host diagnostics 和 HUD 中区分 active/tracked/round/waiting/disconnected participant，并显示当前窗口 participant 状态。
+6. 已将 lifecycle decision 收敛到 `multiplayer-core` 的 `createMultiplayerParticipantPolicy()`：Demo host 内部配置 join/lateJoin/leave/disconnect/reconnect/boundary，传入 app-owned phase context 并执行 decision，不再用 Demo metadata 模拟 next-round，也不对外暴露重复配置入口。
 
 验收：
 
 - late join、leave、disconnect、reconnect、reset 都有 headless 测试或 browser smoke。
 - active peer count、slot count 和 round participant count 不混淆。
+
+验证记录（2026-07-10）：
+
+- `corepack pnpm --filter multiplayer-demo test`：53 tests 全部通过；覆盖 late join next-round、waiting input rejection、running disconnect state cleanup、同 peer 原 slot 与 input sequence epoch 恢复、再次断线、rematch 清理与 next-round 晋升。
+- `corepack pnpm --filter @gamekit/multiplayer-core test`：34 tests 全部通过；覆盖 `releasePeer()` 清理待处理 action/input、queue depth 和旧 sequence key，并允许恢复后的 sequence 重新从 1 开始；同时覆盖由应用上下文驱动的 join、late join、leave、disconnect、reconnect 和 round-boundary 参与者策略。
+- `corepack pnpm build`、`corepack pnpm lint`、`corepack pnpm format`、`git diff --check`：全部通过。全仓 `corepack pnpm test` 完成 60/62 tasks，剩余 Colyseus/demo Turbo task 因受限环境禁止监听 `127.0.0.1` 而失败；上述两个相关 package 的定向 86 tests 已在允许本地监听的执行路径全部通过。
+- `corepack pnpm bench:multiplayer:check`：9 个性能预算全部通过；本机 32 clients host loop 为 `0.0187 ms/tick`，32 clients burst 4 latest coalescing 为 `0.0423 ms/tick`。`corepack pnpm bench:world` 的 10k entity 场景为 spawn/add `11.48ms`、query/update `7.31ms`。
+- 本地浏览器 smoke：host join 后 HUD 展示 `p1/1`，页面无 console warning/error，新增 participant diagnostics 未破坏首屏布局。
+
+真实浏览器复测（2026-07-11）：
+
+- 三个独立 browser tab 通过真实 Colyseus server 完成 host/join、ready、countdown、running、late join、running disconnect、同 tab rejoin 和 reset-to-lobby，不依赖测试夹具直接调用 host API。
+- 初次复测发现 browser client 每次 Join 都生成新 peer id，导致同一窗口无法命中 app-level player/slot 恢复；现已为每个 tab 在 `sessionStorage` 保持稳定 peer id。修复后 Bob 离开时 host HUD 从 `p2/2` 变为 `p1/2`，同 tab Join 后恢复为 `Bob / orange` 和 `p2/2`，事件顺序为 `Bob disconnected`、`Bob reconnected`，新连接 input ack 从 `15->14` 正常推进。
+- 初次复测还发现 player name 在填写 Room 或 Leave 回到离线练习时会被 render loop 的旧 actor 名覆盖；现已增加未提交输入 dirty gate，并让离线 mirror 跟随最后一次权威名。修复后权威事件和画面稳定显示 Alice/Bob，重连不再改回默认 `Runner`。
+- Charlie 在 running 中显示 `Charlie / next-round`、`p2/2`，Ready/Interact 禁用；host 执行 Reset Arena 后进入 lobby，Charlie 晋升为正式 player，三个窗口显示 `p3/3`。最终三端 console warning/error 均为空，host 画面保持约 `120fps`。
 
 ### Wave 7: Hardening And Documentation
 

@@ -83,6 +83,8 @@ const loop = createMultiplayerAuthorityHostLoop({
 
 Choose queue semantics from the input model. Discrete commands that must all execute use the default `fifo` mode; `maxInputsPerSourcePerTick: 1` prevents a burst from advancing one player multiple simulation steps inside one authority tick, and `maxQueuedInputsPerSource` bounds hostile or jittery senders. Continuously sampled movement, aim or steering state uses `inputQueueMode: "latest"`: a newer state replaces an older unconsumed state from the same source, queue depth stays bounded by active sources, and diagnostics report `queuedInputs`, `maxQueuedInputs` and `coalescedInputs`. The simulation may hold the last applied state until a newer state or game-owned timeout replaces it. Its acknowledgement advances only after that latest state has been adopted by an authoritative simulation tick; superseded samples need not execute individually.
 
+When presence reports that a peer left or disconnected, the host composition layer must call `loop.releasePeer(peerId)`. The loop then discards that peer's queued actions and inputs and forgets its input sequence keys, so a restored peer can start a fresh input stream without executing pre-disconnect work or being rejected against an old sequence. Player actor, slot and round-stat retention remain game-owned policy.
+
 Offline/local play should use the same action/input, tick, snapshot/apply and diagnostics contract through `createMultiplayerLocalAuthorityLoop()`. The delivery is in-process, but gameplay should not fork into a second single-player-only rule path.
 
 ## Snapshot Presentation
@@ -218,7 +220,7 @@ Core owns the input queue, ack handling, replay, bounded fixed-step presentation
 
 ## Peer / Player Binding
 
-Use `createMultiplayerPeerPlayerBindingStore()` to bind provider peers to app players, display names, slots and spectator/leave states:
+Use `createMultiplayerPeerPlayerBindingStore()` to bind provider peers to app players, display names, slots and active, spectator, next-round or leave states:
 
 ```ts
 const players = createMultiplayerPeerPlayerBindingStore();
@@ -234,7 +236,27 @@ players.markPeerLeft("peer-a", { status: "left", reason: "tab closed" });
 players.close("room closed");
 ```
 
-The helper normalizes and de-duplicates display names per binding set. It does not decide game-specific late-join policy; apps still choose whether a late peer becomes an active player, spectator, next-round participant or rejected join.
+The helper normalizes and de-duplicates display names per binding set. Configure lifecycle decisions once with `createMultiplayerParticipantPolicy()`. Rules can be static or use app-owned context without teaching core about game phases:
+
+```ts
+const participantPolicy = createMultiplayerParticipantPolicy<{
+  phase: "lobby" | "running" | "results";
+}>({
+  join: "active",
+  lateJoin: "next-round",
+  leave: "remove",
+  disconnect: ({ context }) => (context.phase === "lobby" ? "remove" : "disconnected"),
+  reconnect: "restore",
+  boundary: ({ binding }) =>
+    binding.status === "disconnected"
+      ? "remove"
+      : binding.status === "next-round"
+        ? "activate"
+        : "retain"
+});
+```
+
+Core resolves policy decisions and maintains binding vocabulary; the app/server composition layer still applies game-owned actor, slot, team and round-stat changes. Intentional leave and transport disconnect have separate rules even when a particular backend currently reports only generic presence loss.
 
 ## Diagnostics
 

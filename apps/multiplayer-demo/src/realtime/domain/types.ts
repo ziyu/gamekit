@@ -89,6 +89,8 @@ export type RealtimeArenaEvent = {
   tick: number;
   type:
     | "player.joined"
+    | "player.disconnected"
+    | "player.reconnected"
     | "player.left"
     | "player.name"
     | "player.ready"

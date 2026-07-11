@@ -137,7 +137,8 @@ Status: Implemented
 2026-07-08 实现进度：
 
 - `@gamekit/multiplayer-core` 新增 `createMultiplayerPeerPlayerBindingStore()`、`normalizeMultiplayerDisplayName()` 和 `createUniqueMultiplayerDisplayName()`。
-- store 支持 peer 到 player binding、display name 清洗和去重、slot/role/metadata、spectator、left/disconnected、remove 和 close。
+- store 支持 peer 到 player binding、display name 清洗和去重、slot/role/metadata、spectator、next-round、left/disconnected、remove 和 close。
+- `createMultiplayerParticipantPolicy()` 统一 join/lateJoin/leave/disconnect/reconnect/boundary decision；支持静态规则或 app-context callback，core 不依赖具体游戏 phase。
 - core 单元测试覆盖默认/重复名字、leave cleanup、恢复 player binding、spectator 和 close 后拒绝新 binding。
 
 ### 4. Colyseus Provider-Native Lane

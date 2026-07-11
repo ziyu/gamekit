@@ -130,6 +130,58 @@ export function removeRealtimeArenaPlayer(
   return ACCEPTED;
 }
 
+export function disconnectRealtimeArenaPlayer(
+  state: RealtimeArenaState,
+  playerId: string
+): RealtimeArenaActionResult {
+  const player = findPlayer(state, playerId);
+  if (!player) {
+    return reject("unknown-player", `Unknown player: ${playerId}`);
+  }
+  if (!player.connected) {
+    return ACCEPTED;
+  }
+
+  player.connected = false;
+  player.velocity = { x: 0, y: 0 };
+  player.inputStateAgeMs = 0;
+  delete player.inputState;
+  releasePlayerCore(state, player);
+  recordRealtimeArenaEvent(state, {
+    type: "player.disconnected",
+    playerId: player.id,
+    teamId: player.teamId,
+    label: `${player.label} disconnected`
+  });
+  return ACCEPTED;
+}
+
+export function reconnectRealtimeArenaPlayer(
+  state: RealtimeArenaState,
+  playerId: string
+): RealtimeArenaActionResult {
+  const player = findPlayer(state, playerId);
+  if (!player) {
+    return reject("unknown-player", `Unknown player: ${playerId}`);
+  }
+  if (player.connected) {
+    return ACCEPTED;
+  }
+
+  player.connected = true;
+  player.velocity = { x: 0, y: 0 };
+  player.lastInputSequence = 0;
+  player.inputStateAgeMs = 0;
+  delete player.inputState;
+  recordRealtimeArenaEvent(state, {
+    type: "player.reconnected",
+    playerId: player.id,
+    teamId: player.teamId,
+    label: `${player.label} reconnected`
+  });
+  return ACCEPTED;
+}
+
 export function startRealtimeArenaCountdown(state: RealtimeArenaState): RealtimeArenaActionResult {
   if (state.phase !== "lobby") {
     return reject("round-not-in-lobby", "Realtime arena can only start from the lobby.");
@@ -166,6 +218,14 @@ export function applyRealtimeInputFrame(
   const player = findPlayer(state, playerId);
   if (!player) {
     return reject("unknown-player", `Unknown player: ${playerId}`);
+  }
+  if (!player.connected) {
+    return rejectPlayerInput(
+      state,
+      player,
+      "player-disconnected",
+      "Disconnected players cannot submit gameplay input."
+    );
   }
 
   if (state.phase !== "running") {
@@ -206,6 +266,14 @@ export function applyRealtimeArenaPlayerInteract(
   const player = findPlayer(state, playerId);
   if (!player) {
     return reject("unknown-player", `Unknown player: ${playerId}`);
+  }
+  if (!player.connected) {
+    return rejectPlayerInput(
+      state,
+      player,
+      "player-disconnected",
+      "Disconnected players cannot interact."
+    );
   }
   if (state.phase !== "running") {
     return rejectPlayerInput(
@@ -283,6 +351,10 @@ function tickRunning(state: RealtimeArenaState, deltaMs: number): void {
   state.roundElapsedMs += deltaMs;
 
   for (const player of state.players) {
+    if (!player.connected) {
+      player.velocity = { x: 0, y: 0 };
+      continue;
+    }
     updateSprintTimers(player, deltaMs);
     updatePlayerMotion(state, player, deltaMs);
     updateCarriedCore(state, player);

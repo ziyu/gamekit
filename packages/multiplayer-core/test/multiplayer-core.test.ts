@@ -8,6 +8,7 @@ import {
   createMultiplayerAuthorityReceiver,
   createMultiplayerLocalAuthorityLoop,
   createMultiplayerPeerPlayerBindingStore,
+  createMultiplayerParticipantPolicy,
   createMultiplayerPredictionBuffer,
   createMultiplayerRuntime,
   createSnapshotBuffer,
@@ -498,6 +499,61 @@ describe("multiplayer authority helpers", () => {
     expect(loop.diagnostics().queuedInputs).toBe(0);
   });
 
+  it("releases queued work and input sequence state when a peer disconnects", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "peer-release-host",
+      backend: fake.backend,
+      clock: () => 200
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "host-authoritative",
+      localPeer: { id: "host", role: "host" }
+    });
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: "session-1",
+      mode: "host-authoritative",
+      authorityPeerId: "host"
+    });
+    const processed: string[] = [];
+    const loop = createMultiplayerAuthorityHostLoop<ActionPayload, InputPayload, { tick: number }>({
+      runtime,
+      binding,
+      readAction,
+      readInput,
+      inputSequence: (input) => input.sequence,
+      inputQueueMode: "latest",
+      handleAction({ message }) {
+        processed.push(`${message.sourcePeerId}:action`);
+      },
+      handleInput({ message, payload }) {
+        processed.push(`${message.sourcePeerId}:input:${payload.sequence}`);
+      },
+      captureSnapshot({ tick }) {
+        return { tick };
+      }
+    });
+
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 7, dx: 1 }));
+    loop.tick(50);
+    expect(processed).toEqual(["client-a:input:7"]);
+
+    fake.emit(messageFrom("client-a", MULTIPLAYER_ACTION_KIND, { type: "start" }));
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 8, dx: 1 }));
+    fake.emit(messageFrom("client-b", MULTIPLAYER_INPUT_KIND, { sequence: 1, dx: 1 }));
+    expect(loop.diagnostics().queuedInputs).toBe(2);
+
+    loop.releasePeer("client-a");
+    expect(loop.diagnostics().queuedInputs).toBe(1);
+    loop.tick(50);
+    expect(processed).toEqual(["client-a:input:7", "client-b:input:1"]);
+
+    fake.emit(messageFrom("client-a", MULTIPLAYER_INPUT_KIND, { sequence: 1, dx: 1 }));
+    loop.tick(50);
+    expect(processed).toEqual(["client-a:input:7", "client-b:input:1", "client-a:input:1"]);
+  });
+
   it("uses the same action and input contract for local authority", () => {
     const state = { started: false, x: 0 };
     const loop = createMultiplayerLocalAuthorityLoop<ActionPayload, InputPayload, SnapshotPayload>({
@@ -909,10 +965,14 @@ describe("peer/player binding utility", () => {
 
     store.bindPeer(peer("peer-a", { playerId: "player-a", role: "host" }));
     store.bindPeer(peer("peer-s", { playerId: "spectator-a", role: "spectator" }));
+    store.bindPeer(peer("peer-late", { playerId: "player-late" }), {
+      status: "next-round"
+    });
 
     expect(store.bindings()).toEqual([
       expect.objectContaining({ playerId: "player-a", status: "active" }),
-      expect.objectContaining({ playerId: "spectator-a", status: "spectator" })
+      expect.objectContaining({ playerId: "spectator-a", status: "spectator" }),
+      expect.objectContaining({ playerId: "player-late", status: "next-round" })
     ]);
     expect(store.activeBindings().map((binding) => binding.playerId)).toEqual(["player-a"]);
 
@@ -921,6 +981,11 @@ describe("peer/player binding utility", () => {
       expect.objectContaining({ playerId: "player-a", status: "closed", reason: "room closed" }),
       expect.objectContaining({
         playerId: "spectator-a",
+        status: "closed",
+        reason: "room closed"
+      }),
+      expect.objectContaining({
+        playerId: "player-late",
         status: "closed",
         reason: "room closed"
       })
@@ -935,6 +1000,57 @@ describe("peer/player binding utility", () => {
     expect(normalizeMultiplayerDisplayName("  Alpha   Bravo  ", "Fallback")).toBe("Alpha Bravo");
     expect(normalizeMultiplayerDisplayName("   ", "Fallback")).toBe("Fallback");
     expect(createUniqueMultiplayerDisplayName("Scout", ["Scout", "Scout 2"])).toBe("Scout 3");
+  });
+
+  it("resolves configurable participant lifecycle policy with app-owned context", () => {
+    const store = createMultiplayerPeerPlayerBindingStore();
+    const activePeer = peer("peer-a", { playerId: "player-a" });
+    const activeBinding = store.bindPeer(activePeer);
+    const disconnectedBinding = store.markPeerLeft("peer-a", {
+      status: "disconnected"
+    });
+    expect(disconnectedBinding).toBeDefined();
+
+    const policy = createMultiplayerParticipantPolicy<{
+      phase: "lobby" | "running";
+      hasCapacity: boolean;
+    }>({
+      join: ({ context }) => (context.hasCapacity ? "active" : "reject"),
+      lateJoin: "next-round",
+      leave: "remove",
+      disconnect: ({ context }) => (context.phase === "lobby" ? "remove" : "disconnected"),
+      reconnect: "restore",
+      boundary: ({ binding }) => (binding.status === "disconnected" ? "remove" : "retain")
+    });
+    const lobbyContext = { phase: "lobby" as const, hasCapacity: true };
+    const runningContext = { phase: "running" as const, hasCapacity: true };
+
+    expect(policy.join({ peer: activePeer, context: lobbyContext })).toBe("active");
+    expect(
+      policy.join({
+        peer: activePeer,
+        context: { phase: "lobby", hasCapacity: false }
+      })
+    ).toBe("reject");
+    expect(policy.lateJoin({ peer: activePeer, context: runningContext })).toBe("next-round");
+    expect(
+      policy.leave({ peerId: activePeer.id, binding: activeBinding, context: runningContext })
+    ).toBe("remove");
+    expect(
+      policy.disconnect({ peerId: activePeer.id, binding: activeBinding, context: lobbyContext })
+    ).toBe("remove");
+    expect(
+      policy.disconnect({ peerId: activePeer.id, binding: activeBinding, context: runningContext })
+    ).toBe("disconnected");
+    expect(
+      policy.reconnect({ peer: activePeer, binding: activeBinding, context: runningContext })
+    ).toBe("restore");
+    expect(
+      policy.boundary({
+        binding: disconnectedBinding as NonNullable<typeof disconnectedBinding>,
+        context: lobbyContext
+      })
+    ).toBe("remove");
   });
 });
 

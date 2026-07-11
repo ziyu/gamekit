@@ -83,15 +83,30 @@ describe("multiplayer-demo UI state", () => {
         queuedInputs: 0,
         maxQueuedInputs: 2,
         coalescedInputs: 7
+      },
+      participant: {
+        peerId: "client-late",
+        status: "next-round",
+        displayName: "Late Runner"
+      },
+      participantSummary: {
+        active: 2,
+        tracked: 3,
+        round: 2,
+        waiting: 1,
+        disconnected: 0
       }
     } as const;
 
     expect(formatRealtimeArenaDiagnostics(diagnostics)).toBe(
-      "12 / 20hz / 19tps / 58fps / d72 / j15 / q0 / c0"
+      "12 / 20hz / 19tps / 58fps / d72 / j15 / q0 / p2/2 / c0"
     );
     expect(formatRealtimeArenaDiagnosticsTitle(diagnostics)).toContain("interpolated");
     expect(formatRealtimeArenaDiagnosticsTitle(diagnostics)).toContain("jitter 15ms");
     expect(formatRealtimeArenaDiagnosticsTitle(diagnostics)).toContain("coalesced 7");
+    expect(formatRealtimeArenaDiagnosticsTitle(diagnostics)).toContain(
+      "participants active 2; tracked 3; round 2; waiting 1; disconnected 0"
+    );
   });
 
   it("formats realtime arena prediction diagnostics for the HUD title", () => {

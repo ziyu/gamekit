@@ -5,6 +5,7 @@ export type MultiplayerPeerPlayerBindingStatus =
   | "active"
   | "disconnected"
   | "left"
+  | "next-round"
   | "spectator"
   | "closed";
 
@@ -29,7 +30,10 @@ export type MultiplayerPeerPlayerBindingInput = {
 };
 
 export type MultiplayerPeerPlayerLeaveOptions = {
-  status?: Extract<MultiplayerPeerPlayerBindingStatus, "disconnected" | "left" | "spectator">;
+  status?: Extract<
+    MultiplayerPeerPlayerBindingStatus,
+    "disconnected" | "left" | "next-round" | "spectator"
+  >;
   remove?: boolean;
   reason?: string;
 };

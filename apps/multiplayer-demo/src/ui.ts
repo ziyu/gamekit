@@ -4,7 +4,11 @@ import type { RealtimeArenaSnapshot, RealtimeArenaState } from "./realtime/domai
 import type { RealtimeLocalGameDiagnostics } from "./realtime/local-game";
 import type { RealtimeArenaPresentationDiagnostics } from "./realtime/presentation";
 import type { RealtimeArenaPredictionDiagnostics } from "./realtime/prediction";
-import type { RealtimeArenaAuthorityInputDiagnostics } from "./realtime/protocol";
+import type {
+  RealtimeArenaAuthorityInputDiagnostics,
+  RealtimeArenaParticipant,
+  RealtimeArenaParticipantSummary
+} from "./realtime/protocol";
 
 type RealtimeArenaViewState = RealtimeArenaState | RealtimeArenaSnapshot;
 
@@ -47,6 +51,8 @@ export type RealtimeArenaUiDiagnostics = RealtimeLocalGameDiagnostics & {
   presentation?: RealtimeArenaPresentationDiagnostics;
   prediction?: RealtimeArenaPredictionDiagnostics;
   authorityInput?: RealtimeArenaAuthorityInputDiagnostics;
+  participant?: RealtimeArenaParticipant;
+  participantSummary?: RealtimeArenaParticipantSummary;
 };
 
 export type MultiplayerDemoConfig = {
@@ -365,13 +371,16 @@ export function renderRealtimeArenaUi(
   ui.arenaScore.textContent = formatScore(state.score);
   ui.arenaPlayer.textContent =
     localPlayer === undefined
-      ? "none"
+      ? diagnostics.participant === undefined
+        ? "none"
+        : `${diagnostics.participant.displayName ?? diagnostics.participant.peerId} / ${diagnostics.participant.status}`
       : `${localPlayer.label} / ${localPlayer.teamId} / ${localPlayer.carryingCoreId ?? "empty"} / ${localPlayer.deliveredCores}`;
   ui.arenaInput.textContent = formatRealtimeArenaDiagnostics(diagnostics);
   ui.arenaInput.title = formatRealtimeArenaDiagnosticsTitle(diagnostics);
   ui.arenaHint.textContent = arenaHint(state, diagnostics, localPlayer);
 
-  ui.readyButton.disabled = !permissions.ready || state.phase !== "lobby";
+  ui.readyButton.disabled =
+    !permissions.ready || state.phase !== "lobby" || localPlayer === undefined;
   ui.readyButton.textContent = localPlayer?.ready ? "Unready" : "Ready";
   ui.startRoundButton.disabled =
     !permissions.startRound || state.phase !== "lobby" || localPlayer?.ready !== true;
@@ -400,11 +409,14 @@ export function formatRealtimeArenaDiagnostics(diagnostics: RealtimeArenaUiDiagn
   const delay = Math.round(diagnostics.presentation?.interpolationDelayMs ?? 0);
   const jitter = Math.round(diagnostics.presentation?.estimatedJitterMs ?? 0);
   const queuedInputs = diagnostics.authorityInput?.queuedInputs ?? 0;
+  const participants = diagnostics.participantSummary;
   const ack = diagnostics.prediction?.inputAckSequence;
   const correction = diagnostics.prediction?.lastCorrectionMagnitude ?? 0;
   const sequence =
     ack === undefined ? `${diagnostics.inputSequence}` : `${diagnostics.inputSequence}->${ack}`;
-  return `${sequence} / ${diagnostics.inputSendRate}hz / ${diagnostics.serverTickRate}tps / ${frameRate}fps / d${delay} / j${jitter} / q${queuedInputs} / c${Math.round(correction)}`;
+  const participantText =
+    participants === undefined ? "" : ` / p${participants.active}/${participants.round}`;
+  return `${sequence} / ${diagnostics.inputSendRate}hz / ${diagnostics.serverTickRate}tps / ${frameRate}fps / d${delay} / j${jitter} / q${queuedInputs}${participantText} / c${Math.round(correction)}`;
 }
 
 export function formatRealtimeArenaDiagnosticsTitle(
@@ -433,6 +445,11 @@ export function formatRealtimeArenaDiagnosticsTitle(
     authorityInput === undefined
       ? "authority input --"
       : `authority input queued ${authorityInput.queuedInputs}; peak ${authorityInput.maxQueuedInputs}; coalesced ${authorityInput.coalescedInputs}`;
+  const participantSummary = diagnostics.participantSummary;
+  const participantText =
+    participantSummary === undefined
+      ? "participants --"
+      : `participants active ${participantSummary.active}; tracked ${participantSummary.tracked}; round ${participantSummary.round}; waiting ${participantSummary.waiting}; disconnected ${participantSummary.disconnected}`;
   const predictionText =
     prediction === undefined
       ? "prediction --"
@@ -448,7 +465,7 @@ export function formatRealtimeArenaDiagnosticsTitle(
           `prediction phase ${Math.round(prediction.presentationAlpha * 100)}% (${formatOptionalMs(prediction.presentationElapsedMs)})`,
           `presentation clamps ${prediction.clampedPresentationFrames}`
         ].join("; ");
-  return `presentation ${status}; ${presentation.bufferLength} buffered; ${age}; ${delay}; ${jitter}; ${authorityInputText}; ${predictionText}`;
+  return `presentation ${status}; ${presentation.bufferLength} buffered; ${age}; ${delay}; ${jitter}; ${authorityInputText}; ${participantText}; ${predictionText}`;
 }
 
 function formatOptionalMs(value: number | undefined): string {
@@ -872,6 +889,15 @@ function arenaHint(
 ): string {
   if (diagnostics.lastAction && !diagnostics.lastAction.accepted) {
     return diagnostics.lastAction.reason;
+  }
+  if (diagnostics.participant?.status === "next-round") {
+    return "Watching this round; joining the next lobby";
+  }
+  if (diagnostics.participant?.status === "spectator") {
+    return "Spectating this round";
+  }
+  if (diagnostics.participant?.status === "disconnected") {
+    return "Disconnected; this round slot is reserved for the same peer id";
   }
   if (state.phase === "results") {
     if (state.result?.winnerTeamId) {

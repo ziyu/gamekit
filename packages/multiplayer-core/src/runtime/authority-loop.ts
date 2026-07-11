@@ -76,6 +76,7 @@ export type MultiplayerAuthorityLoopDiagnostics = {
 export type MultiplayerAuthorityHostLoop = {
   tick(deltaMs?: number): void;
   broadcastSnapshot(): Promise<void>;
+  releasePeer(peerId: string): void;
   diagnostics(): MultiplayerAuthorityLoopDiagnostics;
   dispose(): void;
 };
@@ -125,6 +126,8 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
   const queuedInputsBySource = new Map<string, number>();
   const latestQueuedInputBySource = new Map<string, QueuedInput<TInput>>();
   const inputSequences = new Map<string, number>();
+  const inputSequenceKeysByPeerId = new Map<string, Set<string>>();
+  const inputSequencePeerIdsByKey = new Map<string, string>();
   const diagnostics: MultiplayerAuthorityLoopDiagnostics = createDiagnostics();
 
   const unsubscribe = options.runtime.subscribe((message) => {
@@ -347,7 +350,49 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
     }
 
     inputSequences.set(key, sequence);
+    trackInputSequenceKey(message.sourcePeerId, key);
     return { allowed: true };
+  }
+
+  function trackInputSequenceKey(peerId: string, key: string): void {
+    const previousPeerId = inputSequencePeerIdsByKey.get(key);
+    if (previousPeerId !== undefined && previousPeerId !== peerId) {
+      const previousKeys = inputSequenceKeysByPeerId.get(previousPeerId);
+      previousKeys?.delete(key);
+      if (previousKeys?.size === 0) {
+        inputSequenceKeysByPeerId.delete(previousPeerId);
+      }
+    }
+
+    const keys = inputSequenceKeysByPeerId.get(peerId) ?? new Set<string>();
+    keys.add(key);
+    inputSequenceKeysByPeerId.set(peerId, keys);
+    inputSequencePeerIdsByKey.set(key, peerId);
+  }
+
+  function releasePeer(peerId: string): void {
+    for (let index = actionQueue.length - 1; index >= 0; index -= 1) {
+      if (actionQueue[index]?.message.sourcePeerId === peerId) {
+        actionQueue.splice(index, 1);
+      }
+    }
+
+    for (let index = inputQueue.length - 1; index >= 0; index -= 1) {
+      const entry = inputQueue[index];
+      if (entry?.message.sourcePeerId === peerId) {
+        inputQueue.splice(index, 1);
+        releaseQueuedInput(entry);
+      }
+    }
+
+    for (const key of inputSequenceKeysByPeerId.get(peerId) ?? []) {
+      if (inputSequencePeerIdsByKey.get(key) === peerId) {
+        inputSequences.delete(key);
+        inputSequencePeerIdsByKey.delete(key);
+      }
+    }
+    inputSequenceKeysByPeerId.delete(peerId);
+    refreshQueueDiagnostics();
   }
 
   function rejectMessage(message: MultiplayerMessageEnvelope, code: string, reason: string): void {
@@ -405,6 +450,7 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       void broadcastSnapshot();
     },
     broadcastSnapshot,
+    releasePeer,
     diagnostics() {
       return cloneDiagnostics(diagnostics);
     },
@@ -415,6 +461,8 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       queuedInputsBySource.clear();
       latestQueuedInputBySource.clear();
       inputSequences.clear();
+      inputSequenceKeysByPeerId.clear();
+      inputSequencePeerIdsByKey.clear();
       refreshQueueDiagnostics();
     }
   };

@@ -3,7 +3,9 @@ import {
   applyRealtimeArenaPlayerInteract,
   applyRealtimeInputFrame,
   createRealtimeArenaState,
+  disconnectRealtimeArenaPlayer,
   joinRealtimeArenaPlayer,
+  reconnectRealtimeArenaPlayer,
   rematchRealtimeArena,
   removeRealtimeArenaPlayer,
   setRealtimeArenaPlayerName,
@@ -263,6 +265,58 @@ describe("realtime arena domain", () => {
       type: "player.left",
       playerId: "runner"
     });
+  });
+
+  it("preserves a disconnected player while clearing transient gameplay state", () => {
+    const state = createRealtimeArenaState({
+      layout: deliveryLayout,
+      rules: {
+        countdownMs: 0,
+        playerSpeedPerSecond: 100
+      },
+      players: [
+        { id: "runner", teamId: "green" },
+        { id: "defender", teamId: "orange" }
+      ]
+    });
+
+    readyAndStart(state, ["runner", "defender"]);
+    expectAccepted(applyRealtimeArenaPlayerInteract(state, "runner"));
+    expectAccepted(applyRealtimeInputFrame(state, "runner", inputFrame(7, { moveX: 1 })));
+    tickRealtimeArena(state, 16);
+
+    const beforeDisconnect = { ...getPlayer(state, "runner").position };
+    expect(getPlayer(state, "runner").carryingCoreId).toBe("core-alpha");
+    expectAccepted(disconnectRealtimeArenaPlayer(state, "runner"));
+
+    expect(getPlayer(state, "runner")).toMatchObject({
+      connected: false,
+      position: beforeDisconnect,
+      velocity: { x: 0, y: 0 },
+      inputStateAgeMs: 0
+    });
+    expect(getPlayer(state, "runner").inputState).toBeUndefined();
+    expect(getPlayer(state, "runner").carryingCoreId).toBeUndefined();
+    expect(state.cores[0]?.carriedByPlayerId).toBeUndefined();
+    expectRejected(
+      applyRealtimeInputFrame(state, "runner", inputFrame(2, { moveX: 1 })),
+      "player-disconnected"
+    );
+    expectRejected(applyRealtimeArenaPlayerInteract(state, "runner"), "player-disconnected");
+
+    tickRealtimeArena(state, 100);
+    expect(getPlayer(state, "runner").position).toEqual(beforeDisconnect);
+
+    const slot = getPlayer(state, "runner").slot;
+    expectAccepted(reconnectRealtimeArenaPlayer(state, "runner"));
+    expect(getPlayer(state, "runner")).toMatchObject({
+      connected: true,
+      slot,
+      position: beforeDisconnect,
+      velocity: { x: 0, y: 0 },
+      lastInputSequence: 0
+    });
+    expectAccepted(applyRealtimeInputFrame(state, "runner", inputFrame(1, { moveX: 1 })));
   });
 
   it("assigns unique player labels when requested names collide", () => {

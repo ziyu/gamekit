@@ -94,6 +94,7 @@
 - Multiplayer backend adapter 必须覆盖 provider facade 的 connect、create-or-join/leave、message routing、peer summary、disconnect、reconnect 降级、payload validation、dispose cleanup 和 diagnostics；provider 自己拥有的 room/matchmaker/state sync 逻辑不要在 GameKit core 中重写。
 - Multiplayer app/demo 集成测试不能只断言 peer count 或 presence；必须至少断言一条 lifecycle、input、snapshot、patch 或 command result 来自同一个 authority state，并验证非 authority snapshot/patch 不会被 client 应用。
 - Multiplayer 输入先区分 continuous state 和 discrete command：移动、瞄准、驾驶采用 latest-per-source coalescing、持有状态和明确 timeout；交互、购买、一次性技能采用 bounded FIFO/action。生产频率与消费频率相同的 continuous input 不能进入逐条 FIFO，否则 jitter 会永久转化为远端表现延迟。
+- Multiplayer peer 离开或断线时，host/server presence 组合层必须调用 authority loop 的 peer release 入口，清掉该 peer 尚未消费的 action/input 和 sequence epoch。是否保留 actor、slot 或本局统计属于 gameplay policy，不能靠保留旧网络队列来实现。
 - 离线单机和多人模式应共享同一套 gameplay orchestration。测试应能用同一 input/action log 在 local authority 和 host/server authority fixture 中得到等价稳定 snapshot，避免维护两套规则实现。
 - Sandbox、demo 或 headless host 的集成测试应覆盖长链路：Data → Asset → App Host → GameRuntime → World → TCA/GAS → Renderer/Input/Camera → Snapshot/Timeline。
 - 固定 seed 测试只比较稳定 snapshot，不比较 DOM、native handle、绝对时间或底层库对象。

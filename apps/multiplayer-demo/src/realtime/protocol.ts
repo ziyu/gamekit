@@ -29,12 +29,33 @@ export type RealtimeArenaAuthorityInputDiagnostics = {
   coalescedInputs: number;
 };
 
+export type RealtimeArenaParticipantStatus = "active" | "spectator" | "next-round" | "disconnected";
+
+export type RealtimeArenaParticipant = {
+  peerId: string;
+  status: RealtimeArenaParticipantStatus;
+  displayName?: string;
+  playerId?: string;
+  slot?: number;
+  reason?: string;
+};
+
+export type RealtimeArenaParticipantSummary = {
+  active: number;
+  tracked: number;
+  round: number;
+  waiting: number;
+  disconnected: number;
+};
+
 export type RealtimeArenaSnapshotPayload = {
   snapshot: RealtimeArenaSnapshot;
   playersByPeerId: Record<string, string>;
   inputAcksByPeerId: Record<string, number>;
   serverTime: number;
   authorityInput?: RealtimeArenaAuthorityInputDiagnostics;
+  participantsByPeerId?: Record<string, RealtimeArenaParticipant>;
+  participantSummary?: RealtimeArenaParticipantSummary;
 };
 
 export function isRealtimeArenaNetworkAction(value: unknown): value is RealtimeArenaNetworkAction {
@@ -110,14 +131,97 @@ export function readRealtimeArenaSnapshotPayload(
   if (value.authorityInput !== undefined && authorityInput === undefined) {
     return undefined;
   }
+  const participantsByPeerId = readParticipantsByPeerId(value.participantsByPeerId);
+  if (value.participantsByPeerId !== undefined && participantsByPeerId === undefined) {
+    return undefined;
+  }
+  const participantSummary = readParticipantSummary(value.participantSummary);
+  if (value.participantSummary !== undefined && participantSummary === undefined) {
+    return undefined;
+  }
 
   return {
     snapshot: value.snapshot as RealtimeArenaSnapshot,
     playersByPeerId,
     inputAcksByPeerId,
     serverTime: value.serverTime,
-    ...(authorityInput === undefined ? {} : { authorityInput })
+    ...(authorityInput === undefined ? {} : { authorityInput }),
+    ...(participantsByPeerId === undefined ? {} : { participantsByPeerId }),
+    ...(participantSummary === undefined ? {} : { participantSummary })
   };
+}
+
+function readParticipantsByPeerId(
+  value: unknown
+): Record<string, RealtimeArenaParticipant> | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const participants: Record<string, RealtimeArenaParticipant> = {};
+  for (const [peerId, candidate] of Object.entries(value)) {
+    const participant = readParticipant(candidate);
+    if (participant === undefined || participant.peerId !== peerId) {
+      return undefined;
+    }
+    participants[peerId] = participant;
+  }
+  return participants;
+}
+
+function readParticipant(value: unknown): RealtimeArenaParticipant | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.peerId !== "string" ||
+    !isParticipantStatus(value.status) ||
+    (value.displayName !== undefined && typeof value.displayName !== "string") ||
+    (value.playerId !== undefined && typeof value.playerId !== "string") ||
+    (value.slot !== undefined && !isNonNegativeInteger(value.slot)) ||
+    (value.reason !== undefined && typeof value.reason !== "string")
+  ) {
+    return undefined;
+  }
+
+  return {
+    peerId: value.peerId,
+    status: value.status,
+    ...(value.displayName === undefined ? {} : { displayName: value.displayName }),
+    ...(value.playerId === undefined ? {} : { playerId: value.playerId }),
+    ...(value.slot === undefined ? {} : { slot: value.slot }),
+    ...(value.reason === undefined ? {} : { reason: value.reason })
+  };
+}
+
+function readParticipantSummary(value: unknown): RealtimeArenaParticipantSummary | undefined {
+  if (
+    !isRecord(value) ||
+    !isNonNegativeInteger(value.active) ||
+    !isNonNegativeInteger(value.tracked) ||
+    !isNonNegativeInteger(value.round) ||
+    !isNonNegativeInteger(value.waiting) ||
+    !isNonNegativeInteger(value.disconnected)
+  ) {
+    return undefined;
+  }
+  return {
+    active: value.active,
+    tracked: value.tracked,
+    round: value.round,
+    waiting: value.waiting,
+    disconnected: value.disconnected
+  };
+}
+
+function isParticipantStatus(value: unknown): value is RealtimeArenaParticipantStatus {
+  return (
+    value === "active" ||
+    value === "spectator" ||
+    value === "next-round" ||
+    value === "disconnected"
+  );
 }
 
 function readAuthorityInputDiagnostics(

@@ -313,10 +313,10 @@ client action / input
 
 - 为 action/input/snapshot/patch/result 提供 provider-neutral envelope、schema version、sequence、tick、correlation id 和 redaction hook。
 - 为 local authority 提供 in-process delivery，使 offline singleplayer、unit test 和 local preview 可以复用同一 reducer/simulation/snapshot receiver，而不是创建第二套单机入口。
-- 在 host/server side 维护有界 input queue、last accepted sequence、rejected reason、每 source 每 tick 的消费上限、tick boundary 和 snapshot broadcaster 的通用骨架。Queue policy 必须匹配输入语义：购买、交互、一次性技能等离散 command 使用 bounded FIFO；移动、瞄准、驾驶等连续 input state 使用 latest-per-source coalescing，新状态覆盖尚未消费的旧采样，不能在生产/消费同频时积累历史方向。固定步 command 的 ack 只能随已经进入本次 authoritative simulation/snapshot 的 command 推进；continuous state 的 ack 可以跨过被 supersede 的采样，但只能在 latest state 已被 authoritative tick 采用后推进。Diagnostics 必须区分 queued、max queued、coalesced 和 rejected。
+- 在 host/server side 维护有界 input queue、last accepted sequence、rejected reason、每 source 每 tick 的消费上限、tick boundary 和 snapshot broadcaster 的通用骨架。Queue policy 必须匹配输入语义：购买、交互、一次性技能等离散 command 使用 bounded FIFO；移动、瞄准、驾驶等连续 input state 使用 latest-per-source coalescing，新状态覆盖尚未消费的旧采样，不能在生产/消费同频时积累历史方向。固定步 command 的 ack 只能随已经进入本次 authoritative simulation/snapshot 的 command 推进；continuous state 的 ack 可以跨过被 supersede 的采样，但只能在 latest state 已被 authoritative tick 采用后推进。Diagnostics 必须区分 queued、max queued、coalesced 和 rejected。Peer 离开或断线时，App Host/server presence 组合层必须通知标准 authority loop 释放该 peer 的待处理 action/input 和 sequence key；actor、slot、round stats 是否保留仍由玩法 policy 决定。
 - 在 client side 维护 authority source gate、snapshot age、last applied tick、resync state 和 rejected non-authority payload diagnostics。
 - 提供 snapshot presentation timing + declared track toolkit：core 维护按 tick/server time 排序的短期 snapshot playback、render delay/jitter window、under-run clamp、presentation FPS、sample status、stale/drop diagnostics、类型化插值原语和 `Network*` presentation track 投影；游戏自己声明可表现字段、track key、snap/reset policy，以及如何把底层算好的 presented value 写入 render-only snapshot。
-- 提供 peer/player binding utilities，避免重复实现 duplicate peer、late join、disconnect 和 reconnect 映射。
+- 提供 peer/player binding utilities 和可配置 participant lifecycle policy resolver，统一 active、spectator、next-round、leave、disconnect、reconnect 与 round boundary decision vocabulary，避免每个 app 重复发明状态映射。Policy 可以是静态决定或读取 app-owned context 的 callback；core 不认识具体游戏 phase，也不直接增删玩法 actor、slot、team 或 round stats。
 - 提供 conformance tests，验证多 client 不会各自本地开局、非 authority snapshot 不会被应用、不同 session state 隔离、离开 peer 不继续阻塞 ready/start。
 
 标准 helper 不拥有具体玩法：

@@ -218,6 +218,8 @@ describe("multiplayer-demo", () => {
     });
     const clientA = createClient(host, "client-a", "Runner");
     const clientB = createClient(host, "client-b", "Runner");
+    const lateClient = createClient(host, "client-late", "Late Runner");
+    let resumedClientB: MultiplayerDemoClient | undefined;
 
     try {
       await clientA.connect();
@@ -386,21 +388,161 @@ describe("multiplayer-demo", () => {
         );
       });
 
+      await clientB.sendRealtimeInput({
+        sequence: 7,
+        clientTime: 350,
+        moveX: 0,
+        moveY: 0,
+        sprint: false
+      });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_INPUT_KIND, 4);
+      host.tick(50);
+      await waitFor(
+        () =>
+          findSnapshotPlayer(host.realtime.snapshot().snapshot, clientB.peerId)
+            .lastInputSequence === 7
+      );
+
+      await lateClient.connect();
+      await waitFor(() => countActivePeers(host) === 4);
+      host.tick(50);
+      await waitFor(() => {
+        const snapshot = lateClient.latestRealtimeSnapshot();
+        return (
+          snapshot?.participantsByPeerId?.[lateClient.peerId]?.status === "next-round" &&
+          snapshot.playersByPeerId[lateClient.peerId] === undefined &&
+          snapshot.snapshot.players.every((player) => player.id !== lateClient.peerId)
+        );
+      });
+      expect(host.realtime.snapshot().participantSummary).toEqual({
+        active: 2,
+        tracked: 3,
+        round: 2,
+        waiting: 1,
+        disconnected: 0
+      });
+
+      await lateClient.sendRealtimeInput({
+        sequence: 1,
+        clientTime: 0,
+        moveX: 1,
+        moveY: 0,
+        sprint: false
+      });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_INPUT_KIND, 5);
+      host.tick(50);
+      expect(host.realtime.diagnostics().lastAction).toMatchObject({
+        accepted: false,
+        code: "participant-waiting"
+      });
+
       await clientB.dispose();
-      await waitFor(() => countActivePeers(host) === 2);
+      await waitFor(() => countActivePeers(host) === 3);
       host.tick(50);
       await waitFor(() => {
         const hostSnapshot = host.realtime.snapshot();
         const clientSnapshot = clientA.latestRealtimeSnapshot();
+        if (!clientSnapshot) {
+          return false;
+        }
         return (
-          hostSnapshot.snapshot.players.map((player) => player.id).join(",") === "client-a" &&
-          clientSnapshot?.snapshot.players.map((player) => player.id).join(",") === "client-a" &&
-          clientSnapshot.playersByPeerId[clientB.peerId] === undefined
+          findSnapshotPlayer(hostSnapshot.snapshot, clientB.peerId).connected === false &&
+          findSnapshotPlayer(clientSnapshot.snapshot, clientB.peerId).connected === false &&
+          clientSnapshot.playersByPeerId[clientB.peerId] === undefined &&
+          clientSnapshot.participantsByPeerId?.[clientB.peerId]?.status === "disconnected"
         );
+      });
+      expect(host.realtime.snapshot().participantSummary).toEqual({
+        active: 1,
+        tracked: 3,
+        round: 2,
+        waiting: 1,
+        disconnected: 1
+      });
+
+      const disconnectedPlayer = findSnapshotPlayer(
+        host.realtime.snapshot().snapshot,
+        clientB.peerId
+      );
+      resumedClientB = createClient(host, "client-b", "Runner");
+      await resumedClientB.connect();
+      await waitFor(() => countActivePeers(host) === 4);
+      host.tick(50);
+      await waitFor(() => {
+        const snapshot = clientA.latestRealtimeSnapshot();
+        const participant = snapshot?.participantsByPeerId?.[clientB.peerId];
+        const player = snapshot?.snapshot.players.find(
+          (candidate) => candidate.id === clientB.peerId
+        );
+        return (
+          snapshot?.playersByPeerId[clientB.peerId] === clientB.peerId &&
+          participant?.status === "active" &&
+          participant.slot === disconnectedPlayer.slot &&
+          player?.connected === true
+        );
+      });
+      expect(
+        findSnapshotPlayer(host.realtime.snapshot().snapshot, clientB.peerId).lastInputSequence
+      ).toBe(0);
+
+      await resumedClientB.sendRealtimeInput({
+        sequence: 1,
+        clientTime: 0,
+        moveX: 0,
+        moveY: 0,
+        sprint: false
+      });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_INPUT_KIND, 6);
+      host.tick(50);
+      await waitFor(() => {
+        const snapshot = clientA.latestRealtimeSnapshot();
+        return (
+          snapshot?.inputAcksByPeerId[clientB.peerId] === 1 &&
+          findSnapshotPlayer(snapshot.snapshot, clientB.peerId).lastInputSequence === 1
+        );
+      });
+
+      await resumedClientB.dispose();
+      resumedClientB = undefined;
+      await waitFor(() => countActivePeers(host) === 3);
+      host.tick(50);
+      await waitFor(
+        () =>
+          clientA.latestRealtimeSnapshot()?.participantsByPeerId?.[clientB.peerId]?.status ===
+          "disconnected"
+      );
+
+      host.tick(host.realtime.state.rules.roundDurationMs);
+      host.tick(host.realtime.state.rules.endingDurationMs);
+      await waitFor(() => clientA.latestRealtimeSnapshot()?.snapshot.phase === "results");
+      await clientA.sendRealtimeAction({ type: "rematch" });
+      await waitForHostRealtimeMessages(host, REALTIME_ARENA_ACTION_KIND, 6);
+      host.tick(50);
+      await waitFor(() => {
+        const snapshot = clientA.latestRealtimeSnapshot();
+        return (
+          snapshot?.snapshot.phase === "lobby" &&
+          snapshot.playersByPeerId[lateClient.peerId] === lateClient.peerId &&
+          snapshot.participantsByPeerId?.[lateClient.peerId]?.status === "active" &&
+          snapshot.participantsByPeerId?.[clientB.peerId] === undefined &&
+          snapshot.snapshot.players
+            .map((player) => player.id)
+            .sort()
+            .join(",") === "client-a,client-late"
+        );
+      });
+      expect(host.realtime.snapshot().participantSummary).toEqual({
+        active: 2,
+        tracked: 2,
+        round: 2,
+        waiting: 0,
+        disconnected: 0
       });
     } finally {
       await clientA.dispose();
       await clientB.dispose();
+      await resumedClientB?.dispose();
+      await lateClient.dispose();
       await host.dispose();
       await colyseus.dispose();
     }

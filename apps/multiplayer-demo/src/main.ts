@@ -24,6 +24,8 @@ import {
 import type {
   RealtimeArenaAuthorityInputDiagnostics,
   RealtimeArenaNetworkAction,
+  RealtimeArenaParticipant,
+  RealtimeArenaParticipantSummary,
   RealtimeArenaSnapshotPayload
 } from "./realtime/protocol";
 import {
@@ -62,6 +64,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
   const ui = renderMultiplayerDemoShell(rootElement);
   const config = await fetchConfig();
   const hostOwnerId = readMultiplayerDemoHostOwnerId();
+  const localPeerId = readMultiplayerDemoPeerId();
   const initialPlayerName = readMultiplayerDemoPlayerName();
   let sessionInfo: MultiplayerDemoSessionInfo | undefined;
   let client: MultiplayerDemoClient | undefined;
@@ -69,6 +72,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
   let localRoomRole: "host" | "client" | undefined;
   let busyLabel: string | undefined;
   let lastError: string | undefined;
+  let playerNameInputDirty = false;
   const realtimeGame = createRealtimeLocalGame({ playerName: initialPlayerName });
   const localPresentation = createRealtimeArenaPresentation({
     interpolationDelayMs: 0,
@@ -126,6 +130,9 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
   ui.playerNameInput.value = initialPlayerName;
   renderAll();
   ui.roomInput.addEventListener("input", renderAll);
+  ui.playerNameInput.addEventListener("input", () => {
+    playerNameInputDirty = true;
+  });
   ui.playerNameInput.addEventListener("change", () => {
     void applyPlayerNameSetting();
   });
@@ -141,13 +148,17 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
 
   bindMultiplayerDemoControls(ui, {
     host() {
+      const sessionId = readRoomId();
+      const playerName = commitPlayerNameInput();
       void runAction("Hosting room", async () => {
-        await hostAndConnectClient(readRoomId(), commitPlayerNameInput());
+        await hostAndConnectClient(sessionId, playerName);
       });
     },
     connect() {
+      const sessionId = readRoomId();
+      const playerName = commitPlayerNameInput();
       void runAction("Connecting client", async () => {
-        await connectClient(readRoomId(), commitPlayerNameInput());
+        await connectClient(sessionId, playerName);
       });
     },
     disconnect() {
@@ -372,7 +383,9 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
           remoteDiagnostics,
           remotePresentation,
           remotePrediction.diagnostics(),
-          remote.authorityInput
+          remote.authorityInput,
+          remote.participantsByPeerId?.[client?.peerId ?? ""],
+          remote.participantSummary
         ),
         readRemotePlayerId(remote),
         permissions
@@ -742,13 +755,17 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     diagnostics: RealtimeLocalGameDiagnostics,
     presentation: RealtimeArenaPresentation,
     prediction?: RealtimeArenaPredictionDiagnostics,
-    authorityInput?: RealtimeArenaAuthorityInputDiagnostics
+    authorityInput?: RealtimeArenaAuthorityInputDiagnostics,
+    participant?: RealtimeArenaParticipant,
+    participantSummary?: RealtimeArenaParticipantSummary
   ): RealtimeArenaUiDiagnostics {
     return {
       ...diagnostics,
       presentation: presentation.diagnostics(),
       ...(prediction === undefined ? {} : { prediction }),
-      ...(authorityInput === undefined ? {} : { authorityInput })
+      ...(authorityInput === undefined ? {} : { authorityInput }),
+      ...(participant === undefined ? {} : { participant }),
+      ...(participantSummary === undefined ? {} : { participantSummary })
     };
   }
 
@@ -764,8 +781,10 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
 
   function commitPlayerNameInput(): string {
     const playerName = normalizeRealtimeArenaPlayerLabel(ui.playerNameInput.value);
+    playerNameInputDirty = false;
     ui.playerNameInput.value = playerName;
     writeMultiplayerDemoPlayerName(playerName);
+    realtimeGame.setPlayerName(playerName);
     return playerName;
   }
 
@@ -773,15 +792,19 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
     state: { players: Array<{ id: string; label: string }> },
     playerId: string
   ): void {
-    if (document.activeElement === ui.playerNameInput) {
+    if (playerNameInputDirty || document.activeElement === ui.playerNameInput) {
       return;
     }
 
     const player = state.players.find((candidate) => candidate.id === playerId);
-    if (!player || ui.playerNameInput.value === player.label) {
+    if (!player) {
       return;
     }
 
+    realtimeGame.setPlayerName(player.label);
+    if (ui.playerNameInput.value === player.label) {
+      return;
+    }
     ui.playerNameInput.value = player.label;
     writeMultiplayerDemoPlayerName(player.label);
   }
@@ -857,6 +880,7 @@ async function bootMultiplayerDemo(rootElement: HTMLElement): Promise<void> {
       roomName: hosted.roomName,
       sessionId: hosted.sessionId,
       hostPeerId: hosted.hostPeerId,
+      peerId: localPeerId,
       displayName: playerName
     });
     try {
@@ -941,8 +965,10 @@ async function fetchConfig(): Promise<MultiplayerDemoConfig> {
 }
 
 const MULTIPLAYER_DEMO_HOST_OWNER_STORAGE_KEY = "gamekit.multiplayerDemo.hostOwnerId";
+const MULTIPLAYER_DEMO_PEER_ID_STORAGE_KEY = "gamekit.multiplayerDemo.peerId";
 const MULTIPLAYER_DEMO_PLAYER_NAME_STORAGE_KEY = "gamekit.multiplayerDemo.playerName";
 const FALLBACK_MULTIPLAYER_DEMO_HOST_OWNER_ID = createMultiplayerDemoHostOwnerId();
+const FALLBACK_MULTIPLAYER_DEMO_PEER_ID = createMultiplayerDemoPeerId();
 const FALLBACK_MULTIPLAYER_DEMO_PLAYER_NAME = createDefaultMultiplayerDemoPlayerName();
 
 function readMultiplayerDemoHostOwnerId(): string {
@@ -966,6 +992,29 @@ function createMultiplayerDemoHostOwnerId(): string {
   }
 
   return `window-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000000).toString(36)}`;
+}
+
+function readMultiplayerDemoPeerId(): string {
+  try {
+    const existing = window.sessionStorage.getItem(MULTIPLAYER_DEMO_PEER_ID_STORAGE_KEY);
+    if (existing) {
+      return existing;
+    }
+
+    const next = createMultiplayerDemoPeerId();
+    window.sessionStorage.setItem(MULTIPLAYER_DEMO_PEER_ID_STORAGE_KEY, next);
+    return next;
+  } catch {
+    return FALLBACK_MULTIPLAYER_DEMO_PEER_ID;
+  }
+}
+
+function createMultiplayerDemoPeerId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `browser-${crypto.randomUUID().slice(0, 12)}`;
+  }
+
+  return `browser-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000000).toString(36)}`;
 }
 
 function readMultiplayerDemoPlayerName(): string {
