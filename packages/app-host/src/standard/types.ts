@@ -39,7 +39,7 @@ import type {
   SaveStore,
   SaveVersion
 } from "@gamekit/save";
-import type { TcaDefinitionSet, TcaTraceStore, TcaRuntime } from "@gamekit/tca";
+import type { TcaDefinitionSet, TcaHandle, TcaTraceStore, TcaRuntime } from "@gamekit/tca";
 import type { UiRuntime } from "@gamekit/ui-core";
 import type {
   AppAdapterRegistry,
@@ -315,6 +315,7 @@ export type StandardTcaGameModuleOptions<TContext> = {
   ruleKind?: string | undefined;
   definitions?: StandardValue<TcaDefinitionSet, TContext> | undefined;
   traceStore?: StandardValue<TcaTraceStore, TContext> | undefined;
+  handle?: StandardValue<TcaHandle, TContext> | undefined;
   onRuntime?(ctx: StandardServiceBuildContext<TContext>, runtime: TcaRuntime): void;
 };
 

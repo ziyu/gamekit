@@ -29,7 +29,7 @@ import { createMemoryMultiplayerBackend } from "@gamekit/multiplayer-memory";
 import { createMemoryPhysicsBackend, createPhysicsHandle } from "@gamekit/physics-core";
 import { createMemorySaveStore } from "@gamekit/save";
 import { type GameWorld } from "@gamekit/world";
-import { createTcaRuleDataType } from "@gamekit/tca";
+import { createTcaHandle, createTcaRuleDataType } from "@gamekit/tca";
 import { createUiRuntime } from "@gamekit/ui-core";
 
 describe("app host service registry", () => {
@@ -707,6 +707,7 @@ describe("configured app host", () => {
     const initialCameraX = camera.getState().x;
     const eventBus = createEventBus({ clock: () => 1 });
     const gasHandle = createGasHandle({ id: "standard.gas" });
+    const tcaHandle = createTcaHandle({ id: "standard.tca" });
     const derived: string[] = [];
     let gasRuntime: GasRuntime | undefined;
     eventBus.on("test.derived", (event) => {
@@ -723,7 +724,7 @@ describe("configured app host", () => {
         data: { registry },
         game: {
           standardModules: {
-            tca: {},
+            tca: { handle: tcaHandle },
             gas: {
               traceStore: createGasTraceStore(),
               handle: gasHandle,
@@ -761,6 +762,7 @@ describe("configured app host", () => {
     expect(derived).toEqual(["test.derived"]);
     expect(camera.getState().x).toBe(initialCameraX + 12);
     expect(gasRuntime).toBeDefined();
+    expect(tcaHandle.isBound()).toBe(true);
     expect(gasHandle.isBound()).toBe(true);
     expect(configured.host.services.game?.modules.map((module) => module.id)).toEqual([
       "gamekit.tca",
@@ -769,6 +771,7 @@ describe("configured app host", () => {
     ]);
 
     await configured.host.dispose();
+    expect(tcaHandle.isBound()).toBe(false);
     expect(gasHandle.isBound()).toBe(false);
   });
 

@@ -1,6 +1,7 @@
 export * from "./built-in-definitions";
 export * from "./compiler";
 export * from "./create-tca-module";
+export { createTcaHandle, type TcaHandleOptions } from "./create-tca-handle";
 export * from "./create-tca-runtime";
 export * from "./data-type";
 export * from "./definition-set";
@@ -8,4 +9,5 @@ export * from "./errors";
 export * from "./event-bridge";
 export * from "./handler-registry";
 export * from "./trace-store";
+export * from "./save-contributor";
 export * from "./types";

@@ -16,13 +16,15 @@ export function createGasModule(config: CreateGasModuleConfig) {
         traceStore: config.traceStore
       });
 
+      let handleBound = false;
       try {
         if (config.handle) {
           bindGasHandle(config.handle, runtime, moduleId);
+          handleBound = true;
         }
         config.onRuntime?.(runtime);
       } catch (error) {
-        if (config.handle?.isBound()) {
+        if (config.handle && handleBound) {
           unbindGasHandle(config.handle, moduleId);
         }
         runtime.dispose();

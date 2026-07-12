@@ -190,6 +190,8 @@ export type SaveContributor<TData = unknown> = {
 
 这样可以避免 `@gamekit/save` 直接依赖 GAS/TCA/Camera，也避免每个游戏在 app 入口手写保存流水线。
 
+领域包只依赖 `@gamekit/save` 的稳定 contributor/section/context 类型，不依赖 SaveManager、store 或平台实现。标准 gameplay contributor 使用 module-bound handle 捕获和恢复状态，默认顺序是 World identity → Physics (`200`) → GAS (`300`) → TCA (`400`) → app gameplay；restore 本身不启动 tick，组合层恢复 runtime clock 后再 resume。
+
 ## 保存范围策略
 
 真实游戏不会每次都保存所有内容。手动存档、自动存档、关卡 checkpoint、调试快照和云同步可能需要不同范围。

@@ -13,6 +13,7 @@ import {
   createPhysicsHandle,
   createPhysicsDataTypes,
   createPhysicsModule,
+  createPhysicsSaveContributor,
   createPhysicsTraceStore,
   checkCollision,
   checkOverlap,
@@ -444,6 +445,63 @@ describe("Physics module", () => {
       runtime.tick(16);
       expect(physics.snapshot()).toMatchObject({ bodyCount: 12, colliderCount: 12 });
     }
+    runtime.dispose();
+  });
+
+  it("restores stable physics state, entity remaps, and the fixed-step accumulator", async () => {
+    const world = createMemoryWorld();
+    const actor = world.spawn();
+    world.add(actor, PhysicsBodyComponent, {
+      definition: { kind: "dynamic" }
+    });
+    world.add(actor, PhysicsTransformComponent, {
+      position: { x: 0, y: 0 }
+    });
+    world.add(actor, PhysicsVelocityComponent, {
+      linear: { x: 2, y: 0 }
+    });
+    world.add(actor, PhysicsColliderComponent, {
+      definition: { shape: { type: "circle", radius: 0.5 } }
+    });
+    const physics = createPhysicsHandle({ id: "checkpoint.physics" });
+    const runtime = createGame({
+      modules: [
+        createPhysicsModule({
+          backend: createMemoryPhysicsBackend(),
+          fixedDeltaMs: 1_000,
+          scene: { gravity: { x: 0, y: 0 } },
+          handle: physics
+        })
+      ],
+      world,
+      eventBus: createEventBus({ clock: () => 1 }),
+      seed: "physics-checkpoint"
+    });
+    runtime.start();
+    runtime.tick(500);
+    const contributor = createPhysicsSaveContributor({ handle: physics });
+    const section = await contributor.capture({ now: 500 });
+    const restoredActor = world.spawn();
+    if (section === undefined) {
+      throw new Error("Physics contributor did not capture a section");
+    }
+    expect(section.data.entities[0]?.body?.state).not.toHaveProperty("id");
+
+    runtime.tick(500);
+    expect(world.get(actor, PhysicsTransformComponent)?.position.x).toBe(2);
+    physics.restoreCheckpoint(section.data, {
+      resolveEntityId(entityId) {
+        return entityId === actor ? restoredActor : undefined;
+      }
+    });
+
+    expect(physics.snapshot()).toMatchObject({ bodyCount: 0, colliderCount: 0 });
+    expect(world.get(actor, PhysicsBodyComponent)).toBeUndefined();
+    expect(world.get(restoredActor, PhysicsBodyComponent)?.bodyId).toBeUndefined();
+
+    runtime.tick(500);
+    expect(world.get(restoredActor, PhysicsTransformComponent)?.position.x).toBe(2);
+    expect(physics.snapshot()).toMatchObject({ bodyCount: 1, colliderCount: 1 });
     runtime.dispose();
   });
 

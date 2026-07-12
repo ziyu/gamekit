@@ -21,6 +21,7 @@
     "@gamekit/data": "workspace:*",
     "@gamekit/event-bus": "workspace:*",
     "@gamekit/game-runtime": "workspace:*",
+    "@gamekit/save": "workspace:*",
     "@gamekit/tca": "workspace:*",
     "@gamekit/world": "workspace:*"
   },

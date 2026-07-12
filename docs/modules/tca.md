@@ -75,7 +75,9 @@ export type ActionConfig = {
 ```ts
 createTcaRuleDataType();
 createTcaRuntime({ rules, eventBus, definitions, traceStore, dataRegistry, game });
-createTcaModule({ dataRegistry, definitions, traceStore });
+createTcaHandle();
+createTcaModule({ dataRegistry, definitions, traceStore, handle });
+createTcaSaveContributor({ handle });
 createTcaTraceStore({ limit });
 ```
 
@@ -104,6 +106,7 @@ TCA GameModule 负责：
 - 创建并持有 TcaRuntime。
 - 订阅 EventBus。
 - 在 GameRuntime dispose 时取消订阅并释放 TcaRuntime。
+- 绑定可选 `TcaHandle`，供 Save contributor 捕获/恢复 once-rule state 与 run sequence；dispose 后 handle 失效。
 - 可选注册低频 system，用于 tick trigger 或 deferred action queue。
 
 GameRuntime 不直接理解 TCA；它只安装 GameModule 并在 dispose 时清理模块。
@@ -233,6 +236,8 @@ GAS 不重新实现一套规则引擎。
 - 规则在加载或 runtime 启动时预编译，运行时按 event type index 查找候选规则；不要每个 EventBus event 扫描所有规则。
 - 修改 rule compile、event index、runner 或 trace store 时运行 `corepack pnpm bench:gameplay:check`；基准必须同时记录总规则数与实际候选规则数，避免吞吐结果掩盖全量扫描回归。
 - TCA module 集成负责 EventBus 订阅、DataRegistry rule loading、definition merge、trace store 和 dispose cleanup，业务代码不重复手写这套装配。
+- TCA checkpoint 只保存已执行的 once-rule id 和 run sequence，不保存 compiled handler、EventBus subscription 或 trace history。Restore 清空旧 trace，并在恢复 runtime clock 后继续生成不冲突的 trace id。
+- 修改 checkpoint capture/restore 时运行 `corepack pnpm bench:checkpoint:check`。
 - 测试应覆盖 trigger index、definition duplicate、condition pass/fail、action error、trace ordering、unsubscribe/cleanup、DataRegistry rule loading 和与 GAS definition set 的组合。
 
 ### 模块使用

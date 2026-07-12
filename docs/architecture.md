@@ -111,7 +111,7 @@ driver packages → core protocol packages / external runtime
 game-runtime → core / world / event-bus
 world-koota → world / core / koota
 input-dom/input-tauri → input-core
-physics-core → core / event-bus / game-runtime / world / data
+physics-core → core / event-bus / game-runtime / world / data / save
 physics-rapier2d → physics-core / core / @dimforge/rapier2d-compat
 physics-rapier3d → physics-core / core / @dimforge/rapier3d-compat
 physics-matter → physics-core / core / matter-js
@@ -119,8 +119,8 @@ driver-phaser → driver-core / renderer-core / renderer-phaser / input-core / c
 driver-three → driver-core / renderer-core / input-core / camera-core / asset / core / three
 platform-web/platform-tauri → platform-core
 asset → data / core
-tca → core / data / event-bus / game-runtime
-gas → core / data / event-bus / game-runtime / tca / world
+tca → core / data / event-bus / game-runtime / save
+gas → core / data / event-bus / game-runtime / tca / world / save
 multiplayer-core → core / event-bus / game-runtime
 multiplayer backend packages → multiplayer-core / platform-core / backend-owned runtime
 react-ui → ui-core

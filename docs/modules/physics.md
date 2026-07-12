@@ -332,13 +332,18 @@ export type PhysicsQueries = {
 };
 
 export type PhysicsHandle = PhysicsQueries & {
+  captureCheckpoint(): PhysicsRuntimeCheckpoint;
+  restoreCheckpoint(
+    checkpoint: PhysicsRuntimeCheckpoint,
+    options?: PhysicsCheckpointRestoreOptions
+  ): void;
   isBound(): boolean;
 };
 
 export function createPhysicsHandle(): PhysicsHandle;
 ```
 
-`createPhysicsModule(...)` 在 install 时把 handle 绑定到自己创建的 scene，在 dispose 时解绑。Handle 在未绑定、已 dispose 或重复绑定时必须给出明确 `GameError`，不能静默创建 fallback scene。测试可以向业务模块注入 fake `PhysicsQueries`，不需要启动 Rapier 或真实 backend。
+`createPhysicsModule(...)` 在 install 时把 handle 绑定到自己创建的 scene 和 checkpoint controller，在 dispose 时解绑。Handle 在未绑定、已 dispose 或重复绑定时必须给出明确 `GameError`，不能静默创建 fallback scene。测试可以向业务模块注入 fake `PhysicsQueries`，不需要启动 Rapier 或真实 backend。
 
 依赖注入优先使用显式 module options：
 
@@ -524,6 +529,8 @@ Physics 可以提供 `createPhysicsSaveContributor()`，但 Save payload 只能�
 
 Load 时应先恢复 World entity，再由 Physics contributor 重建 backend scene。若 body id 在 load 后重映射，Physics contributor 必须使用 Save restore context 的 entity mapping。
 
+标准 Physics checkpoint 还保存 fixed-step accumulator，保证半步保存后可以从同一模拟边界续跑。Restore 先销毁 module-owned backend body/collider 与反向索引，再恢复稳定 World component；下一次 physics system tick 从 World 重建 scene。Contacts、trace、native id、active pair 与 solver cache 均不恢复。
+
 ## DevTools 与 Trace
 
 Physics 必须从一开始提供可解释入口：
@@ -591,4 +598,5 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
 - Collision layer/mask 只表达物理过滤；不要把所有玩法 target rule 都塞进 physics filter。需要命中后解释的规则应放在 gameplay 数据中。
 - 高频移动、碰撞和查询留在 physics/world system 内；不要把每帧 contact manifold、position patch 或 query result 全量发到 EventBus、React UI 或 DevTools UI。
 - Save 只保存可恢复 physics state，不保存 backend cache。Load 后由 Physics module 重建 scene 并恢复 stable body/entity mapping。
+- 修改 Physics checkpoint、backend reset 或 restore rebuild 时运行 `corepack pnpm bench:checkpoint:check`；该基准将 restore 与首个 rebuild tick 一起计量。
 - 需要后端专属能力时，通过显式 native path 使用具体 adapter 包，并把这段代码限制在 app-specific integration、Editor backend panel 或 DevTools plugin 中。

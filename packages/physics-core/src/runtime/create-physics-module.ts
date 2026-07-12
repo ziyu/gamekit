@@ -24,6 +24,7 @@ import type {
   PhysicsTraceStore
 } from "./types";
 import { bindPhysicsHandle, unbindPhysicsHandle } from "./create-physics-handle";
+import { createPhysicsCheckpointController } from "./checkpoint";
 
 export type PhysicsWorldBindings = {
   body?: ComponentDef<PhysicsBodyComponentState>;
@@ -74,6 +75,7 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
   };
   let scene: PhysicsScene | undefined;
   let accumulator = 0;
+  const pendingSleeping = new Map<EntityId, boolean>();
 
   return defineGameModule<GameInstallContext>({
     id: moduleId,
@@ -81,7 +83,22 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
       const nextScene = options.backend.createScene(options.scene);
       try {
         if (options.handle !== undefined) {
-          bindPhysicsHandle(options.handle, nextScene, moduleId);
+          bindPhysicsHandle(
+            options.handle,
+            nextScene,
+            moduleId,
+            createPhysicsCheckpointController({
+              world: ctx.world,
+              scene: nextScene,
+              bindings,
+              entityIndex,
+              pendingSleeping,
+              accumulator: () => accumulator,
+              setAccumulator(value) {
+                accumulator = value;
+              }
+            })
+          );
         }
       } catch (error) {
         nextScene.dispose();
@@ -95,7 +112,7 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
             return;
           }
 
-          syncWorldToScene(systemCtx.world, scene, bindings, entityIndex);
+          syncWorldToScene(systemCtx.world, scene, bindings, entityIndex, pendingSleeping);
           accumulator += systemCtx.delta;
           let subSteps = 0;
           while (accumulator >= fixedDeltaMs && subSteps < maxSubSteps) {
@@ -166,6 +183,7 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
           accumulator = 0;
           entityIndex.bodies.clear();
           entityIndex.colliders.clear();
+          pendingSleeping.clear();
         }
       };
     }
@@ -186,7 +204,8 @@ function syncWorldToScene(
   world: GameWorld,
   scene: PhysicsScene,
   bindings: ResolvedPhysicsBindings,
-  entityIndex: PhysicsEntityIndex
+  entityIndex: PhysicsEntityIndex,
+  pendingSleeping: Map<EntityId, boolean>
 ): void {
   const nextBodies = new Map<PhysicsBodyId, EntityId>();
   const nextColliders = new Map<PhysicsColliderId, EntityId>();
@@ -237,7 +256,13 @@ function syncWorldToScene(
             ...(velocity.angular === undefined ? {} : { angularVelocity: velocity.angular })
           }
         : {};
-    scene.updateBody(bodyId, { ...patch, ...velocityPatch });
+    const restoredSleeping = pendingSleeping.get(entity);
+    scene.updateBody(bodyId, {
+      ...patch,
+      ...velocityPatch,
+      ...(restoredSleeping === undefined ? {} : { sleeping: restoredSleeping })
+    });
+    pendingSleeping.delete(entity);
   }
 
   destroyStaleBodies(scene, entityIndex.bodies, nextBodies);

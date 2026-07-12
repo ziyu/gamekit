@@ -57,6 +57,7 @@ type GasEffectRuntimeOptions = {
 export type GasEffectRuntime = {
   apply(input: GasEffectApplication): GasEffectApplicationResult;
   updateActor(state: GasActorRuntimeState): boolean;
+  synchronizeSequence(states: GasActorRuntimeState[]): void;
 };
 
 export function createGasEffectRuntime(options: GasEffectRuntimeOptions): GasEffectRuntime {
@@ -64,8 +65,22 @@ export function createGasEffectRuntime(options: GasEffectRuntimeOptions): GasEff
 
   return {
     apply,
-    updateActor
+    updateActor,
+    synchronizeSequence
   };
+
+  function synchronizeSequence(states: GasActorRuntimeState[]): void {
+    effectSequence = states.reduce((maximum, state) => {
+      for (const active of state.effects.active) {
+        const separator = active.id.lastIndexOf(":");
+        const suffix = separator < 0 ? Number.NaN : Number(active.id.slice(separator + 1));
+        if (Number.isInteger(suffix) && suffix > maximum) {
+          maximum = suffix;
+        }
+      }
+      return maximum;
+    }, 0);
+  }
 
   function apply(input: GasEffectApplication): GasEffectApplicationResult {
     const state = options.requireActor(input.targetActorId);

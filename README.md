@@ -16,6 +16,7 @@ corepack pnpm bench:world
 corepack pnpm bench:physics:check
 corepack pnpm bench:multiplayer:check
 corepack pnpm bench:gameplay:check
+corepack pnpm bench:checkpoint:check
 ```
 
 ## 文档入口

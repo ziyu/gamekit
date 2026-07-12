@@ -135,7 +135,18 @@ export type TcaRuntime = {
   readonly rules: TcaCompiledRule[];
   readonly traceStore: TcaTraceStore;
   handleEvent(event: GameEvent): void;
+  captureCheckpoint(): TcaRuntimeCheckpoint;
+  restoreCheckpoint(checkpoint: TcaRuntimeCheckpoint): void;
   dispose(): void;
+};
+
+export type TcaRuntimeCheckpoint = {
+  runSequence: number;
+  executedOnceRuleIds: string[];
+};
+
+export type TcaHandle = Pick<TcaRuntime, "captureCheckpoint" | "restoreCheckpoint"> & {
+  isBound(): boolean;
 };
 
 export type CreateTcaRuntimeConfig = {
@@ -156,5 +167,6 @@ export type CreateTcaModuleConfig = {
   definitions?: TcaDefinitionSet | undefined;
   handlers?: TcaHandlerSet | undefined;
   traceStore?: TcaTraceStore | undefined;
+  handle?: TcaHandle | undefined;
   onRuntime?: ((runtime: TcaRuntime) => void) | undefined;
 };

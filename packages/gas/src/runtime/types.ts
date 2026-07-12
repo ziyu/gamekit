@@ -253,6 +253,15 @@ export type GasRuntimeSnapshot = {
   traces: GasTraceEntry[];
 };
 
+export type GasRuntimeCheckpoint = {
+  elapsed: number;
+  actors: GasActorRuntimeState[];
+};
+
+export type GasCheckpointRestoreOptions = {
+  resolveEntityId?(savedEntityId: EntityId): EntityId | undefined;
+};
+
 export type GasRuntime = {
   readonly traceStore: GasTraceStore;
   createActor(input: GasActorCreation): GasActorRuntimeState;
@@ -276,6 +285,8 @@ export type GasRuntime = {
     context?: GasOperationContext
   ): void;
   update(delta: number, elapsed: number): void;
+  captureCheckpoint(): GasRuntimeCheckpoint;
+  restoreCheckpoint(checkpoint: GasRuntimeCheckpoint, options?: GasCheckpointRestoreOptions): void;
   snapshot(): GasRuntimeSnapshot;
   dispose(): void;
 };
@@ -292,6 +303,8 @@ export type GasHandle = Pick<
   | "modifyAttribute"
   | "addTag"
   | "removeTag"
+  | "captureCheckpoint"
+  | "restoreCheckpoint"
   | "snapshot"
 > & {
   isBound(): boolean;

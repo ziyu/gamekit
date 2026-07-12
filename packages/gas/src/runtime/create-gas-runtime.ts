@@ -1,4 +1,10 @@
-import { GAS_ABILITY_TYPE, GAS_ACTOR_TYPE, GAS_ATTRIBUTE_TYPE, GAS_CUE_TYPE } from "./data-types";
+import {
+  GAS_ABILITY_TYPE,
+  GAS_ACTOR_TYPE,
+  GAS_ATTRIBUTE_TYPE,
+  GAS_CUE_TYPE,
+  GAS_EFFECT_TYPE
+} from "./data-types";
 import { createGasError } from "./errors";
 import { createGasTraceStore } from "./trace-store";
 import { GasAbilities, GasActor, GasAttributes, GasEffects, GasTags } from "./components";
@@ -25,6 +31,7 @@ import type {
   GasEffectApplicationResult,
   GasOperationContext,
   GasRuntime,
+  GasRuntimeCheckpoint,
   GasTraceEntry
 } from "./types";
 
@@ -195,6 +202,40 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
           persistState(state);
         }
       }
+    },
+    captureCheckpoint() {
+      return {
+        elapsed: elapsedNow,
+        actors: mutableStates()
+          .sort((left, right) => left.actor.actorId.localeCompare(right.actor.actorId))
+          .map(cloneGasActorState)
+      };
+    },
+    restoreCheckpoint(checkpoint, options) {
+      assertActive();
+      const states = prepareCheckpoint(checkpoint, options?.resolveEntityId);
+      for (const entityId of actorEntityById.values()) {
+        removeActorComponents(entityId);
+      }
+      actorEntityById.clear();
+      detachedActors.clear();
+      for (const state of states) {
+        const entityId = state.actor.entityId;
+        if (entityId === undefined) {
+          detachedActors.set(state.actor.actorId, cloneGasActorState(state));
+          continue;
+        }
+        removeActorComponents(entityId);
+        config.world.add(entityId, GasActor, state.actor);
+        config.world.add(entityId, GasAttributes, state.attributes);
+        config.world.add(entityId, GasTags, state.tags);
+        config.world.add(entityId, GasAbilities, state.abilities);
+        config.world.add(entityId, GasEffects, state.effects);
+        actorEntityById.set(state.actor.actorId, entityId);
+      }
+      elapsedNow = checkpoint.elapsed;
+      effectRuntime.synchronizeSequence(states);
+      traceStore.clear();
     },
     snapshot() {
       return {
@@ -676,6 +717,63 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
 
   function emit(type: string, payload: unknown, context?: GasOperationContext): void {
     config.eventBus?.emit(type, payload, "gas", context);
+  }
+
+  function prepareCheckpoint(
+    checkpoint: GasRuntimeCheckpoint,
+    resolveEntityId: ((savedEntityId: string | number) => string | number | undefined) | undefined
+  ): GasActorRuntimeState[] {
+    if (!Number.isFinite(checkpoint.elapsed) || checkpoint.elapsed < 0) {
+      throw createGasError("gas.checkpoint_invalid_elapsed", "Invalid GAS checkpoint elapsed time");
+    }
+    if (!Array.isArray(checkpoint.actors)) {
+      throw createGasError("gas.checkpoint_invalid_actors", "Invalid GAS checkpoint actors");
+    }
+    const actorIds = new Set<string>();
+    const entityIds = new Set<string | number>();
+    return checkpoint.actors.map((savedState) => {
+      const state = cloneGasActorState(savedState);
+      const actorId = state.actor.actorId;
+      if (actorIds.has(actorId)) {
+        throw createGasError("gas.checkpoint_duplicate_actor", `Duplicate GAS actor: ${actorId}`);
+      }
+      actorIds.add(actorId);
+      if (!config.dataRegistry.has(GAS_ACTOR_TYPE, state.actor.definitionId)) {
+        throw createGasError(
+          "gas.checkpoint_missing_definition",
+          `Missing GAS actor definition: ${state.actor.definitionId}`
+        );
+      }
+      for (const active of state.effects.active) {
+        if (!config.dataRegistry.has(GAS_EFFECT_TYPE, active.effectId)) {
+          throw createGasError(
+            "gas.checkpoint_missing_effect",
+            `Missing GAS effect definition: ${active.effectId}`
+          );
+        }
+      }
+      const savedEntityId = state.actor.entityId;
+      if (savedEntityId === undefined) {
+        return state;
+      }
+      const entityId = resolveEntityId?.(savedEntityId) ?? savedEntityId;
+      if (!config.world.has(entityId)) {
+        throw createGasError(
+          "gas.checkpoint_missing_entity",
+          `Missing restored GAS entity: ${String(entityId)}`,
+          { actorId, savedEntityId, entityId }
+        );
+      }
+      if (entityIds.has(entityId)) {
+        throw createGasError(
+          "gas.checkpoint_duplicate_entity",
+          `Multiple GAS actors target restored entity: ${String(entityId)}`
+        );
+      }
+      entityIds.add(entityId);
+      state.actor.entityId = entityId;
+      return state;
+    });
   }
 
   function assertActive(): void {

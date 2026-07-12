@@ -9,6 +9,7 @@
     { "path": "../core" },
     { "path": "../data" },
     { "path": "../event-bus" },
-    { "path": "../game-runtime" }
+    { "path": "../game-runtime" },
+    { "path": "../save" }
   ]
 }

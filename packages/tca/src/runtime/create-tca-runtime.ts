@@ -1,6 +1,7 @@
 import { compileTcaRules } from "./compiler";
 import { mergeTcaDefinitionSets } from "./definition-set";
 import { createTcaTraceStore } from "./trace-store";
+import { createTcaError } from "./errors";
 import type {
   CreateTcaRuntimeConfig,
   TcaCompiledRule,
@@ -42,6 +43,21 @@ export function createTcaRuntime(config: CreateTcaRuntimeConfig): TcaRuntime {
           parentId: event.parentId
         });
       }
+    },
+    captureCheckpoint() {
+      return {
+        runSequence,
+        executedOnceRuleIds: [...executedOnce].sort()
+      };
+    },
+    restoreCheckpoint(checkpoint) {
+      validateCheckpoint(checkpoint, compiled.rules);
+      runSequence = checkpoint.runSequence;
+      executedOnce.clear();
+      for (const ruleId of checkpoint.executedOnceRuleIds) {
+        executedOnce.add(ruleId);
+      }
+      traceStore.clear();
     },
     dispose() {
       disposed = true;
@@ -118,6 +134,37 @@ export function createTcaRuntime(config: CreateTcaRuntimeConfig): TcaRuntime {
       executedOnce.add(rule.rule.id);
     }
     traceStore.add(trace);
+  }
+}
+
+function validateCheckpoint(
+  checkpoint: { runSequence: number; executedOnceRuleIds: string[] },
+  rules: TcaCompiledRule[]
+): void {
+  if (!Number.isInteger(checkpoint.runSequence) || checkpoint.runSequence < 0) {
+    throw createTcaError(
+      "tca.checkpoint_invalid_sequence",
+      "TCA checkpoint runSequence must be a non-negative integer"
+    );
+  }
+  const onceRuleIds = new Set(rules.filter((rule) => rule.rule.once).map((rule) => rule.rule.id));
+  const seen = new Set<string>();
+  for (const ruleId of checkpoint.executedOnceRuleIds) {
+    if (!onceRuleIds.has(ruleId)) {
+      throw createTcaError(
+        "tca.checkpoint_unknown_once_rule",
+        `TCA checkpoint references an unknown once rule: ${ruleId}`,
+        { ruleId }
+      );
+    }
+    if (seen.has(ruleId)) {
+      throw createTcaError(
+        "tca.checkpoint_duplicate_once_rule",
+        `TCA checkpoint contains a duplicate once rule: ${ruleId}`,
+        { ruleId }
+      );
+    }
+    seen.add(ruleId);
   }
 }
 

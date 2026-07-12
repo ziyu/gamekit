@@ -36,6 +36,8 @@
     "bench:multiplayer:stability": "node --expose-gc --import tsx scripts/multiplayer-stability.ts",
     "bench:gameplay": "tsx scripts/gameplay-framework-benchmark.ts",
     "bench:gameplay:check": "tsx scripts/gameplay-framework-benchmark.ts --check",
+    "bench:checkpoint": "tsx scripts/checkpoint-benchmark.ts",
+    "bench:checkpoint:check": "tsx scripts/checkpoint-benchmark.ts --check",
     "changeset": "changeset",
     "changeset:auto": "node scripts/create-auto-changeset.mjs",
     "release:publish": "node scripts/release-gamekits.mjs",

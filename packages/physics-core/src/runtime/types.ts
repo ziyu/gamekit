@@ -342,7 +342,47 @@ export type PhysicsQueries = {
 };
 
 export type PhysicsHandle = PhysicsQueries & {
+  captureCheckpoint(): PhysicsRuntimeCheckpoint;
+  restoreCheckpoint(
+    checkpoint: PhysicsRuntimeCheckpoint,
+    options?: PhysicsCheckpointRestoreOptions
+  ): void;
   isBound(): boolean;
+};
+
+export type PhysicsEntityCheckpoint = {
+  entityId: EntityId;
+  body?: {
+    definition: PhysicsBodyDefinition;
+    enabled: boolean;
+    syncFromWorld: boolean;
+    syncVelocityFromWorld: boolean;
+    syncToWorld: boolean;
+    state?: PhysicsCheckpointBodyState;
+  };
+  collider?: {
+    definition: PhysicsColliderDefinition;
+    enabled: boolean;
+  };
+  transform?: {
+    position: PhysicsVector;
+    rotation?: PhysicsRotation;
+  };
+  velocity?: {
+    linear: PhysicsVector;
+    angular?: PhysicsRotation;
+  };
+};
+
+export type PhysicsCheckpointBodyState = Omit<PhysicsBodyState, "id">;
+
+export type PhysicsRuntimeCheckpoint = {
+  accumulator: number;
+  entities: PhysicsEntityCheckpoint[];
+};
+
+export type PhysicsCheckpointRestoreOptions = {
+  resolveEntityId?(savedEntityId: EntityId): EntityId | undefined;
 };
 
 export type PhysicsBodyData = PhysicsBodyDefinition & {

@@ -7,6 +7,7 @@ import {
   createGasHandle,
   createGasModule,
   createGasRuntime,
+  createGasSaveContributor,
   createGasTcaDefinitions,
   createGasTraceStore,
   GasActor,
@@ -317,6 +318,67 @@ describe("GAS runtime", () => {
     expect(runtime.actorForEntity(restoredEntity)?.actor.actorId).toBe("actor.stable");
   });
 
+  it("restores actor state, elapsed time, entity remaps, and effect id sequence", () => {
+    const world = createMemoryWorld();
+    const runtime = createTestGasRuntime(world);
+    const sourceEntity = world.spawn();
+    const targetEntity = world.spawn();
+    runtime.createActor({
+      actorId: "actor.source",
+      definitionId: "actor.scout",
+      entityId: sourceEntity
+    });
+    runtime.createActor({
+      actorId: "actor.target",
+      definitionId: "actor.scout",
+      entityId: targetEntity
+    });
+    runtime.update(50, 50);
+    const activation = runtime.activateAbility({
+      actorId: "actor.source",
+      abilityId: "ability.strike",
+      targetActorId: "actor.target"
+    });
+    const checkpoint = runtime.captureCheckpoint();
+    const restoredSource = world.spawn();
+    const restoredTarget = world.spawn();
+
+    runtime.modifyAttribute("actor.source", {
+      attribute: "energy",
+      operation: "set",
+      value: 0
+    });
+    runtime.restoreCheckpoint(checkpoint, {
+      resolveEntityId(entityId) {
+        if (entityId === sourceEntity) {
+          return restoredSource;
+        }
+        return entityId === targetEntity ? restoredTarget : undefined;
+      }
+    });
+
+    expect(activation.status).toBe("activated");
+    expect(runtime.getActor("actor.source")).toMatchObject({
+      actor: { entityId: restoredSource },
+      attributes: { current: { energy: 35 } },
+      abilities: { cooldowns: { "ability.strike": 150 } }
+    });
+    expect(runtime.getActor("actor.target")).toMatchObject({
+      actor: { entityId: restoredTarget },
+      attributes: { current: { health: 88 } },
+      effects: { active: [{ id: "effect.damage:1" }] }
+    });
+    expect(world.get(sourceEntity, GasActor)).toBeUndefined();
+    expect(runtime.traceStore.list()).toEqual([]);
+
+    runtime.update(550, 600);
+    const next = runtime.applyEffect({
+      effectId: "effect.damage",
+      targetActorId: "actor.target"
+    });
+    expect(next.activeEffectId).toBe("effect.damage:2");
+  });
+
   it("preserves correlation across ability, effect, attribute and EventBus facts", () => {
     const world = createMemoryWorld();
     const eventBus = createEventBus();
@@ -360,7 +422,7 @@ describe("GAS runtime", () => {
     });
   });
 
-  it("binds a GAS handle to one module owner and invalidates it on dispose", () => {
+  it("binds a GAS handle to Save contributors and invalidates it on dispose", async () => {
     const world = createMemoryWorld();
     const eventBus = createEventBus();
     const handle = createGasHandle({ id: "combat.gas" });
@@ -379,6 +441,8 @@ describe("GAS runtime", () => {
     expect(handle.isBound()).toBe(true);
     handle.createActor({ actorId: "actor.handle", definitionId: "actor.scout" });
     expect(handle.hasActor("actor.handle")).toBe(true);
+    const section = await createGasSaveContributor({ handle }).capture({ now: 0 });
+    expect(section?.data.actors).toHaveLength(1);
 
     game.dispose();
 

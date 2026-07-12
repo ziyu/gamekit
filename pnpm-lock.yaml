@@ -573,6 +573,9 @@ importers:
       '@gamekit/game-runtime':
         specifier: workspace:*
         version: link:../game-runtime
+      '@gamekit/save':
+        specifier: workspace:*
+        version: link:../save
       '@gamekit/tca':
         specifier: workspace:*
         version: link:../tca
@@ -643,6 +646,9 @@ importers:
       '@gamekit/game-runtime':
         specifier: workspace:*
         version: link:../game-runtime
+      '@gamekit/save':
+        specifier: workspace:*
+        version: link:../save
       '@gamekit/world':
         specifier: workspace:*
         version: link:../world
@@ -783,6 +789,9 @@ importers:
       '@gamekit/game-runtime':
         specifier: workspace:*
         version: link:../game-runtime
+      '@gamekit/save':
+        specifier: workspace:*
+        version: link:../save
 
   packages/test-utils:
     dependencies:

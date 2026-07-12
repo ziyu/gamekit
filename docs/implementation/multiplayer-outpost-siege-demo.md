@@ -187,11 +187,14 @@ Status: In progress since 2026-07-12.
 - GAS ability/effect/attribute/tag/cue trace 与 EventBus fact 保留 correlation/parent；相关 runtime 已按 actor state、effect runtime、handle 和 operation context 拆分。
 - 新增 gameplay framework microbenchmark 与 9 项粗粒度预算，覆盖 correlated EventBus fan-out、1,004-rule TCA indexed dispatch、GAS ability/effect chain、bounded stacking、500 entity actor idle/dormant/periodic tick 和 4,000 actor stale entity cleanup。
 - GAS effect update 不再把 idle 或本 tick 未变化的 actor 写回 World；`periodMs` 必须严格大于零，避免 authority tick 进入不前进的 periodic loop。
-- `@gamekit/event-bus` 4 tests、`@gamekit/tca` 8 tests、`@gamekit/gas` 14 tests、`@gamekit/app-host` 27 tests 和 Abyss Delve 17 tests 通过。
+- Physics、GAS 和 TCA 提供 domain-owned Save contributor 与 module-bound checkpoint handle；restore order 固定为 Physics `200`、GAS `300`、TCA `400`，并支持 entity remap、fixed-step accumulator、active effect/cooldown 与 once-rule continuation。
+- App Host headless fixture 已通过真实 SaveManager JSON encode/store/load 验证 Physics + GAS + TCA + runtime clock continuation；restore 不保存 trace、native handle、contact cache 或 presentation state。
+- 新增 checkpoint benchmark 与 6 项粗粒度预算；1,000 once-rules capture/restore 约 0.02/0.12 ms，1,000 GAS actors + 500 active effects 约 0.51/3.49 ms，1,000 Physics entities capture/restore+rebuild tick 约 4.07/7.22 ms。
+- `@gamekit/event-bus` 4 tests、`@gamekit/tca` 10 tests、`@gamekit/gas` 15 tests、`@gamekit/physics-core` 9 tests、`@gamekit/app-host` 28 tests 和 Abyss Delve 17 tests 通过。
 - 全仓库 `test`、`build`、`lint`、`format` 和 `bench:world` 通过；10,000 entities / 5,000 moving entities 的本次结果为 spawn/add 11.68 ms、query/update 6.95 ms。
 - `bench:gameplay:check` 9/9 budgets 连续两次通过；本机代表结果为 TCA 1.56 µs/event、GAS combat chain 5.03 µs/activation、500 dormant effects 0.74 ms/tick、500 periodic effects 1.63 ms/tick、2,000 stale actor cleanup 5.25 ms。
 
-剩余工作：TCA/GAS/Physics Save contributor、authority module/system order fixture，以及多模块 DevTools correlation source。
+剩余工作：authority module/system order fixture，以及多模块 DevTools correlation source。
 
 ### Wave 3: App Skeleton And Content Pipeline
 

@@ -22,6 +22,7 @@ import type {
   PhysicsShapeDefinition,
   PhysicsVector
 } from "./types";
+import type { PhysicsCheckpointController } from "./checkpoint";
 
 export type PhysicsHandleOptions = {
   id?: string;
@@ -30,6 +31,7 @@ export type PhysicsHandleOptions = {
 type PhysicsHandleState = {
   id: string;
   scene: PhysicsScene | undefined;
+  checkpoint: PhysicsCheckpointController | undefined;
   ownerId: string | undefined;
 };
 
@@ -39,6 +41,7 @@ export function createPhysicsHandle(options: PhysicsHandleOptions = {}): Physics
   const state: PhysicsHandleState = {
     id: options.id ?? "physics.handle",
     scene: undefined,
+    checkpoint: undefined,
     ownerId: undefined
   };
 
@@ -98,6 +101,12 @@ export function createPhysicsHandle(options: PhysicsHandleOptions = {}): Physics
     snapshot(): PhysicsSceneSnapshot {
       return requireBoundScene(state, "snapshot").snapshot();
     },
+    captureCheckpoint() {
+      return requireCheckpointController(state, "captureCheckpoint").capture();
+    },
+    restoreCheckpoint(checkpoint, options) {
+      requireCheckpointController(state, "restoreCheckpoint").restore(checkpoint, options);
+    },
     isBound(): boolean {
       return state.scene !== undefined;
     }
@@ -110,7 +119,8 @@ export function createPhysicsHandle(options: PhysicsHandleOptions = {}): Physics
 export function bindPhysicsHandle(
   handle: PhysicsHandle,
   scene: PhysicsScene,
-  ownerId: string
+  ownerId: string,
+  checkpoint?: PhysicsCheckpointController
 ): void {
   const state = requireHandleState(handle);
   if (state.scene !== undefined) {
@@ -123,6 +133,7 @@ export function bindPhysicsHandle(
   }
 
   state.scene = scene;
+  state.checkpoint = checkpoint;
   state.ownerId = ownerId;
 }
 
@@ -141,7 +152,22 @@ export function unbindPhysicsHandle(handle: PhysicsHandle, ownerId: string): voi
   }
 
   state.scene = undefined;
+  state.checkpoint = undefined;
   state.ownerId = undefined;
+}
+
+function requireCheckpointController(
+  state: PhysicsHandleState,
+  operation: "captureCheckpoint" | "restoreCheckpoint"
+): PhysicsCheckpointController {
+  if (state.checkpoint === undefined) {
+    throw new GameError(
+      "physics.checkpoint_unavailable",
+      "Physics checkpoint operations require a module-bound handle",
+      { handleId: state.id, operation }
+    );
+  }
+  return state.checkpoint;
 }
 
 function requireHandleState(handle: PhysicsHandle): PhysicsHandleState {

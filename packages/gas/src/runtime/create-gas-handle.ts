@@ -71,6 +71,12 @@ export function createGasHandle(options: GasHandleOptions = {}): GasHandle {
     removeTag(actorId: GasActorId, tag: GasTagId, source?: string, context?: GasOperationContext) {
       requireBoundRuntime(state, "removeTag").removeTag(actorId, tag, source, context);
     },
+    captureCheckpoint() {
+      return requireBoundRuntime(state, "captureCheckpoint").captureCheckpoint();
+    },
+    restoreCheckpoint(checkpoint, options) {
+      requireBoundRuntime(state, "restoreCheckpoint").restoreCheckpoint(checkpoint, options);
+    },
     snapshot() {
       return requireBoundRuntime(state, "snapshot").snapshot();
     },

@@ -4,9 +4,11 @@ import { createGame } from "@gamekit/game-runtime";
 import { type GameWorld } from "@gamekit/world";
 import { describe, expect, it } from "vitest";
 import {
+  createTcaHandle,
   createTcaModule,
   createTcaRuleDataType,
   createTcaRuntime,
+  createTcaSaveContributor,
   createTcaTraceStore,
   type TcaActionHandler,
   type TcaConditionHandler,
@@ -157,6 +159,37 @@ describe("TCA runtime", () => {
     expect(runtime.traceStore.list().map((entry) => entry.status)).toEqual(["passed", "skipped"]);
   });
 
+  it("restores once-rule state and trace sequence from a checkpoint", () => {
+    const eventBus = createEventBus({ clock: () => 1 });
+    const calls: string[] = [];
+    const createRuntime = () =>
+      createTcaRuntime({
+        eventBus,
+        handlers: {
+          actions: [
+            actionHandler("test.record", (label) => {
+              calls.push(label);
+            })
+          ]
+        },
+        rules: [{ ...rule("once", "input.action", "ran"), once: true }]
+      });
+    const source = createRuntime();
+    source.handleEvent({ type: "input.action", payload: {}, timestamp: 1 });
+    const checkpoint = source.captureCheckpoint();
+    const restored = createRuntime();
+
+    restored.restoreCheckpoint(checkpoint);
+    restored.handleEvent({ type: "input.action", payload: {}, timestamp: 2 });
+
+    expect(calls).toEqual(["ran"]);
+    expect(restored.traceStore.list()[0]).toMatchObject({
+      id: "tca-run-2",
+      ruleId: "once",
+      status: "skipped"
+    });
+  });
+
   it("emits derived events through the built-in event.emit action", () => {
     const eventBus = createEventBus({ clock: () => 1 });
     const emitted: Array<{ type: string; correlationId?: string; parentId?: string }> = [];
@@ -258,6 +291,39 @@ describe("TCA runtime", () => {
 });
 
 describe("TCA module", () => {
+  it("binds a checkpoint handle for Save contributors and releases it on dispose", async () => {
+    const registry = createDataRegistry();
+    registry.registerType(createTcaRuleDataType());
+    registry.registerPack(tcaPack([{ ...rule("once", "input.action", "ran"), once: true }]));
+    const eventBus = createEventBus({ clock: () => 1 });
+    const handle = createTcaHandle();
+    const game = createGame({
+      modules: [
+        createTcaModule({
+          dataRegistry: registry,
+          handle,
+          handlers: { actions: [actionHandler("test.record", () => {})] }
+        })
+      ],
+      world: createMemoryWorld(),
+      eventBus,
+      seed: "tca-save-handle"
+    });
+    eventBus.emit("input.action", {}, "test");
+    const contributor = createTcaSaveContributor({ handle });
+    const section = await contributor.capture({ now: 1 });
+
+    expect(section?.data).toEqual({
+      runSequence: 1,
+      executedOnceRuleIds: ["once"]
+    });
+    game.dispose();
+    expect(handle.isBound()).toBe(false);
+    expect(() => handle.captureCheckpoint()).toThrowError(
+      expect.objectContaining({ code: "tca.handle_unbound" })
+    );
+  });
+
   it("reads rules from DataRegistry and unsubscribes on runtime dispose", () => {
     const registry = createDataRegistry();
     registry.registerType(createTcaRuleDataType());

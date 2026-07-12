@@ -12,6 +12,8 @@ export function createStandardTcaModule<TContext>(
     options.definitions === undefined ? undefined : resolveStandardValue(ctx, options.definitions);
   const traceStore =
     options.traceStore === undefined ? undefined : resolveStandardValue(ctx, options.traceStore);
+  const handle =
+    options.handle === undefined ? undefined : resolveStandardValue(ctx, options.handle);
 
   return createTcaModule({
     id: options.id ?? "gamekit.tca",
@@ -19,6 +21,7 @@ export function createStandardTcaModule<TContext>(
     ruleKind: options.ruleKind,
     definitions,
     traceStore,
+    handle,
     onRuntime(runtime) {
       options.onRuntime?.(ctx, runtime);
     }

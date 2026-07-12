@@ -158,6 +158,10 @@ Trace 是 GAS 的核心能力之一，因为数据驱动玩法如果不可解释
 
 Ability、Effect、Attribute、Tag 和 Cue 操作接受可选 correlation context。每个派生 trace 保留同一 `correlationId`，并把直接触发它的 GAS/TCA/network trace 记录为 `parentId`；派生 EventBus fact 使用相同 envelope metadata，不要求 gameplay payload 携带调试字段。
 
+## Save 边界
+
+`createGasSaveContributor({ handle })` 通过 module-bound `GasHandle` 捕获 elapsed、actor attributes/tags/abilities/cooldowns 和 active effects。Restore 使用 `SaveRestoreContext.entityMap` 重绑定 entity-backed actor，保留 detached actor，并同步 active effect id sequence；trace 与 EventBus 历史不进入存档。World contributor 不应重复保存 GAS-owned components。
+
 ## 与 DataPack 的关系
 
 Actor、Attribute、Tag、Ability、Effect、Cue、Clue 都通过明确的 DataType 注册和校验，例如 `gas.actor`、`gas.ability`、`gas.effect`。DataPack 可以混合这些内置类型和游戏自定义类型，例如 `game.hero` 或 `game.monster`。
@@ -171,6 +175,7 @@ GAS 不要求游戏必须按 GAS 类型组织内容文件。真实项目可以�
 - GAS module 集成负责从 DataRegistry 读取 definitions、创建 ECS-backed runtime、注册 effect tick system、合并 TCA definitions、写 trace，并在 GameRuntime dispose 时清理。多个业务模块需要 GAS 时共享同一个 module-bound `GasHandle`，不各自创建 runtime 或通过全局变量捕获内部实例。
 - 修改 ability/effect runner、stack policy、entity actor mapping 或 tick persistence 时运行 `corepack pnpm bench:gameplay:check`。基准分别覆盖 ability→effect→attribute→cue、bounded stacking、idle/periodic entity actor update 和 stale entity cleanup；预算用于发现数量级退化，不替代目标平台 profiler。
 - Actor 与 EntityId 的绑定、save/load entity mapping、spawn/despawn 策略由 game module 或 Save contributor 明确处理；业务 despawn 优先显式 `removeActor`，runtime 的 stale mapping cleanup 只是生命周期安全网。
+- 修改 GAS checkpoint capture/restore、entity remap 或 active effect continuation 时运行 `corepack pnpm bench:checkpoint:check`。
 - 测试应覆盖 cost/cooldown/tag requirement、effect stack/expire/periodic、attribute modifier、cue dispatch、entity binding、save/restore 边界和 TCA integration。
 
 ### 模块使用
