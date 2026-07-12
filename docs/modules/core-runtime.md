@@ -207,6 +207,7 @@ Profiler 接入规则：
 - `@gamekit/core` 只放低层通用工具，例如 Registry、Clock、Result、GameError、seeded rng 和 GameModule 类型；不要把 renderer、input、asset、platform、Physics、TCA、GAS 或具体游戏概念塞进 Core。
 - Registry、Clock、GameError 等基础工具的错误消息要稳定、可测试、可定位，避免为了方便返回 `undefined` 后让调用方在更远处失败。
 - EventBus 事件应表达已经发生的低频事实，事件 payload 保持小而可序列化；跨模块链路通过 envelope 的 `correlationId` / `parentId` 传播，不把调试关系塞进每种业务 payload。不要用 EventBus 广播每帧 transform、raw pointer move、held input 或 render patch。
+- EventBus envelope 或 listener dispatch 发生变化时，应运行 `corepack pnpm bench:gameplay:check` 的 correlated fan-out 场景，观察突发低频事实的数量级退化；该预算不是允许把 EventBus 当成逐帧状态总线。
 - `start()`、`stop()`、`tick()`、`dispose()` 的边界要清楚：`stop()` 不释放模块，`dispose()` 释放长期句柄，`tick()` 不应该悄悄 boot app service。
 - 需要定位性能问题时，优先读取 Runtime profiler 的 system/tick summary，再决定是否开启更深的模块级 trace；不要把高频数据塞进 EventBus 或 React UI。
 - 测试优先覆盖 lifecycle、重复安装、system 顺序、stop 后不执行、dispose cleanup、clock restore 和错误路径。

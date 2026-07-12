@@ -111,6 +111,8 @@ Effect 支持：
 
 有 lifecycle 的 Effect 默认使用有界单栈并在重复应用时刷新最早实例。需要多栈时通过 `stacking.limit` 显式声明上限，并选择 `reject-newest`、`refresh-oldest` 或 `replace-oldest`；还可以选择按 effect 或同 source 匹配。Runtime 追踪 tag grant source，某个 effect 过期或被替换时只能移除自己贡献的 tag，不能误删 actor、装备或其他 effect 仍在提供的同名 tag。
 
+Periodic effect 的 `periodMs` 必须是严格正数，避免追赶循环无法推进。Effect system 仍会查询 entity-backed actor 以处理 stale mapping，但没有 active effect 或本 tick 没有 periodic/expire 变化的 actor 不写回 World；只有状态实际变化时才持久化相关 GAS components。
+
 ## TCA 集成
 
 GAS 复用 TCA，不重新实现规则系统。GAS 自己提供 TCA definitions，例如：
@@ -167,6 +169,7 @@ GAS 不要求游戏必须按 GAS 类型组织内容文件。真实项目可以�
 ### 模块集成
 
 - GAS module 集成负责从 DataRegistry 读取 definitions、创建 ECS-backed runtime、注册 effect tick system、合并 TCA definitions、写 trace，并在 GameRuntime dispose 时清理。多个业务模块需要 GAS 时共享同一个 module-bound `GasHandle`，不各自创建 runtime 或通过全局变量捕获内部实例。
+- 修改 ability/effect runner、stack policy、entity actor mapping 或 tick persistence 时运行 `corepack pnpm bench:gameplay:check`。基准分别覆盖 ability→effect→attribute→cue、bounded stacking、idle/periodic entity actor update 和 stale entity cleanup；预算用于发现数量级退化，不替代目标平台 profiler。
 - Actor 与 EntityId 的绑定、save/load entity mapping、spawn/despawn 策略由 game module 或 Save contributor 明确处理；业务 despawn 优先显式 `removeActor`，runtime 的 stale mapping cleanup 只是生命周期安全网。
 - 测试应覆盖 cost/cooldown/tag requirement、effect stack/expire/periodic、attribute modifier、cue dispatch、entity binding、save/restore 边界和 TCA integration。
 

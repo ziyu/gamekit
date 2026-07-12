@@ -191,8 +191,9 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
       elapsedNow = elapsed;
       cleanupMissingEntityActors();
       for (const state of mutableStates()) {
-        effectRuntime.updateActor(state);
-        persistState(state);
+        if (effectRuntime.updateActor(state)) {
+          persistState(state);
+        }
       }
     },
     snapshot() {

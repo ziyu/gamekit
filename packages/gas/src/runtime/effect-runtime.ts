@@ -56,7 +56,7 @@ type GasEffectRuntimeOptions = {
 
 export type GasEffectRuntime = {
   apply(input: GasEffectApplication): GasEffectApplicationResult;
-  updateActor(state: GasActorRuntimeState): void;
+  updateActor(state: GasActorRuntimeState): boolean;
 };
 
 export function createGasEffectRuntime(options: GasEffectRuntimeOptions): GasEffectRuntime {
@@ -184,37 +184,64 @@ export function createGasEffectRuntime(options: GasEffectRuntimeOptions): GasEff
     return result;
   }
 
-  function updateActor(state: GasActorRuntimeState): void {
-    const remaining: GasActiveEffectState[] = [];
-    const expired: GasActiveEffectState[] = [];
+  function updateActor(state: GasActorRuntimeState): boolean {
+    if (state.effects.active.length === 0) {
+      return false;
+    }
 
-    for (const active of state.effects.active) {
+    const activeEffects = state.effects.active;
+    const now = options.now();
+    let remaining: GasActiveEffectState[] | undefined;
+    let expired: GasActiveEffectState[] | undefined;
+    let changed = false;
+
+    for (let index = 0; index < activeEffects.length; index += 1) {
+      const active = activeEffects[index];
+      if (active === undefined) {
+        continue;
+      }
       const definition = options.dataRegistry.getValue<GasEffectDefinition>(
         GAS_EFFECT_TYPE,
         active.effectId
       );
       const operationContext = activeEffectContext(active);
       let nextTickAt = active.nextTickAt;
-      while (nextTickAt !== undefined && nextTickAt <= options.now()) {
+      while (nextTickAt !== undefined && nextTickAt <= now) {
         for (const modifier of definition.periodicModifiers ?? []) {
           options.modifyAttribute(state, modifier, active.effectId, operationContext);
         }
         nextTickAt += definition.periodMs ?? Number.POSITIVE_INFINITY;
+        changed = true;
       }
 
-      const updated = {
-        ...active,
-        ...(nextTickAt === undefined ? {} : { nextTickAt })
-      };
-      if (active.expiresAt !== undefined && active.expiresAt <= options.now()) {
-        expired.push(updated);
-      } else {
-        remaining.push(updated);
+      const updated =
+        nextTickAt === active.nextTickAt
+          ? active
+          : {
+              ...active,
+              ...(nextTickAt === undefined ? {} : { nextTickAt })
+            };
+      const isExpired = active.expiresAt !== undefined && active.expiresAt <= now;
+      if ((nextTickAt !== active.nextTickAt || isExpired) && remaining === undefined) {
+        remaining = activeEffects.slice(0, index);
+        expired = [];
       }
+      if (remaining !== undefined) {
+        if (isExpired) {
+          expired?.push(updated);
+        } else {
+          remaining.push(updated);
+        }
+      }
+      changed ||= isExpired;
     }
 
-    state.effects.active = remaining;
-    for (const active of expired) {
+    if (!changed) {
+      return false;
+    }
+
+    state.effects.active = remaining ?? activeEffects;
+    for (const active of expired ?? []) {
       const operationContext = activeEffectContext(active);
       removeGrantedTags(state, active, operationContext);
       const expiredTrace = options.trace(
@@ -236,6 +263,7 @@ export function createGasEffectRuntime(options: GasEffectRuntimeOptions): GasEff
         childGasContext(operationContext, expiredTrace.id)
       );
     }
+    return true;
   }
 
   function removeGrantedTags(

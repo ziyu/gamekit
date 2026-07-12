@@ -231,6 +231,7 @@ GAS 不重新实现一套规则引擎。
 
 - Trigger、Condition、Action definition 应由外部模块注册并合并，TCA core 不硬编码具体游戏、GAS、UI、quest 或 renderer 行为。
 - 规则在加载或 runtime 启动时预编译，运行时按 event type index 查找候选规则；不要每个 EventBus event 扫描所有规则。
+- 修改 rule compile、event index、runner 或 trace store 时运行 `corepack pnpm bench:gameplay:check`；基准必须同时记录总规则数与实际候选规则数，避免吞吐结果掩盖全量扫描回归。
 - TCA module 集成负责 EventBus 订阅、DataRegistry rule loading、definition merge、trace store 和 dispose cleanup，业务代码不重复手写这套装配。
 - 测试应覆盖 trigger index、definition duplicate、condition pass/fail、action error、trace ordering、unsubscribe/cleanup、DataRegistry rule loading 和与 GAS definition set 的组合。
 

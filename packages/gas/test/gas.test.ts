@@ -16,6 +16,29 @@ import {
 import type { ComponentDef, EntityId, GameWorld } from "@gamekit/world";
 
 describe("GAS data types", () => {
+  it("rejects non-positive periodic effect intervals", () => {
+    const registry = createDataRegistry();
+    for (const type of createGasDataTypes()) {
+      registry.registerType(type);
+    }
+
+    const validation = registry.validatePack({
+      id: "invalid-period",
+      version: "1.0.0",
+      entries: [
+        {
+          type: "gas.effect",
+          id: "effect.invalid-period",
+          data: { id: "effect.invalid-period", periodMs: 0 }
+        }
+      ]
+    });
+
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "gas.effect_invalid_period" })
+    );
+  });
+
   it("rejects non-positive or fractional effect stack limits", () => {
     const registry = createDataRegistry();
     for (const type of createGasDataTypes()) {
@@ -124,6 +147,34 @@ describe("GAS runtime", () => {
     runtime.update(800, 1050);
     expect(runtime.getActor("actor.source").tags.values).not.toContain("state.overcharged");
     expect(runtime.getActor("actor.source").effects.active).toHaveLength(0);
+  });
+
+  it("does not write unchanged entity actors back to the world during update", () => {
+    let writes = 0;
+    const world = createMemoryWorld(() => {
+      writes += 1;
+    });
+    const runtime = createTestGasRuntime(world);
+    const entity = world.spawn();
+
+    runtime.createActor({
+      actorId: "actor.source",
+      definitionId: "actor.scout",
+      entityId: entity
+    });
+    writes = 0;
+    runtime.update(50, 50);
+
+    expect(writes).toBe(0);
+
+    runtime.applyEffect({
+      effectId: "effect.regen",
+      targetActorId: "actor.source"
+    });
+    writes = 0;
+    runtime.update(50, 100);
+
+    expect(writes).toBe(0);
   });
 
   it("returns rejected activation results without paying costs", () => {
@@ -501,7 +552,7 @@ function createTcaContext(runtime: GasRuntime) {
   };
 }
 
-function createMemoryWorld(): GameWorld {
+function createMemoryWorld(onSet?: () => void): GameWorld {
   const componentData = new Map<EntityId, Map<string, unknown>>();
   let nextId = 0;
 
@@ -527,6 +578,7 @@ function createMemoryWorld(): GameWorld {
         | undefined;
     },
     set(entity, component, data) {
+      onSet?.();
       const components = requireEntity(componentData, entity);
       const current =
         (components.get(component.id) as ReturnType<typeof component.create>) ?? component.create();
