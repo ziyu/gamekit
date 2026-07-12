@@ -15,6 +15,7 @@ import type {
   MultiplayerMessageEnvelope,
   MultiplayerRuntime
 } from "./types";
+import { createBoundedQueue } from "./bounded-queue";
 
 export type MultiplayerBridgeInstallContext = {
   eventBus: EventBus;
@@ -47,6 +48,30 @@ export type MultiplayerAuthorityPolicy<TInstallContext extends MultiplayerBridge
 export type MultiplayerCommandHandler<TInstallContext extends MultiplayerBridgeInstallContext> = (
   ctx: MultiplayerCommandContext<TInstallContext>
 ) => void;
+
+export type MultiplayerCommandQueueOverflowPolicy = "reject-newest" | "drop-oldest";
+
+export type MultiplayerCommandQueueDiagnostics = {
+  capacity: number;
+  queued: number;
+  maxQueued: number;
+  received: number;
+  handled: number;
+  rejected: number;
+  overflowed: number;
+  expired: number;
+  lastCode?: string;
+  lastMessageId?: string;
+};
+
+export type MultiplayerCommandQueueOptions = {
+  capacity?: number;
+  maxPerTick?: number;
+  maxAgeMs?: number;
+  overflowPolicy?: MultiplayerCommandQueueOverflowPolicy;
+  clock?: () => number;
+  onDiagnostics?(diagnostics: MultiplayerCommandQueueDiagnostics): void;
+};
 
 export type MultiplayerPresentationReadContext<
   TInstallContext extends MultiplayerBridgeInstallContext
@@ -85,6 +110,7 @@ export type MultiplayerModuleOptions<
   id?: string;
   runtime: MultiplayerRuntime;
   commandKinds?: string[];
+  commandQueue?: MultiplayerCommandQueueOptions;
   authority?: MultiplayerAuthorityPolicy<TInstallContext>;
   handleCommand?: MultiplayerCommandHandler<TInstallContext>;
   presentation?: MultiplayerPresentationBridgeOptions<TSnapshot, TInstallContext>;
@@ -102,17 +128,83 @@ export function createMultiplayerModule<
 >(options: MultiplayerModuleOptions<TInstallContext, TSnapshot>): GameModule<TInstallContext> {
   const moduleId = options.id ?? "gamekit.multiplayer.bridge";
   const commandKinds = new Set(options.commandKinds ?? ["game.command"]);
+  const commandQueueCapacity = normalizePositiveInteger(options.commandQueue?.capacity, 256);
+  const maxCommandsPerTick = normalizePositiveInteger(options.commandQueue?.maxPerTick, 64);
+  const maxCommandAgeMs = normalizeDuration(options.commandQueue?.maxAgeMs);
+  const overflowPolicy = options.commandQueue?.overflowPolicy ?? "reject-newest";
+  const commandQueueClock = options.commandQueue?.clock ?? (() => Date.now());
 
   return {
     id: moduleId,
     install(ctx: TInstallContext) {
-      const queue: MultiplayerMessageEnvelope[] = [];
+      const queue = createBoundedQueue<{
+        message: MultiplayerMessageEnvelope;
+        enqueuedAt: number;
+      }>(commandQueueCapacity);
+      const queueDiagnostics: MultiplayerCommandQueueDiagnostics = {
+        capacity: queue.capacity,
+        queued: 0,
+        maxQueued: 0,
+        received: 0,
+        handled: 0,
+        rejected: 0,
+        overflowed: 0,
+        expired: 0
+      };
       const cleanup: Array<() => void> = [];
+
+      function emitQueueDiagnostics(code?: string, messageId?: string): void {
+        queueDiagnostics.queued = queue.length;
+        queueDiagnostics.maxQueued = Math.max(queueDiagnostics.maxQueued, queue.length);
+        if (code === undefined) {
+          delete queueDiagnostics.lastCode;
+        } else {
+          queueDiagnostics.lastCode = code;
+        }
+        if (messageId === undefined) {
+          delete queueDiagnostics.lastMessageId;
+        } else {
+          queueDiagnostics.lastMessageId = messageId;
+        }
+        options.commandQueue?.onDiagnostics?.(cloneCommandQueueDiagnostics(queueDiagnostics));
+      }
+
+      function emitOverflow(message: MultiplayerMessageEnvelope, code: string): void {
+        queueDiagnostics.overflowed += 1;
+        ctx.eventBus.emit(
+          "multiplayer.command.overflow",
+          {
+            messageId: message.id,
+            peerId: message.sourcePeerId,
+            code,
+            policy: overflowPolicy
+          },
+          moduleId
+        );
+        emitQueueDiagnostics(code, message.id);
+      }
 
       if (options.handleCommand) {
         const unsubscribe = options.runtime.subscribe((message) => {
           if (commandKinds.has(message.kind)) {
-            queue.push(message);
+            queueDiagnostics.received += 1;
+            const entry = { message, enqueuedAt: commandQueueClock() };
+            if (queue.enqueue(entry)) {
+              emitQueueDiagnostics();
+              return;
+            }
+
+            if (overflowPolicy === "drop-oldest") {
+              const dropped = queue.dequeue();
+              if (dropped !== undefined) {
+                emitOverflow(dropped.message, "command-queue-dropped");
+              }
+              queue.enqueue(entry);
+              emitQueueDiagnostics();
+              return;
+            }
+
+            emitOverflow(message, "command-queue-full");
           }
         });
         cleanup.push(unsubscribe);
@@ -120,9 +212,25 @@ export function createMultiplayerModule<
         ctx.systems.register({
           id: `${moduleId}.commands`,
           update() {
-            while (queue.length > 0) {
-              const message = queue.shift();
-              if (!message) {
+            const pending = Math.min(queue.length, maxCommandsPerTick);
+            for (let index = 0; index < pending; index += 1) {
+              const entry = queue.dequeue();
+              if (!entry) {
+                continue;
+              }
+              const message = entry.message;
+              if (commandQueueClock() - entry.enqueuedAt > maxCommandAgeMs) {
+                queueDiagnostics.expired += 1;
+                ctx.eventBus.emit(
+                  "multiplayer.command.expired",
+                  {
+                    messageId: message.id,
+                    peerId: message.sourcePeerId,
+                    code: "command-expired"
+                  },
+                  moduleId
+                );
+                emitQueueDiagnostics("command-expired", message.id);
                 continue;
               }
 
@@ -133,6 +241,7 @@ export function createMultiplayerModule<
               };
               const decision = options.authority?.(commandContext) ?? { allowed: true };
               if (!decision.allowed) {
+                queueDiagnostics.rejected += 1;
                 ctx.eventBus.emit(
                   "multiplayer.command.rejected",
                   {
@@ -143,6 +252,7 @@ export function createMultiplayerModule<
                   },
                   moduleId
                 );
+                emitQueueDiagnostics(decision.code, message.id);
                 continue;
               }
 
@@ -156,7 +266,10 @@ export function createMultiplayerModule<
                 moduleId
               );
               options.handleCommand?.(commandContext);
+              queueDiagnostics.handled += 1;
+              emitQueueDiagnostics();
             }
+            emitQueueDiagnostics();
           }
         });
       }
@@ -201,7 +314,8 @@ export function createMultiplayerModule<
       }
 
       return () => {
-        queue.length = 0;
+        queue.clear();
+        emitQueueDiagnostics();
         for (const dispose of cleanup.splice(0).reverse()) {
           dispose();
         }
@@ -218,4 +332,31 @@ export function createMultiplayerBridgeModule<
   options: CreateMultiplayerBridgeModuleOptions<TInstallContext, TSnapshot>
 ): GameModule<TInstallContext> {
   return createMultiplayerModule<TInstallContext, TSnapshot>(options);
+}
+
+function normalizePositiveInteger(value: number | undefined, fallback: number): number {
+  return value === undefined || !Number.isFinite(value) ? fallback : Math.max(1, Math.floor(value));
+}
+
+function normalizeDuration(value: number | undefined): number {
+  return value === undefined || !Number.isFinite(value)
+    ? Number.POSITIVE_INFINITY
+    : Math.max(0, value);
+}
+
+function cloneCommandQueueDiagnostics(
+  diagnostics: MultiplayerCommandQueueDiagnostics
+): MultiplayerCommandQueueDiagnostics {
+  return {
+    capacity: diagnostics.capacity,
+    queued: diagnostics.queued,
+    maxQueued: diagnostics.maxQueued,
+    received: diagnostics.received,
+    handled: diagnostics.handled,
+    rejected: diagnostics.rejected,
+    overflowed: diagnostics.overflowed,
+    expired: diagnostics.expired,
+    ...(diagnostics.lastCode === undefined ? {} : { lastCode: diagnostics.lastCode }),
+    ...(diagnostics.lastMessageId === undefined ? {} : { lastMessageId: diagnostics.lastMessageId })
+  };
 }

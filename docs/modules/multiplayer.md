@@ -291,6 +291,20 @@ export type MultiplayerAuthorityBinding = {
 - `peer.id` 到 `playerId`、slot、team、spectator 或 next-round participant 的映射必须由 authority binding 或权威 snapshot 声明，不能由 UI 临时推断。
 - Leave、disconnect、reconnect、late join 和 room reset 必须更新 authority binding；旧 snapshot buffer、input queue 和 prediction cache 不能跨 binding 复用。
 
+## Room-owned Server Authority
+
+Server-authoritative room 可以由成熟 backend 的 Room/runtime 自己持有 authority lifecycle，而不是把 browser creator 或第一个 peer 当作 server simulation owner。
+
+长期边界：
+
+- Provider Room 创建并持有 headless App Host、server GameRuntime、World、Physics、replication projection 和 diagnostics；Room close 或 server shutdown 统一释放这些资源。
+- Browser creator/party leader 是 app-owned permission role，只能请求 start、rematch、leader transfer 或 close；它不能推进 authority clock、写 Schema authority state 或决定 server simulation 的存续。
+- Backend package 可以提供 typed room-side server/runtime bridge，把 provider join/leave/message/send/snapshot lifecycle 映射到 GameKit MultiplayerRuntime 或 authority ingress。该 bridge 不拥有玩法规则、participant policy、World component 或 app Schema。
+- Host-authoritative 与 Room-owned server-authoritative 模式共享 action/input、authority binding、source gate 和 diagnostics，但 host leave 的 room-close policy 只适用于 host-authoritative 模式。
+- 每个 room 只有一个 fixed-step authority clock owner。Browser render loop、UI timer、provider patch callback 和 GameRuntime tick 不能分别推进同一 simulation。
+
+Server GameRuntime 需要明确的 system 顺序：network ingress → gameplay intent/AI → Physics → combat/lifecycle → replication projection → provider commit。Authority helper 应允许把 ingress 与 commit 分为受约束的两个阶段，使 app systems 在中间运行；ack、snapshot version 和 provider commit 只能在完整 simulation tick 完成后推进。这个能力属于 Multiplayer authority toolkit，不要求 GameRuntime 预先固化一套全局 phase catalog。
+
 ## Standard Authoritative Replication
 
 Multiplayer core 不定义具体游戏玩法类型，但应提供标准权威复制组合边界，让 app 只填入自己的 payload schema、simulation 和 presentation。
@@ -314,6 +328,7 @@ client action / input
 - 为 action/input/snapshot/patch/result 提供 provider-neutral envelope、schema version、sequence、tick、correlation id 和 redaction hook。
 - 为 local authority 提供 in-process delivery，使 offline singleplayer、unit test 和 local preview 可以复用同一 reducer/simulation/snapshot receiver，而不是创建第二套单机入口。
 - 在 host/server side 维护有界 input queue、last accepted sequence、rejected reason、每 source 每 tick 的消费上限、tick boundary 和 snapshot broadcaster 的通用骨架。Queue policy 必须匹配输入语义：购买、交互、一次性技能等离散 command 使用 bounded FIFO；移动、瞄准、驾驶等连续 input state 使用 latest-per-source coalescing，新状态覆盖尚未消费的旧采样，不能在生产/消费同频时积累历史方向。固定步 command 的 ack 只能随已经进入本次 authoritative simulation/snapshot 的 command 推进；continuous state 的 ack 可以跨过被 supersede 的采样，但只能在 latest state 已被 authoritative tick 采用后推进。Diagnostics 必须区分 queued、max queued、coalesced 和 rejected。Peer 离开或断线时，App Host/server presence 组合层必须通知标准 authority loop 释放该 peer 的待处理 action/input 和 sequence key；actor、slot、round stats 是否保留仍由玩法 policy 决定。
+- 为模块化 server simulation 提供受约束的 authority tick 分段：ingress 消费输入并建立本 tick context，GameRuntime 在中间运行 AI/Physics/combat 等 app systems，commit 捕获并发布最终状态。不得在 commit 前推进离散 action ack，也不得允许重复 begin、跨 tick commit 或异常后复用半完成 frame。
 - 在 client side 维护 authority source gate、snapshot age、last applied tick、resync state 和 rejected non-authority payload diagnostics。
 - 提供 snapshot presentation timing + declared track toolkit：core 维护按 tick/server time 排序的短期 snapshot playback、render delay/jitter window、under-run clamp、presentation FPS、sample status、stale/drop diagnostics、类型化插值原语和 `Network*` presentation track 投影；游戏自己声明可表现字段、track key、snap/reset policy，以及如何把底层算好的 presented value 写入 render-only snapshot。
 - 提供 peer/player binding utilities 和可配置 participant lifecycle policy resolver，统一 active、spectator、next-round、leave、disconnect、reconnect 与 round boundary decision vocabulary，避免每个 app 重复发明状态映射。Policy 可以是静态决定或读取 app-owned context 的 callback；core 不认识具体游戏 phase，也不直接增删玩法 actor、slot、team 或 round stats。
@@ -356,11 +371,13 @@ Authoritative snapshot 通常以固定 tick 或 provider state update 到达，�
 - Matchmaking / room listing / room metadata：provider 可以负责筛选、排队、分配区域和 room metadata。GameKit core 只消费最终 session summary，不定义完整 matchmaking UI 或社交模型。
 - Provider diagnostics：load、transport、ping、drop、reconnect、room close reason 和 provider state size 可以通过 backend diagnostics 暴露。默认 diagnostics 必须脱敏，高频 payload 展开需要显式 opt-in。
 - Native server/runtime bridge：app-specific server、工具或 DevTools plugin 可以显式导入 backend package 的 native bridge 使用 provider SDK 类型；可复用 gameplay module、DataType、Save 和 core facade 不能依赖这些类型。
+- App-owned field-level state mapping：复杂游戏可以在 app provider boundary 定义字段级 Colyseus Schema 或其他 provider state model；backend package 只提供通用 subscription、update metadata、authority/source/version/size/resync gate 和 diagnostics，不拥有具体游戏 Schema。
 
 接入规则：
 
 - Provider-native state sync 与 GameKit envelope snapshot/patch 不能双写同一份 authority state。一个 app 必须声明当前 authoritative path，并把另一条路径降级为 diagnostics、summary 或迁移通道。
 - Backend package 可以提供 provider-specific helper，例如 Colyseus Schema authority bridge；helper 输出应能连接到 GameKit authority binding、receiver diagnostics 和 conformance tests。
+- App-owned Schema entity 应使用稳定 id 与 generation，并把 server world、replication projection、provider state、client authoritative shadow 和 presented state 保持为不同对象。Provider callback 先更新 authoritative shadow，再由 presentation frame 批量写 renderer。
 - Provider-native receiver 应优先使用 provider 的单调 state/update version 排序，gameplay tick 只表示 simulation 时间。一个 gameplay tick 内允许发布多次合法状态；重复 provider callback 应在 adapter 边界去重，真正的 stale/duplicate update 仍由 authority bridge 拒绝并记录。
 - 如果一个 provider 支持核心 baseline 之外的能力，adapter capabilities 应明确声明支持等级和限制；调用方必须按 capability 检测启用，而不是假设所有 backend 等价。
 - 完整 backend adapter 测试除 core conformance 外，还应覆盖 provider-native bridge 的 source gate、resync、reconnect cleanup、room isolation、redaction 和 dispose。
@@ -437,6 +454,8 @@ platform / config / auth
 ```
 
 标准组合中，`services.multiplayer` 暴露连接 facade；`profile.standard.game.standardModules.multiplayer` 安装 GameModule bridge，把入站 command 放到 GameRuntime tick 边界处理。二者必须保持分离：App Host service 管 provider connection lifecycle，GameModule bridge 管 gameplay command lifecycle。
+
+Headless server profile 也遵守同一分工：Room-owned provider bridge 作为 Multiplayer service，server GameRuntime 安装 authority/gameplay modules，App Host 统一推进 start/stop/dispose。Room 本身仍由 backend package 或 app server 持有，不能进入 core facade。
 
 典型依赖：
 
@@ -525,13 +544,16 @@ Multiplayer diagnostics 应回答：
 - 优先接入成熟多人 backend，再按需补 provider adapter。不要从 raw WebSocket 开始扩展 GameKit 自己的多人核心。
 - 需要按 GameKit session id 加入指定 room 的 adapter，必须保证不同 backend 实例能解析到同一个 provider room；fallback 不能加入同 room type 下的任意可用房间。
 - `host-authoritative` backend adapter 必须定义 authority host 离开后的 room lifecycle：默认关闭该 room 并断开剩余 client，除非明确实现 host migration 并更新 authority binding。
+- `server-authoritative` Room-owned backend 必须把 party leader 与 authority endpoint 分离；leader 离开只触发 app permission transfer，不能套用 host-authoritative 的自动关房规则。
 - Headless server app 应优先复用同一套 GameRuntime、Data、World、TCA/GAS、Save 和 DevTools 协议，只替换 renderer/input/UI 为空或测试实现。
+- Room-owned server tick 应按 ingress → gameplay/Physics → replication commit 的顺序执行；输入消费、simulation 和 ack/Schema publish 不能由互不关联的 timer 分别推进。
 - 新增 provider backend 时，先实现 core session/message/diagnostic 协议；provider-specific matchmaking、好友、邀请、房间属性和原生控制通过 typed native bridge 或 app-specific service 扩展。
 - 多人协议变更必须同时考虑 Data schema、Save compatibility、DevTools redaction 和 server/client 版本协商。
 - 接入 realtime game demo 或真实游戏时，优先使用 multiplayer core 的 authority binding / replication helper；只有 provider-native state sync 或特殊 netcode 需求明确时，才通过 typed native bridge 替换默认复制策略。
 - 离线单机、local preview 和 multiplayer room 应共享 gameplay orchestration；差异应收敛为 authority endpoint 和 transport/delivery adapter，而不是分叉玩法代码。
 - 多客户端 headless test 不能只断言 peer count；必须断言同一 lifecycle、input 或 snapshot 来自同一个 authority state。
 - 改动多人高频路径时运行并按需扩展 `bench:multiplayer`。模块级 benchmark 应覆盖 envelope normalization、authority receiver source gate、host/local authority loop、latest-input coalescing、prediction reconciliation/presentation、snapshot playback 和 presentation projection；定时或手动 performance workflow 使用宽松预算观察数量级回归，并用模拟长时序 + GC 后 retained heap 检查有界缓存，不作为常规 PR merge gate。provider-native backend 可在对应 adapter 包中补独立 benchmark。
+- 字段级 provider state model 优先保持 app-owned；只有第二个稳定应用出现相同 mapping、partition 或 interest-management 需求，并通过真实 benchmark 验证后，才评估下沉 backend package 或 core。
 
 ### 模块使用
 

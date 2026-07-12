@@ -243,6 +243,7 @@ export type StandardMultiplayerGameModuleOptions<TContext> = {
   id?: string | undefined;
   runtime?: StandardValue<MultiplayerRuntime, TContext> | undefined;
   commandKinds?: string[] | undefined;
+  commandQueue?: MultiplayerModuleOptions<GameInstallContext>["commandQueue"] | undefined;
   authority?: MultiplayerModuleOptions<GameInstallContext>["authority"] | undefined;
   handleCommand?: MultiplayerModuleOptions<GameInstallContext>["handleCommand"];
   presentation?: StandardValue<MultiplayerPresentationBridgeOptions, TContext> | undefined;

@@ -1,6 +1,6 @@
 # Multiplayer Outpost Siege Demo
 
-Status: Planned on 2026-07-11; implementation has not started.
+Status: Active since 2026-07-11; Wave 0 and Wave 1 are verified.
 
 ## Goal
 
@@ -24,12 +24,32 @@ Status: Planned on 2026-07-11; implementation has not started.
 - `docs/modules/driver.md`
 - `docs/modules/devtools.md`
 - `docs/modules/physics.md`
+- `docs/apps/multiplayer-outpost-siege-demo.md`
 - `docs/best-practices.md`
 - `docs/adr/0013-standard-authoritative-replication-boundary.md`
 - `docs/adr/0014-multiplayer-presentation-temporal-buffer.md`
 - `docs/adr/0015-colyseus-schema-authority-carrier.md`
+- `docs/adr/0016-room-owned-server-authority-lifecycle.md`
+- `docs/adr/0017-app-owned-colyseus-field-schema-boundary.md`
 
 本文件只记录这次工作流的范围、决策门、实施波次和验证证据。实现形成新的长期协议、公共 API 或 package 边界时，必须同步更新对应模块文档并新增 ADR。
+
+## Planning Baseline
+
+2026-07-11 文档规划时确认：
+
+- `multiplayer-first-usable-version.md`、`multiplayer-demo-validation.md`、`multiplayer-realtime-game-demo.md` 和 `multiplayer-colyseus-native-lane.md` 已关闭；Outpost Siege 只迁移其中尚未覆盖的 App Host/Driver/DevTools、Room-owned authority、字段级 Schema、reconnect 和压力验证。
+- `@gamekit/multiplayer-core` 38 个测试通过。
+- `@gamekit/multiplayer-colyseus` 9 个测试通过。
+- `apps/multiplayer-demo` 59 个测试通过。
+- `bench:multiplayer:check` 的 12 个预算通过，包含 staged authority frame 与 standard module command queue。
+- Relay Arena 继续作为最小回归基线；Outpost Siege 不修改其玩法职责。
+
+Wave 1 开始时识别出三个 foundation gap，现已补齐：
+
+- Authority loop 需要把 input/action ingress 与 snapshot/provider commit 分成同一 tick 的两个受约束阶段，才能在中间运行 AI、Physics 和 combat systems。
+- 标准 Multiplayer GameModule command queue 需要容量、每 tick 消费上限、overflow/expired diagnostics 和非 `Array.shift()` 的有界队列实现。
+- Physics GameModule 需要维护 body/collider 到 entity 的反向索引，并增加大实体/contact benchmark，避免 contact 映射扫描整个 World。
 
 ## Why A Separate Demo
 
@@ -331,7 +351,7 @@ Diagnostics 只保存固定窗口聚合值和 bounded recent samples，不保留
 - 预热后 retained heap 应进入稳定区间；最后 30 分钟不能呈持续单调增长。
 - Active tracks、entity registry、peer binding、listener、timer、action queue 和 Schema collection 在 despawn/leave/room dispose 后回到预期基线。
 
-网络 bandwidth 的硬预算不在文档阶段猜测。Wave 2 先记录 field-level Schema 的 p50/p95/p99 和 bytes/sec 基线，再把实测预算写入 benchmark budget；之后定时或手动 performance workflow 只做稳定、可重复的粗粒度 regression 观察，完整压力测试继续由专门的手动或定时任务运行，常规 PR CI 不以性能数值阻塞合并。
+网络 bandwidth 的硬预算不在文档阶段猜测。Wave 3 先记录 field-level Schema 的 p50/p95/p99 和 bytes/sec 基线，再把实测预算写入 benchmark budget；之后定时或手动 performance workflow 只做稳定、可重复的粗粒度 regression 观察，完整压力测试继续由专门的手动或定时任务运行，常规 PR CI 不以性能数值阻塞合并。
 
 ## Network Fault Matrix
 
@@ -391,42 +411,66 @@ Colyseus 基于可靠连接时，不能用伪造 packet loss 的应用层消息�
 
 ### Wave 0: Workflow Baseline And Decisions
 
-Status: Planned.
+Status: Verified on 2026-07-11.
 
-1. 关闭或归档已完成的旧 Demo 工作流，把未完成的 App Host/DevTools 综合验证迁移到本文件。
+1. 确认旧 Demo 工作流已经关闭，只迁移 App Host/DevTools 综合验证、Room-owned authority、字段级 Schema、provider reconnect 和压力验证。
 2. 固定 Relay Arena 当前 test、benchmark、Schema bytes 和真实浏览器表现作为基线。
-3. 新增 ADR：Room-owned authority lifecycle 与 browser party leader 分离。
-4. 新增 ADR：app-owned Colyseus Schema mapping extension boundary。
-5. 固定 `physics-core + physics-rapier2d` 的 headless server profile、World sync 顺序和 benchmark diagnostics。
-6. 定义功能、单房压力、多房吞吐和 soak profile 的机器可读配置。
+3. 采用 ADR 0016：Room-owned authority lifecycle 与 browser party leader 分离。
+4. 采用 ADR 0017：field-level Colyseus Schema 与 mapping 保持 app-owned boundary。
+5. 固定 authority system 顺序：ingress → gameplay intent/AI → Physics → combat/lifecycle → replication projection → provider commit → diagnostics。
+6. 固定 `physics-core + physics-rapier2d` 的 headless server profile、World sync 顺序和 benchmark diagnostics。
+7. 定义功能、单房压力、多房吞吐和 soak profile 的机器可读配置。
 
 完成标准：没有 gameplay 代码，所有高影响边界有文档结论，基线数据可重复获得。
 
-### Wave 1: Room-owned Vertical Slice
+### Wave 1: Multiplayer Runtime Foundation
+
+Status: Verified on 2026-07-11.
+
+1. 为 authority loop 增加向后兼容的 ingress/commit 两阶段接口；保留现有单调用便利入口。
+2. 在 core 内增加可复用的 bounded deque/ring queue，替换 authority loop 和 Multiplayer GameModule bridge 的高频 `Array.shift()` 路径。
+3. 为 standard Multiplayer GameModule 增加 command queue 容量、每 tick 消费上限、overflow policy、expired policy 和 diagnostics。
+4. 保持 action per-source bounded FIFO 和 continuous input latest-state coalescing，并补 begin/commit 重入、异常、dispose 和 peer release 测试。
+5. 为 Physics GameModule 维护 body/collider 到 entity 的反向索引，补大实体/contact benchmark 和 cleanup test。
+6. 扩展 `bench:multiplayer`，记录阶段化 authority frame 和 bounded module queue 基线。
+
+完成标准：没有 Outpost gameplay；ack/provider commit 只在完整 authority tick 后推进，所有 command/action/input queue 有界，高实体 contact 映射不扫描整个 World。
+
+验证证据：
+
+- `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint` 和 `corepack pnpm format` 通过。
+- `@gamekit/multiplayer-core` 43 个测试、`apps/multiplayer-demo` 59 个测试和 `@gamekit/physics-core` 8 个测试通过。
+- `corepack pnpm bench:multiplayer:check` 的 12 个预算通过，覆盖 staged authority frame 和 standard module command queue。
+- `corepack pnpm bench:physics:check` 通过；3,000 entity profile 平均约 4.43 ms/tick，低于 50 ms budget。
+- `corepack pnpm bench:world` 通过；10,000 entities / 5,000 moving entities 的本次结果为 spawn/add 11.24 ms、query/update 6.88 ms。
+- 兼容入口 `tick()` 在 dispose 后保持幂等无操作；显式 `beginTick()` / `commitTick()` 仍对非法阶段和 dispose 状态抛出结构化错误。
+
+### Wave 2: Room-owned Vertical Slice
 
 Status: Planned.
 
 1. 创建独立 app 和 `OutpostSiegeRoom`。
-2. Room 持有 headless App Host/GameRuntime 和固定 tick authority loop。
-3. Browser 使用 configured App Host、Phaser Driver、Input、Camera、Renderer 和 multiplayer standard service。
-4. 跑通 lobby、ready、countdown、四玩家 movement/aim 和 room close。
-5. 输入走 bounded latest-state；start/ready 走 bounded action FIFO。
+2. 在 `@gamekit/multiplayer-colyseus/server` 增加不包含 app gameplay/Schema 的 typed room-side runtime bridge。
+3. Room 持有 headless App Host/GameRuntime、固定 tick authority frame、Physics 和统一 dispose lifecycle。
+4. Browser 使用 configured App Host、Phaser Driver、Input、Camera、Renderer 和 multiplayer standard service。
+5. 跑通 lobby、ready、countdown、四玩家 movement/aim 和 room close。
+6. 输入走 bounded latest-state；start/ready 走 bounded action FIFO。
 
 完成标准：关闭创建者浏览器不会销毁仍有 participant 的 authority simulation；四个浏览器看到同一 server state。
 
-### Wave 2: Field-level Schema And Observability
+### Wave 3: Field-level Schema And Observability
 
 Status: Planned.
 
 1. 实现 app-owned player/enemy/projectile/buildable/pickup Schema collections。
 2. 实现 stable entity id、generation、spawn/despawn、initial sync 和 resync。
-3. 增加 app-specific native state mapping hook，保持 gameplay/provider-neutral。
+3. 在 app provider adapter 中实现 Schema-to-authoritative-view mapping；backend package 只提供通用 subscription、metadata gate 和 diagnostics。
 4. 接入 bytes、patch size、encode/apply time、entity count 和 queue diagnostics。
 5. 建立第一版真实网络 bandwidth/performance budget。
 
 完成标准：高频状态不再编码成完整 JSON carrier；浏览器不 import Schema 类型；初始同步和增量 patch 都有真实 Colyseus integration test。
 
-### Wave 3: Prediction, Presentation And Combat
+### Wave 4: Prediction, Presentation And Combat
 
 Status: Planned.
 
@@ -438,18 +482,18 @@ Status: Planned.
 
 完成标准：Demo 上层没有手写 interpolation loop；本地输入即时响应，远端连续，snap/reset 不留下旧 history。
 
-### Wave 4: Complete Game And Participant Lifecycle
+### Wave 5: Complete Game And Participant Lifecycle
 
 Status: Planned.
 
 1. 完成 wave、intermission、boss、extraction、results 和 rematch。
-2. 完成 spectator/next-round、explicit leave、disconnect grace、provider reconnect 和 timeout policy。
+2. 完成 spectator/next-round、explicit leave、disconnect grace、provider reconnect 和 timeout policy；grace 期间采用 neutral input + frozen actor，不引入 bot 接管。
 3. 完成 leader transfer、last-participant idle close 和同名 session recreate。
 4. 覆盖 authority abuse、payload validation 和 action rate limit。
 
 完成标准：四人可以完成一局；生命周期矩阵通过真实 Colyseus test，不用 UI 状态猜测结果。
 
-### Wave 5: Load, Soak And Interest Management
+### Wave 6: Load, Soak And Interest Management
 
 Status: Planned.
 
@@ -461,7 +505,7 @@ Status: Planned.
 
 完成标准：所有 queue/buffer 有界，内存进入平台期，tick/frame/patch/bytes 报告可复现，性能退化能定位到具体阶段。
 
-### Wave 6: Framework Extraction And Closure
+### Wave 7: Framework Extraction And Closure
 
 Status: Planned.
 
@@ -488,10 +532,10 @@ Status: Planned.
 - 实测性能预算进入 `bench:multiplayer` 定时/手动 regression workflow，而不是只留在人工报告或进入常规 PR merge gate。
 - 通用结论已经迁移到长期模块文档/ADR，本文件状态关闭。
 
-## Open Decisions For Wave 0
+## Wave 0 Decisions
 
-- Authority tick 和 Schema replication rate 的默认组合：先比较 20/15Hz 与 30/20Hz。
-- Projectile 是逐实体复制、事件 + client presentation，还是按数量分层；必须先实测再决定。
-- Disconnect grace 期间 actor 是冻结、无输入停留还是由 server bot 接管。
-- Colyseus app-specific Schema mapping 由 package extension hook 还是 app-local adapter 实现；必须保证 browser gameplay 不依赖 provider 类型。
-- AOI 是否需要 provider-native filtering；Wave 2 全量同步基线之前不决定。
+- 默认 profile 使用 20Hz authority simulation、15Hz Schema replication 和 30Hz client input send；同时保留 30/20Hz 对照 profile，用实测决定是否调整默认值。
+- Projectile 在字段级 Schema 基线中逐实体复制。只有 patch/bytes/presentation 数据证明预算不足时，才评估事件 + client presentation 或按数量分层。
+- Disconnect grace 期间立即 neutralize continuous input 并冻结 actor；不在基础生命周期验证中引入 server bot，避免混淆 reconnect 与 AI 接管。
+- App-specific Schema class、projection 和 mapping 位于 app-local provider adapter；`@gamekit/multiplayer-colyseus/server` 只新增通用 typed room-side runtime bridge 和 provider gate/diagnostics。
+- Wave 3 全量同步基线之前不实现 provider-native AOI。只有实测超出预算时先做 app-specific filtering，并在第二个稳定使用场景出现后再评估公共 primitive。

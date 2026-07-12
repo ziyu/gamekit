@@ -385,6 +385,96 @@ describe("multiplayer authority helpers", () => {
     expect(fake.sent).toEqual([]);
   });
 
+  it("splits authority ingress from simulation commit without publishing partial state", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "staged-authority-host",
+      backend: fake.backend,
+      clock: () => 200
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "server", role: "server" }
+    });
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: "session-1",
+      mode: "server-authoritative",
+      authorityPeerId: "server"
+    });
+    const order: string[] = [];
+    const state = { x: 0 };
+    const published: Array<{ tick: number; x: number }> = [];
+    const loop = createMultiplayerAuthorityHostLoop<
+      never,
+      InputPayload,
+      { tick: number; x: number }
+    >({
+      runtime,
+      binding,
+      readInput,
+      inputSequence: (input) => input.sequence,
+      handleInput({ payload }) {
+        order.push("input");
+        state.x += payload.dx;
+      },
+      tick() {
+        order.push("ingress");
+      },
+      captureSnapshot({ tick }) {
+        order.push("capture");
+        return { tick, x: state.x };
+      },
+      publishSnapshot(snapshot) {
+        order.push("publish");
+        published.push(snapshot);
+      }
+    });
+
+    fake.emit(messageFrom("client", MULTIPLAYER_INPUT_KIND, { sequence: 1, dx: 2 }));
+    const frame = loop.beginTick(50);
+    expect(frame).toMatchObject({ tick: 1, deltaMs: 50 });
+    expect(order).toEqual(["input", "ingress"]);
+    expect(published).toEqual([]);
+    expect(loop.diagnostics()).toMatchObject({ activeTick: 1, committedTicks: 0 });
+
+    order.push("physics");
+    state.x += 10;
+    await loop.commitTick();
+
+    expect(order).toEqual(["input", "ingress", "physics", "capture", "publish"]);
+    expect(published).toEqual([{ tick: 1, x: 12 }]);
+    expect(loop.diagnostics()).toMatchObject({ tick: 1, committedTicks: 1, sentSnapshots: 1 });
+    expect(loop.diagnostics().activeTick).toBeUndefined();
+  });
+
+  it("rejects invalid staged authority lifecycle transitions and keeps legacy ticks disposable", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({ id: "staged-errors", backend: fake.backend });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "server", role: "server" }
+    });
+    const loop = createMultiplayerAuthorityHostLoop<never, never, { tick: number }>({
+      runtime,
+      binding: createMultiplayerAuthorityBindingStore({
+        sessionId: "session-1",
+        mode: "server-authoritative",
+        authorityPeerId: "server"
+      }),
+      captureSnapshot: ({ tick }) => ({ tick })
+    });
+
+    expectMultiplayerError(() => loop.commitTick(), multiplayerErrorCodes.authorityFrameState);
+    loop.beginTick(50);
+    expectMultiplayerError(() => loop.beginTick(50), multiplayerErrorCodes.authorityFrameState);
+    await loop.commitTick();
+    loop.dispose();
+    expect(() => loop.tick(50)).not.toThrow();
+    expectMultiplayerError(() => loop.beginTick(50), multiplayerErrorCodes.disposed);
+  });
+
   it("bounds discrete action queues and consumption per source", async () => {
     const fake = createFakeBackend();
     const runtime = createMultiplayerRuntime({
@@ -479,6 +569,7 @@ describe("multiplayer authority helpers", () => {
     expect(loop.diagnostics()).toMatchObject({
       receivedActions: 33,
       rejectedActions: 1,
+      overflowedActions: 1,
       queuedActions: 32,
       maxQueuedActions: 32,
       lastRejected: { code: "action-queue-full" }
@@ -488,6 +579,46 @@ describe("multiplayer authority helpers", () => {
     expect(loop.diagnostics()).toMatchObject({
       acceptedActions: 8,
       queuedActions: 24
+    });
+  });
+
+  it("enforces room-wide authority queue capacities across distinct sources", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({ id: "room-bounded-host", backend: fake.backend });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "host-authoritative",
+      localPeer: { id: "host", role: "host" }
+    });
+    const loop = createMultiplayerAuthorityHostLoop<ActionPayload, InputPayload, { tick: number }>({
+      runtime,
+      binding: createMultiplayerAuthorityBindingStore({
+        sessionId: "session-1",
+        mode: "host-authoritative",
+        authorityPeerId: "host"
+      }),
+      readAction,
+      readInput,
+      inputSequence: (input) => input.sequence,
+      maxQueuedActions: 2,
+      maxQueuedActionsPerSource: 2,
+      maxQueuedInputs: 2,
+      maxQueuedInputsPerSource: 2,
+      captureSnapshot: ({ tick }) => ({ tick })
+    });
+
+    for (const peerId of ["client-a", "client-b", "client-c"]) {
+      fake.emit(messageFrom(peerId, MULTIPLAYER_ACTION_KIND, { type: "start" }));
+      fake.emit(messageFrom(peerId, MULTIPLAYER_INPUT_KIND, { sequence: 1, dx: 1 }));
+    }
+
+    expect(loop.diagnostics()).toMatchObject({
+      actionQueueCapacity: 2,
+      queuedActions: 2,
+      overflowedActions: 1,
+      inputQueueCapacity: 2,
+      queuedInputs: 2,
+      overflowedInputs: 1
     });
   });
 
@@ -770,12 +901,17 @@ describe("multiplayer authority helpers", () => {
         rejectedActions: 1,
         queuedActions: 1,
         maxQueuedActions: 2,
+        actionQueueCapacity: 32,
+        overflowedActions: 1,
         receivedInputs: 3,
         acceptedInputs: 2,
         rejectedInputs: 1,
         coalescedInputs: 0,
         queuedInputs: 1,
         maxQueuedInputs: 2,
+        inputQueueCapacity: 32,
+        overflowedInputs: 1,
+        committedTicks: 4,
         sentSnapshots: 4,
         rejectedMessages: 2,
         lastRejected: { code: "stale-input", reason: "Input was stale." },
@@ -1681,6 +1817,101 @@ describe("createMultiplayerModule", () => {
     expect(events).toEqual(["multiplayer.command.accepted"]);
   });
 
+  it("bounds and expires standard module commands with observable diagnostics", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "bounded-module-runtime",
+      backend: fake.backend
+    });
+    const eventBus = createEventBus({ clock: () => 10 });
+    const systems: Array<{ id: string; update(): void }> = [];
+    const handled: string[] = [];
+    const facts: string[] = [];
+    const diagnostics: Array<{
+      queued: number;
+      handled: number;
+      overflowed: number;
+      expired: number;
+    }> = [];
+    let now = 0;
+    eventBus.onAny((event) => facts.push(event.type));
+
+    createMultiplayerModule({
+      runtime,
+      commandQueue: {
+        capacity: 2,
+        maxPerTick: 1,
+        maxAgeMs: 50,
+        clock: () => now,
+        onDiagnostics(snapshot) {
+          diagnostics.push(snapshot);
+        }
+      },
+      handleCommand({ message }) {
+        handled.push(message.id);
+      }
+    }).install({
+      eventBus,
+      systems: { register: (system) => systems.push(system) }
+    });
+    await runtime.createSession({ id: "session-1", localPeer: { id: "host" } });
+
+    for (const id of ["command-1", "command-2", "command-3"]) {
+      fake.emit({
+        id,
+        sessionId: "session-1",
+        channel: "reliable",
+        kind: "game.command",
+        sourcePeerId: "client",
+        timestamp: 0,
+        payload: { action: "move" }
+      });
+    }
+
+    expect(diagnostics.at(-1)).toMatchObject({ queued: 2, overflowed: 1 });
+    systems[0]?.update();
+    expect(handled).toEqual(["command-1"]);
+    expect(diagnostics.at(-1)).toMatchObject({ queued: 1, handled: 1 });
+
+    now = 100;
+    systems[0]?.update();
+    expect(handled).toEqual(["command-1"]);
+    expect(diagnostics.at(-1)).toMatchObject({ queued: 0, overflowed: 1, expired: 1 });
+    expect(facts).toContain("multiplayer.command.overflow");
+    expect(facts).toContain("multiplayer.command.expired");
+  });
+
+  it("can drop the oldest standard module command on overflow", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({ id: "drop-oldest-runtime", backend: fake.backend });
+    const systems: Array<{ id: string; update(): void }> = [];
+    const handled: string[] = [];
+    createMultiplayerModule({
+      runtime,
+      commandQueue: { capacity: 2, overflowPolicy: "drop-oldest" },
+      handleCommand: ({ message }) => handled.push(message.id)
+    }).install({
+      eventBus: createEventBus(),
+      systems: { register: (system) => systems.push(system) }
+    });
+    await runtime.createSession({ id: "session-1", localPeer: { id: "host" } });
+
+    for (const id of ["command-1", "command-2", "command-3"]) {
+      fake.emit({
+        id,
+        sessionId: "session-1",
+        channel: "reliable",
+        kind: "game.command",
+        sourcePeerId: "client",
+        timestamp: 0,
+        payload: {}
+      });
+    }
+    systems[0]?.update();
+
+    expect(handled).toEqual(["command-2", "command-3"]);
+  });
+
   it("emits rejected command facts when authority denies a command", async () => {
     const fake = createFakeBackend();
     const runtime = createMultiplayerRuntime({
@@ -1967,6 +2198,16 @@ function peer(
     ...(options.playerId === undefined ? {} : { playerId: options.playerId }),
     ...(options.metadata === undefined ? {} : { metadata: options.metadata })
   };
+}
+
+function expectMultiplayerError(callback: () => unknown, code: string): void {
+  try {
+    callback();
+  } catch (error) {
+    expect(error).toMatchObject({ code });
+    return;
+  }
+  throw new Error(`Expected multiplayer error: ${code}`);
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {

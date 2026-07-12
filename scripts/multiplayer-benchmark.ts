@@ -1,9 +1,11 @@
 import { performance } from "node:perf_hooks";
+import { createEventBus } from "../packages/event-bus/src";
 import {
   createMultiplayerAuthorityBindingStore,
   createMultiplayerAuthorityHostLoop,
   createMultiplayerAuthorityReceiver,
   createMultiplayerLocalAuthorityLoop,
+  createMultiplayerModule,
   createMultiplayerPredictionBuffer,
   createSnapshotPlayback,
   createSnapshotPresentationProjector,
@@ -80,7 +82,9 @@ const suites: BenchmarkSuite[] = [
   runEnvelopeNormalizationBenchmark(),
   runAuthorityReceiverBenchmark(),
   runHostAuthorityLoopBenchmark(),
+  runStagedAuthorityFrameBenchmark(),
   runHostActionQueueBenchmark(),
+  runModuleCommandQueueBenchmark(),
   runLatestInputCoalescingBenchmark(),
   runLocalAuthorityLoopBenchmark(),
   runPredictionReconciliationBenchmark(),
@@ -286,6 +290,79 @@ function runHostAuthorityLoopBenchmark(): BenchmarkSuite {
   };
 }
 
+function runStagedAuthorityFrameBenchmark(): BenchmarkSuite {
+  const cases = [8, 32].map((clients) => {
+    const ticks = 5_000;
+    const runtime = createBenchmarkRuntime(clients);
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: SESSION_ID,
+      mode: "server-authoritative",
+      status: "bound",
+      authorityEndpoint: {
+        kind: "server",
+        id: AUTHORITY_PEER_ID,
+        peerId: AUTHORITY_PEER_ID
+      },
+      authorityPeerId: AUTHORITY_PEER_ID
+    });
+    let checksum = 0;
+    const loop = createMultiplayerAuthorityHostLoop<never, BenchmarkInput, BenchmarkPayload>({
+      runtime,
+      binding,
+      readInput(payload) {
+        return isBenchmarkInput(payload) ? payload : undefined;
+      },
+      inputSequence(input) {
+        return input.sequence;
+      },
+      inputSequenceKey(input) {
+        return input.playerId;
+      },
+      inputQueueMode: "latest",
+      handleInput(ctx) {
+        checksum += ctx.payload.dx + ctx.payload.dy;
+      },
+      captureSnapshot(ctx) {
+        return { tick: ctx.tick, x: checksum };
+      }
+    });
+
+    for (let tick = 0; tick < 200; tick += 1) {
+      emitClientInputs(runtime, clients, tick);
+      loop.beginTick(TICK_MS);
+      checksum += tick & 1;
+      void loop.commitTick();
+    }
+    const before = loop.diagnostics();
+
+    const start = performance.now();
+    for (let tick = 0; tick < ticks; tick += 1) {
+      emitClientInputs(runtime, clients, tick + 200);
+      loop.beginTick(TICK_MS);
+      checksum += tick & 1;
+      void loop.commitTick();
+    }
+    const durationMs = performance.now() - start;
+    const diagnostics = loop.diagnostics();
+    loop.dispose();
+
+    return {
+      clients,
+      ticks,
+      inputs: ticks * clients,
+      committedTicks: diagnostics.committedTicks - before.committedTicks,
+      durationMs: round(durationMs),
+      msPerTick: round(durationMs / ticks),
+      checksum
+    };
+  });
+
+  return {
+    suite: "authority-staged-frame",
+    cases
+  };
+}
+
 function runLatestInputCoalescingBenchmark(): BenchmarkSuite {
   const cases = [8, 32].map((clients) => {
     const ticks = 5_000;
@@ -429,6 +506,61 @@ function runHostActionQueueBenchmark(): BenchmarkSuite {
 
   return {
     suite: "authority-host-action-queue",
+    cases
+  };
+}
+
+function runModuleCommandQueueBenchmark(): BenchmarkSuite {
+  const cases = [8, 32].map((clients) => {
+    const ticks = 5_000;
+    const runtime = createBenchmarkRuntime(clients);
+    const eventBus = createEventBus({ clock: () => 0 });
+    let commandSystem: { update(): void } | undefined;
+    let checksum = 0;
+    createMultiplayerModule({
+      runtime,
+      commandQueue: {
+        capacity: clients * 4,
+        maxPerTick: clients
+      },
+      handleCommand({ message }) {
+        checksum += (message.payload as BenchmarkAction).command;
+      }
+    }).install({
+      eventBus,
+      systems: {
+        register(system) {
+          commandSystem = system;
+        }
+      }
+    });
+
+    for (let tick = 0; tick < 200; tick += 1) {
+      emitModuleCommands(runtime, clients, tick);
+      commandSystem?.update();
+    }
+
+    const start = performance.now();
+    for (let tick = 0; tick < ticks; tick += 1) {
+      emitModuleCommands(runtime, clients, tick + 200);
+      commandSystem?.update();
+    }
+    const durationMs = performance.now() - start;
+    const commands = ticks * clients;
+
+    return {
+      clients,
+      ticks,
+      commands,
+      durationMs: round(durationMs),
+      microsecondsPerCommand: round((durationMs * 1000) / commands),
+      msPerTick: round(durationMs / ticks),
+      checksum
+    };
+  });
+
+  return {
+    suite: "module-command-queue",
     cases
   };
 }
@@ -925,6 +1057,21 @@ function emitClientActions(
         payload: { command: actionIndex + 1 }
       });
     }
+  }
+}
+
+function emitModuleCommands(runtime: BenchmarkRuntime, clients: number, tick: number): void {
+  for (let clientIndex = 0; clientIndex < clients; clientIndex += 1) {
+    runtime.emit({
+      id: `command-${tick}-${clientIndex}`,
+      sessionId: SESSION_ID,
+      channel: RELIABLE_CHANNEL,
+      kind: "game.command",
+      sourcePeerId: `client-${clientIndex}`,
+      tick,
+      timestamp: tick,
+      payload: { command: clientIndex + 1 }
+    });
   }
 }
 

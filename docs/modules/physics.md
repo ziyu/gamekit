@@ -562,6 +562,8 @@ Physics module 应默认使用 fixed timestep 和稳定 system order，减少不
 - point / raycast / shape cast / overlap / check / bounds query。
 - query trigger interaction、filter、ignore list、closest/all/any mode 和 result ordering。
 - body/collider id 与 entity binding。
+- 大量 contact 的 entity mapping 使用 body/collider 反向索引，query 次数不随 contact 数量增长。
+- entity despawn、body/collider component 移除或 disabled 后释放 backend handle 和反向索引。
 - snapshot 不暴露 native handle。
 - Save capture/restore 可重建 scene。
 
@@ -577,7 +579,9 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
 - 组合层为每个 live physics scene 创建一个具名 `PhysicsHandle`，并把它同时注入 `createPhysicsModule(...)` 和需要查询的 gameplay module；handle 不拥有 scene，只由 Physics module 绑定和解绑。
 - 独立物理库进入 `physics-*` adapter 包；绑定完整外部 scene runtime 的物理能力由对应 Driver 暴露 runtime slice。
 - Physics module 的 World sync 顺序必须明确。常见顺序是 input/AI 写意图，physics step 推进，再把 transform/velocity 写回 World，最后 renderer sync。
+- Physics module 在 World sync 时维护 body/collider handle 到 entity 的反向索引，并在 component disabled、entity despawn 或 handle replacement 时释放 stale backend handle；contact 热路径不能为每个 contact 扫描 World。
 - 新 backend 先通过 physics conformance tests，再补 backend-specific behavior test。真实 canvas 或 Phaser Scene 只用于少量集成测试。
+- 改动 Physics World sync、contact mapping 或 handle lifecycle 时运行 `corepack pnpm bench:physics:check`，用大实体/固定 contact profile 观察数量级回归。
 
 ### 模块使用
 

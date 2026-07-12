@@ -29,6 +29,8 @@
     "format": "oxfmt --check .",
     "format:write": "oxfmt --write .",
     "bench:world": "tsx scripts/world-benchmark.ts",
+    "bench:physics": "tsx scripts/physics-module-benchmark.ts",
+    "bench:physics:check": "tsx scripts/physics-module-benchmark.ts --check",
     "bench:multiplayer": "tsx scripts/multiplayer-benchmark.ts",
     "bench:multiplayer:check": "tsx scripts/multiplayer-benchmark.ts --check",
     "bench:multiplayer:stability": "node --expose-gc --import tsx scripts/multiplayer-stability.ts",

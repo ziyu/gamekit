@@ -7,9 +7,14 @@ MVP 阶段已经关闭，历史阶段文档只作为归档证据保留。常态�
 ## Active Workflows
 
 - `multiplayer-package-planning.md`
+- `multiplayer-outpost-siege-demo.md`
+
+## Closed Workflows
+
 - `multiplayer-first-usable-version.md`
 - `multiplayer-demo-validation.md`
 - `multiplayer-realtime-game-demo.md`
+- `multiplayer-colyseus-native-lane.md`
 
 ## 职责边界
 

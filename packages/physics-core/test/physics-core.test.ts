@@ -385,6 +385,68 @@ describe("Physics module", () => {
     expectPhysicsError(() => physics.queryPoint({ x: 2, y: 0 }), "physics.handle_unbound");
   });
 
+  it("indexes contact handles and releases despawned world bodies without contact scans", () => {
+    let queryCount = 0;
+    const world = createMemoryWorld(() => {
+      queryCount += 1;
+    });
+    const entities: EntityId[] = [];
+    for (let index = 0; index < 24; index += 1) {
+      const entity = world.spawn();
+      entities.push(entity);
+      world.add(entity, PhysicsBodyComponent, {
+        definition: { kind: "static" }
+      });
+      world.add(entity, PhysicsTransformComponent, {
+        position: { x: 0, y: 0 }
+      });
+      world.add(entity, PhysicsColliderComponent, {
+        definition: { shape: { type: "circle", radius: 1 } }
+      });
+    }
+
+    const physics = createPhysicsHandle({ id: "indexed.physics" });
+    const runtime = createGame({
+      modules: [
+        createPhysicsModule({
+          backend: createMemoryPhysicsBackend(),
+          fixedDeltaMs: 16,
+          scene: { gravity: { x: 0, y: 0 } },
+          eventPolicy: { emitContacts: false },
+          handle: physics
+        })
+      ],
+      world,
+      eventBus: createEventBus({ clock: () => 1 }),
+      seed: "physics-index"
+    });
+
+    runtime.start();
+    runtime.tick(16);
+    expect(queryCount).toBe(4);
+    expect(physics.snapshot()).toMatchObject({ bodyCount: 24, colliderCount: 24 });
+
+    for (const entity of entities.slice(0, 12)) {
+      world.despawn(entity);
+    }
+    queryCount = 0;
+    runtime.tick(16);
+
+    expect(queryCount).toBe(4);
+    expect(physics.snapshot()).toMatchObject({ bodyCount: 12, colliderCount: 12 });
+
+    const disabled = entities[12];
+    if (disabled !== undefined) {
+      world.set(disabled, PhysicsBodyComponent, { enabled: false });
+      runtime.tick(16);
+      expect(physics.snapshot()).toMatchObject({ bodyCount: 11, colliderCount: 11 });
+      world.set(disabled, PhysicsBodyComponent, { enabled: true });
+      runtime.tick(16);
+      expect(physics.snapshot()).toMatchObject({ bodyCount: 12, colliderCount: 12 });
+    }
+    runtime.dispose();
+  });
+
   it("rejects unbound and duplicate physics handle access", () => {
     const physics = createPhysicsHandle({ id: "duplicate.physics" });
     expectPhysicsError(() => physics.snapshot(), "physics.handle_unbound");
@@ -433,7 +495,7 @@ function expectPhysicsError(callback: () => void, code: string): void {
   throw new Error(`Expected physics error: ${code}`);
 }
 
-function createMemoryWorld(): GameWorld {
+function createMemoryWorld(onQuery?: () => void): GameWorld {
   let nextEntity = 1;
   const components = new Map<EntityId, Map<string, object>>();
 
@@ -465,6 +527,7 @@ function createMemoryWorld(): GameWorld {
       requireEntity(components, entity).delete(component.id);
     },
     query(required = []) {
+      onQuery?.();
       const result: EntityId[] = [];
       for (const [entity, entityComponents] of components.entries()) {
         if (required.every((component) => entityComponents.has(component.id))) {

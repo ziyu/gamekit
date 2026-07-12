@@ -27,6 +27,9 @@ export function createStandardMultiplayerModule<TContext>(
   if (options.commandKinds !== undefined) {
     moduleOptions.commandKinds = options.commandKinds;
   }
+  if (options.commandQueue !== undefined) {
+    moduleOptions.commandQueue = options.commandQueue;
+  }
   if (options.authority !== undefined) {
     moduleOptions.authority = options.authority;
   }

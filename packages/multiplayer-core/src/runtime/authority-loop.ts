@@ -1,4 +1,6 @@
 import { createMultiplayerAuthorityBindingStore } from "./authority-binding";
+import { createBoundedQueue } from "./bounded-queue";
+import { createMultiplayerError, multiplayerErrorCodes } from "./errors";
 import {
   MULTIPLAYER_ACTION_KIND,
   MULTIPLAYER_AUTHORITY_CHANNEL,
@@ -48,9 +50,11 @@ export type MultiplayerAuthorityHostLoopOptions<TAction, TInput, TSnapshot> = {
   inputSequenceKey?(input: TInput, message: MultiplayerMessageEnvelope): string;
   maxActionsPerSourcePerTick?: number;
   maxQueuedActionsPerSource?: number;
+  maxQueuedActions?: number;
   inputQueueMode?: MultiplayerAuthorityInputQueueMode;
   maxInputsPerSourcePerTick?: number;
   maxQueuedInputsPerSource?: number;
+  maxQueuedInputs?: number;
   handleAction?(
     ctx: MultiplayerAuthorityMessageContext<TAction>
   ): MultiplayerAuthorityDecision | void;
@@ -73,12 +77,18 @@ export type MultiplayerAuthorityLoopDiagnostics = {
   rejectedActions: number;
   queuedActions: number;
   maxQueuedActions: number;
+  actionQueueCapacity: number;
+  overflowedActions: number;
   receivedInputs: number;
   acceptedInputs: number;
   rejectedInputs: number;
   coalescedInputs: number;
   queuedInputs: number;
   maxQueuedInputs: number;
+  inputQueueCapacity: number;
+  overflowedInputs: number;
+  committedTicks: number;
+  activeTick?: number;
   sentSnapshots: number;
   rejectedMessages: number;
   lastRejected?: MultiplayerAuthorityRejectedPayload;
@@ -86,6 +96,8 @@ export type MultiplayerAuthorityLoopDiagnostics = {
 };
 
 export type MultiplayerAuthorityHostLoop = {
+  beginTick(deltaMs?: number): MultiplayerAuthorityTickContext;
+  commitTick(): Promise<void>;
   tick(deltaMs?: number): void;
   broadcastSnapshot(): Promise<void>;
   releasePeer(peerId: string): void;
@@ -131,6 +143,7 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
     maxActionsPerSourcePerTick,
     32
   );
+  const maxQueuedActions = normalizeGlobalQueueLimit(options.maxQueuedActions, 1024);
   const inputQueueMode = options.inputQueueMode ?? "fifo";
   const maxInputsPerSourcePerTick = normalizeMaxInputsPerSourcePerTick(
     options.maxInputsPerSourcePerTick
@@ -139,15 +152,21 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
     options.maxQueuedInputsPerSource,
     maxInputsPerSourcePerTick
   );
-  const actionQueue: Array<QueuedAction<TAction>> = [];
+  const maxQueuedInputs = normalizeGlobalQueueLimit(options.maxQueuedInputs, 1024);
+  const actionQueue = createBoundedQueue<QueuedAction<TAction>>(maxQueuedActions);
   const queuedActionsBySource = new Map<string, number>();
-  const inputQueue: Array<QueuedInput<TInput>> = [];
+  const inputQueue = createBoundedQueue<QueuedInput<TInput>>(maxQueuedInputs);
   const queuedInputsBySource = new Map<string, number>();
   const latestQueuedInputBySource = new Map<string, QueuedInput<TInput>>();
   const inputSequences = new Map<string, number>();
   const inputSequenceKeysByPeerId = new Map<string, Set<string>>();
   const inputSequencePeerIdsByKey = new Map<string, string>();
   const diagnostics: MultiplayerAuthorityLoopDiagnostics = createDiagnostics();
+  diagnostics.actionQueueCapacity = actionQueue.capacity;
+  diagnostics.inputQueueCapacity = inputQueue.capacity;
+  let activeFrame: MultiplayerAuthorityTickContext | undefined;
+  let publishChain: Promise<void> = Promise.resolve();
+  let disposed = false;
 
   const unsubscribe = options.runtime.subscribe((message) => {
     if (message.kind === actionKind) {
@@ -184,10 +203,16 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
     if (queuedForSource >= maxQueuedActionsPerSource) {
       rejectMessage(message, "action-queue-full", "Action queue is full for this source.");
       diagnostics.rejectedActions += 1;
+      diagnostics.overflowedActions += 1;
       return;
     }
 
-    actionQueue.push({ message, payload, sourceKey });
+    if (!actionQueue.enqueue({ message, payload, sourceKey })) {
+      rejectMessage(message, "action-queue-full", "Action queue is full for this room.");
+      diagnostics.rejectedActions += 1;
+      diagnostics.overflowedActions += 1;
+      return;
+    }
     queuedActionsBySource.set(sourceKey, queuedForSource + 1);
     refreshQueueDiagnostics();
   }
@@ -228,11 +253,17 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
     if (queuedForSource >= maxQueuedInputsPerSource) {
       rejectMessage(message, "input-queue-full", "Input queue is full for this source.");
       diagnostics.rejectedInputs += 1;
+      diagnostics.overflowedInputs += 1;
       return;
     }
 
     const entry = { message, payload, sourceKey };
-    inputQueue.push(entry);
+    if (!inputQueue.enqueue(entry)) {
+      rejectMessage(message, "input-queue-full", "Input queue is full for this room.");
+      diagnostics.rejectedInputs += 1;
+      diagnostics.overflowedInputs += 1;
+      return;
+    }
     if (inputQueueMode === "latest") {
       latestQueuedInputBySource.set(sourceKey, entry);
     }
@@ -260,22 +291,21 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
 
   function processQueuedActions(): void {
     const processedBySource = new Map<string, number>();
-    const deferred: Array<QueuedAction<TAction>> = [];
-    while (actionQueue.length > 0) {
-      const entry = actionQueue.shift();
+    const pending = actionQueue.length;
+    for (let index = 0; index < pending; index += 1) {
+      const entry = actionQueue.dequeue();
       if (!entry) {
         continue;
       }
       const processed = processedBySource.get(entry.sourceKey) ?? 0;
       if (processed >= maxActionsPerSourcePerTick) {
-        deferred.push(entry);
+        actionQueue.enqueue(entry);
         continue;
       }
       decrementQueued(queuedActionsBySource, entry.sourceKey);
       processAction(entry);
       processedBySource.set(entry.sourceKey, processed + 1);
     }
-    actionQueue.push(...deferred);
     refreshQueueDiagnostics();
   }
 
@@ -307,7 +337,7 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
   function processQueuedInputs(): void {
     if (!Number.isFinite(maxInputsPerSourcePerTick)) {
       while (inputQueue.length > 0) {
-        const entry = inputQueue.shift();
+        const entry = inputQueue.dequeue();
         if (entry) {
           releaseQueuedInput(entry);
           processInput(entry);
@@ -318,23 +348,22 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
     }
 
     const processedBySource = new Map<string, number>();
-    const deferred: Array<QueuedInput<TInput>> = [];
-    while (inputQueue.length > 0) {
-      const entry = inputQueue.shift();
+    const pending = inputQueue.length;
+    for (let index = 0; index < pending; index += 1) {
+      const entry = inputQueue.dequeue();
       if (!entry) {
         continue;
       }
       const sourceKey = entry.sourceKey;
       const processed = processedBySource.get(sourceKey) ?? 0;
       if (processed >= maxInputsPerSourcePerTick) {
-        deferred.push(entry);
+        inputQueue.enqueue(entry);
         continue;
       }
       releaseQueuedInput(entry);
       processInput(entry);
       processedBySource.set(sourceKey, processed + 1);
     }
-    inputQueue.push(...deferred);
     refreshQueueDiagnostics();
   }
 
@@ -418,21 +447,19 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
   }
 
   function releasePeer(peerId: string): void {
-    for (let index = actionQueue.length - 1; index >= 0; index -= 1) {
-      const entry = actionQueue[index];
-      if (entry?.message.sourcePeerId === peerId) {
-        actionQueue.splice(index, 1);
+    actionQueue.removeWhere(
+      (entry) => entry.message.sourcePeerId === peerId,
+      (entry) => {
         decrementQueued(queuedActionsBySource, entry.sourceKey);
       }
-    }
+    );
 
-    for (let index = inputQueue.length - 1; index >= 0; index -= 1) {
-      const entry = inputQueue[index];
-      if (entry?.message.sourcePeerId === peerId) {
-        inputQueue.splice(index, 1);
+    inputQueue.removeWhere(
+      (entry) => entry.message.sourcePeerId === peerId,
+      (entry) => {
         releaseQueuedInput(entry);
       }
-    }
+    );
 
     for (const key of inputSequenceKeysByPeerId.get(peerId) ?? []) {
       if (inputSequencePeerIdsByKey.get(key) === peerId) {
@@ -451,9 +478,55 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
     options.onRejected?.(rejection);
   }
 
-  async function broadcastSnapshot(): Promise<void> {
+  function publishCapturedSnapshot(
+    payload: TSnapshot,
+    context: MultiplayerAuthoritySnapshotContext
+  ): Promise<void> {
+    const publish = async () => {
+      if (disposed || options.runtime.phase() !== "in-session") {
+        return;
+      }
+
+      try {
+        if (options.publishSnapshot) {
+          await options.publishSnapshot(payload, context);
+        } else {
+          await options.runtime.send({
+            channel,
+            kind: snapshotKind,
+            tick: context.tick,
+            ...(options.snapshotVersion === undefined
+              ? context.binding.snapshotVersion === undefined
+                ? {}
+                : { schemaVersion: context.binding.snapshotVersion }
+              : { schemaVersion: options.snapshotVersion }),
+            payload
+          });
+        }
+        diagnostics.sentSnapshots += 1;
+        delete diagnostics.lastBroadcastError;
+      } catch (error) {
+        diagnostics.lastBroadcastError = error instanceof Error ? error.message : String(error);
+      }
+    };
+
+    publishChain = publishChain.then(publish, publish);
+    return publishChain;
+  }
+
+  function captureSnapshot(context: MultiplayerAuthoritySnapshotContext): TSnapshot {
+    try {
+      return options.captureSnapshot(context);
+    } catch (error) {
+      diagnostics.lastBroadcastError = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
+  }
+
+  function broadcastSnapshot(): Promise<void> {
+    assertNotDisposed();
     if (options.runtime.phase() !== "in-session") {
-      return;
+      return Promise.resolve();
     }
 
     const binding = options.binding.current();
@@ -461,42 +534,84 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       binding,
       tick: diagnostics.tick
     };
-    const payload = options.captureSnapshot(context);
-    try {
-      if (options.publishSnapshot) {
-        await options.publishSnapshot(payload, context);
-      } else {
-        await options.runtime.send({
-          channel,
-          kind: snapshotKind,
-          tick: diagnostics.tick,
-          ...(options.snapshotVersion === undefined
-            ? binding.snapshotVersion === undefined
-              ? {}
-              : { schemaVersion: binding.snapshotVersion }
-            : { schemaVersion: options.snapshotVersion }),
-          payload
-        });
-      }
-      diagnostics.sentSnapshots += 1;
-      delete diagnostics.lastBroadcastError;
-    } catch (error) {
-      diagnostics.lastBroadcastError = error instanceof Error ? error.message : String(error);
+    return publishCapturedSnapshot(captureSnapshot(context), context);
+  }
+
+  function assertNotDisposed(): void {
+    if (disposed) {
+      throw createMultiplayerError(
+        multiplayerErrorCodes.disposed,
+        "Cannot advance a disposed multiplayer authority loop."
+      );
     }
   }
 
+  function beginTick(deltaMs = 0): MultiplayerAuthorityTickContext {
+    assertNotDisposed();
+    if (activeFrame !== undefined) {
+      throw createMultiplayerError(
+        multiplayerErrorCodes.authorityFrameState,
+        "Cannot begin an authority tick before committing the active tick.",
+        { activeTick: activeFrame.tick }
+      );
+    }
+
+    diagnostics.tick += 1;
+    processQueuedActions();
+    processQueuedInputs();
+    const binding = options.binding.update({ tick: diagnostics.tick });
+    const frame = {
+      binding,
+      tick: diagnostics.tick,
+      deltaMs
+    };
+    activeFrame = frame;
+    diagnostics.activeTick = frame.tick;
+    try {
+      options.tick?.(frame);
+    } catch (error) {
+      activeFrame = undefined;
+      delete diagnostics.activeTick;
+      throw error;
+    }
+    return { ...frame, binding: { ...frame.binding } };
+  }
+
+  function commitTick(): Promise<void> {
+    assertNotDisposed();
+    if (activeFrame === undefined) {
+      throw createMultiplayerError(
+        multiplayerErrorCodes.authorityFrameState,
+        "Cannot commit an authority tick before beginning one."
+      );
+    }
+
+    const frame = activeFrame;
+    activeFrame = undefined;
+    delete diagnostics.activeTick;
+    const context = {
+      binding: options.binding.current(),
+      tick: frame.tick
+    };
+    let payload: TSnapshot;
+    try {
+      payload = captureSnapshot(context);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    diagnostics.committedTicks += 1;
+    return publishCapturedSnapshot(payload, context);
+  }
+
   return {
+    beginTick,
+    commitTick,
     tick(deltaMs = 0) {
-      diagnostics.tick += 1;
-      processQueuedActions();
-      processQueuedInputs();
-      const binding = options.binding.update({ tick: diagnostics.tick });
-      options.tick?.({
-        binding,
-        tick: diagnostics.tick,
-        deltaMs
-      });
-      void broadcastSnapshot();
+      if (disposed) {
+        return;
+      }
+      beginTick(deltaMs);
+      void commitTick().catch(() => undefined);
     },
     broadcastSnapshot,
     releasePeer,
@@ -504,10 +619,13 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       return cloneDiagnostics(diagnostics);
     },
     dispose() {
+      disposed = true;
       unsubscribe();
-      actionQueue.length = 0;
+      activeFrame = undefined;
+      delete diagnostics.activeTick;
+      actionQueue.clear();
       queuedActionsBySource.clear();
-      inputQueue.length = 0;
+      inputQueue.clear();
       queuedInputsBySource.clear();
       latestQueuedInputBySource.clear();
       inputSequences.clear();
@@ -633,6 +751,7 @@ export function createMultiplayerLocalAuthorityLoop<TAction, TInput, TSnapshot>(
         deltaMs
       });
       latestSnapshot = captureAndApply();
+      diagnostics.committedTicks += 1;
       diagnostics.sentSnapshots += 1;
     },
     snapshot() {
@@ -683,9 +802,13 @@ function normalizeMaxQueuedInputsPerSource(
   if (value !== undefined && Number.isFinite(value)) {
     return Math.max(1, Math.floor(value));
   }
-  return Number.isFinite(maxInputsPerSourcePerTick)
-    ? maxInputsPerSourcePerTick * 4
-    : Number.POSITIVE_INFINITY;
+  return Number.isFinite(maxInputsPerSourcePerTick) ? maxInputsPerSourcePerTick * 4 : 32;
+}
+
+function normalizeGlobalQueueLimit(value: number | undefined, defaultValue: number): number {
+  return value === undefined || !Number.isFinite(value)
+    ? defaultValue
+    : Math.max(1, Math.floor(value));
 }
 
 function acceptsClientMessage(
@@ -733,12 +856,17 @@ function createDiagnostics(): MultiplayerAuthorityLoopDiagnostics {
     rejectedActions: 0,
     queuedActions: 0,
     maxQueuedActions: 0,
+    actionQueueCapacity: 0,
+    overflowedActions: 0,
     receivedInputs: 0,
     acceptedInputs: 0,
     rejectedInputs: 0,
     coalescedInputs: 0,
     queuedInputs: 0,
     maxQueuedInputs: 0,
+    inputQueueCapacity: 0,
+    overflowedInputs: 0,
+    committedTicks: 0,
     sentSnapshots: 0,
     rejectedMessages: 0
   };
@@ -754,12 +882,18 @@ function cloneDiagnostics(
     rejectedActions: diagnostics.rejectedActions,
     queuedActions: diagnostics.queuedActions,
     maxQueuedActions: diagnostics.maxQueuedActions,
+    actionQueueCapacity: diagnostics.actionQueueCapacity,
+    overflowedActions: diagnostics.overflowedActions,
     receivedInputs: diagnostics.receivedInputs,
     acceptedInputs: diagnostics.acceptedInputs,
     rejectedInputs: diagnostics.rejectedInputs,
     coalescedInputs: diagnostics.coalescedInputs,
     queuedInputs: diagnostics.queuedInputs,
     maxQueuedInputs: diagnostics.maxQueuedInputs,
+    inputQueueCapacity: diagnostics.inputQueueCapacity,
+    overflowedInputs: diagnostics.overflowedInputs,
+    committedTicks: diagnostics.committedTicks,
+    ...(diagnostics.activeTick === undefined ? {} : { activeTick: diagnostics.activeTick }),
     sentSnapshots: diagnostics.sentSnapshots,
     rejectedMessages: diagnostics.rejectedMessages,
     ...(diagnostics.lastRejected === undefined

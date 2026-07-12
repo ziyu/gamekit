@@ -82,7 +82,7 @@ packages/
 - `@gamekit/fx` 不作为独立业务包规划；Effect 可作为 Asset/Data/Save/Platform/Editor 等基础设施包内部实现选择。
 - `@gamekit/animation` 不作为早期独立包规划；动画主要归入 RenderObject、Renderer Adapter、Cue/Presentation、UI、Camera。
 - `driver-phaser` 是 Phaser 的长期默认集成边界；Phaser 的 asset/input/camera/physics 能力收敛为 driver 内部 adapter，不再以独立单协议 package 暴露。
-- Multiplayer 后端包按 `multiplayer-<backend>` 增加；`multiplayer-core` 定义 GameKit 侧稳定 facade、App Host service shape、GameModule bridge、语义 command、local/remote authority binding、标准复制 helper 和 diagnostics。离线单机使用 local authority endpoint 复用同一 gameplay contract；成熟多人 backend 负责 room、matchmaking、reconnect、presence、provider state sync 和 transport；首个真实 backend adapter 是 Colyseus。
+- Multiplayer 后端包按 `multiplayer-<backend>` 增加；`multiplayer-core` 定义 GameKit 侧稳定 facade、App Host service shape、GameModule bridge、语义 command、local/remote authority binding、标准复制 helper 和 diagnostics。离线单机使用 local authority endpoint 复用同一 gameplay contract；成熟多人 backend 负责 room、matchmaking、reconnect、presence、provider state sync 和 transport；首个真实 backend adapter 是 Colyseus。Backend package 还可以提供 typed room-side server/runtime bridge，让 provider Room 持有 headless App Host 和 authority endpoint，但 bridge 不拥有 app gameplay 或 app Schema。
 - 模块长期设计见 `docs/modules/`。
 
 ## 应用与验证面
@@ -92,6 +92,8 @@ packages/
 Sandbox 的长期演示设计见 `docs/apps/sandbox.md`。具体工作流状态、任务拆分和验收证据放在任务系统、PR 或 `docs/implementation/`。
 
 `apps/multiplayer-demo` 是 Multiplayer 的独立验证应用，用本地 Colyseus backend 跑通 host authority、client command、GameRuntime bridge 和可见 diagnostics。它不是 Sandbox 子面板，也不把 demo command 上推为 `multiplayer-core` 协议。
+
+`apps/multiplayer-outpost-siege-demo` 是复杂 Multiplayer 综合验证应用，用 Room-owned server authority、字段级 Colyseus Schema、App Host/Phaser Driver 标准组合、大量动态实体和完整参与者生命周期验证真实负载。它与 Multiplayer Demo 的最小回归职责分离，玩法和 Schema 保持 app-local。
 
 真实游戏验证应用放在 `docs/apps/` 下维护长期设计。Abyss Delve 是当前计划的真实游戏验证应用，用常见肉鸽暗黑-like 设计验证完整框架组合，但它的职业、怪物、掉落、房间和 UI 概念不作为核心协议来源。
 
@@ -202,7 +204,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 | `@gamekit/gas`                                                                        | Game Module                                   | 通用 Actor/Ability/Effect runtime；热状态落在 World component，复用 TCA。                                                                                                                 |
 | `@gamekit/multiplayer-core`                                                           | 混合：App Service facade + Game Module bridge | GameKit 侧连接 facade、语义 command、local/remote authority binding、标准复制 helper、diagnostics 和 bridge；不拥有 provider room/matchmaker/reconnect/state-sync engine 或具体玩法逻辑。 |
 | `@gamekit/multiplayer-memory`                                                         | Test backend adapter                          | 本地 loopback 和 deterministic conformance fixture；不代表生产多人 backend。                                                                                                              |
-| `@gamekit/multiplayer-colyseus`                                                       | App Service backend adapter                   | 首个成熟多人 backend adapter；Colyseus 拥有 Room、matchmaking、state sync、reconnect 和 transport。                                                                                       |
+| `@gamekit/multiplayer-colyseus`                                                       | App Service backend adapter                   | 首个成熟多人 backend adapter；Colyseus 拥有 Room、matchmaking、state sync、reconnect 和 transport，并可提供不包含 app 玩法/Schema 的 typed room-side server/runtime bridge。              |
 | `@gamekit/ui-core`                                                                    | App/UI toolkit                                | UI 状态、window、focus 协议；gameplay 不直接依赖 React。                                                                                                                                  |
 | `@gamekit/react-ui`                                                                   | App/UI adapter                                | React UI 实现。                                                                                                                                                                           |
 | `@gamekit/save`                                                                       | 混合：App Service + Game Module bridge        | 存储 adapter 和 profile 是应用服务；snapshot capture/restore 是游戏模块桥接。                                                                                                             |
@@ -340,7 +342,9 @@ Multiplayer 负责多人会话、连接、消息、玩家身份映射、authorit
 
 `@gamekit/multiplayer-core` 定义 GameKit 侧稳定 facade、App Host service shape、GameModule bridge、语义 command、authority decision、authority binding、标准复制 helper、diagnostics 和 adapter conformance helper，不依赖具体网络 SDK，也不自研通用 room server、matchmaker、reconnect、presence 或 provider state sync。Colyseus、Nakama、PartyKit、平台联机 SDK 或其他成熟后端通过 `@gamekit/multiplayer-<backend>` adapter 接入。线上 remote payload 默认是不可信输入，权威 host/server 必须重新验证 command/input 后再改写 gameplay 状态；client 只有绑定到明确 authority endpoint 后才能应用 authoritative snapshot/patch。单机/offline 绑定 local authority endpoint，省略网络 IO，但不省略 authority validation、tick boundary 或 snapshot presentation。
 
-详细设计见 `docs/modules/multiplayer.md`，决策背景见 `docs/adr/0010-multiplayer-core-and-backend-adapters.md`、`docs/adr/0012-mature-multiplayer-backend-adapter.md` 和 `docs/adr/0013-standard-authoritative-replication-boundary.md`。
+Server-authoritative Room 可以持有 headless App Host、GameRuntime、World、Physics 和 replication lifecycle；browser creator 只拥有 app-defined party leader 权限，不成为 authority clock owner。复杂 provider-native state sync 的字段级 Schema 与 mapping 留在 app provider boundary，backend package 只提供通用 typed hook、source/version/resync gate 和 redacted diagnostics。Room-owned 与 host-authoritative 模式共享 authority contract，但不能共享 host-leave-close policy。
+
+详细设计见 `docs/modules/multiplayer.md`，决策背景见 `docs/adr/0010-multiplayer-core-and-backend-adapters.md`、`docs/adr/0012-mature-multiplayer-backend-adapter.md`、`docs/adr/0013-standard-authoritative-replication-boundary.md`、`docs/adr/0016-room-owned-server-authority-lifecycle.md` 和 `docs/adr/0017-app-owned-colyseus-field-schema-boundary.md`。
 
 ## 包内拆分约定
 
