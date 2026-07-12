@@ -1778,8 +1778,14 @@ describe("createMultiplayerModule", () => {
     const eventBus = createEventBus({ clock: () => 10 });
     const systems: Array<{ id: string; update(): void }> = [];
     const handled: MultiplayerMessageEnvelope[] = [];
-    const events: string[] = [];
-    eventBus.onAny((event) => events.push(event.type));
+    const events: Array<{ type: string; correlationId?: string; parentId?: string }> = [];
+    eventBus.onAny((event) =>
+      events.push({
+        type: event.type,
+        ...(event.correlationId === undefined ? {} : { correlationId: event.correlationId }),
+        ...(event.parentId === undefined ? {} : { parentId: event.parentId })
+      })
+    );
 
     const module = createMultiplayerModule({
       runtime,
@@ -1807,6 +1813,7 @@ describe("createMultiplayerModule", () => {
       channel: "reliable",
       kind: "game.command",
       sourcePeerId: "client",
+      correlationId: "combat-1",
       timestamp: 0,
       payload: { action: "move" }
     });
@@ -1814,7 +1821,13 @@ describe("createMultiplayerModule", () => {
     expect(handled).toEqual([]);
     systems[0]?.update();
     expect(handled.map((message) => message.id)).toEqual(["command-1"]);
-    expect(events).toEqual(["multiplayer.command.accepted"]);
+    expect(events).toEqual([
+      {
+        type: "multiplayer.command.accepted",
+        correlationId: "combat-1",
+        parentId: "command-1"
+      }
+    ]);
   });
 
   it("bounds and expires standard module commands with observable diagnostics", async () => {

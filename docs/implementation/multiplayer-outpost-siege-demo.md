@@ -47,6 +47,8 @@ Status: Active. Wave 0 and Wave 1 were verified on 2026-07-11; scope was expande
 - `docs/adr/0016-room-owned-server-authority-lifecycle.md`
 - `docs/adr/0017-app-owned-colyseus-field-schema-boundary.md`
 - `docs/adr/0018-server-authoritative-gameplay-module-execution.md`
+- `docs/adr/0019-domain-owned-gameplay-save-contributors.md`
+- `docs/adr/0020-explicit-authority-pipeline-and-bounded-correlation-source.md`
 
 ## Verified Baseline
 
@@ -167,7 +169,7 @@ Status: Verified on 2026-07-11; commit `0ab9c2a`.
 
 ### Wave 2: Gameplay Framework Readiness
 
-Status: In progress since 2026-07-12.
+Status: Verified on 2026-07-12.
 
 1. 为 GAS 增加 actor remove/cleanup、effect stack policy、correlation context 和稳定 runtime handle/bridge。
 2. 为 TCA trace 增加 correlation/parent context，确保派生 event 继承因果信息。
@@ -191,10 +193,15 @@ Status: In progress since 2026-07-12.
 - App Host headless fixture 已通过真实 SaveManager JSON encode/store/load 验证 Physics + GAS + TCA + runtime clock continuation；restore 不保存 trace、native handle、contact cache 或 presentation state。
 - 新增 checkpoint benchmark 与 6 项粗粒度预算；1,000 once-rules capture/restore 约 0.02/0.12 ms，1,000 GAS actors + 500 active effects 约 0.51/3.49 ms，1,000 Physics entities capture/restore+rebuild tick 约 4.07/7.22 ms。
 - `@gamekit/event-bus` 4 tests、`@gamekit/tca` 10 tests、`@gamekit/gas` 15 tests、`@gamekit/physics-core` 9 tests、`@gamekit/app-host` 28 tests 和 Abyss Delve 17 tests 通过。
-- 全仓库 `test`、`build`、`lint`、`format` 和 `bench:world` 通过；10,000 entities / 5,000 moving entities 的本次结果为 spawn/add 11.68 ms、query/update 6.95 ms。
+- 全仓库 `test`、`build`、`lint`、`format` 和 `bench:world` 通过；10,000 entities / 5,000 moving entities 的 Wave 2 最终隔离结果为 spawn/add 13.35 ms、query/update 7.97 ms。
 - `bench:gameplay:check` 9/9 budgets 连续两次通过；本机代表结果为 TCA 1.56 µs/event、GAS combat chain 5.03 µs/activation、500 dormant effects 0.74 ms/tick、500 periodic effects 1.63 ms/tick、2,000 stale actor cleanup 5.25 ms。
+- App Host headless authority fixture 通过公开 standard module helper 与 app modules 显式固定 10 个 module、9 个 system 的内部顺序，并验证外层 authority begin → ingress → movement → Physics → combat → GAS → checkpoint → replication → authority commit → diagnostics；Physics/GAS/TCA handle unbind 与 app cleanup reverse order也已覆盖。
+- Multiplayer standard module 的 command fact 继承 message correlation，并以 message id 为 parent；同一 `combat-1` 的 Multiplayer → Physics → GAS → TCA 五段 trace 已进入统一 DevTools timeline。
+- DevTools 提供 domain-neutral bounded correlation source；App Host 提供 TCA/GAS/Physics 增量映射 helper。Runtime trace、recent correlation 和 per-correlation roots 分别有界，domain package 不依赖 DevTools。
+- `@gamekit/devtools` 8 tests、`@gamekit/app-host` 29 tests、`@gamekit/multiplayer-core` 43 tests、`@gamekit/tca` 10 tests 和 `@gamekit/gas` 15 tests 通过。
+- 新增 `bench:diagnostics:check` 4 项预算；50,000 条多模块 trace 的 Wave 2 最终隔离结果约 0.40 µs/条，包含 512 条 trace 和 64 条 correlation summary 的 runtime snapshot 约 0.01 ms。
 
-剩余工作：authority module/system order fixture，以及多模块 DevTools correlation source。
+Wave 2 已关闭。下一步进入 Wave 3，创建 Outpost Siege app skeleton、app-owned DataType/content contract、资源分组和共享 profile definition。
 
 ### Wave 3: App Skeleton And Content Pipeline
 

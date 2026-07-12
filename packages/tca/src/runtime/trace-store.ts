@@ -1,6 +1,11 @@
 import type { TcaTraceEntry, TcaTraceSnapshot, TcaTraceStore } from "./types";
 
-export function createTcaTraceStore(options: { limit?: number | undefined } = {}): TcaTraceStore {
+export type CreateTcaTraceStoreOptions = {
+  limit?: number | undefined;
+  onEntry?(entry: TcaTraceEntry): void;
+};
+
+export function createTcaTraceStore(options: CreateTcaTraceStoreOptions = {}): TcaTraceStore {
   const limit = options.limit ?? 100;
   const entries: TcaTraceEntry[] = [];
   let nextId = 0;
@@ -16,6 +21,7 @@ export function createTcaTraceStore(options: { limit?: number | undefined } = {}
       while (entries.length > limit) {
         entries.shift();
       }
+      options.onEntry?.(traceEntry);
       return traceEntry;
     },
     list() {

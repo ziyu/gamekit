@@ -1,6 +1,11 @@
 import type { GasTraceEntry, GasTraceStore } from "./types";
 
-export function createGasTraceStore(options: { limit?: number } = {}): GasTraceStore {
+export type CreateGasTraceStoreOptions = {
+  limit?: number;
+  onEntry?(entry: GasTraceEntry): void;
+};
+
+export function createGasTraceStore(options: CreateGasTraceStoreOptions = {}): GasTraceStore {
   const limit = options.limit ?? 100;
   const entries: GasTraceEntry[] = [];
   let sequence = 0;
@@ -16,6 +21,7 @@ export function createGasTraceStore(options: { limit?: number } = {}): GasTraceS
       if (entries.length > limit) {
         entries.shift();
       }
+      options.onEntry?.(trace);
       return trace;
     },
     list() {

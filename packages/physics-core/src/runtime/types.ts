@@ -409,6 +409,8 @@ export type PhysicsTraceEntry = {
   bodyId?: PhysicsBodyId;
   colliderId?: PhysicsColliderId;
   entityId?: EntityId;
+  correlationId?: string;
+  parentId?: string;
   payload?: Record<string, unknown>;
 };
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDevToolsRuntime } from "@gamekit/devtools";
+import { createDevToolsCorrelationSource, createDevToolsRuntime } from "@gamekit/devtools";
 
 describe("devtools runtime", () => {
   it("registers data sources, panels, commands and snapshots them", () => {
@@ -59,6 +59,75 @@ describe("devtools runtime", () => {
 
     expect(runtime.snapshot().traces.map((trace) => trace.label)).toEqual(["b", "c"]);
     expect(runtime.snapshot().diagnostics.map((diagnostic) => diagnostic.type)).toEqual(["second"]);
+  });
+
+  it("indexes explicit correlations incrementally with bounded summaries", () => {
+    let now = 0;
+    const runtime = createDevToolsRuntime({ traceLimit: 3, clock: () => now++ });
+    const correlation = createDevToolsCorrelationSource(runtime, {
+      correlationLimit: 2,
+      rootLimitPerCorrelation: 1
+    });
+    runtime.registerDataSource(correlation.dataSource);
+
+    correlation.push({
+      id: "network-1",
+      kind: "multiplayer",
+      label: "command.accepted",
+      source: "multiplayer",
+      correlationId: "combat-1"
+    });
+    correlation.push({
+      id: "physics-1",
+      kind: "physics",
+      label: "physics.query.hit",
+      source: "physics",
+      correlationId: "combat-1",
+      parentId: "network-1"
+    });
+    correlation.push({
+      id: "gas-1",
+      kind: "gas",
+      label: "gas.effect.applied",
+      source: "gas",
+      correlationId: "combat-1",
+      parentId: "physics-1"
+    });
+    correlation.push({
+      id: "tca-1",
+      kind: "tca",
+      label: "tca.rule.passed",
+      source: "tca",
+      correlationId: "combat-2"
+    });
+    correlation.push({
+      id: "world-1",
+      kind: "world",
+      label: "world.entity.removed",
+      source: "world",
+      correlationId: "combat-3"
+    });
+
+    expect(runtime.snapshot().traces.map((entry) => entry.id)).toEqual([
+      "gas-1",
+      "tca-1",
+      "world-1"
+    ]);
+    expect(correlation.snapshot()).toMatchObject({
+      totalTraceCount: 5,
+      uncorrelatedTraceCount: 0,
+      retainedCorrelationCount: 2,
+      correlations: [
+        { correlationId: "combat-2", traceCount: 1, rootTraceIds: ["tca-1"] },
+        { correlationId: "combat-3", traceCount: 1, rootTraceIds: ["world-1"] }
+      ]
+    });
+    expect(
+      runtime.snapshot({ includeSourceSnapshots: true }).sourceSnapshots?.[0]?.snapshot
+    ).toEqual(correlation.snapshot());
+
+    correlation.dispose();
+    expect(correlation.push({ kind: "event", label: "ignored", source: "test" })).toBeUndefined();
   });
 
   it("records source snapshot failures as diagnostics without failing whole snapshot", () => {

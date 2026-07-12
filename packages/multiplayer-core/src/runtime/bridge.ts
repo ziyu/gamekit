@@ -179,7 +179,8 @@ export function createMultiplayerModule<
             code,
             policy: overflowPolicy
           },
-          moduleId
+          moduleId,
+          messageCorrelation(message)
         );
         emitQueueDiagnostics(code, message.id);
       }
@@ -228,7 +229,8 @@ export function createMultiplayerModule<
                     peerId: message.sourcePeerId,
                     code: "command-expired"
                   },
-                  moduleId
+                  moduleId,
+                  messageCorrelation(message)
                 );
                 emitQueueDiagnostics("command-expired", message.id);
                 continue;
@@ -250,7 +252,8 @@ export function createMultiplayerModule<
                     code: decision.code,
                     reason: decision.reason
                   },
-                  moduleId
+                  moduleId,
+                  messageCorrelation(message)
                 );
                 emitQueueDiagnostics(decision.code, message.id);
                 continue;
@@ -263,7 +266,8 @@ export function createMultiplayerModule<
                   peerId: message.sourcePeerId,
                   kind: message.kind
                 },
-                moduleId
+                moduleId,
+                messageCorrelation(message)
               );
               options.handleCommand?.(commandContext);
               queueDiagnostics.handled += 1;
@@ -342,6 +346,16 @@ function normalizeDuration(value: number | undefined): number {
   return value === undefined || !Number.isFinite(value)
     ? Number.POSITIVE_INFINITY
     : Math.max(0, value);
+}
+
+function messageCorrelation(message: MultiplayerMessageEnvelope): {
+  correlationId?: string;
+  parentId: string;
+} {
+  return {
+    ...(message.correlationId === undefined ? {} : { correlationId: message.correlationId }),
+    parentId: message.id
+  };
 }
 
 function cloneCommandQueueDiagnostics(

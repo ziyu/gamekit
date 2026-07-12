@@ -543,6 +543,8 @@ Physics 必须从一开始提供可解释入口：
 
 DevTools Core 不接收 backend native handle。Backend-specific DevTools plugin 可以显式依赖 adapter 包读取更深的 native summary，但必须保持可选。
 
+Physics trace store 可以配置轻量 entry hook，由 App Host 或 app-specific composition 映射到 DevTools correlation source。Physics entry 只传播调用方明确提供的 `correlationId` / `parentId`；core 不根据 entity、contact 时间或 collider id 推断 combat 因果。
+
 ## Determinism
 
 Physics module 应默认使用 fixed timestep 和稳定 system order，减少不同 frame delta 带来的差异。
@@ -589,6 +591,7 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
 - Physics module 在 World sync 时维护 body/collider handle 到 entity 的反向索引，并在 component disabled、entity despawn 或 handle replacement 时释放 stale backend handle；contact 热路径不能为每个 contact 扫描 World。
 - 新 backend 先通过 physics conformance tests，再补 backend-specific behavior test。真实 canvas 或 Phaser Scene 只用于少量集成测试。
 - 改动 Physics World sync、contact mapping 或 handle lifecycle 时运行 `corepack pnpm bench:physics:check`，用大实体/固定 contact profile 观察数量级回归。
+- 把 Physics trace 接入跨模块 timeline 时使用有界 trace store 和增量 entry hook；不要每帧读取并合并完整 trace history。修改该路径时运行 `corepack pnpm bench:diagnostics:check`。
 
 ### 模块使用
 

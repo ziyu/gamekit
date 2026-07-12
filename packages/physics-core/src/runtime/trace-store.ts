@@ -2,6 +2,7 @@ import type { PhysicsTraceEntry, PhysicsTraceStore } from "./types";
 
 export type CreatePhysicsTraceStoreOptions = {
   limit?: number;
+  onEntry?(entry: PhysicsTraceEntry): void;
 };
 
 export function createPhysicsTraceStore(
@@ -22,6 +23,7 @@ export function createPhysicsTraceStore(
       if (entries.length > limit) {
         entries.splice(0, entries.length - limit);
       }
+      options.onEntry?.(materialized);
 
       return materialized;
     },

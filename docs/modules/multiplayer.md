@@ -558,6 +558,7 @@ Multiplayer diagnostics 应回答：
 ### 模块使用
 
 - 游戏代码发送语义命令，不发送 backend frame。命令应小、可序列化、可验证，并能关联 tick、peer、player 和 correlation id。
+- Standard Multiplayer module 派生 accepted/rejected/expired/overflow EventBus fact 时保留 message `correlationId`，并把 message id 作为 `parentId`；后续 Physics/GAS/TCA/app fact 应沿这条显式链继续传播。
 - 线上权威玩法默认使用 host/server validation；客户端预测只影响本地表现，不直接写入长期权威状态。
 - 连续移动/瞄准输入按 latest state 复制并由 authority 在新状态或超时前保持；不能把 20Hz 输入采样作为与 20Hz simulation 等速的 FIFO command 队列。必须逐条执行的交互、购买和一次性技能使用底层 action contract 的 per-source 有界 FIFO，并按玩法风险收紧每 tick 消费上限和队列上限；不能在 app 中另建无界 command 数组。
 - 使用 core snapshot playback、declared `Network*` presentation tracks 或明确的 presentation cache 连接 authoritative snapshot 和 renderer frame；通过 App Host standard multiplayer module 启动的游戏，应优先把 latest authoritative snapshot source、track declaration 和 apply hook 挂到 module presentation binding，让底层随 GameRuntime tick 自动推进 playback 并产出 typed presented values。不要让 renderer 直接按低频网络 tick 跳变，不要在 app 层重复实现通用 playback clock，也不要把 presented position 写回 authority state。

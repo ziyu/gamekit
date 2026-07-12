@@ -47,6 +47,7 @@
 
 - EventBus 只承载低频事实。高频 position、camera target、physics contact manifold、render patch、held input、UI hover 等状态留在对应 runtime state 或 system 内。
 - Renderer、Input、Camera、Physics、UI、TCA、GAS、Save 和 Multiplayer 都需要 trace/diagnostic 入口，但诊断不能反向成为业务逻辑依赖。
+- 跨模块 trace 优先在 entry 产生时增量映射，并传播显式 correlation/parent；不要每帧轮询、复制和按时间猜测多个完整 trace buffer。
 
 ## 生命周期
 
@@ -209,6 +210,7 @@
 - benchmark 的细微变化只作为趋势参考，不写死成易碎测试；已经稳定的热点模块可以在定时或手动 performance workflow 使用留有足够机器波动余量的粗粒度预算，观察数量级退化、无界队列和 retained heap 持续增长。常规 PR CI 只保留确定性的正确性门禁；性能检查不能代替 profiler，也不能因为共享 runner 噪声阻塞合并。
 - DevTools Performance 面板只展示 GameKit 级 frame/system/service/adapter 归因，不替代浏览器 profiler；需要 CPU flamegraph、layout、paint、GPU 信息时仍使用浏览器或引擎原生工具。
 - 默认只开启低成本 summary；深度 span、单帧详情、完整 payload 展开必须由用户显式开启或在测试夹具中启用。
+- Trace ring、domain trace store、correlation summary 和每条 correlation 的 detail/root collection 必须分别有界，并用 benchmark 同时验证吞吐、snapshot 和 retained size。
 - 每个热点模块都应定义自己的预算语义，例如 runtime tick、render sync、asset load group、service boot、UI refresh；预算超限只产生诊断，不改变 gameplay。
 - profiler disabled 时，高频路径不能留下明显对象分配、数组复制或 React state 更新。
 - Performance UI 刷新必须节流，不能跟随 gameplay tick 每帧重渲染。

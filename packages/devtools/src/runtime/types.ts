@@ -13,6 +13,7 @@ export type DevToolsDataSourceKind =
   | "input"
   | "multiplayer"
   | "camera"
+  | "physics"
   | "tca"
   | "gas"
   | "save"
@@ -29,6 +30,7 @@ export type DevToolsTraceKind =
   | "renderer"
   | "asset"
   | "camera"
+  | "physics"
   | "save"
   | "runtime"
   | "host"
@@ -53,6 +55,38 @@ export type DevToolsTraceEntry = {
 
 export type DevToolsTraceInput = Omit<DevToolsTraceEntry, "id" | "time"> &
   Partial<Pick<DevToolsTraceEntry, "id" | "time">>;
+
+export type DevToolsCorrelationSummary = {
+  correlationId: string;
+  traceCount: number;
+  firstTime: number;
+  lastTime: number;
+  lastTraceId: string;
+  rootTraceIds: string[];
+  kinds: Partial<Record<DevToolsTraceKind, number>>;
+};
+
+export type DevToolsCorrelationSourceSnapshot = {
+  totalTraceCount: number;
+  uncorrelatedTraceCount: number;
+  retainedCorrelationCount: number;
+  correlations: DevToolsCorrelationSummary[];
+};
+
+export type DevToolsCorrelationSourceOptions = {
+  id?: string | undefined;
+  label?: string | undefined;
+  correlationLimit?: number | undefined;
+  rootLimitPerCorrelation?: number | undefined;
+};
+
+export type DevToolsCorrelationSource = {
+  readonly dataSource: DevToolsDataSource;
+  push(entry: DevToolsTraceInput): DevToolsTraceEntry | undefined;
+  snapshot(): DevToolsCorrelationSourceSnapshot;
+  clear(): void;
+  dispose(): void;
+};
 
 export type DevToolsDiagnosticEvent = {
   id: string;

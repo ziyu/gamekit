@@ -521,12 +521,16 @@ Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务�
 
 标准游戏模块用于减少重复装配代码，但不能模糊边界：
 
+简单组合可以使用 `standardModules` 默认顺序。需要把 app intent、AI、contact/combat、checkpoint、replication、commit 等 module 插入标准模块之间时，app 应在 `game.modules(ctx)` 中按顺序调用公开的 standard module helper 和 app factory。App Host 不引入全局 phase catalog；headless composition test 必须固定 module/system id 顺序和逆序 cleanup。
+
 - `camera` 标准游戏模块负责把已经归一化的 input action fact 转成 CameraController 目标状态，可选平滑插值显示状态，并通过 app/profile 提供的 sync hook 同步 renderer camera adapter 或 UI。
 - `physics` 标准游戏模块负责从 DataRegistry/World 物化 body 与 collider，用 fixed timestep 推进 backend scene，写回 World transform/velocity，桥接低频 contact event，并在 GameRuntime dispose 时释放 backend scene。
 - `tca` 标准游戏模块负责从 DataRegistry 读取 `tca.rule`、编译规则、桥接 EventBus、写入 trace，并在 GameRuntime dispose 时清理订阅。
 - `gas` 标准游戏模块负责从 DataRegistry 读取 GAS 定义、创建 ECS-backed GAS runtime、注册 effect tick system、写入 trace，并在 GameRuntime dispose 时释放。Profile 可以提供 `GasHandle`，让同一 GameRuntime 内的业务模块通过稳定 facade 使用该 runtime；handle 仍跟随 GameModule 绑定/解绑，不进入 `services.xxx`。
 - `multiplayer` 标准游戏模块负责从 `services.multiplayer` 或显式 facade 订阅归一化消息，把 command 入站队列放到 tick 边界处理；如果 profile 声明 presentation binding，则在 GameRuntime tick 中自动推进 core snapshot playback，没收到新 authoritative snapshot 的帧也继续 advance 既有 buffer，并通过 reusable presentation projector 根据声明的 `Network*` tracks 产出 typed presented values，再交给游戏提供的 apply hook。GameRuntime dispose 时释放订阅并重置 playback/projector。
 - 标准游戏模块只能依赖稳定 facade、App Host services 和 profile 注入的定义，不能直接依赖 Phaser、DOM、Tauri 或具体 app 入口。
+
+`createGameplayDevToolsCorrelation(...)` 是 App Host 的可选跨模块诊断组合 helper。它创建有界 TCA/GAS/Physics trace store，并将 entry 增量映射到一个 domain-neutral DevTools correlation source；它不拥有 gameplay runtime，也不把 DevTools 依赖下推到 domain package。
 
 ## Test Host
 
@@ -563,6 +567,7 @@ Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务�
 - Driver 由 App Host 管 lifecycle，Renderer/Input/Asset/Camera adapter 通过 Driver capability 选择；多个 Driver 并存时 profile 必须显式选择。
 - Save service context 默认保持最小，只给 contributor 暴露必要服务；renderer/input/ui/platform 等对象必须显式 opt-in。
 - Headless Host 是标准组合路径的测试入口。新增标准 service 或标准 game module helper 时，必须能在不启动浏览器/Tauri 的情况下测试生命周期和依赖顺序。
+- Authority app 使用 `game.modules(ctx)` 显式交错 standard/app modules 时，测试必须同时断言 module install order、system registration order、runtime handle unbind 和 cleanup reverse order。
 
 ### 模块使用
 

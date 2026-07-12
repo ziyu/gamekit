@@ -108,6 +108,8 @@ DevToolsRuntime 应支持：
 
 DevToolsRuntime 不应该在 `snapshot()` 中做昂贵全量计算。复杂关联和索引应在 trace 进入时增量维护，或在 UI 明确请求详情时懒加载。
 
+`createDevToolsCorrelationSource(...)` 是跨模块显式关联的标准增量入口。它把 trace 写入 DevToolsRuntime 的 ring buffer，并维护独立有界的 recent correlation summary；每条 summary 只保存计数、kind 分布、首末时间、最后 trace 和少量 root id，不复制完整 payload。`dispose()` 后 source 忽略后续写入，组合层仍需注销对应 DataSource。
+
 ## 快速集成
 
 普通游戏不应该手写一大组 DevTools data source、panel 和 UI launcher。App Host 必须提供标准 preset，让游戏可以从一行配置开始：
@@ -527,6 +529,8 @@ input.action
 
 Correlation 优先使用显式 `correlationId`。没有显式 id 时，可以按时间窗口、actorId、entityId、event id、rule id、ability id 做弱关联，但 UI 必须标记为 inferred，不能把推断当成确定因果。
 
+TCA、GAS、Physics 等 domain trace store 可以通过可选 entry hook 接入 correlation source；通用映射位于 App Host 组合层，domain package 不直接依赖 DevTools。Multiplayer message 派生的低频 EventBus fact 应继承 message correlation，并以 message id 作为 parent。Physics 只携带 app 明确提供的 correlation，不自行推断 ability/damage 关系。
+
 ## Performance Profiler
 
 Performance Profiler 用于回答 GameKit 层面的“慢在哪里”，而不是做完整 JavaScript CPU profiler。它关注 frame、GameRuntime system、App Host service lifecycle、physics step/query、renderer sync、asset loading、driver boot 和 UI/DevTools 自身刷新成本。
@@ -790,6 +794,7 @@ Sandbox 专用 Tiny Camp 概念不进入 DevTools Core。
 ## 性能与内存
 
 - trace buffer 必须有上限。
+- correlation summary、每条 correlation 的 root id 和 domain trace store 必须分别有上限；不能因为 runtime trace ring 已有上限就保留无界 correlation index。
 - profiler buffer 必须有上限，默认保留 rolling window summary。
 - profiler 默认聚合，深度 span 采样显式开启。
 - DevTools UI 默认消费 summary，detail 懒加载。
@@ -840,6 +845,7 @@ DevTools diagnostic 至少包含：
 - 普通游戏优先使用标准 profiler preset；只有业务热点需要自定义 span 或 budget。
 - DevTools UI 通过 `@gamekit/devtools-ui` mount，focus 必须进入 `devtools` 或 `ui` input scope。
 - Headless 测试应能不启动 React、浏览器或 Phaser，只用 DevToolsRuntime 验证 data source、trace correlation 和 profiler。
+- 修改 correlation ingest/index/snapshot 时运行 `corepack pnpm bench:diagnostics:check`，同时检查每条 trace 成本、snapshot 成本和 retained 上限。
 
 ### 模块使用
 

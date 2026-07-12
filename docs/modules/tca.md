@@ -213,6 +213,8 @@ TCA trace 必须回答：
 
 Trace entry 保留触发事件的 correlation 和 parent；内置 `event.emit` action 会把派生 fact 的 parent 指向当前 TCA trace。这样 DevTools 可以确定性连接 trigger、condition、action 和后续 GAS/World/Cue，而不依赖时间窗口猜测。
 
+Trace store 可配置轻量 entry hook，让 App Host 组合层把已物化 entry 增量写入 DevTools correlation source。TCA core 不依赖 DevTools，也不在每次 DevTools snapshot 时重新扫描或复制完整 trace history。
+
 ## 与 EventBus 的关系
 
 EventBus 负责低频事实广播。TCA 监听 EventBus 或 command output，但不用于每帧高频逻辑。
@@ -235,6 +237,7 @@ GAS 不重新实现一套规则引擎。
 - Trigger、Condition、Action definition 应由外部模块注册并合并，TCA core 不硬编码具体游戏、GAS、UI、quest 或 renderer 行为。
 - 规则在加载或 runtime 启动时预编译，运行时按 event type index 查找候选规则；不要每个 EventBus event 扫描所有规则。
 - 修改 rule compile、event index、runner 或 trace store 时运行 `corepack pnpm bench:gameplay:check`；基准必须同时记录总规则数与实际候选规则数，避免吞吐结果掩盖全量扫描回归。
+- 修改 trace entry hook 或跨模块 correlation mapping 时运行 `corepack pnpm bench:diagnostics:check`，确认未启用 hook 时没有额外扫描，启用后仍保持有界索引。
 - TCA module 集成负责 EventBus 订阅、DataRegistry rule loading、definition merge、trace store 和 dispose cleanup，业务代码不重复手写这套装配。
 - TCA checkpoint 只保存已执行的 once-rule id 和 run sequence，不保存 compiled handler、EventBus subscription 或 trace history。Restore 清空旧 trace，并在恢复 runtime clock 后继续生成不冲突的 trace id。
 - 修改 checkpoint capture/restore 时运行 `corepack pnpm bench:checkpoint:check`。
