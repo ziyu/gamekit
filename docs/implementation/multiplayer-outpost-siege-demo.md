@@ -1,411 +1,155 @@
-# Multiplayer Outpost Siege Demo
+# Outpost Siege Comprehensive Demo
 
-Status: Active since 2026-07-11; Wave 0 and Wave 1 are verified.
+Status: Active. Wave 0 and Wave 1 were verified on 2026-07-11; scope was expanded and replanned on 2026-07-12.
 
 ## Goal
 
-新增一个独立的复杂多人验证应用 `apps/multiplayer-outpost-siege-demo`，用真实、持续、可扩展的游戏负载综合验证 GameKit Multiplayer 的架构能力、体验质量和性能边界。
+实现独立应用 `apps/multiplayer-outpost-siege-demo`，通过一个完整、物理化、数据驱动、server-authoritative 的多人合作游戏验证 GameKit 当前所有核心能力能否在同一条真实产品链路中协同工作。
 
-这个工作流不是继续扩展 Relay Arena，也不是把 Demo 玩法上推成框架协议。Relay Arena 继续承担最小可用 multiplayer baseline、跨 backend envelope conformance 和回归验证；Outpost Siege 专门承担以下更重的系统验证：
+长期应用体验和模块协作以 `docs/apps/multiplayer-outpost-siege-demo.md` 为准。本文件只维护实施范围、基础缺口、波次、决策门和验证证据。
 
-- Colyseus Room 自己持有 headless authoritative runtime，不再由某个 browser host peer 决定服务器模拟的存续。
-- Browser 通过 App Host 挂载 Multiplayer、Driver、Input、Camera、Renderer 和 DevTools，验证标准组合路径。
-- 高频状态使用 app-owned、字段级 Colyseus Schema，而不是把完整 snapshot 编码成单个 JSON carrier。
-- 本地玩家 prediction/reconciliation、远端对象 presentation、spawn/despawn、teleport 和 generation change 由底层标准能力处理。
-- 在大量玩家、敌人、投射物、建筑和掉落物下测量真实 server tick、Schema patch、网络流量、客户端 frame、GC、队列和长期内存。
-- 用 late join、spectator、disconnect、reconnect、explicit leave 和 room close/recreate 验证完整参与者生命周期。
+## Scope Revision
 
-长期设计事实仍以以下文档为准：
+2026-07-12 将目标从“复杂 Multiplayer 专项验证”扩展为“全框架综合验证”。Multiplayer 仍是关键约束，但完整验收还必须覆盖：
+
+- Core Runtime、EventBus、GameModule lifecycle 和固定 system order。
+- App Host、Config、Browser/Headless/Tauri profiles 和 Driver lifecycle。
+- DataPack、DataRegistry、AssetRef、AssetManager preload/lazy/retry 完整内容资源链。
+- World entity、Physics、TCA、GAS 组成的权威战斗系统。
+- Input、Camera、Renderer、React UI 和 Cue presentation。
+- Save contributor、checkpoint、migration 和 deterministic continuation。
+- DevTools correlation、inspector、profiler 和 bounded diagnostics。
+- 真实 Colyseus Room-owned authority、字段级 Schema、participant lifecycle、负载与 soak。
+
+此次范围扩展不废弃已经完成的 Wave 0/1。它们是新的综合 Demo 所需的 Multiplayer/Physics foundation，并已提交为 `0ab9c2a`。
+
+## Long-term References
 
 - `docs/project-design.md`
 - `docs/architecture.md`
-- `docs/modules/multiplayer.md`
-- `docs/modules/app-host.md`
-- `docs/modules/driver.md`
-- `docs/modules/devtools.md`
-- `docs/modules/physics.md`
 - `docs/apps/multiplayer-outpost-siege-demo.md`
-- `docs/best-practices.md`
-- `docs/adr/0013-standard-authoritative-replication-boundary.md`
-- `docs/adr/0014-multiplayer-presentation-temporal-buffer.md`
-- `docs/adr/0015-colyseus-schema-authority-carrier.md`
+- `docs/modules/app-host.md`
+- `docs/modules/core-runtime.md`
+- `docs/modules/data.md`
+- `docs/modules/assets.md`
+- `docs/modules/world.md`
+- `docs/modules/input.md`
+- `docs/modules/camera.md`
+- `docs/modules/physics.md`
+- `docs/modules/tca.md`
+- `docs/modules/gas.md`
+- `docs/modules/multiplayer.md`
+- `docs/modules/renderer.md`
+- `docs/modules/ui.md`
+- `docs/modules/save.md`
+- `docs/modules/platform.md`
+- `docs/modules/devtools.md`
 - `docs/adr/0016-room-owned-server-authority-lifecycle.md`
 - `docs/adr/0017-app-owned-colyseus-field-schema-boundary.md`
+- `docs/adr/0018-server-authoritative-gameplay-module-execution.md`
 
-本文件只记录这次工作流的范围、决策门、实施波次和验证证据。实现形成新的长期协议、公共 API 或 package 边界时，必须同步更新对应模块文档并新增 ADR。
+## Verified Baseline
 
-## Planning Baseline
+Wave 1 commit：`0ab9c2a Build multiplayer authority foundation`。
 
-2026-07-11 文档规划时确认：
+已验证基础：
 
-- `multiplayer-first-usable-version.md`、`multiplayer-demo-validation.md`、`multiplayer-realtime-game-demo.md` 和 `multiplayer-colyseus-native-lane.md` 已关闭；Outpost Siege 只迁移其中尚未覆盖的 App Host/Driver/DevTools、Room-owned authority、字段级 Schema、reconnect 和压力验证。
-- `@gamekit/multiplayer-core` 38 个测试通过。
-- `@gamekit/multiplayer-colyseus` 9 个测试通过。
-- `apps/multiplayer-demo` 59 个测试通过。
-- `bench:multiplayer:check` 的 12 个预算通过，包含 staged authority frame 与 standard module command queue。
-- Relay Arena 继续作为最小回归基线；Outpost Siege 不修改其玩法职责。
+- Multiplayer authority loop 支持受约束 `beginTick()` / `commitTick()`，并保留兼容 `tick()`。
+- Authority action/input 与 standard Multiplayer GameModule command queue 使用有界 ring queue。
+- Queue capacity、per-tick consumption、overflow、expired、coalesced 和 diagnostics 有测试。
+- Physics GameModule 维护 body/collider → entity 反向索引，并清理 despawn/disabled stale handles。
+- `@gamekit/multiplayer-core` 43 tests、`apps/multiplayer-demo` 59 tests、`@gamekit/physics-core` 8 tests 通过。
+- Multiplayer benchmark 12/12 budgets 通过；Physics 3,000 entity profile 约 4.43 ms/tick。
+- 全仓库 test、build、lint、format 和 world benchmark 通过。
 
-Wave 1 开始时识别出三个 foundation gap，现已补齐：
+Relay Arena 继续承担最小 Multiplayer regression。Outpost Siege 不修改其职责。
 
-- Authority loop 需要把 input/action ingress 与 snapshot/provider commit 分成同一 tick 的两个受约束阶段，才能在中间运行 AI、Physics 和 combat systems。
-- 标准 Multiplayer GameModule command queue 需要容量、每 tick 消费上限、overflow/expired diagnostics 和非 `Array.shift()` 的有界队列实现。
-- Physics GameModule 需要维护 body/collider 到 entity 的反向索引，并增加大实体/contact benchmark，避免 contact 映射扫描整个 World。
+## Current Framework Gaps
 
-## Why A Separate Demo
+代码核对后，综合 Demo 开始前需要先补齐以下真实缺口，不能在 app 内旁路实现：
 
-现有 `apps/multiplayer-demo` 已经适合验证 2-4 个玩家、少量共享对象、两条 authority lane 和基础 prediction/presentation。继续在同一个应用中堆叠 AI 群、建筑、复杂生命周期和负载工具会让最小回归样例失去可读性，也会把 baseline lane 与 provider-specific optimization 混在一起。
+### GAS Runtime
 
-因此保留两个职责不同的应用：
+- 现有 GAS 已支持 entity-backed actor、attribute/tag、ability、cost、cooldown、effect、periodic update、cue 和 trace。
+- 需要补 actor remove/despawn cleanup，防止 World entity 销毁后 runtime mapping 和 effect state 泄漏。
+- 需要明确并实现可验证的 effect stacking/refresh/replace policy；不能让同类 duration effect 无限制增长。
+- Ability/effect/attribute/cue trace 需要携带稳定 correlation context，连接 network action、Physics hit、TCA rule 和 presentation cue。
+- Gameplay module 需要稳定、可注入的 GAS runtime access boundary；不能长期靠 app closure 捕获 standard module 的内部 runtime。
+- 需要标准 GAS Save contributor，恢复 attributes、tags、cooldowns 和 active effects，并处理 entity remap。
 
-| 应用          | 主要职责                                                                                    | 高频同步路径                                           |
-| ------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| Relay Arena   | 最小可用闭环、envelope conformance、local authority、基础 prediction/presentation 回归      | GameKit envelope 或通用 Schema carrier，单局只能选一条 |
-| Outpost Siege | Room-owned authority、字段级 Schema、大量实体、App Host/Driver/DevTools、真实网络和性能门禁 | app-owned Colyseus Schema                              |
+### TCA Runtime
 
-Outpost Siege 仍可用 memory/in-process fixture 做确定性测试，但浏览器正式路径不需要再增加一套完整 snapshot runtime toggle。低频语义事实继续使用 GameKit envelope；同一份高频 authority state 不能双写。
+- TCA 已支持 rule compile、event index、condition/action、priority、once 和 trace。
+- TCA trace 需要 correlation/parent context，连接触发 event 与派生 GAS/World/Cue fact。
+- Once/runtime-local state 需要标准 Save contributor；restore 不能重新执行已经完成的 once rule。
+- Outpost app definitions 必须通过稳定 handler context/bridge 使用 World、PhysicsQueries 和 GAS，不得 import app/server/backend private objects。
 
-## Demo Concept
+### Physics / World / Save
 
-Demo 名称：`Outpost Siege`。
+- 需要 app-owned、显式可保存 component definitions 和 stable gameplay id ↔ EntityId remap。
+- Physics Save contributor 需要保存可恢复状态并在 World restore 后重建 scene；不能保存 Rapier handle/cache。
+- Contact 到 semantic hit candidate 的转换属于 app combat module；Physics core 不加入 damage/team/projectile 语义。
 
-玩法是一局 2D 俯视角、最多四人的合作防守与撤离游戏。玩家在前线哨站中收集资源、建造炮塔和路障、抵御多波敌人，并在最终阶段启动撤离装置。
+### App Host / DevTools Composition
 
-这个玩法不是为了内容规模，而是为了自然制造 multiplayer 压力：
+- 需要证明 standard camera、physics、TCA、GAS、multiplayer modules 与 app modules 能按权威 pipeline 顺序安装和释放。
+- TCA/GAS/Physics/Multiplayer trace source 需要进入同一个 DevTools correlation timeline，并保持默认低开销、有界。
+- Headless Room、Browser client 和 Tauri client profile 必须共享 app definition/content contract，但提供不同 adapter 和 service 参数。
 
-- 玩家持续移动和瞄准，验证 latest-input coalescing、本地 prediction 和远端 interpolation。
-- 射击、冲刺、技能、建造和交互是离散 action，验证 bounded FIFO、validation、ack 和 rejection。
-- 敌人、投射物、建筑和掉落物由 server authority 创建、更新和销毁，验证动态 replication。
-- 击退、受伤、复活和传送会触发不同强度的 reconciliation 或 snap。
-- 共享资源、占位建造和唯一掉落物会产生竞争，必须由 authority 决定结果。
-- 大量同类实体适合测量 serialization、patch size、presentation projection、renderer update 和 GC。
-- 波次间隙、进行中加入、旁观和重连可以验证参与者策略，而不需要虚构额外流程。
+### Colyseus Server Boundary
 
-## Game Loop
+- `@gamekit/multiplayer-colyseus/server` 需要不包含 app gameplay/Schema 的 typed Room-side runtime bridge。
+- App-owned Schema projection、participant policy、AI、combat、TCA/GAS 和 Save checkpoint 保持在 Outpost app。
 
-建议 session lifecycle：
+## Architecture Decisions
 
-```txt
-room setup
-  -> lobby
-  -> loading
-  -> countdown
-  -> wave
-  -> intermission
-  -> wave / boss
-  -> extraction
-  -> results
-  -> rematch or room close
-```
+### Authority
 
-第一版完整局包含：
+- 在线正式结果只由 Room-owned authority GameRuntime 决定。
+- Server 运行 World、Physics、AI、TCA、GAS、objective、spawn/despawn 和 checkpoint capture。
+- Client 不运行决定正式 damage/effect/objective 的 TCA/GAS，只维护 authority shadow、prediction、presentation 和 UI view model。
+- Local authority/headless fixture 使用相同 gameplay modules，不维护第二套 reducer。
 
-- 1 个 lobby 和 ready check。
-- 3 个普通 wave，每个 wave 增加敌人数和出生频率。
-- 2 个 intermission，用于拾取、建造和补给。
-- 1 个 boss 或高压最终 wave。
-- 1 个有明确倒计时和范围目标的 extraction。
-- 胜利、失败、个人统计、团队统计和 rematch。
-
-建议玩法对象上限以可配置 profile 表达，不在 gameplay 代码中散落常量：
-
-| 对象           | 常规 profile | 单房压力 profile |
-| -------------- | -----------: | ---------------: |
-| Active players |            4 |                4 |
-| Spectators     |            2 |               12 |
-| Enemies        |          250 |            1,000 |
-| Projectiles    |          300 |            1,500 |
-| Buildables     |           64 |              256 |
-| Pickups        |          128 |              512 |
-
-第一版视觉和规则应保持克制。对象数量、生命周期和同步模式比地图、美术数量或技能树深度更重要。
-
-## Functional Scope
-
-### Required Gameplay
-
-- 玩家移动、瞄准、主武器射击和冲刺。
-- 至少一种需要 server validation 的主动技能。
-- 炮塔和路障建造，包含资源、冷却、占位和范围检查。
-- 至少两种 server-owned 敌人行为和一种 boss 行为。
-- 投射物、命中、伤害、击退、死亡和复活。
-- 共享资源、掉落物竞争和团队目标进度。
-- lobby、ready、start、wave、results 和 rematch 完整闭环。
-
-### Required Multiplayer Behavior
-
-- 1-4 个 active players 加入同一 room。
-- Room 创建者只是 party leader，不是网络 authority，也不持有 server simulation。
-- 进行中的新 participant 默认进入 spectator/next-round，不直接成为当前 wave 玩家。
-- transient disconnect 保留 seat；provider reconnect 成功后恢复原 peer/player binding。
-- explicit leave 与 transport disconnect 是不同事实，具体保留/移除策略由 app 配置 multiplayer-core participant policy。
-- Room close、普通 leave、disconnect timeout 和同名 session recreate 分别有测试。
-- 非 authority source、重复/倒序 sequence、NaN/Infinity、超大 payload、越权 action 和过频输入被拒绝并可诊断。
-
-### Explicit Non-goals
-
-- 账号、好友、邀请、排行榜、商店和公网部署。
-- 生产 matchmaking 或跨 region 调度。
-- 通用 rollback/lockstep netcode。
-- client authority projectile、伤害或 AI。
-- 复杂装备、长期养成、Save 或内容生产管线。
-- 为 Demo 自研完整物理引擎、网络协议或 ECS。
-- 在第一版就把 AOI、replication contributor 或玩法 Schema 抽成通用 core API。
-
-## Runtime Architecture
+### System Order
 
 ```txt
-Browser
-  App Host
-    Phaser Driver
-      Renderer / Input source / Camera adapter / Assets
-    Multiplayer standard service
-    Client GameRuntime + standard multiplayer GameModule
-    Prediction + reconciliation + presentation projection
-    DevTools sources
-                |
-                | input state / discrete actions
-                | low-frequency semantic envelopes
-                | app-specific Schema patches
-                v
-Colyseus server
-  OutpostSiegeRoom
-    headless App Host
-    server GameRuntime + World
-    fixed-step authority loop
-    gameplay validation / AI / combat / building
-    replication projection
-    app-owned Colyseus Schema
-    room diagnostics
+authority begin / ingress
+  -> participant and input intent
+  -> movement and AI
+  -> Physics sync / fixed step
+  -> contact and query facts
+  -> combat / GAS
+  -> TCA / objective / lifecycle
+  -> checkpoint dirty state
+  -> replication projection
+  -> authority commit / provider publish
+  -> diagnostics
 ```
 
-### Browser Ownership
+GameRuntime 继续使用注册顺序，不新增全局 phase catalog。Outpost composition tests 固定 app-specific order。
 
-- App Host 统一拥有 Multiplayer service、Phaser Driver、Renderer、Input、Camera、DevTools 和 dispose lifecycle。
-- Phaser runtime 只能由 Driver 创建和持有；renderer/input/camera adapter 绑定 Driver slice，不能各自创建 Phaser runtime。
-- Browser gameplay 只发送归一化 input/action，只消费 provider-neutral authoritative view 和 presentation value。
-- UI 不读取 Colyseus `Room`、`Client`、raw Schema 或 socket handle。
-- React/DOM 只消费节流后的 lobby、score、health、diagnostics 和 results summary；高频 transform 不驱动 DOM render。
+### Combat Boundary
 
-### Server Ownership
+- Entity 是战斗对象的 runtime 载体。
+- Physics 负责空间与运动；World/app components 保存 intent、team、projectile、lifetime 和 identity。
+- GAS 负责 ability/effect/attribute/tag/cost/cooldown/cue。
+- TCA 负责状态反应、击杀链、波次、目标、掉落和 boss phase 等低频规则。
+- EventBus 只发送 ability activated、hit confirmed、actor died、wave completed 等低频事实。
+- Renderer/UI/Cue 只表现结果，不决定 gameplay。
 
-- 每个 `OutpostSiegeRoom` 拥有一个 headless App Host，由它统一管理 server GameRuntime、Multiplayer module、diagnostics 和 dispose lifecycle。
-- Room 创建时启动 authority runtime，最后一个保留 participant/seat 释放且 room policy 决定关闭时统一 dispose。
-- Fixed-step simulation、AI、碰撞、伤害、生成销毁和结果判定只在 server runtime 运行。
-- Browser party leader 可以请求开始、rematch 或 close room，但不能因此取得 authority write capability。
-- Room state 与 provider connection handle 不进入 gameplay world 或 Save boundary。
+### Data And Asset Boundary
 
-### Physics Integration
+- 所有 archetype、ability、effect、rule、physics、render 和 asset 定义进入 DataRegistry。
+- App content 文件可以按 player/enemy/building/wave 业务概念组织，一个文件可混合多个 DataType entry。
+- AssetManager 从 `asset.definition` 建立 boot/match/combat/boss load plan。
+- Gameplay 和 RenderObject 只保存 AssetRef/asset id；不直接保存 URL 或 native texture。
+- Headless server 注册相同定义和引用，但跳过纯视觉资源加载。
 
-Outpost Siege 使用 `@gamekit/physics-core` 作为稳定 facade，并通过 `@gamekit/physics-rapier2d` 创建可 headless 运行的 server authority scene。Physics scene 由 server GameRuntime 中的标准 Physics GameModule 持有和推进，不进入 App Host standard service，也不依赖 browser Phaser Driver lifecycle。
+### Save Boundary
 
-Browser prediction 只能通过 backend-neutral movement/physics contract 复用必要规则，不能直接 import Rapier native type。Phaser physics 不能成为 server authority；Renderer 只消费 authority/presentation transform，不能反向决定 gameplay collision。
-
-## Authority And Data Flow
-
-权威数据至少分成五层，不能复用同一个可变对象跨层写入：
-
-```txt
-server gameplay world
-  -> app-owned replication projection
-  -> Colyseus Schema patch
-  -> client authoritative shadow
-  -> prediction / presentation values
-  -> renderer target state
-```
-
-- Server world 是规则事实源，包含内部 AI、碰撞、cooldown 和临时索引。
-- Replication projection 只包含客户端需要的字段，不暴露 server-only 状态。
-- Client authoritative shadow 只接受当前 room/source/version 的合法更新。
-- 本地预测状态可以提前响应输入，但 reconciliation 不能回写 authoritative shadow。
-- Presented state 只用于渲染，不能进入 gameplay rule、command validation 或下一次 prediction base。
-
-### Input Contract
-
-Continuous input 使用 latest-state contract：
-
-- movement axes、aim direction 和 held-fire state 每个 peer 只保留最新值。
-- Browser 每帧采样，但按可配置频率发送，初始建议 30Hz。
-- Server 在固定 tick 上读取最新 input，默认 authority tick 建议 20Hz，基线后再决定是否提高到 30Hz。
-- Input 带 sequence/epoch；重复、倒序、过大跳变和旧 epoch 被拒绝。
-- neutral/release、timeout 和 disconnect 都必须清空持续输入，避免角色继续移动或射击。
-
-Discrete action 使用 bounded FIFO：
-
-- dash、ability、build、interact、ready、start 和 rematch 每份只消费一次。
-- 每 peer 和每 room 都有容量、每 tick 消费上限和 overflow policy。
-- Accepted/rejected/overflow/coalesced/expired 必须进入低成本 diagnostics。
-- `createMultiplayerModule()` 的通用 command queue 在进入本 Demo 高频路径前，必须改为 bounded deque/ring buffer，或明确证明它只承载低频 control fact；不能把当前无界 `Array.shift()` 队列用于战斗 action。
-
-## Provider-native Schema Boundary
-
-ADR 0015 的通用 Schema carrier 继续作为 baseline 和迁移工具，但 Outpost Siege 的高频状态使用 app-owned 字段级 Schema。
-
-边界要求：
-
-- Schema class 和 gameplay-to-schema mapping 位于 app server 边界，不进入 `multiplayer-core`。
-- `multiplayer-colyseus` 提供可扩展的 typed native state mapping hook，负责把 provider update 转成 provider-neutral authority update metadata 和 app-local value。
-- Browser gameplay、presentation 和 UI 不 import `@colyseus/schema` 类型。
-- Schema entity 使用稳定 `entityId + generation`，避免 despawn 后复用 id 时旧 patch、旧 track 或旧 prediction 污染新实体。
-- 初次加入获得完整当前状态；之后只应用单调 provider version 的增量 patch。
-- spawn/despawn、room reset、schema version mismatch 和 resync 都有明确状态机与 diagnostics。
-- Schema patch callback 不直接逐对象更新 renderer；先更新 authoritative shadow，再由 presentation frame 批量投影到复用的 renderer target。
-
-第一版同步全量可见实体，以得到诚实基线。AOI/interest management 在性能证据证明需要后再实现，先保持 app/server-specific；只有出现第二个稳定使用场景后，才评估 replication contributor 或 partition primitive 是否下沉 core。
-
-## Prediction And Presentation
-
-Demo 上层不能拥有 `interpolatePosition()`、手写 snapshot buffer 或每帧 clone 完整 snapshot。它只声明哪些字段使用哪种 presentation/prediction policy，并在 render frame 读取底层维护的 presented values。
-
-建议策略：
-
-| 对象/字段                          | 本地玩家                                     | 其他客户端                                      |
-| ---------------------------------- | -------------------------------------------- | ----------------------------------------------- |
-| Player position/velocity           | input prediction + reconciliation            | interpolation                                   |
-| Aim/rotation                       | immediate local value + authority correction | angle interpolation                             |
-| Dash                               | immediate local start，server 可拒绝/校正    | authority event + interpolation                 |
-| Enemy transform                    | 不预测                                       | interpolation，必要时短时 bounded extrapolation |
-| Projectile transform               | 本地仅即时播放开火表现                       | server-owned presentation                       |
-| Health/resource                    | authority value，可做 UI tween               | authority value                                 |
-| Teleport/respawn/generation change | snap/reset prediction history                | snap/reset presentation track                   |
-
-需要观测：
-
-- local input-to-present latency。
-- remote presentation delay 和 adaptive interpolation delay。
-- correction count、distance、peak 和 cause。
-- buffer depth、underflow、overflow、stale sample、snap/reset 和 dropped update。
-- presentation frame CPU time、active track count 和 allocation rate。
-
-## Participant Lifecycle Policy
-
-Demo policy 是 app 配置，不是 core 写死规则。第一版建议：
-
-- Lobby explicit leave：立即移除 player 和 seat。
-- Running explicit leave：标记 abandoned，停止输入并释放携带物；seat 立即释放，actor 按 gameplay rule 安全 despawn。
-- Transport disconnect：标记 disconnected，清空输入，保留 seat 15 秒并冻结或交给简单 server bot。
-- Provider reconnect：在 grace period 内恢复同一 stable peer/player binding、input epoch 和 authority stream，不重放旧 action。
-- Grace timeout：转为 abandoned，执行与 running explicit leave 相同的 app policy。
-- Late join：进入 spectator/next-round；下一次 lobby/rematch 晋升 active player。
-- Room leader disconnect：只影响 leader 权限；server authority 继续运行，并按 app policy 转移 leader。
-- Last participant leave：Room 可以立即关闭或等待短 idle timeout，策略由 server profile 配置。
-
-测试必须区分 explicit leave、network disconnect、provider reconnect、new join 和 page refresh，不能只观察 active peer count。
-
-## Diagnostics Contract
-
-浏览器 DevTools 与 headless benchmark 至少暴露：
-
-### Client
-
-- render FPS、frame time p50/p95/p99。
-- presentation frame time、track count、buffer depth 和 adaptive delay。
-- input sample/send rate、latest sequence、coalesced 和 timeout。
-- prediction history size、ack sequence、correction count/distance/peak。
-- applied/rejected/stale Schema update、snapshot age 和 resync count。
-- bytes/sec in/out、patch bytes p50/p95/p99 和 message count。
-- rendered/replicated/culled entity count。
-
-### Room/server
-
-- simulation tick p50/p95/p99、missed/overrun tick 和 accumulated lag。
-- input/action queue current/peak/overflow/coalesced/expired。
-- AI、physics/collision、gameplay rules、replication projection 和 Schema encode/patch 分阶段耗时。
-- connected/active/spectator/disconnected/reserved participant count。
-- world/replicated entity count、spawn/despawn rate。
-- bytes/sec per client/per room、patch size、broadcast count。
-- process heap、room retained heap estimate、GC pause 和 event-loop lag。
-
-Diagnostics 只保存固定窗口聚合值和 bounded recent samples，不保留完整 payload、逐 tick world clone、socket handle、token 或无限 event history。
-
-## Performance Profiles And Gates
-
-性能测试必须把 server throughput、单房 simulation、网络、client presentation 和 renderer 分开测量；不能只在一台机器同时打开多个可视浏览器后用肉眼判断。
-
-### Functional Profile
-
-- 4 active browser clients。
-- 250 enemies、300 projectiles、64 buildables、128 pickups 的峰值配置。
-- 20Hz authority tick，10-20Hz replication，60Hz/120Hz presentation。
-- 1080p 下 client frame p95 不超过 16.7ms，且没有持续 frame degradation。
-- Server tick p95 不超过 25ms，不能连续耗尽 50ms tick budget。
-- 所有 queue/buffer 都有稳定上限，10 分钟运行后不持续增长。
-
-### Single-room Stress Profile
-
-- 4 active headless clients、12 spectators。
-- 1,000 enemies、1,500 projectiles、256 buildables、512 pickups 的短时峰值。
-- 记录 simulation、replication、Schema patch、bytes/client 和 memory，不要求保持完整视觉质量。
-- Server tick p95 必须保持在配置 tick budget 内；如果超出，报告首先失效的阶段，而不是静默降速。
-
-### Multi-room Throughput Profile
-
-- 独立 load process 启动 8 个 room，每 room 4 个 bot client。
-- 每个 room 使用常规 profile 的缩减实体规模，避免把单房极限与多房吞吐混为一个数字。
-- 记录 room create/dispose churn、event-loop lag、总带宽、process heap 和 tick fairness。
-- 任一 room 的拥塞不能让其他 room queue 无界增长。
-
-### Soak Profile
-
-- 常规 profile 连续运行至少 60 分钟。
-- 每分钟执行可重复的 join/leave/disconnect/reconnect、build/destroy 和 wave reset。
-- 预热后 retained heap 应进入稳定区间；最后 30 分钟不能呈持续单调增长。
-- Active tracks、entity registry、peer binding、listener、timer、action queue 和 Schema collection 在 despawn/leave/room dispose 后回到预期基线。
-
-网络 bandwidth 的硬预算不在文档阶段猜测。Wave 3 先记录 field-level Schema 的 p50/p95/p99 和 bytes/sec 基线，再把实测预算写入 benchmark budget；之后定时或手动 performance workflow 只做稳定、可重复的粗粒度 regression 观察，完整压力测试继续由专门的手动或定时任务运行，常规 PR CI 不以性能数值阻塞合并。
-
-## Network Fault Matrix
-
-真实集成测试至少覆盖：
-
-|    RTT | Jitter | Loss/disconnect    | 预期                                                       |
-| -----: | -----: | ------------------ | ---------------------------------------------------------- |
-| 0-10ms |    0ms | none               | 本地 prediction 无可见周期性跳变                           |
-|   80ms |   30ms | none               | 远端保持连续，本地 correction 有界                         |
-|  150ms |   80ms | transient delay    | adaptive delay 有上限，buffer 不持续膨胀                   |
-|   80ms |   30ms | forced disconnect  | seat reservation 和 reconnect policy 正确                  |
-|    any |    any | repeated reconnect | listener、peer binding、prediction history 和 track 不泄漏 |
-
-Colyseus 基于可靠连接时，不能用伪造 packet loss 的应用层消息丢弃来宣称验证了 provider transport。故障注入应通过独立 network proxy、provider connection close 或明确标注的 app-level test seam 完成，并在报告中区分类型。
-
-## Test Strategy
-
-### Domain Unit Tests
-
-- 固定 seed、固定 tick 下 wave、AI、combat、building 和 result 可重复。
-- 不依赖 renderer、socket 或 wall clock。
-- 非法 input/action 不改变 authoritative world。
-- entity generation、spawn/despawn 和 reset 不复用旧 transient state。
-
-### Core And Adapter Tests
-
-- bounded input/action queue 和 overflow diagnostics。
-- app-owned native Schema mapping、version/source/schema gate 和 resync。
-- prediction ack/replay/reset；presentation interpolation/snap/despawn。
-- provider reconnect capability 与 stable peer binding。
-- dispose 后 listener、timer、queue 和 track 全部释放。
-
-### Real Colyseus Integration
-
-- 真实 server + 1/2/4 headless clients 完成一局。
-- late join、spectator、disconnect、reconnect、explicit leave 和 room recreate。
-- 同 room 共享权威状态，不同 room 完全隔离。
-- 非 authority client 不能写 Schema authority state。
-- 初始完整同步后只接受合法增量 version。
-
-### Browser E2E
-
-- App Host 正确创建和释放 Driver、Multiplayer service、GameRuntime 和 DevTools。
-- 本地玩家即时响应且 reconciliation 无周期性跳变。
-- 远端玩家、敌人和投射物连续呈现。
-- UI focus/input scope 不误触 gameplay action。
-- 60Hz 和 120Hz 显示下 presentation clock、FPS 和 frame diagnostics 正确。
-- Desktop 和 mobile-sized viewport 不出现 UI overlap；mobile 只要求观战/diagnostics 可用，不要求完整操作体验。
-
-### Benchmark And Soak
-
-- 扩展现有 `bench:multiplayer`，在同一顶层入口下区分 core microbenchmark、Outpost Siege room benchmark 和 client presentation benchmark。
-- 独立 soak 命令不进入每次普通 test；CI 使用缩短版稳定性检查。
-- Benchmark 输出机器、Node/browser、tick/replication 配置、实体 profile 和样本数，避免只提交脱离环境的单个 FPS 数字。
+- 保存 authority gameplay checkpoint，不保存网络连接或 client presentation。
+- Restore order：Data/Asset compatibility → World identity/entity → Physics → GAS/TCA → app gameplay → replication rebuild。
+- Restore 后 participant/session 重新绑定；旧 input epoch、queue、Schema collection 和 prediction history 不恢复。
 
 ## Implementation Waves
 
@@ -413,129 +157,187 @@ Colyseus 基于可靠连接时，不能用伪造 packet loss 的应用层消息�
 
 Status: Verified on 2026-07-11.
 
-1. 确认旧 Demo 工作流已经关闭，只迁移 App Host/DevTools 综合验证、Room-owned authority、字段级 Schema、provider reconnect 和压力验证。
-2. 固定 Relay Arena 当前 test、benchmark、Schema bytes 和真实浏览器表现作为基线。
-3. 采用 ADR 0016：Room-owned authority lifecycle 与 browser party leader 分离。
-4. 采用 ADR 0017：field-level Colyseus Schema 与 mapping 保持 app-owned boundary。
-5. 固定 authority system 顺序：ingress → gameplay intent/AI → Physics → combat/lifecycle → replication projection → provider commit → diagnostics。
-6. 固定 `physics-core + physics-rapier2d` 的 headless server profile、World sync 顺序和 benchmark diagnostics。
-7. 定义功能、单房压力、多房吞吐和 soak profile 的机器可读配置。
+已完成：Relay Arena baseline、Room-owned authority ADR、app-owned field Schema ADR、authority system order、Physics profile 和性能 profile 规划。
 
-完成标准：没有 gameplay 代码，所有高影响边界有文档结论，基线数据可重复获得。
+### Wave 1: Multiplayer And Physics Foundation
 
-### Wave 1: Multiplayer Runtime Foundation
+Status: Verified on 2026-07-11; commit `0ab9c2a`.
 
-Status: Verified on 2026-07-11.
+已完成：staged authority tick、bounded queues、queue diagnostics、Physics reverse index/cleanup、tests 和 benchmark。
 
-1. 为 authority loop 增加向后兼容的 ingress/commit 两阶段接口；保留现有单调用便利入口。
-2. 在 core 内增加可复用的 bounded deque/ring queue，替换 authority loop 和 Multiplayer GameModule bridge 的高频 `Array.shift()` 路径。
-3. 为 standard Multiplayer GameModule 增加 command queue 容量、每 tick 消费上限、overflow policy、expired policy 和 diagnostics。
-4. 保持 action per-source bounded FIFO 和 continuous input latest-state coalescing，并补 begin/commit 重入、异常、dispose 和 peer release 测试。
-5. 为 Physics GameModule 维护 body/collider 到 entity 的反向索引，补大实体/contact benchmark 和 cleanup test。
-6. 扩展 `bench:multiplayer`，记录阶段化 authority frame 和 bounded module queue 基线。
-
-完成标准：没有 Outpost gameplay；ack/provider commit 只在完整 authority tick 后推进，所有 command/action/input queue 有界，高实体 contact 映射不扫描整个 World。
-
-验证证据：
-
-- `corepack pnpm test`、`corepack pnpm build`、`corepack pnpm lint` 和 `corepack pnpm format` 通过。
-- `@gamekit/multiplayer-core` 43 个测试、`apps/multiplayer-demo` 59 个测试和 `@gamekit/physics-core` 8 个测试通过。
-- `corepack pnpm bench:multiplayer:check` 的 12 个预算通过，覆盖 staged authority frame 和 standard module command queue。
-- `corepack pnpm bench:physics:check` 通过；3,000 entity profile 平均约 4.43 ms/tick，低于 50 ms budget。
-- `corepack pnpm bench:world` 通过；10,000 entities / 5,000 moving entities 的本次结果为 spawn/add 11.24 ms、query/update 6.88 ms。
-- 兼容入口 `tick()` 在 dispose 后保持幂等无操作；显式 `beginTick()` / `commitTick()` 仍对非法阶段和 dispose 状态抛出结构化错误。
-
-### Wave 2: Room-owned Vertical Slice
+### Wave 2: Gameplay Framework Readiness
 
 Status: Planned.
 
-1. 创建独立 app 和 `OutpostSiegeRoom`。
-2. 在 `@gamekit/multiplayer-colyseus/server` 增加不包含 app gameplay/Schema 的 typed room-side runtime bridge。
-3. Room 持有 headless App Host/GameRuntime、固定 tick authority frame、Physics 和统一 dispose lifecycle。
-4. Browser 使用 configured App Host、Phaser Driver、Input、Camera、Renderer 和 multiplayer standard service。
-5. 跑通 lobby、ready、countdown、四玩家 movement/aim 和 room close。
-6. 输入走 bounded latest-state；start/ready 走 bounded action FIFO。
+1. 为 GAS 增加 actor remove/cleanup、effect stack policy、correlation context 和稳定 runtime handle/bridge。
+2. 为 TCA trace 增加 correlation/parent context，确保派生 event 继承因果信息。
+3. 实现 GAS、TCA 和 Physics 的标准 Save contributor；World 可保存组件与 app entity mapping 使用既有 Save contributor 协议组合。
+4. 用 App Host standard modules + app modules 固定 authority system order、runtime access 和 dispose order。
+5. 为 TCA/GAS/Physics trace 与 DevTools source 增加 headless correlation fixture。
+6. 更新对应模块长期文档、tests 和 microbenchmarks；公共 API 变化需要独立 ADR 或扩展 ADR 0018 后续决策。
 
-完成标准：关闭创建者浏览器不会销毁仍有 participant 的 authority simulation；四个浏览器看到同一 server state。
+完成标准：headless fixture 不依赖网络或 renderer，即可完成“ability request → Physics hit/query → GAS effect → TCA reaction → entity cleanup → save/restore continuation”的确定性链路，所有 runtime handle 和 trace buffer 可释放。
 
-### Wave 3: Field-level Schema And Observability
-
-Status: Planned.
-
-1. 实现 app-owned player/enemy/projectile/buildable/pickup Schema collections。
-2. 实现 stable entity id、generation、spawn/despawn、initial sync 和 resync。
-3. 在 app provider adapter 中实现 Schema-to-authoritative-view mapping；backend package 只提供通用 subscription、metadata gate 和 diagnostics。
-4. 接入 bytes、patch size、encode/apply time、entity count 和 queue diagnostics。
-5. 建立第一版真实网络 bandwidth/performance budget。
-
-完成标准：高频状态不再编码成完整 JSON carrier；浏览器不 import Schema 类型；初始同步和增量 patch 都有真实 Colyseus integration test。
-
-### Wave 4: Prediction, Presentation And Combat
+### Wave 3: App Skeleton And Content Pipeline
 
 Status: Planned.
 
-1. 本地 movement/aim prediction、server ack 和 bounded reconciliation。
-2. 远端 player/enemy/projectile presentation track declaration 和底层自动 frame update。
-3. 完成 shooting、dash、ability、damage、knockback、death、respawn 和 teleport reset。
-4. 完成 buildable、pickup 和共享资源竞争。
-5. 暴露 correction、presentation delay、track/buffer 和 frame cost diagnostics。
+1. 创建 `apps/multiplayer-outpost-siege-demo`，拆分 `domain`、`content`、`gameplay`、`server`、`realtime`、`presentation`、`ui`、`profiles` 和 `test`。
+2. 定义 app-owned player/enemy/weapon/buildable/wave/objective DataType 和引用校验。
+3. 注册 GAS、TCA、Physics、Renderer、Asset 内置 DataType，并建立第一批业务 DataPack。
+4. 建立 boot/match/combat/boss Asset groups，使用 AssetRef、Phaser Driver loader、lazy/retry 和 diagnostics。
+5. 建立 stable gameplay object id、EntityId、actorId、physics id、network identity、RenderObjectId 映射。
+6. 创建共享 app definition，以及 Browser Web、headless server、deterministic test 和 Tauri smoke profiles。
 
-完成标准：Demo 上层没有手写 interpolation loop；本地输入即时响应，远端连续，snap/reset 不留下旧 history。
+完成标准：所有内容通过 Data/Asset pipeline 启动；缺失引用、重复定义、资源加载失败能定位 source/path；headless server 不加载视觉 payload；没有 gameplay 常量表或直接 URL 旁路。
 
-### Wave 5: Complete Game And Participant Lifecycle
-
-Status: Planned.
-
-1. 完成 wave、intermission、boss、extraction、results 和 rematch。
-2. 完成 spectator/next-round、explicit leave、disconnect grace、provider reconnect 和 timeout policy；grace 期间采用 neutral input + frozen actor，不引入 bot 接管。
-3. 完成 leader transfer、last-participant idle close 和同名 session recreate。
-4. 覆盖 authority abuse、payload validation 和 action rate limit。
-
-完成标准：四人可以完成一局；生命周期矩阵通过真实 Colyseus test，不用 UI 状态猜测结果。
-
-### Wave 6: Load, Soak And Interest Management
+### Wave 4: Room-owned Multiplayer Vertical Slice
 
 Status: Planned.
 
-1. 实现 headless bot client 和独立多进程 load harness。
-2. 运行 functional、single-room、multi-room 和 60-minute soak profile。
-3. 增加网络故障注入与 reconnect churn。
-4. 根据数据优化 hot path、allocation、update frequency 和 renderer projection。
-5. 只有全量可见实体实测不满足预算时，才实现 app-specific AOI/interest management。
+1. 在 Multiplayer Colyseus backend 增加通用 typed Room-side runtime bridge。
+2. Room 持有 headless App Host、authority GameRuntime、Physics、TCA/GAS runtime 和统一 dispose lifecycle。
+3. Browser 使用 configured App Host、Phaser Driver、Input、Camera、Renderer、UI、Multiplayer 和 DevTools。
+4. 实现 lobby、ready、countdown、player entity spawn、四人 movement/aim 和 room close。
+5. Continuous input 使用 latest-state；ready/start 使用 bounded action FIFO。
+6. 建立 app-owned field-level player Schema、authority shadow、entity generation、initial sync 和 resync。
 
-完成标准：所有 queue/buffer 有界，内存进入平台期，tick/frame/patch/bytes 报告可复现，性能退化能定位到具体阶段。
+完成标准：关闭 party leader 浏览器后 Room 仍继续 authority tick；四个客户端读取同一 player entity state；不同 room 隔离；所有 Host/GameModule/backend lifecycle 可释放。
 
-### Wave 7: Framework Extraction And Closure
+### Wave 5: Physical TCA/GAS Combat
 
 Status: Planned.
 
-1. 审查 Demo 中哪些能力属于 app，哪些形成了第二个稳定通用场景。
-2. 只下沉已经被真实压力验证的 Schema mapping、replication partition、queue 或 diagnostics primitive。
-3. 更新模块长期文档、最佳实践、ADR、benchmark budget 和 release changeset。
-4. 完成 package test/build/lint/format、browser E2E、benchmark 和 soak 证据。
-5. 将本工作流标记 Closed，并把临时状态从长期文档移除。
+1. 实现 player/enemy/projectile/buildable 的 entity archetype materializer。
+2. 实现 movement intent、AI steering、Rapier 2D sync、hitbox/hurtbox、projectile、overlap/raycast 和 placement validation。
+3. 实现 rifle、dash、shock field、turret deployment 和 enemy attack GAS abilities。
+4. 实现 health/shield/stamina/resource attributes，damage/heal/knockback/status duration/periodic effects，以及 stack/refresh/expire。
+5. 实现状态反应、kill/drop、shield break、boss phase 和 objective TCA rules。
+6. 建立完整 correlation：network command → GAS → Physics → GAS effect → TCA → World lifecycle → cue。
+7. 测试非法 source、cost/cooldown/tag/target/placement rejection 不改变 authority state。
 
-完成标准：Demo 不维护平行 multiplayer framework；底层 API 有测试、文档和至少一个真实应用消费；未完成 stretch goal 明确迁移到独立工作流。
+完成标准：战斗结果只来自 authority runtime；所有战斗对象基于 World entity 和 Physics；TCA/GAS 定义来自 DataRegistry；客户端不能通过伪造 Schema、cue 或 UI command 改变 damage/effect。
+
+### Wave 6: Replication, Prediction And Presentation
+
+Status: Planned.
+
+1. 扩展 app-owned Schema collections，覆盖 entity lifecycle、transform、actor public state、combat facts、wave/objective 和 shared resource。
+2. 实现 stable `entityId + generation`、provider version、source/schema gate、spawn/despawn 和 resync。
+3. 本地 movement/aim 使用 prediction/reconciliation；dash 只做有限 presentation prediction。
+4. 远端 player/enemy/projectile 使用 core playback 和 declared `Network*` tracks。
+5. Combat cue 使用有界、可去重 fact stream；teleport/respawn/generation/binding change reset history。
+6. Renderer 批量消费 presented values；不在 Schema callback 中逐对象写 Phaser。
+
+完成标准：Demo 上层没有平行 interpolation clock 或 deep snapshot clone；damage/effect/objective 不预测；本地响应及时，远端连续，reset 后不残留旧 track/cue。
+
+### Wave 7: Camera, UI And Complete Session
+
+Status: Planned.
+
+1. Camera follow/lookahead/bounds/zoom anchor/shake 与 Phaser Driver camera adapter 接通。
+2. Input scope 覆盖 game、ui、modal、text-input、devtools；键鼠、手柄和 UI action 走同一语义层。
+3. React UI 完成 lobby、loadout、HUD、ability/effect、build menu、objective、reconnect、results 和 rematch。
+4. 完成普通 wave、intermission、elite/boss、extraction、胜负和统计。
+5. 完成 cue → renderer/camera/UI presentation，失败不阻塞 authority tick。
+6. 覆盖 desktop 和 mobile-sized spectator/diagnostics layout、focus、reduced motion。
+
+完成标准：四人可以从 lobby 完成一局；UI 不订阅每帧 World state；DevTools/modal/text input 不误触 gameplay；所有 camera 坐标转换使用 Camera Core。
+
+### Wave 8: Save, Platform And Participant Lifecycle
+
+Status: Planned.
+
+1. Intermission 创建 authority checkpoint，覆盖 runtime、World、Physics、GAS、TCA、wave/objective/resource sections。
+2. 固定 seed 验证 save → new runtime → restore → continue tick 与 uninterrupted runtime 等价。
+3. 验证 format migration、missing content compatibility、corrupted payload 和 contributor failure diagnostics。
+4. Web 使用 Platform storage；Tauri smoke 使用 Platform file store、语义路径、权限错误和原子写入；headless test 使用 memory store。
+5. 完成 spectator/next-round、explicit leave、disconnect grace、provider reconnect、timeout、leader transfer、room recreate。
+6. Restore 或 reconnect 不复用旧 queue、input epoch、Schema collection、prediction buffer 或 RenderObject。
+
+完成标准：checkpoint 可恢复权威 gameplay 而不保存网络/native state；Web/Tauri/headless 使用相同 Save contract；完整 participant lifecycle matrix 通过真实 Colyseus integration。
+
+### Wave 9: DevTools, Load And Soak
+
+Status: Planned.
+
+1. 标准和 app-specific sources 覆盖 Host、Data、Asset、World、Input、Camera、Physics、TCA、GAS、Multiplayer、Renderer、UI 和 Save。
+2. Timeline 展示完整 combat correlation；Inspector 可从 entity 反查 actor、physics、data、asset、network 和 render identity。
+3. Profiler 分离 ingress、AI、Physics、combat、TCA/GAS、lifecycle、replication、Schema、render、UI、asset 和 save 成本。
+4. 建立 functional、single-room stress、multi-room throughput、browser frame、Tauri smoke 和 60-minute soak harness。
+5. 运行 reconnect、spawn/despawn、save/restore、wave reset 和 room recreate churn；验证 heap、listener、timer、track、queue、registry 回到基线。
+6. 只有字段级全量同步数据证明预算不足时，才实现 app-specific AOI/interest management。
+
+完成标准：所有核心模块在同一应用有 inspectable evidence；所有 buffer/queue/history/registry 有界；性能退化能定位到具体阶段；soak 后 retained heap 进入平台期。
+
+### Wave 10: Framework Extraction And Closure
+
+Status: Planned.
+
+1. 审查 Demo 中形成第二个稳定场景的 runtime handle、Save contributor、correlation、Schema mapping 或 diagnostics primitive。
+2. 只下沉经过真实使用和压力验证的通用能力，app gameplay 与 Schema 保持本地。
+3. 更新长期模块文档、最佳实践、ADR、package README、benchmark budget 和 release changeset。
+4. 完成全仓库 test/build/lint/format、browser E2E、Tauri smoke、benchmarks 和 soak 证据。
+5. 标记本工作流 Closed，记录最终提交/PR，并迁移仍有价值的结论。
+
+完成标准：Outpost Siege 不维护平行 GameKit；核心 API 有测试、文档和真实 app 消费；所有完成门禁有可重复证据。
+
+## Test Matrix
+
+### Domain / Deterministic
+
+- 同一 input/action log 在 local authority 和 Room authority fixture 得到等价稳定 snapshot。
+- Ability cost/cooldown/tag、effect stack/expire/periodic、TCA condition/action/once 和 entity cleanup。
+- Physics contact/query → semantic hit → GAS/TCA chain 不依赖 renderer、socket 或 wall clock。
+- Save/load/tick continuation 和 entity remap。
+
+### Content / Resource
+
+- Duplicate、unknown type、missing DataRef/AssetRef、schema/path、override priority。
+- Preload group、lazy load、retry、unsupported source 和 driver cache lifecycle。
+- Headless profile 不加载纯视觉资源，但仍验证引用与 compatibility。
+
+### Real Colyseus
+
+- 1/2/4 clients 完成 session；late join、spectator、leave、disconnect、reconnect、room recreate。
+- 非 authority client 不能写 gameplay/Schema state。
+- 不同 room state、World、GAS/TCA、Physics 和 Save checkpoint 完全隔离。
+- Provider commit/ack 只发生在完整 authority tick 后。
+
+### Browser / Tauri
+
+- App Host/Driver/Input/Camera/Renderer/UI/DevTools 生命周期。
+- Prediction/presentation、focus scope、responsive/reduced motion。
+- Web asset/save path 和 Tauri file/permission smoke。
+
+### Performance / Soak
+
+- Core microbenchmarks：World、Physics、Multiplayer、TCA/GAS hot paths、Save capture/restore。
+- Functional：4 browser clients，250 enemies，300 projectiles，64 buildables，128 pickups。
+- Stress：4 active headless clients + 12 spectators，1,000 enemies，1,500 projectiles，256 buildables，512 pickups。
+- Multi-room：8 rooms × 4 bot clients，记录 tick fairness、event-loop lag、bandwidth 和 heap。
+- Soak：60 minutes，重复 participant、entity、checkpoint 和 room churn。
 
 ## Completion Gate
 
 只有同时满足以下条件，才能称为综合验证完成：
 
-- Room-owned server authority 不依赖 browser host 存活。
-- Browser 正式走 App Host + standard Multiplayer service/GameModule + Driver 路径。
-- 高频状态使用字段级 Schema，core、gameplay 和 UI 不依赖 provider 类型。
-- Prediction/presentation 由底层标准能力运行，上层只声明 policy 并读取 presented value。
-- 四玩家可以完成完整一局，late join/leave/disconnect/reconnect/rematch 行为稳定。
-- 真实 Colyseus integration、browser E2E、负载和 60 分钟 soak 都有证据。
-- Tick、frame、patch、bandwidth、queue、correction、GC 和 memory 都可观测。
-- 所有高频队列、buffer、track、listener 和 entity registry 有界且可释放。
-- 实测性能预算进入 `bench:multiplayer` 定时/手动 regression workflow，而不是只留在人工报告或进入常规 PR merge gate。
-- 通用结论已经迁移到长期模块文档/ADR，本文件状态关闭。
+- 应用设计验证合同中的每个核心能力都有真实承载点和自动化证据。
+- 四人可以完成完整 session，Room authority 不依赖任何 browser 存活。
+- 战斗完全基于 World entity + Physics + GAS + TCA，且结果只由 authority runtime 决定。
+- 内容、资源、物理、渲染、能力、效果和规则定义全部经过 Data/Asset workflow，没有 app-local 平行 registry 或直接 URL。
+- Browser 正式走 App Host + Phaser Driver + standard services/GameModules；headless 与 Tauri profile 复用同一 app contract。
+- 高频状态使用 app-owned field-level Schema，client prediction/presentation 不回写 authority state。
+- Authority checkpoint 能恢复 World/Physics/GAS/TCA/gameplay 并继续确定性 tick，不保存 connection/native/presentation state。
+- DevTools 能关联 input → network → Physics → GAS/TCA → World → replication → presentation → save。
+- 所有 queue、buffer、trace、track、listener、timer、entity/actor/physics/render registry 有界且可释放。
+- Functional、integration、browser、Tauri、benchmark 和 soak 证据可重复。
+- 可复用结论已迁移到长期文档，工作流状态 Closed。
 
-## Wave 0 Decisions
+## Decision Gates
 
-- 默认 profile 使用 20Hz authority simulation、15Hz Schema replication 和 30Hz client input send；同时保留 30/20Hz 对照 profile，用实测决定是否调整默认值。
-- Projectile 在字段级 Schema 基线中逐实体复制。只有 patch/bytes/presentation 数据证明预算不足时，才评估事件 + client presentation 或按数量分层。
-- Disconnect grace 期间立即 neutralize continuous input 并冻结 actor；不在基础生命周期验证中引入 server bot，避免混淆 reconnect 与 AI 接管。
-- App-specific Schema class、projection 和 mapping 位于 app-local provider adapter；`@gamekit/multiplayer-colyseus/server` 只新增通用 typed room-side runtime bridge 和 provider gate/diagnostics。
-- Wave 3 全量同步基线之前不实现 provider-native AOI。只有实测超出预算时先做 app-specific filtering，并在第二个稳定使用场景出现后再评估公共 primitive。
+- AOI：只有全量 field-level Schema 实测超出 budget 才实现，先保持 app-specific。
+- Projectile replication：先逐实体复制；只有 bytes/patch/presentation 数据不足时再评估事件化或分层。
+- GAS/TCA extraction：只有通用 runtime 缺口进入 package；weapon、damage formula、status reaction 和 wave rule 保持 app-local。
+- Save persistence：本 Demo 验证 checkpoint contract，不扩展账号、云同步或生产数据库。
+- Backend breadth：Outpost 使用 Phaser + Rapier 2D + Colyseus + Web/Tauri；其他 driver/backend 继续通过 Lab/conformance，不在此复制覆盖。

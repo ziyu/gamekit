@@ -93,7 +93,7 @@ Sandbox 的长期演示设计见 `docs/apps/sandbox.md`。具体工作流状态�
 
 `apps/multiplayer-demo` 是 Multiplayer 的独立验证应用，用本地 Colyseus backend 跑通 host authority、client command、GameRuntime bridge 和可见 diagnostics。它不是 Sandbox 子面板，也不把 demo command 上推为 `multiplayer-core` 协议。
 
-`apps/multiplayer-outpost-siege-demo` 是复杂 Multiplayer 综合验证应用，用 Room-owned server authority、字段级 Colyseus Schema、App Host/Phaser Driver 标准组合、大量动态实体和完整参与者生命周期验证真实负载。它与 Multiplayer Demo 的最小回归职责分离，玩法和 Schema 保持 app-local。
+`apps/multiplayer-outpost-siege-demo` 是全框架综合验证应用。它在 Room-owned server authority 下组合 App Host、Data/Asset、World、Physics、TCA/GAS、Multiplayer、Phaser Driver、Input/Camera/Renderer、React UI、Save、Platform 和 DevTools，验证数据驱动、实体化、物理化多人战斗以及完整资源、存档、诊断和负载链路。它与 Multiplayer Demo 的最小回归职责分离，玩法、Schema 和 app-specific orchestration 保持 app-local；其他 renderer/physics backend 变体继续由专属 Lab 和 conformance test 验证。
 
 真实游戏验证应用放在 `docs/apps/` 下维护长期设计。Abyss Delve 是当前计划的真实游戏验证应用，用常见肉鸽暗黑-like 设计验证完整框架组合，但它的职业、怪物、掉落、房间和 UI 概念不作为核心协议来源。
 

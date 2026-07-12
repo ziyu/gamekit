@@ -18,7 +18,7 @@
 
 - `sandbox.md`：Sandbox / Tiny Camp 框架验证面。
 - `multiplayer-demo.md`：Multiplayer Colyseus Loopback 独立 demo app。
-- `multiplayer-outpost-siege-demo.md`：Room-owned authority 与字段级 Schema 的复杂 Multiplayer 综合验证应用。
+- `multiplayer-outpost-siege-demo.md`：基于 Room-owned authority、实体/物理、TCA/GAS 和现有资源工作流的全框架综合验证应用。
 - `abyss-delve.md`：Abyss Delve 真实游戏验证应用。
 - `three-demo.md`：Three Driver 独立能力实验台。
 - `physics-2d-lab.md`：Physics Core / Rapier 2D 独立能力实验台。

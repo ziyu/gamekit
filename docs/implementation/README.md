@@ -7,7 +7,7 @@ MVP 阶段已经关闭，历史阶段文档只作为归档证据保留。常态�
 ## Active Workflows
 
 - `multiplayer-package-planning.md`
-- `multiplayer-outpost-siege-demo.md`
+- `multiplayer-outpost-siege-demo.md`：Outpost Siege 全框架综合验证应用工作流。
 
 ## Closed Workflows
 
