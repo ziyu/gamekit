@@ -9,7 +9,7 @@ export function createTcaTraceStore(options: { limit?: number | undefined } = {}
     add(entry) {
       const traceEntry: TcaTraceEntry = {
         ...entry,
-        id: `tca-trace-${nextId}`
+        id: entry.id ?? `tca-trace-${nextId}`
       };
       nextId += 1;
       entries.push(traceEntry);

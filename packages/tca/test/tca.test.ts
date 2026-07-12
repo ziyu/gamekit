@@ -159,7 +159,7 @@ describe("TCA runtime", () => {
 
   it("emits derived events through the built-in event.emit action", () => {
     const eventBus = createEventBus({ clock: () => 1 });
-    const emitted: string[] = [];
+    const emitted: Array<{ type: string; correlationId?: string; parentId?: string }> = [];
     const runtime = createTcaRuntime({
       eventBus,
       rules: [
@@ -176,12 +176,33 @@ describe("TCA runtime", () => {
       ]
     });
     eventBus.on("derived.event", (event) => {
-      emitted.push(event.type);
+      emitted.push({
+        type: event.type,
+        correlationId: event.correlationId,
+        parentId: event.parentId
+      });
     });
 
-    runtime.handleEvent({ type: "input.action", payload: {}, timestamp: 1 });
+    runtime.handleEvent({
+      type: "input.action",
+      payload: {},
+      timestamp: 1,
+      correlationId: "command-3",
+      parentId: "input-trace-2"
+    });
 
-    expect(emitted).toEqual(["derived.event"]);
+    const trace = runtime.traceStore.list()[0];
+    expect(trace).toMatchObject({
+      correlationId: "command-3",
+      parentId: "input-trace-2"
+    });
+    expect(emitted).toEqual([
+      {
+        type: "derived.event",
+        correlationId: "command-3",
+        parentId: trace?.id
+      }
+    ]);
   });
 
   it("accepts external trigger, condition and action definitions", () => {

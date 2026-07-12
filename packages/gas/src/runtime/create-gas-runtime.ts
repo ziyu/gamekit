@@ -1,27 +1,31 @@
-import {
-  GAS_ABILITY_TYPE,
-  GAS_ACTOR_TYPE,
-  GAS_ATTRIBUTE_TYPE,
-  GAS_CUE_TYPE,
-  GAS_EFFECT_TYPE
-} from "./data-types";
+import { GAS_ABILITY_TYPE, GAS_ACTOR_TYPE, GAS_ATTRIBUTE_TYPE, GAS_CUE_TYPE } from "./data-types";
 import { createGasError } from "./errors";
 import { createGasTraceStore } from "./trace-store";
 import { GasAbilities, GasActor, GasAttributes, GasEffects, GasTags } from "./components";
+import type { ComponentDef } from "@gamekit/world";
+import {
+  cloneGasActorState,
+  cloneGasAttributes,
+  cloneGasTags,
+  uniqueGasValues
+} from "./actor-state";
+import { createGasEffectRuntime } from "./effect-runtime";
+import { childGasContext } from "./operation-context";
 import type {
   CreateGasRuntimeConfig,
-  GasAbilityDefinition,
   GasAbilityActivation,
   GasAbilityActivationResult,
+  GasAbilityDefinition,
   GasActorDefinition,
   GasActorId,
   GasActorRuntimeState,
   GasAttributeDefinition,
   GasAttributeModifier,
   GasCueDefinition,
-  GasEffectApplication,
-  GasEffectDefinition,
-  GasRuntime
+  GasEffectApplicationResult,
+  GasOperationContext,
+  GasRuntime,
+  GasTraceEntry
 } from "./types";
 
 export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
@@ -30,7 +34,18 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
   const detachedActors = new Map<GasActorId, GasActorRuntimeState>();
   let elapsedNow = 0;
   let disposed = false;
-  let effectSequence = 0;
+  const effectRuntime = createGasEffectRuntime({
+    dataRegistry: config.dataRegistry,
+    now: () => elapsedNow,
+    requireActor: requireMutableActor,
+    persistActor: persistState,
+    modifyAttribute: modifyAttributeState,
+    addTag: addTagState,
+    removeTag: removeTagState,
+    emitCues,
+    trace,
+    emit
+  });
 
   const runtime: GasRuntime = {
     traceStore,
@@ -41,12 +56,28 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
         input.definitionId
       );
       const actorId = input.actorId ?? String(input.entityId ?? input.definitionId);
+      if (actorEntityById.has(actorId) && findState(actorId) === undefined) {
+        removeActor(actorId, input, "entity-missing");
+      }
+      if (findState(actorId) !== undefined || actorEntityById.has(actorId)) {
+        throw createGasError("gas.duplicate_actor", `Duplicate GAS actor: ${actorId}`, { actorId });
+      }
+      if (input.entityId !== undefined && config.world.get(input.entityId, GasActor)) {
+        throw createGasError("gas.entity_bound", "World entity already has a GAS actor", {
+          actorId,
+          entityId: input.entityId
+        });
+      }
+
       const attributes = {
         ...definition.attributes,
         ...input.attributes
       };
-      const tags = unique([...(definition.tags ?? []), ...(input.tags ?? [])]);
-      const abilities = unique([...(definition.abilities ?? []), ...(input.abilities ?? [])]);
+      const tags = uniqueGasValues([...(definition.tags ?? []), ...(input.tags ?? [])]);
+      const abilities = uniqueGasValues([
+        ...(definition.abilities ?? []),
+        ...(input.abilities ?? [])
+      ]);
       const state: GasActorRuntimeState = {
         actor: {
           actorId,
@@ -57,7 +88,10 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
           base: { ...attributes },
           current: { ...attributes }
         },
-        tags: { values: tags },
+        tags: {
+          values: tags,
+          sources: Object.fromEntries(tags.map((tag) => [tag, ["actor"]]))
+        },
         abilities: {
           ids: abilities,
           cooldowns: {},
@@ -79,20 +113,32 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
         actorEntityById.set(actorId, input.entityId);
       }
 
-      trace("actor.created", {
-        actorId,
-        message: `Created GAS actor: ${actorId}`,
-        details: {
+      const actorTrace = trace(
+        "actor.created",
+        {
+          actorId,
+          message: `Created GAS actor: ${actorId}`,
+          details: {
+            definitionId: input.definitionId,
+            entityId: input.entityId
+          }
+        },
+        input
+      );
+      emit(
+        "gas.actor_created",
+        {
+          actorId,
           definitionId: input.definitionId,
           entityId: input.entityId
-        }
-      });
-      emit("gas.actor_created", {
-        actorId,
-        definitionId: input.definitionId,
-        entityId: input.entityId
-      });
-      return cloneActorState(state);
+        },
+        childGasContext(input, actorTrace.id)
+      );
+      return cloneGasActorState(state);
+    },
+    removeActor(actorId, context) {
+      assertActive();
+      return removeActor(actorId, context, "explicit");
     },
     hasActor(actorId) {
       return findState(actorId) !== undefined;
@@ -102,12 +148,14 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
       if (!state) {
         throw createGasError("gas.missing_actor", `Missing GAS actor: ${actorId}`, { actorId });
       }
-
-      return cloneActorState(state);
+      return cloneGasActorState(state);
     },
     actorForEntity(entityId) {
+      if (!config.world.has(entityId)) {
+        return undefined;
+      }
       const state = readEntityActor(entityId);
-      return state ? cloneActorState(state) : undefined;
+      return state ? cloneGasActorState(state) : undefined;
     },
     activateAbility(input) {
       assertActive();
@@ -115,24 +163,24 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
     },
     applyEffect(input) {
       assertActive();
-      applyEffect(input);
+      return effectRuntime.apply(input);
     },
-    modifyAttribute(actorId, modifier, source) {
+    modifyAttribute(actorId, modifier, source, context) {
       assertActive();
       const state = requireMutableActor(actorId);
-      modifyAttributeState(state, modifier, source);
+      modifyAttributeState(state, modifier, source, context);
       persistState(state);
     },
-    addTag(actorId, tag, source) {
+    addTag(actorId, tag, source, context) {
       assertActive();
       const state = requireMutableActor(actorId);
-      addTagState(state, tag, source);
+      addTagState(state, tag, source, context);
       persistState(state);
     },
-    removeTag(actorId, tag, source) {
+    removeTag(actorId, tag, source, context) {
       assertActive();
       const state = requireMutableActor(actorId);
-      removeTagState(state, tag, source);
+      removeTagState(state, tag, source, context);
       persistState(state);
     },
     update(_delta, elapsed) {
@@ -141,19 +189,26 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
       }
 
       elapsedNow = elapsed;
+      cleanupMissingEntityActors();
       for (const state of mutableStates()) {
-        updateActorEffects(state);
+        effectRuntime.updateActor(state);
         persistState(state);
       }
     },
     snapshot() {
       return {
-        actors: mutableStates().map(cloneActorState),
+        actors: mutableStates().map(cloneGasActorState),
         traces: traceStore.list()
       };
     },
     dispose() {
+      if (disposed) {
+        return;
+      }
       disposed = true;
+      for (const entityId of actorEntityById.values()) {
+        removeActorComponents(entityId);
+      }
       actorEntityById.clear();
       detachedActors.clear();
     }
@@ -187,8 +242,21 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
       return rejectAbility(input, "ability costs cannot be paid");
     }
 
-    payCosts(state, ability);
-    const resultEffects: GasEffectApplication[] = [];
+    const abilityTrace = trace(
+      "ability.activated",
+      {
+        actorId: input.actorId,
+        abilityId: input.abilityId,
+        message: `Activated GAS ability: ${input.abilityId}`,
+        details: {
+          targetActorId: input.targetActorId
+        }
+      },
+      input
+    );
+    const operationContext = childGasContext(input, abilityTrace.id);
+    payCosts(state, ability, operationContext);
+    const resultEffects: GasEffectApplicationResult[] = [];
     const cooldownUntil =
       (ability.cooldownMs ?? 0) > 0 ? elapsedNow + (ability.cooldownMs ?? 0) : undefined;
     if ((ability.cooldownMs ?? 0) > 0) {
@@ -196,19 +264,15 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
     }
     persistState(state);
 
-    trace("ability.activated", {
-      actorId: input.actorId,
-      abilityId: input.abilityId,
-      message: `Activated GAS ability: ${input.abilityId}`,
-      details: {
+    emit(
+      "gas.ability_activated",
+      {
+        actorId: input.actorId,
+        abilityId: input.abilityId,
         targetActorId: input.targetActorId
-      }
-    });
-    emit("gas.ability_activated", {
-      actorId: input.actorId,
-      abilityId: input.abilityId,
-      targetActorId: input.targetActorId
-    });
+      },
+      operationContext
+    );
 
     for (const effect of ability.effects ?? []) {
       const targetActorId = effect.target === "self" ? input.actorId : input.targetActorId;
@@ -222,19 +286,17 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
           }
         );
       }
-      applyEffect({
-        sourceActorId: input.actorId,
-        targetActorId,
-        effectId: effect.effectId
-      });
-      resultEffects.push({
-        sourceActorId: input.actorId,
-        targetActorId,
-        effectId: effect.effectId
-      });
+      resultEffects.push(
+        effectRuntime.apply({
+          sourceActorId: input.actorId,
+          targetActorId,
+          effectId: effect.effectId,
+          ...operationContext
+        })
+      );
     }
 
-    emitCues(ability.cues ?? [], input.actorId, input.targetActorId);
+    emitCues(ability.cues ?? [], input.actorId, input.targetActorId, operationContext);
     return {
       status: "activated",
       actorId: input.actorId,
@@ -242,118 +304,42 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
       targetActorId: input.targetActorId,
       cooldownUntil,
       paidCosts: [...(ability.costs ?? [])],
-      appliedEffects: resultEffects
+      appliedEffects: resultEffects,
+      ...(input.correlationId === undefined ? {} : { correlationId: input.correlationId })
     };
   }
 
   function rejectAbility(input: GasAbilityActivation, reason: string): GasAbilityActivationResult {
-    trace("ability.rejected", {
-      actorId: input.actorId,
-      abilityId: input.abilityId,
-      message: reason,
-      details: {
-        targetActorId: input.targetActorId
-      }
-    });
-    emit("gas.ability_rejected", {
-      actorId: input.actorId,
-      abilityId: input.abilityId,
-      targetActorId: input.targetActorId,
-      reason
-    });
+    const rejectedTrace = trace(
+      "ability.rejected",
+      {
+        actorId: input.actorId,
+        abilityId: input.abilityId,
+        message: reason,
+        details: {
+          targetActorId: input.targetActorId
+        }
+      },
+      input
+    );
+    emit(
+      "gas.ability_rejected",
+      {
+        actorId: input.actorId,
+        abilityId: input.abilityId,
+        targetActorId: input.targetActorId,
+        reason
+      },
+      childGasContext(input, rejectedTrace.id)
+    );
     return {
       status: "rejected",
       actorId: input.actorId,
       abilityId: input.abilityId,
       targetActorId: input.targetActorId,
-      reason
+      reason,
+      ...(input.correlationId === undefined ? {} : { correlationId: input.correlationId })
     };
-  }
-
-  function applyEffect(input: GasEffectApplication): void {
-    const state = requireMutableActor(input.targetActorId);
-    const effect = config.dataRegistry.getValue<GasEffectDefinition>(
-      GAS_EFFECT_TYPE,
-      input.effectId
-    );
-
-    for (const modifier of effect.attributeModifiers ?? []) {
-      modifyAttributeState(state, modifier, input.effectId);
-    }
-    for (const tag of effect.removedTags ?? []) {
-      removeTagState(state, tag, input.effectId);
-    }
-    for (const tag of effect.grantedTags ?? []) {
-      addTagState(state, tag, input.effectId);
-    }
-
-    const hasLifecycle = effect.durationMs !== undefined || effect.periodMs !== undefined;
-    if (hasLifecycle) {
-      effectSequence += 1;
-      state.effects.active.push({
-        id: `${input.effectId}:${effectSequence}`,
-        effectId: input.effectId,
-        sourceActorId: input.sourceActorId,
-        targetActorId: input.targetActorId,
-        startedAt: elapsedNow,
-        ...(effect.durationMs === undefined ? {} : { expiresAt: elapsedNow + effect.durationMs }),
-        ...(effect.periodMs === undefined ? {} : { nextTickAt: elapsedNow + effect.periodMs }),
-        grantedTags: [...(effect.grantedTags ?? [])]
-      });
-    }
-
-    persistState(state);
-    trace("effect.applied", {
-      actorId: input.targetActorId,
-      effectId: input.effectId,
-      message: `Applied GAS effect: ${input.effectId}`,
-      details: {
-        sourceActorId: input.sourceActorId
-      }
-    });
-    emit("gas.effect_applied", input);
-    emitCues(effect.cues ?? [], input.sourceActorId, input.targetActorId);
-  }
-
-  function updateActorEffects(state: GasActorRuntimeState): void {
-    const remaining = [];
-
-    for (const active of state.effects.active) {
-      const definition = config.dataRegistry.getValue<GasEffectDefinition>(
-        GAS_EFFECT_TYPE,
-        active.effectId
-      );
-      let nextTickAt = active.nextTickAt;
-      while (nextTickAt !== undefined && nextTickAt <= elapsedNow) {
-        for (const modifier of definition.periodicModifiers ?? []) {
-          modifyAttributeState(state, modifier, active.effectId);
-        }
-        nextTickAt += definition.periodMs ?? Number.POSITIVE_INFINITY;
-      }
-
-      if (active.expiresAt !== undefined && active.expiresAt <= elapsedNow) {
-        for (const tag of active.grantedTags) {
-          removeTagState(state, tag, active.effectId);
-        }
-        trace("effect.expired", {
-          actorId: active.targetActorId,
-          effectId: active.effectId,
-          message: `Expired GAS effect: ${active.effectId}`
-        });
-        emit("gas.effect_expired", {
-          actorId: active.targetActorId,
-          effectId: active.effectId
-        });
-        continue;
-      }
-
-      remaining.push({
-        ...active,
-        ...(nextTickAt === undefined ? {} : { nextTickAt })
-      });
-    }
-
-    state.effects.active = remaining;
   }
 
   function canPayCosts(state: GasActorRuntimeState, ability: GasAbilityDefinition): boolean {
@@ -362,7 +348,11 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
     );
   }
 
-  function payCosts(state: GasActorRuntimeState, ability: GasAbilityDefinition): void {
+  function payCosts(
+    state: GasActorRuntimeState,
+    ability: GasAbilityDefinition,
+    context: GasOperationContext
+  ): void {
     for (const cost of ability.costs ?? []) {
       modifyAttributeState(
         state,
@@ -371,7 +361,8 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
           operation: "add",
           value: -cost.amount
         },
-        ability.id
+        ability.id,
+        context
       );
     }
   }
@@ -387,7 +378,8 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
   function modifyAttributeState(
     state: GasActorRuntimeState,
     modifier: GasAttributeModifier,
-    source?: string
+    source?: string,
+    context?: GasOperationContext
   ): void {
     const previous = state.attributes.current[modifier.attribute] ?? 0;
     const rawNext =
@@ -398,60 +390,114 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
           : previous + modifier.value;
     const next = clampAttribute(modifier.attribute, rawNext);
     state.attributes.current[modifier.attribute] = next;
-    trace("attribute.changed", {
-      actorId: state.actor.actorId,
-      message: `Changed GAS attribute: ${modifier.attribute}`,
-      details: {
+    const attributeTrace = trace(
+      "attribute.changed",
+      {
+        actorId: state.actor.actorId,
+        message: `Changed GAS attribute: ${modifier.attribute}`,
+        details: {
+          attribute: modifier.attribute,
+          previous,
+          next,
+          source
+        }
+      },
+      context
+    );
+    emit(
+      "gas.attribute_changed",
+      {
+        actorId: state.actor.actorId,
         attribute: modifier.attribute,
         previous,
         next,
         source
-      }
-    });
-    emit("gas.attribute_changed", {
-      actorId: state.actor.actorId,
-      attribute: modifier.attribute,
-      previous,
-      next,
-      source
-    });
+      },
+      childGasContext(context, attributeTrace.id)
+    );
   }
 
-  function addTagState(state: GasActorRuntimeState, tag: string, source?: string): void {
+  function addTagState(
+    state: GasActorRuntimeState,
+    tag: string,
+    source?: string,
+    context?: GasOperationContext
+  ): void {
+    const sourceId = source ?? "runtime";
+    const sources = (state.tags.sources ??= {});
+    sources[tag] = uniqueGasValues([...(sources[tag] ?? []), sourceId]);
     if (state.tags.values.includes(tag)) {
       return;
     }
     state.tags.values.push(tag);
-    trace("tag.added", {
-      actorId: state.actor.actorId,
-      message: `Added GAS tag: ${tag}`,
-      details: { tag, source }
-    });
-    emit("gas.tag_added", {
-      actorId: state.actor.actorId,
-      tag,
-      source
-    });
+    const tagTrace = trace(
+      "tag.added",
+      {
+        actorId: state.actor.actorId,
+        message: `Added GAS tag: ${tag}`,
+        details: { tag, source }
+      },
+      context
+    );
+    emit(
+      "gas.tag_added",
+      {
+        actorId: state.actor.actorId,
+        tag,
+        source
+      },
+      childGasContext(context, tagTrace.id)
+    );
   }
 
-  function removeTagState(state: GasActorRuntimeState, tag: string, source?: string): void {
+  function removeTagState(
+    state: GasActorRuntimeState,
+    tag: string,
+    source?: string,
+    context?: GasOperationContext
+  ): void {
     if (!state.tags.values.includes(tag)) {
       return;
     }
+    if (source !== undefined) {
+      const remainingSources = (state.tags.sources?.[tag] ?? []).filter(
+        (sourceId) => sourceId !== source
+      );
+      if (remainingSources.length > 0) {
+        (state.tags.sources ??= {})[tag] = remainingSources;
+        return;
+      }
+    }
+    if (state.tags.sources) {
+      delete state.tags.sources[tag];
+    }
     state.tags.values = state.tags.values.filter((value) => value !== tag);
-    trace("tag.removed", {
-      actorId: state.actor.actorId,
-      message: `Removed GAS tag: ${tag}`,
-      details: { tag, source }
-    });
-    emit("gas.tag_removed", {
-      actorId: state.actor.actorId,
-      tag,
-      source
-    });
+    const tagTrace = trace(
+      "tag.removed",
+      {
+        actorId: state.actor.actorId,
+        message: `Removed GAS tag: ${tag}`,
+        details: { tag, source }
+      },
+      context
+    );
+    emit(
+      "gas.tag_removed",
+      {
+        actorId: state.actor.actorId,
+        tag,
+        source
+      },
+      childGasContext(context, tagTrace.id)
+    );
   }
 
-  function emitCues(cueIds: string[], sourceActorId?: string, targetActorId?: string): void {
+  function emitCues(
+    cueIds: string[],
+    sourceActorId?: string,
+    targetActorId?: string,
+    context?: GasOperationContext
+  ): void {
     for (const cueId of cueIds) {
       const cue = config.dataRegistry.getValue<GasCueDefinition>(GAS_CUE_TYPE, cueId);
       const event = {
@@ -461,12 +507,78 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
         targetActorId,
         payload: cue.payload
       };
-      trace("cue.emitted", {
-        actorId: targetActorId ?? sourceActorId,
-        message: `Emitted GAS cue: ${cueId}`,
-        details: event
-      });
-      emit("gas.cue", event);
+      const cueTrace = trace(
+        "cue.emitted",
+        {
+          actorId: targetActorId ?? sourceActorId,
+          message: `Emitted GAS cue: ${cueId}`,
+          details: event
+        },
+        context
+      );
+      emit("gas.cue", event, childGasContext(context, cueTrace.id));
+    }
+  }
+
+  function removeActor(
+    actorId: GasActorId,
+    context: GasOperationContext | undefined,
+    reason: "explicit" | "entity-missing"
+  ): boolean {
+    const entityId = actorEntityById.get(actorId);
+    const hasDetached = detachedActors.has(actorId);
+    if (entityId === undefined && !hasDetached) {
+      return false;
+    }
+
+    if (entityId !== undefined) {
+      removeActorComponents(entityId);
+      actorEntityById.delete(actorId);
+    }
+    detachedActors.delete(actorId);
+
+    const removedTrace = trace(
+      "actor.removed",
+      {
+        actorId,
+        message: `Removed GAS actor: ${actorId}`,
+        details: { entityId, reason }
+      },
+      context
+    );
+    emit(
+      "gas.actor_removed",
+      { actorId, entityId, reason },
+      childGasContext(context, removedTrace.id)
+    );
+    return true;
+  }
+
+  function cleanupMissingEntityActors(): void {
+    for (const [actorId, entityId] of actorEntityById) {
+      if (!config.world.has(entityId) || readEntityActor(entityId) === undefined) {
+        removeActor(actorId, undefined, "entity-missing");
+      }
+    }
+  }
+
+  function removeActorComponents(entityId: string | number): void {
+    if (!config.world.has(entityId)) {
+      return;
+    }
+    removeComponentIfPresent(entityId, GasActor);
+    removeComponentIfPresent(entityId, GasAttributes);
+    removeComponentIfPresent(entityId, GasTags);
+    removeComponentIfPresent(entityId, GasAbilities);
+    removeComponentIfPresent(entityId, GasEffects);
+  }
+
+  function removeComponentIfPresent<T extends object>(
+    entityId: string | number,
+    component: ComponentDef<T>
+  ): void {
+    if (config.world.get(entityId, component)) {
+      config.world.remove(entityId, component);
     }
   }
 
@@ -495,6 +607,9 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
   function findState(actorId: string): GasActorRuntimeState | undefined {
     const entityId = actorEntityById.get(actorId);
     if (entityId !== undefined) {
+      if (!config.world.has(entityId)) {
+        return undefined;
+      }
       return readEntityActor(entityId);
     }
     return detachedActors.get(actorId);
@@ -525,12 +640,15 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
   function persistState(state: GasActorRuntimeState): void {
     const entityId = state.actor.entityId;
     if (entityId === undefined) {
-      detachedActors.set(state.actor.actorId, cloneActorState(state));
+      detachedActors.set(state.actor.actorId, cloneGasActorState(state));
+      return;
+    }
+    if (!config.world.has(entityId)) {
       return;
     }
 
-    config.world.set(entityId, GasAttributes, cloneAttributes(state.attributes));
-    config.world.set(entityId, GasTags, { values: [...state.tags.values] });
+    config.world.set(entityId, GasAttributes, cloneGasAttributes(state.attributes));
+    config.world.set(entityId, GasTags, cloneGasTags(state.tags));
     config.world.set(entityId, GasAbilities, {
       ids: [...state.abilities.ids],
       cooldowns: { ...state.abilities.cooldowns },
@@ -543,17 +661,20 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
 
   function trace(
     type: Parameters<typeof traceStore.add>[0]["type"],
-    entry: Omit<Parameters<typeof traceStore.add>[0], "type" | "timestamp">
-  ): void {
-    traceStore.add({
+    entry: Omit<Parameters<typeof traceStore.add>[0], "type" | "timestamp">,
+    context?: GasOperationContext
+  ): GasTraceEntry {
+    return traceStore.add({
       type,
       timestamp: elapsedNow,
+      ...(context?.correlationId === undefined ? {} : { correlationId: context.correlationId }),
+      ...(context?.parentId === undefined ? {} : { parentId: context.parentId }),
       ...entry
     });
   }
 
-  function emit(type: string, payload: unknown): void {
-    config.eventBus?.emit(type, payload, "gas");
+  function emit(type: string, payload: unknown, context?: GasOperationContext): void {
+    config.eventBus?.emit(type, payload, "gas", context);
   }
 
   function assertActive(): void {
@@ -561,33 +682,4 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
       throw createGasError("gas.disposed", "GAS runtime is disposed");
     }
   }
-}
-
-function cloneActorState(state: GasActorRuntimeState): GasActorRuntimeState {
-  return {
-    actor: { ...state.actor },
-    attributes: cloneAttributes(state.attributes),
-    tags: { values: [...state.tags.values] },
-    abilities: {
-      ids: [...state.abilities.ids],
-      cooldowns: { ...state.abilities.cooldowns },
-      disabled: [...state.abilities.disabled]
-    },
-    effects: {
-      active: state.effects.active.map((effect) => ({ ...effect }))
-    }
-  };
-}
-
-function cloneAttributes(
-  attributes: GasActorRuntimeState["attributes"]
-): GasActorRuntimeState["attributes"] {
-  return {
-    base: { ...attributes.base },
-    current: { ...attributes.current }
-  };
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
 }

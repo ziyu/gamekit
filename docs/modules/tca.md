@@ -149,8 +149,13 @@ export type TcaHandlerContext = {
   dataRegistry?: DataRegistry;
   game?: GameInstallContext;
   rule: TcaRule;
+  traceId: string;
+  correlationId?: string;
+  parentId?: string;
 };
 ```
+
+Runtime 为每次 rule execution 提供稳定 `traceId`，并从触发事件继承 `correlationId` / `parentId`。Handler 发出派生 EventBus fact 或调用 GAS 等稳定 bridge 时，应保留同一 correlation，并把当前 `traceId` 作为新的 parent。
 
 Handler 不应直接导入具体 renderer、Phaser、DOM 或具体游戏 app。需要表现层行为时，优先发出低频 EventBus fact，或调用由 game module 注入的稳定 bridge。
 
@@ -203,6 +208,8 @@ TCA trace 必须回答：
 - 修改了哪些状态？
 - 发出了哪些派生 event？
 
+Trace entry 保留触发事件的 correlation 和 parent；内置 `event.emit` action 会把派生 fact 的 parent 指向当前 TCA trace。这样 DevTools 可以确定性连接 trigger、condition、action 和后续 GAS/World/Cue，而不依赖时间窗口猜测。
+
 ## 与 EventBus 的关系
 
 EventBus 负责低频事实广播。TCA 监听 EventBus 或 command output，但不用于每帧高频逻辑。
@@ -232,4 +239,4 @@ GAS 不重新实现一套规则引擎。
 - TCA 负责低频、可解释、可追踪的规则链路，不负责 movement、camera smoothing、render sync、pathfinding 等每帧高频逻辑。
 - Handler 只通过 TcaHandlerContext 访问稳定 facade。需要表现或 UI 时发低频 event/command，不直接 import Phaser、DOM、React 或具体 app。
 - Condition/action 的 value resolver 尽量在 compile 阶段准备，运行时减少字符串 path 解析和临时对象。
-- Trace 是 TCA 的主要可维护性工具。每次规则跳过、失败或执行都应能解释 event、rule、condition、action 和派生 event。
+- Trace 是 TCA 的主要可维护性工具。每次规则跳过、失败或执行都应能解释 event、rule、condition、action 和派生 event；跨模块派生操作应传播 correlation，并以当前 rule trace 作为 parent。

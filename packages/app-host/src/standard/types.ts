@@ -11,7 +11,7 @@ import type {
   DevToolsUiOptions
 } from "@gamekit/devtools";
 import type { DriverBootContext, DriverRegistry, GameDriver } from "@gamekit/driver-core";
-import type { GasRuntime, GasTraceStore } from "@gamekit/gas";
+import type { GasHandle, GasRuntime, GasTraceStore } from "@gamekit/gas";
 import type { GameInstallContext, GameRuntime } from "@gamekit/game-runtime";
 import type { InputDevice, InputRouter, InputSourceAdapter } from "@gamekit/input-core";
 import type {
@@ -322,5 +322,6 @@ export type StandardGasGameModuleOptions<TContext> = {
   id?: string | undefined;
   dataRegistry?: ((ctx: StandardServiceBuildContext<TContext>) => DataRegistry) | undefined;
   traceStore?: StandardValue<GasTraceStore, TContext> | undefined;
+  handle?: StandardValue<GasHandle, TContext> | undefined;
   onRuntime?(ctx: StandardServiceBuildContext<TContext>, runtime: GasRuntime): void;
 };

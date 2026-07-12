@@ -12,11 +12,17 @@ export function createEventBus(options: EventBusOptions = {}): EventBus {
   const anyListeners = new Set<AnyEventListener>();
 
   return {
-    emit(type, payload, source) {
-      const event: GameEvent<typeof payload> =
-        source === undefined
-          ? { type, payload, timestamp: clock() }
-          : { type, payload, timestamp: clock(), source };
+    emit(type, payload, source, correlation) {
+      const event: GameEvent<typeof payload> = {
+        type,
+        payload,
+        timestamp: clock(),
+        ...(source === undefined ? {} : { source }),
+        ...(correlation?.correlationId === undefined
+          ? {}
+          : { correlationId: correlation.correlationId }),
+        ...(correlation?.parentId === undefined ? {} : { parentId: correlation.parentId })
+      };
 
       const listeners = listenersByType.get(type);
       if (listeners) {

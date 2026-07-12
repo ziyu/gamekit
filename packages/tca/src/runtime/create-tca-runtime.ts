@@ -17,6 +17,7 @@ export function createTcaRuntime(config: CreateTcaRuntimeConfig): TcaRuntime {
   const traceStore = config.traceStore ?? createTcaTraceStore();
   const executedOnce = new Set<string>();
   let disposed = false;
+  let runSequence = 0;
 
   return {
     rules: compiled.rules,
@@ -28,12 +29,17 @@ export function createTcaRuntime(config: CreateTcaRuntimeConfig): TcaRuntime {
 
       const rules = compiled.rulesByEventType.get(event.type) ?? [];
       for (const rule of rules) {
+        runSequence += 1;
+        const traceId = `tca-run-${runSequence}`;
         runRule(rule, {
           event,
           eventBus: config.eventBus,
           dataRegistry: config.dataRegistry,
           game: config.game,
-          rule: rule.rule
+          rule: rule.rule,
+          traceId,
+          correlationId: event.correlationId,
+          parentId: event.parentId
         });
       }
     },
@@ -120,11 +126,14 @@ function createTrace(
   ctx: TcaHandlerContext,
   status: TcaTraceEntry["status"],
   reason?: string
-): Omit<TcaTraceEntry, "id"> {
+): TcaTraceEntry {
   return {
+    id: ctx.traceId,
     ruleId: rule.rule.id,
     eventType: ctx.event.type,
     timestamp: ctx.event.timestamp,
+    ...(ctx.correlationId === undefined ? {} : { correlationId: ctx.correlationId }),
+    ...(ctx.parentId === undefined ? {} : { parentId: ctx.parentId }),
     status,
     ...(reason === undefined ? {} : { reason }),
     conditions: [],

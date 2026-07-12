@@ -67,6 +67,9 @@ export type TcaHandlerContext = {
   dataRegistry?: DataRegistry | undefined;
   game?: GameInstallContext | undefined;
   rule: TcaRule;
+  traceId: string;
+  correlationId?: string | undefined;
+  parentId?: string | undefined;
 };
 
 export type TcaCompiledRule = {
@@ -97,6 +100,8 @@ export type TcaTraceEntry = {
   ruleId: string;
   eventType: string;
   timestamp: number;
+  correlationId?: string | undefined;
+  parentId?: string | undefined;
   status: TcaTraceStatus;
   reason?: string | undefined;
   conditions: Array<{
@@ -115,8 +120,12 @@ export type TcaTraceSnapshot = {
   entries: TcaTraceEntry[];
 };
 
+export type TcaTraceInput = Omit<TcaTraceEntry, "id"> & {
+  id?: string | undefined;
+};
+
 export type TcaTraceStore = {
-  add(entry: Omit<TcaTraceEntry, "id">): TcaTraceEntry;
+  add(entry: TcaTraceInput): TcaTraceEntry;
   list(): TcaTraceEntry[];
   clear(): void;
   snapshot(): TcaTraceSnapshot;

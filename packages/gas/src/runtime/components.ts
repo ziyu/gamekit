@@ -27,7 +27,10 @@ export const GasAttributes = defineComponent<GasAttributesComponentState>({
 export const GasTags = defineComponent<GasTagsComponentState>({
   id: "gamekit.gas.tags",
   create: (data) => ({
-    values: [...(data?.values ?? [])]
+    values: [...(data?.values ?? [])],
+    sources: Object.fromEntries(
+      Object.entries(data?.sources ?? {}).map(([tag, sources]) => [tag, [...sources]])
+    )
   })
 });
 

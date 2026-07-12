@@ -167,7 +167,7 @@ Status: Verified on 2026-07-11; commit `0ab9c2a`.
 
 ### Wave 2: Gameplay Framework Readiness
 
-Status: Planned.
+Status: In progress since 2026-07-12.
 
 1. 为 GAS 增加 actor remove/cleanup、effect stack policy、correlation context 和稳定 runtime handle/bridge。
 2. 为 TCA trace 增加 correlation/parent context，确保派生 event 继承因果信息。
@@ -177,6 +177,18 @@ Status: Planned.
 6. 更新对应模块长期文档、tests 和 microbenchmarks；公共 API 变化需要独立 ADR 或扩展 ADR 0018 后续决策。
 
 完成标准：headless fixture 不依赖网络或 renderer，即可完成“ability request → Physics hit/query → GAS effect → TCA reaction → entity cleanup → save/restore continuation”的确定性链路，所有 runtime handle 和 trace buffer 可释放。
+
+已验证切片：
+
+- EventBus event envelope 支持 `correlationId` / `parentId`；TCA rule trace、内置派生 event 和 GAS TCA actions 继续传播因果链。
+- GAS 支持显式 `removeActor`、entity despawn stale mapping cleanup、stable actor id rebind 和 module-bound `GasHandle`。
+- Lifecycle effect 默认使用有界单栈刷新；显式 stacking 支持 limit、source match 和 reject/refresh/replace overflow policy。
+- GAS tag 记录 grant source，effect expire/replace 不会移除其他来源仍提供的同名 tag。
+- GAS ability/effect/attribute/tag/cue trace 与 EventBus fact 保留 correlation/parent；相关 runtime 已按 actor state、effect runtime、handle 和 operation context 拆分。
+- `@gamekit/event-bus` 4 tests、`@gamekit/tca` 8 tests、`@gamekit/gas` 12 tests、`@gamekit/app-host` 27 tests 和 Abyss Delve 17 tests 通过。
+- 全仓库 `test`、`build`、`lint`、`format` 和 `bench:world` 通过；10,000 entities / 5,000 moving entities 的本次结果为 spawn/add 11.68 ms、query/update 6.95 ms。
+
+剩余工作：TCA/GAS/Physics Save contributor、authority module/system order fixture，以及多模块 DevTools correlation source。
 
 ### Wave 3: App Skeleton And Content Pipeline
 

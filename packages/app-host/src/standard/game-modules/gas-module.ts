@@ -11,6 +11,7 @@ export function createStandardGasModule<TContext>(
     dataRegistry: options.dataRegistry?.(ctx) ?? requireDataRegistry(ctx),
     traceStore:
       options.traceStore === undefined ? undefined : resolveStandardValue(ctx, options.traceStore),
+    handle: options.handle === undefined ? undefined : resolveStandardValue(ctx, options.handle),
     onRuntime(runtime) {
       options.onRuntime?.(ctx, runtime);
     }

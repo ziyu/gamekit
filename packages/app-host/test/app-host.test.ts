@@ -12,7 +12,12 @@ import { createCameraController, screenToWorld } from "@gamekit/camera-core";
 import { createDataRegistry } from "@gamekit/data";
 import type { GameDriver } from "@gamekit/driver-core";
 import { createEventBus } from "@gamekit/event-bus";
-import { createGasDataTypes, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
+import {
+  createGasDataTypes,
+  createGasHandle,
+  createGasTraceStore,
+  type GasRuntime
+} from "@gamekit/gas";
 import { createGame } from "@gamekit/game-runtime";
 import { createInputRouter } from "@gamekit/input-core";
 import {
@@ -701,6 +706,7 @@ describe("configured app host", () => {
     const camera = createCameraController({ viewport: { width: 320, height: 180 } });
     const initialCameraX = camera.getState().x;
     const eventBus = createEventBus({ clock: () => 1 });
+    const gasHandle = createGasHandle({ id: "standard.gas" });
     const derived: string[] = [];
     let gasRuntime: GasRuntime | undefined;
     eventBus.on("test.derived", (event) => {
@@ -720,6 +726,7 @@ describe("configured app host", () => {
             tca: {},
             gas: {
               traceStore: createGasTraceStore(),
+              handle: gasHandle,
               onRuntime(_ctx, runtime) {
                 gasRuntime = runtime;
               }
@@ -754,11 +761,15 @@ describe("configured app host", () => {
     expect(derived).toEqual(["test.derived"]);
     expect(camera.getState().x).toBe(initialCameraX + 12);
     expect(gasRuntime).toBeDefined();
+    expect(gasHandle.isBound()).toBe(true);
     expect(configured.host.services.game?.modules.map((module) => module.id)).toEqual([
       "gamekit.tca",
       "gamekit.gas",
       "gamekit.camera"
     ]);
+
+    await configured.host.dispose();
+    expect(gasHandle.isBound()).toBe(false);
   });
 
   it("injects and disposes the standard physics game module", async () => {

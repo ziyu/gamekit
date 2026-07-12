@@ -160,6 +160,19 @@ export function createGasEffectDataType(): DataTypeDefinition<GasEffectDefinitio
         });
       }
 
+      if (
+        document.data.stacking !== undefined &&
+        (!Number.isInteger(document.data.stacking.limit) || document.data.stacking.limit <= 0)
+      ) {
+        diagnostics.push({
+          code: "gas.effect_invalid_stack_limit",
+          message: "Gas effect stack limit must be a positive integer",
+          severity: "error",
+          key: document,
+          path: "stacking.limit"
+        });
+      }
+
       return diagnostics;
     }
   };

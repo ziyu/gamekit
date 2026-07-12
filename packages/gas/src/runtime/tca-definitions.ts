@@ -48,31 +48,45 @@ export function createGasTcaDefinitions(
       {
         type: "gas.activate_ability",
         description: "Activates a GAS ability.",
-        execute(_ctx, action) {
-          requireRuntime(config).activateAbility(readAbilityActivation(action.args));
+        execute(ctx, action) {
+          requireRuntime(config).activateAbility({
+            ...readAbilityActivation(action.args),
+            ...correlationFromTca(ctx)
+          });
         }
       },
       {
         type: "gas.apply_effect",
         description: "Applies a GAS effect.",
-        execute(_ctx, action) {
-          requireRuntime(config).applyEffect(readEffectApplication(action.args));
+        execute(ctx, action) {
+          requireRuntime(config).applyEffect({
+            ...readEffectApplication(action.args),
+            ...correlationFromTca(ctx)
+          });
         }
       },
       {
         type: "gas.modify_attribute",
         description: "Modifies a GAS actor attribute.",
-        execute(_ctx, action) {
+        execute(ctx, action) {
           const actorId = readRequiredString(action.args, "actorId");
           const source = readString(action.args, "source") ?? "tca";
           requireRuntime(config).modifyAttribute(
             actorId,
             readAttributeModifier(action.args),
-            source
+            source,
+            correlationFromTca(ctx)
           );
         }
       }
     ]
+  };
+}
+
+function correlationFromTca(ctx: { correlationId?: string | undefined; traceId: string }) {
+  return {
+    ...(ctx.correlationId === undefined ? {} : { correlationId: ctx.correlationId }),
+    parentId: ctx.traceId
   };
 }
 

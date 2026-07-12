@@ -61,7 +61,9 @@ export type GasActorComponentState = {
 };
 ```
 
-`actorId` 可以等于 `entityId`，但不强制。业务模块负责在 entity despawn、save/load、场景切换时决定 actor 的移除、冻结或迁移策略。
+`actorId` 可以等于 `entityId`，但不强制。业务模块负责在 entity despawn、save/load、场景切换时决定 actor 的移除、冻结或迁移策略。`GasRuntime.removeActor(...)` 显式解除 actor 与 entity-backed components；runtime tick 还会清理已经从 World despawn 或失去完整 GAS component set 的 stale mapping。GameRuntime dispose 时必须释放 handle、mapping 和 module-owned components。
+
+需要由其他 GameModule 激活 ability、应用 effect 或查询 actor 时，组合层应创建 `GasHandle`，并同时传给标准 GAS module 与业务模块。Handle 不拥有 runtime，只允许一个 GAS module owner 绑定；未绑定、重复绑定或 dispose 后调用都产生稳定 `GameError`。GAS 不因此成为 App Host service。
 
 ## Data Definitions
 
@@ -107,6 +109,8 @@ Effect 支持：
 
 首层协议不绑定具体战斗类型。伤害、治疗、建筑增益、区域 aura、生产效率、剧情标记、天气影响都应能用同一套 Effect 模型表达。
 
+有 lifecycle 的 Effect 默认使用有界单栈并在重复应用时刷新最早实例。需要多栈时通过 `stacking.limit` 显式声明上限，并选择 `reject-newest`、`refresh-oldest` 或 `replace-oldest`；还可以选择按 effect 或同 source 匹配。Runtime 追踪 tag grant source，某个 effect 过期或被替换时只能移除自己贡献的 tag，不能误删 actor、装备或其他 effect 仍在提供的同名 tag。
+
 ## TCA 集成
 
 GAS 复用 TCA，不重新实现规则系统。GAS 自己提供 TCA definitions，例如：
@@ -150,6 +154,8 @@ GAS trace 需要能关联：
 
 Trace 是 GAS 的核心能力之一，因为数据驱动玩法如果不可解释，后续编辑器和 DevTools 会很难维护。
 
+Ability、Effect、Attribute、Tag 和 Cue 操作接受可选 correlation context。每个派生 trace 保留同一 `correlationId`，并把直接触发它的 GAS/TCA/network trace 记录为 `parentId`；派生 EventBus fact 使用相同 envelope metadata，不要求 gameplay payload 携带调试字段。
+
 ## 与 DataPack 的关系
 
 Actor、Attribute、Tag、Ability、Effect、Cue、Clue 都通过明确的 DataType 注册和校验，例如 `gas.actor`、`gas.ability`、`gas.effect`。DataPack 可以混合这些内置类型和游戏自定义类型，例如 `game.hero` 或 `game.monster`。
@@ -160,8 +166,8 @@ GAS 不要求游戏必须按 GAS 类型组织内容文件。真实项目可以�
 
 ### 模块集成
 
-- GAS module 集成负责从 DataRegistry 读取 definitions、创建 ECS-backed runtime、注册 effect tick system、合并 TCA definitions、写 trace，并在 GameRuntime dispose 时清理。
-- Actor 与 EntityId 的绑定、save/load entity mapping、spawn/despawn 策略由 game module 或 Save contributor 明确处理，不由 GAS core 猜测。
+- GAS module 集成负责从 DataRegistry 读取 definitions、创建 ECS-backed runtime、注册 effect tick system、合并 TCA definitions、写 trace，并在 GameRuntime dispose 时清理。多个业务模块需要 GAS 时共享同一个 module-bound `GasHandle`，不各自创建 runtime 或通过全局变量捕获内部实例。
+- Actor 与 EntityId 的绑定、save/load entity mapping、spawn/despawn 策略由 game module 或 Save contributor 明确处理；业务 despawn 优先显式 `removeActor`，runtime 的 stale mapping cleanup 只是生命周期安全网。
 - 测试应覆盖 cost/cooldown/tag requirement、effect stack/expire/periodic、attribute modifier、cue dispatch、entity binding、save/restore 边界和 TCA integration。
 
 ### 模块使用
@@ -170,6 +176,6 @@ GAS 不要求游戏必须按 GAS 类型组织内容文件。真实项目可以�
 - Actor 可以绑定 EntityId。热状态应尽量落在 World component 上，让系统查询和批量更新利用 ECS 性能；Data definitions 保留配置自由度。
 - `actorId` 不必须等于 `entityId`。需要 save/load、spawn/despawn、场景迁移时，使用稳定 actor id 和 entity mapping 明确恢复关系。
 - Ability 激活只做低频语义行为。持续移动、碰撞、寻路、渲染动画和 camera smoothing 不应被包装成每帧 ability。
-- Effect 的持续 tick 可以由 system 推进，必要时复用 TCA action；不要在 GAS core 里复制一套规则引擎。
+- Effect 的持续 tick 可以由 system 推进，必要时复用 TCA action；不要在 GAS core 里复制一套规则引擎。Duration/periodic effect 必须使用有界 stacking policy，不能让 active effect collection 随重复应用无界增长。
 - Cue/Presentation 只表达表现意图，不决定 gameplay 结果。GAS 不直接调用 Renderer、Audio、Camera、React 或 Phaser。
-- Trace 必须和 DataType、actor、ability、effect、cue、TCA rule 关联起来。数据驱动玩法不可解释时，编辑器和 DevTools 会失去维护能力。
+- Trace 必须和 DataType、actor、ability、effect、cue、TCA rule 关联起来。跨 Multiplayer、Physics、TCA、GAS 和 Cue 的操作传播 correlation/parent；数据驱动玩法不可解释时，编辑器和 DevTools 会失去维护能力。

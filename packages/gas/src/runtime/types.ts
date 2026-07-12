@@ -12,6 +12,11 @@ export type GasAbilityId = string;
 export type GasEffectId = string;
 export type GasCueId = string;
 
+export type GasOperationContext = {
+  correlationId?: string | undefined;
+  parentId?: string | undefined;
+};
+
 export type GasActorDefinition = {
   id: GasDefinitionId;
   name?: string | undefined;
@@ -61,8 +66,15 @@ export type GasEffectDefinition = {
   periodicModifiers?: GasAttributeModifier[] | undefined;
   grantedTags?: GasTagId[] | undefined;
   removedTags?: GasTagId[] | undefined;
+  stacking?: GasEffectStackingDefinition | undefined;
   cues?: GasCueId[] | undefined;
   tags?: string[] | undefined;
+};
+
+export type GasEffectStackingDefinition = {
+  limit: number;
+  overflow?: "reject-newest" | "refresh-oldest" | "replace-oldest" | undefined;
+  source?: "any" | "same-source" | undefined;
 };
 
 export type GasAttributeModifier = {
@@ -97,6 +109,7 @@ export type GasAttributesComponentState = {
 
 export type GasTagsComponentState = {
   values: GasTagId[];
+  sources?: Record<GasTagId, string[]> | undefined;
 };
 
 export type GasAbilitiesComponentState = {
@@ -114,6 +127,8 @@ export type GasActiveEffectState = {
   expiresAt?: number | undefined;
   nextTickAt?: number | undefined;
   grantedTags: GasTagId[];
+  correlationId?: string | undefined;
+  parentTraceId?: string | undefined;
 };
 
 export type GasEffectsComponentState = {
@@ -128,7 +143,7 @@ export type GasActorRuntimeState = {
   effects: GasEffectsComponentState;
 };
 
-export type GasActorCreation = {
+export type GasActorCreation = GasOperationContext & {
   actorId?: GasActorId | undefined;
   definitionId: GasDefinitionId;
   entityId?: EntityId | undefined;
@@ -137,7 +152,7 @@ export type GasActorCreation = {
   abilities?: GasAbilityId[] | undefined;
 };
 
-export type GasAbilityActivation = {
+export type GasAbilityActivation = GasOperationContext & {
   actorId: GasActorId;
   abilityId: GasAbilityId;
   targetActorId?: GasActorId | undefined;
@@ -151,7 +166,8 @@ export type GasAbilityActivationResult =
       targetActorId?: GasActorId | undefined;
       cooldownUntil?: number | undefined;
       paidCosts: GasAttributeCost[];
-      appliedEffects: GasEffectApplication[];
+      appliedEffects: GasEffectApplicationResult[];
+      correlationId?: string | undefined;
     }
   | {
       status: "rejected";
@@ -159,12 +175,20 @@ export type GasAbilityActivationResult =
       abilityId: GasAbilityId;
       targetActorId?: GasActorId | undefined;
       reason: string;
+      correlationId?: string | undefined;
     };
 
-export type GasEffectApplication = {
+export type GasEffectApplication = GasOperationContext & {
   effectId: GasEffectId;
   targetActorId: GasActorId;
   sourceActorId?: GasActorId | undefined;
+};
+
+export type GasEffectApplicationResult = GasEffectApplication & {
+  status: "applied" | "refreshed" | "replaced" | "rejected";
+  activeEffectId?: string | undefined;
+  replacedEffectId?: string | undefined;
+  reason?: string | undefined;
 };
 
 export type GasAttributeChange = {
@@ -173,6 +197,8 @@ export type GasAttributeChange = {
   previous: number;
   next: number;
   source?: string | undefined;
+  correlationId?: string | undefined;
+  parentId?: string | undefined;
 };
 
 export type GasCueEvent = {
@@ -181,15 +207,21 @@ export type GasCueEvent = {
   sourceActorId?: GasActorId | undefined;
   targetActorId?: GasActorId | undefined;
   payload?: Record<string, unknown> | undefined;
+  correlationId?: string | undefined;
+  parentId?: string | undefined;
 };
 
 export type GasTraceEntry = {
   id: string;
   type:
     | "actor.created"
+    | "actor.removed"
     | "ability.activated"
     | "ability.rejected"
     | "effect.applied"
+    | "effect.refreshed"
+    | "effect.replaced"
+    | "effect.rejected"
     | "effect.expired"
     | "attribute.changed"
     | "tag.added"
@@ -199,6 +231,8 @@ export type GasTraceEntry = {
   actorId?: GasActorId | undefined;
   abilityId?: GasAbilityId | undefined;
   effectId?: GasEffectId | undefined;
+  correlationId?: string | undefined;
+  parentId?: string | undefined;
   message?: string | undefined;
   details?: Record<string, unknown> | undefined;
 };
@@ -222,17 +256,45 @@ export type GasRuntimeSnapshot = {
 export type GasRuntime = {
   readonly traceStore: GasTraceStore;
   createActor(input: GasActorCreation): GasActorRuntimeState;
+  removeActor(actorId: GasActorId, context?: GasOperationContext): boolean;
   hasActor(actorId: GasActorId): boolean;
   getActor(actorId: GasActorId): GasActorRuntimeState;
   actorForEntity(entityId: EntityId): GasActorRuntimeState | undefined;
   activateAbility(input: GasAbilityActivation): GasAbilityActivationResult;
-  applyEffect(input: GasEffectApplication): void;
-  modifyAttribute(actorId: GasActorId, modifier: GasAttributeModifier, source?: string): void;
-  addTag(actorId: GasActorId, tag: GasTagId, source?: string): void;
-  removeTag(actorId: GasActorId, tag: GasTagId, source?: string): void;
+  applyEffect(input: GasEffectApplication): GasEffectApplicationResult;
+  modifyAttribute(
+    actorId: GasActorId,
+    modifier: GasAttributeModifier,
+    source?: string,
+    context?: GasOperationContext
+  ): void;
+  addTag(actorId: GasActorId, tag: GasTagId, source?: string, context?: GasOperationContext): void;
+  removeTag(
+    actorId: GasActorId,
+    tag: GasTagId,
+    source?: string,
+    context?: GasOperationContext
+  ): void;
   update(delta: number, elapsed: number): void;
   snapshot(): GasRuntimeSnapshot;
   dispose(): void;
+};
+
+export type GasHandle = Pick<
+  GasRuntime,
+  | "createActor"
+  | "removeActor"
+  | "hasActor"
+  | "getActor"
+  | "actorForEntity"
+  | "activateAbility"
+  | "applyEffect"
+  | "modifyAttribute"
+  | "addTag"
+  | "removeTag"
+  | "snapshot"
+> & {
+  isBound(): boolean;
 };
 
 export type CreateGasRuntimeConfig = {
@@ -247,11 +309,12 @@ export type CreateGasModuleConfig = {
   dataRegistry: DataRegistry;
   eventBus?: EventBus | undefined;
   traceStore?: GasTraceStore | undefined;
+  handle?: GasHandle | undefined;
   onRuntime?: ((runtime: GasRuntime) => void) | undefined;
 };
 
 export type CreateGasTcaDefinitionsConfig = {
-  runtime: () => GasRuntime | undefined;
+  runtime: () => GasRuntime | GasHandle | undefined;
 };
 
 export type GasTcaDefinitionSet = TcaDefinitionSet;
