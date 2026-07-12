@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createDataRegistry } from "@gamekit/data";
-import { createAssetDataType, createAssetManager, type AssetDefinition } from "../src";
+import {
+  createAssetDataType,
+  createAssetManager,
+  loadAssetGroupWithRetry,
+  type AssetDefinition
+} from "../src";
 
 describe("createAssetManager", () => {
   it("registers assets and loads a single asset", async () => {
@@ -103,6 +108,92 @@ describe("createAssetManager", () => {
       status: "failed",
       error: "boom"
     });
+  });
+
+  it("retries failed group members without reloading successful assets", async () => {
+    const attempts = new Map<string, number>();
+    const observedAttempts: number[] = [];
+    const manager = createAssetManager({
+      adapter: {
+        id: "test",
+        supports: () => true,
+        async load(nextAsset) {
+          const attempt = (attempts.get(nextAsset.id) ?? 0) + 1;
+          attempts.set(nextAsset.id, attempt);
+          if (nextAsset.id === "asset.flaky" && attempt < 2) {
+            throw new Error("transient");
+          }
+        }
+      }
+    });
+    manager.registerMany([
+      asset("asset.stable", { group: "match" }),
+      asset("asset.flaky", { group: "match" })
+    ]);
+
+    const result = await loadAssetGroupWithRetry(manager, "match", {
+      maxAttempts: 3,
+      onAttempt(attempt) {
+        observedAttempts.push(attempt.attempt);
+      }
+    });
+
+    expect(result).toMatchObject({ group: "match", attempt: 2, succeeded: true });
+    expect(result.states.every((state) => state.status === "loaded")).toBe(true);
+    expect(attempts).toEqual(
+      new Map([
+        ["asset.stable", 1],
+        ["asset.flaky", 2]
+      ])
+    );
+    expect(observedAttempts).toEqual([1, 2]);
+  });
+
+  it("reports a missing group without retrying an empty plan", async () => {
+    const diagnostics: string[] = [];
+    const manager = createAssetManager({
+      adapter: {
+        id: "test",
+        supports: () => true,
+        async load() {}
+      },
+      onDiagnostic(event) {
+        diagnostics.push(event.type);
+      }
+    });
+
+    const result = await loadAssetGroupWithRetry(manager, "missing", { maxAttempts: 3 });
+
+    expect(result).toEqual({
+      group: "missing",
+      attempt: 1,
+      states: [],
+      succeeded: false
+    });
+    expect(diagnostics).toEqual(["asset.group_missing"]);
+  });
+
+  it("isolates retry progress observer failures from loading", async () => {
+    const manager = createAssetManager({
+      adapter: {
+        id: "test",
+        supports: () => true,
+        async load() {}
+      }
+    });
+    manager.register(asset("asset.safe", { group: "safe" }));
+
+    const result = await loadAssetGroupWithRetry(manager, "safe", {
+      onAttempt() {
+        throw new Error("observer failed");
+      },
+      onAttemptError() {
+        throw new Error("error observer failed");
+      }
+    });
+
+    expect(result.succeeded).toBe(true);
+    expect(manager.state("asset.safe").status).toBe("loaded");
   });
 });
 

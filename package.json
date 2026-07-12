@@ -40,6 +40,8 @@
     "bench:checkpoint:check": "tsx scripts/checkpoint-benchmark.ts --check",
     "bench:diagnostics": "tsx scripts/diagnostics-benchmark.ts",
     "bench:diagnostics:check": "tsx scripts/diagnostics-benchmark.ts --check",
+    "bench:outpost:content": "tsx scripts/outpost-content-benchmark.ts",
+    "bench:outpost:content:check": "tsx scripts/outpost-content-benchmark.ts --check",
     "changeset": "changeset",
     "changeset:auto": "node scripts/create-auto-changeset.mjs",
     "release:publish": "node scripts/release-gamekits.mjs",

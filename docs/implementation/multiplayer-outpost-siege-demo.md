@@ -208,7 +208,7 @@ Wave 2 已关闭。下一步进入 Wave 3，创建 Outpost Siege app skeleton、
 
 ### Wave 3: App Skeleton And Content Pipeline
 
-Status: Planned.
+Status: Active.
 
 1. 创建 `apps/multiplayer-outpost-siege-demo`，拆分 `domain`、`content`、`gameplay`、`server`、`realtime`、`presentation`、`ui`、`profiles` 和 `test`。
 2. 定义 app-owned player/enemy/weapon/buildable/wave/objective DataType 和引用校验。
@@ -218,6 +218,17 @@ Status: Planned.
 6. 创建共享 app definition，以及 Browser Web、headless server、deterministic test 和 Tauri smoke profiles。
 
 完成标准：所有内容通过 Data/Asset pipeline 启动；缺失引用、重复定义、资源加载失败能定位 source/path；headless server 不加载视觉 payload；没有 gameplay 常量表或直接 URL 旁路。
+
+当前已完成首个内容与身份切片：
+
+- 创建独立 app package 及 `domain`、`content`、`gameplay`、`server`、`realtime`、`presentation`、`ui`、`profiles`、`test` 边界；共享 app definition 固定完整 service graph。
+- App-owned player、enemy、weapon、buildable、wave、objective 和 render object DataType 已接入同一 DataRegistry；首批 51 个 Asset/GAS/TCA/Physics/Render/Outpost document 形成 50 条显式引用，没有 gameplay URL 旁路。
+- boot、match、combat、boss group 与 Browser Web、headless server、deterministic test、Tauri smoke 的加载策略已定义；headless 不产生视觉加载，boss 保持 lazy。
+- `@gamekit/asset` 增加通用有界 group retry 和 missing-group diagnostic；成功 member 不重复加载，Outpost 只负责选择 group。
+- App-owned identity registry 已建立 gameplay object、EntityId、actor、physics body/collider、network generation 和 RenderObjectId 的双向索引，并拒绝产生半注册状态的 identity 冲突。
+- `bench:outpost:content:check` 建立 6 项粗粒度预算；500 次 content boot 代表结果约 0.12 ms/次，25,000 identity 注册约 2.86 µs/个，三类零分配反向查询约 0.33 µs/次，预算全部通过。
+- 包级测试覆盖引用 source/path、duplicate、headless 资源隔离、lazy retry/failure diagnostic、profile policy 和 identity cleanup。Browser/Tauri 的真实 AppProfile factory、Phaser Driver boot 与可视入口仍属于本 Wave 后续切片。
+- 当前切片的全仓库 71 个 test task、40 个 build task、lint、format 与 `bench:world` 均通过；Outpost 9 tests、Asset 8 tests 和内容/身份 6/6 performance budgets 通过。
 
 ### Wave 4: Room-owned Multiplayer Vertical Slice
 

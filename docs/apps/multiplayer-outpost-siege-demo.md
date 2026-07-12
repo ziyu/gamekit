@@ -269,6 +269,7 @@ Explicit leave、disconnect、reconnect、page refresh、new join、checkpoint r
 - Server authority tick 中 ingress、AI、Physics、combat、TCA/GAS、lifecycle、replication 和 Schema commit。
 - Browser input/prediction/presentation、render sync、UI refresh 和 DevTools overhead。
 - Data registration、Asset preload、Save capture/restore 和 App Host lifecycle waterfall。
+- Stable identity registry 的注册、反向查询、entity churn 和 retained size；查询必须使用索引而不是扫描全部 entity mapping。
 - 单房、多房、reconnect churn、entity churn 和 60-minute soak 的 heap、GC、event-loop lag 与资源释放。
 
 所有性能预算来自可复现基线。常规 PR 只保留确定性正确性门禁；粗粒度 budget、浏览器负载和 soak 进入手动或定时 workflow。

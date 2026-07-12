@@ -125,6 +125,10 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
     },
     async loadGroup(group) {
       const targets = [...assets.values()].filter((asset) => asset.group === group);
+      if (targets.length === 0) {
+        emit("asset.group_missing", undefined, { group });
+        return [];
+      }
       return Promise.all(targets.map((asset) => this.load(asset.id)));
     }
   };

@@ -208,6 +208,8 @@ Renderer adapter 可以持有底层资源句柄，但这些句柄不进入 gamep
 - App Host/profile 负责按 Data → AssetManager → adapter preload 的顺序集成资源系统；AssetManager 不自己读取 DataPack 或猜测 gameplay document。
 - Phaser、Three 等资源加载必须通过 Driver 暴露的 asset loader adapter，共享同一个外部 runtime cache；不要为 Asset 单独创建另一套 Phaser/Three runtime。
 - Preload group 应面向启动体验和场景切换，不应把所有资源一次性塞进首屏加载。大资源、可选包和编辑器预览应支持 lazy/retry/unload。
+- 有界 group retry 使用 `loadAssetGroupWithRetry(...)`；已成功资源由 AssetManager cache 跳过，只重试 failed member。调用方必须显式设置最大尝试次数并通过 attempt hook 接入进度或诊断，不能在 app 内实现无界重试循环；attempt observer 及其 error reporter 的异常不能改变资源加载结果。
+- 空 group 返回失败结果并产生 `asset.group_missing` diagnostic，不把“没有任何加载目标”当成成功，也不重复空重试。
 
 ### 模块使用
 

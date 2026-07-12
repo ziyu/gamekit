@@ -171,6 +171,37 @@ importers:
         specifier: ^3.1.3
         version: 3.2.4(@types/node@22.19.18)(tsx@4.21.0)
 
+  apps/multiplayer-outpost-siege-demo:
+    dependencies:
+      '@gamekit/app-host':
+        specifier: workspace:*
+        version: link:../../packages/app-host
+      '@gamekit/asset':
+        specifier: workspace:*
+        version: link:../../packages/asset
+      '@gamekit/data':
+        specifier: workspace:*
+        version: link:../../packages/data
+      '@gamekit/gas':
+        specifier: workspace:*
+        version: link:../../packages/gas
+      '@gamekit/physics-core':
+        specifier: workspace:*
+        version: link:../../packages/physics-core
+      '@gamekit/renderer-core':
+        specifier: workspace:*
+        version: link:../../packages/renderer-core
+      '@gamekit/tca':
+        specifier: workspace:*
+        version: link:../../packages/tca
+      '@gamekit/world':
+        specifier: workspace:*
+        version: link:../../packages/world
+    devDependencies:
+      vitest:
+        specifier: ^3.1.3
+        version: 3.2.4(@types/node@22.19.18)(tsx@4.21.0)
+
   apps/physics-2d-lab:
     dependencies:
       '@gamekit/event-bus':
