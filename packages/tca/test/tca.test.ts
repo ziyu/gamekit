@@ -38,6 +38,35 @@ describe("TCA data type", () => {
   });
 });
 
+describe("TCA trace store", () => {
+  it("isolates observer failures from gameplay writes", () => {
+    const observerError = new Error("observer failed");
+    const errors: unknown[] = [];
+    const traceStore = createTcaTraceStore({
+      onEntry() {
+        throw observerError;
+      },
+      onEntryError(error) {
+        errors.push(error);
+        throw new Error("error observer failed");
+      }
+    });
+
+    expect(() =>
+      traceStore.add({
+        ruleId: "rule.safe",
+        eventType: "gameplay.event",
+        timestamp: 1,
+        status: "passed",
+        conditions: [],
+        actions: []
+      })
+    ).not.toThrow();
+    expect(traceStore.list()).toHaveLength(1);
+    expect(errors).toEqual([observerError]);
+  });
+});
+
 describe("TCA runtime", () => {
   it("indexes rules by event type and runs them by priority", () => {
     const eventBus = createEventBus({ clock: () => 1 });

@@ -158,7 +158,7 @@ Trace 是 GAS 的核心能力之一，因为数据驱动玩法如果不可解释
 
 Ability、Effect、Attribute、Tag 和 Cue 操作接受可选 correlation context。每个派生 trace 保留同一 `correlationId`，并把直接触发它的 GAS/TCA/network trace 记录为 `parentId`；派生 EventBus fact 使用相同 envelope metadata，不要求 gameplay payload 携带调试字段。
 
-Trace store 可配置轻量 entry hook，由 App Host 组合层把已物化 trace 增量映射到统一 DevTools correlation source。GAS runtime 不直接依赖 DevTools，也不为 UI 每帧复制 actor 或完整 trace snapshot。
+Trace store 可配置轻量 entry hook，由 App Host 组合层把已物化 trace 增量映射到统一 DevTools correlation source。Hook 和 error reporter 的异常会被 store 隔离，不能让 ability/effect/attribute 操作失败。GAS runtime 不直接依赖 DevTools，也不为 UI 每帧复制 actor 或完整 trace snapshot；通用 DevTools 映射默认不透传任意 `details`。
 
 ## Save 边界
 

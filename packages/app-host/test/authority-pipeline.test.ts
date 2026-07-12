@@ -67,7 +67,9 @@ describe("headless authority module pipeline", () => {
       gasTraceLimit: 8,
       physicsTraceLimit: 8
     });
-    const unregisterCorrelation = devtools.registerDataSource(correlation.source.dataSource);
+    expect(devtools.snapshot().dataSources.map((source) => source.id)).toContain(
+      "gameplay-correlation"
+    );
     const eventBus = createEventBus({ clock: () => now++ });
     const updates: string[] = [];
     const disposals: string[] = [];
@@ -251,10 +253,78 @@ describe("headless authority module pipeline", () => {
     expect(tcaHandle.isBound()).toBe(false);
     expect(disposals).toEqual(["replication", "checkpoint", "combat", "movement", "participants"]);
 
-    unregisterCorrelation();
-    correlation.source.dispose();
+    correlation.dispose();
+    correlation.dispose();
+    expect(devtools.snapshot().dataSources.map((source) => source.id)).not.toContain(
+      "gameplay-correlation"
+    );
     devtools.dispose();
     clientMultiplayer.dispose();
+  });
+
+  it("bounds default payloads, supports explicit redaction, and isolates bridge failures", () => {
+    let now = 0;
+    const devtools = createDevToolsRuntime({ clock: () => now++ });
+    const defaults = createGameplayDevToolsCorrelation({ devtools, id: "defaults" });
+
+    defaults.gasTraceStore.add({
+      type: "ability.activated",
+      timestamp: 1,
+      actorId: "actor.one",
+      details: { secret: "must-not-leak" }
+    });
+    defaults.physicsTraceStore.push({
+      kind: "query",
+      label: "query.safe",
+      payload: { secret: "must-not-leak" }
+    });
+
+    expect(devtools.snapshot().traces.map((trace) => trace.payload)).toEqual([
+      { type: "ability.activated", timestamp: 1 },
+      { kind: "query" }
+    ]);
+    defaults.dispose();
+
+    const customized = createGameplayDevToolsCorrelation({
+      devtools,
+      id: "customized",
+      summaries: {
+        gas(entry) {
+          return { actorId: entry.actorId, secret: entry.details?.secret };
+        },
+        physics() {
+          throw new Error("custom summary failed");
+        },
+        redact(payload, context) {
+          if (context.kind !== "gas") {
+            return payload;
+          }
+          return { actorId: (payload as { actorId?: string }).actorId };
+        }
+      }
+    });
+
+    customized.gasTraceStore.add({
+      type: "actor.created",
+      timestamp: 2,
+      actorId: "actor.two",
+      details: { secret: "explicitly-redacted" }
+    });
+    expect(() =>
+      customized.physicsTraceStore.push({ kind: "step", label: "physics.step" })
+    ).not.toThrow();
+
+    const snapshot = devtools.snapshot();
+    expect(snapshot.traces.at(-1)?.payload).toEqual({ actorId: "actor.two" });
+    expect(snapshot.diagnostics.at(-1)).toMatchObject({
+      code: "devtools.gameplay_trace_bridge_failed",
+      severity: "warning",
+      relatedTraceId: "physics-trace-1",
+      dataSourceId: "customized",
+      payload: { kind: "physics" }
+    });
+    customized.dispose();
+    devtools.dispose();
   });
 });
 

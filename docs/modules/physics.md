@@ -543,7 +543,7 @@ Physics 必须从一开始提供可解释入口：
 
 DevTools Core 不接收 backend native handle。Backend-specific DevTools plugin 可以显式依赖 adapter 包读取更深的 native summary，但必须保持可选。
 
-Physics trace store 可以配置轻量 entry hook，由 App Host 或 app-specific composition 映射到 DevTools correlation source。Physics entry 只传播调用方明确提供的 `correlationId` / `parentId`；core 不根据 entity、contact 时间或 collider id 推断 combat 因果。
+Physics trace store 可以配置轻量 entry hook，由 App Host 或 app-specific composition 映射到 DevTools correlation source。Hook 和 error reporter 的异常会被 store 隔离，不能中断 step、contact 或 query 结果。Physics entry 只传播调用方明确提供的 `correlationId` / `parentId`；core 不根据 entity、contact 时间或 collider id 推断 combat 因果，通用 DevTools 映射也不默认透传任意 `payload`。
 
 ## Determinism
 

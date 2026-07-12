@@ -5,6 +5,7 @@ export type DiagnosticsBenchmarkResult = {
   millisecondsPerRuntimeSnapshot: number;
   retainedTraces: number;
   retainedCorrelations: number;
+  retainedDomainTraces: number;
 };
 
 export type DiagnosticsBenchmarkFailure = {
@@ -20,7 +21,8 @@ const BUDGETS: Array<{
   { metric: "microsecondsPerTrace", maximum: 10 },
   { metric: "millisecondsPerRuntimeSnapshot", maximum: 2 },
   { metric: "retainedTraces", maximum: 512 },
-  { metric: "retainedCorrelations", maximum: 64 }
+  { metric: "retainedCorrelations", maximum: 64 },
+  { metric: "retainedDomainTraces", maximum: 192 }
 ];
 
 export function checkDiagnosticsBudgets(

@@ -108,7 +108,7 @@ DevToolsRuntime 应支持：
 
 DevToolsRuntime 不应该在 `snapshot()` 中做昂贵全量计算。复杂关联和索引应在 trace 进入时增量维护，或在 UI 明确请求详情时懒加载。
 
-`createDevToolsCorrelationSource(...)` 是跨模块显式关联的标准增量入口。它把 trace 写入 DevToolsRuntime 的 ring buffer，并维护独立有界的 recent correlation summary；每条 summary 只保存计数、kind 分布、首末时间、最后 trace 和少量 root id，不复制完整 payload。`dispose()` 后 source 忽略后续写入，组合层仍需注销对应 DataSource。
+`createDevToolsCorrelationSource(...)` 是跨模块显式关联的标准增量入口。它把 trace 写入 DevToolsRuntime 的 ring buffer，并维护独立有界的 recent correlation summary；每条 summary 只保存计数、kind 分布、首末时间、最后 trace 和少量 root id，不复制完整 payload。直接使用该底层 source 时，组合层在 `dispose()` 前仍需注销对应 DataSource；使用 App Host 的 gameplay correlation helper 时，registration 与 source 由返回对象的单一 `dispose()` 统一管理。
 
 ## 快速集成
 
@@ -529,7 +529,7 @@ input.action
 
 Correlation 优先使用显式 `correlationId`。没有显式 id 时，可以按时间窗口、actorId、entityId、event id、rule id、ability id 做弱关联，但 UI 必须标记为 inferred，不能把推断当成确定因果。
 
-TCA、GAS、Physics 等 domain trace store 可以通过可选 entry hook 接入 correlation source；通用映射位于 App Host 组合层，domain package 不直接依赖 DevTools。Multiplayer message 派生的低频 EventBus fact 应继承 message correlation，并以 message id 作为 parent。Physics 只携带 app 明确提供的 correlation，不自行推断 ability/damage 关系。
+TCA、GAS、Physics 等 domain trace store 可以通过可选 entry hook 接入 correlation source；通用映射位于 App Host 组合层，domain package 不直接依赖 DevTools。通用映射默认只暴露白名单摘要，任意 details/payload 必须由应用显式 summarize 并按需 redact；映射失败只能产生 diagnostic，不能反向中断 domain runtime。Multiplayer message 派生的低频 EventBus fact 应继承 message correlation，并以 message id 作为 parent。Physics 只携带 app 明确提供的 correlation，不自行推断 ability/damage 关系。
 
 ## Performance Profiler
 
@@ -841,6 +841,7 @@ DevTools diagnostic 至少包含：
 - 标准浏览器应用若安装并挂载 `@gamekit/devtools-ui`，`devtools: true` 应自动出现 DevTools launcher 并能打开 shell。
 - 只有业务专属状态需要通过 app profile 追加自定义 data source、panel definitions 和 debug commands。
 - 各模块通过稳定 snapshot、trace store 或 diagnostics 接入 DevTools，不把私有 runtime、native handle 或第三方库对象交给 DevTools Core。
+- 使用 App Host gameplay correlation helper 时只释放 helper，不重复注册或分别释放其 DataSource/source；自定义 summary 必须小、可序列化，并通过 redaction policy 删除 secret、token 和完整业务 payload。
 - Performance profiler 通过 App Host/test harness 或 runtime wrapper 接入，不能改变 system 执行顺序、错误传播或 gameplay 结果。
 - 普通游戏优先使用标准 profiler preset；只有业务热点需要自定义 span 或 budget。
 - DevTools UI 通过 `@gamekit/devtools-ui` mount，focus 必须进入 `devtools` 或 `ui` input scope。
@@ -851,6 +852,7 @@ DevTools diagnostic 至少包含：
 
 - 游戏和工具日常通过 DevToolsRuntime snapshot、trace timeline、inspector detail 和 debug command 观察系统，不直接读取模块私有字段。
 - Trace entry 只记录小而可解释的事实，完整详情通过 data source 查询。
+- Trace observer、summary mapper、redactor 和 diagnostic reporter 的失败都不能改变正式玩法结果；测试必须覆盖 observer 自身与错误回调同时抛错的路径。
 - Debug command 必须显式、可审计、可诊断；不要把正式 gameplay 逻辑依赖 debug command。
 - DevTools 打开与关闭不应改变正式玩法结果。需要 pause、step、spawn、修改属性时，应作为明确 debug/editor command 执行。
 - 面板状态，例如 filter、selected trace、pinned entity、paused live update，是 UI state，不进入 GameRuntime 或普通 Save payload。

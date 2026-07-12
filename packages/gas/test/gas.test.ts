@@ -67,6 +67,32 @@ describe("GAS data types", () => {
   });
 });
 
+describe("GAS trace store", () => {
+  it("isolates observer failures from gameplay writes", () => {
+    const observerError = new Error("observer failed");
+    const errors: unknown[] = [];
+    const traceStore = createGasTraceStore({
+      onEntry() {
+        throw observerError;
+      },
+      onEntryError(error) {
+        errors.push(error);
+        throw new Error("error observer failed");
+      }
+    });
+
+    expect(() =>
+      traceStore.add({
+        type: "actor.created",
+        timestamp: 1,
+        actorId: "actor.safe"
+      })
+    ).not.toThrow();
+    expect(traceStore.list()).toHaveLength(1);
+    expect(errors).toEqual([observerError]);
+  });
+});
+
 describe("GAS runtime", () => {
   it("stores entity-backed actor state in world components", () => {
     const world = createMemoryWorld();

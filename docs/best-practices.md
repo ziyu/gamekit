@@ -211,6 +211,7 @@
 - DevTools Performance 面板只展示 GameKit 级 frame/system/service/adapter 归因，不替代浏览器 profiler；需要 CPU flamegraph、layout、paint、GPU 信息时仍使用浏览器或引擎原生工具。
 - 默认只开启低成本 summary；深度 span、单帧详情、完整 payload 展开必须由用户显式开启或在测试夹具中启用。
 - Trace ring、domain trace store、correlation summary 和每条 correlation 的 detail/root collection 必须分别有界，并用 benchmark 同时验证吞吐、snapshot 和 retained size。
+- Trace observer、跨模块 mapper、redactor 和 diagnostic reporter 属于旁路诊断，任何一层失败都不能改变 gameplay 结果；默认 trace payload 使用白名单摘要，完整业务 payload 和敏感字段只有在显式 opt-in、脱敏且单独预算后才能进入工具链。
 - 每个热点模块都应定义自己的预算语义，例如 runtime tick、render sync、asset load group、service boot、UI refresh；预算超限只产生诊断，不改变 gameplay。
 - profiler disabled 时，高频路径不能留下明显对象分配、数组复制或 React state 更新。
 - Performance UI 刷新必须节流，不能跟随 gameplay tick 每帧重渲染。

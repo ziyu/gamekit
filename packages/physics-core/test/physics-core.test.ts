@@ -258,6 +258,26 @@ describe("Memory physics backend", () => {
   });
 });
 
+describe("Physics trace store", () => {
+  it("isolates observer failures from gameplay writes", () => {
+    const observerError = new Error("observer failed");
+    const errors: unknown[] = [];
+    const traceStore = createPhysicsTraceStore({
+      onEntry() {
+        throw observerError;
+      },
+      onEntryError(error) {
+        errors.push(error);
+        throw new Error("error observer failed");
+      }
+    });
+
+    expect(() => traceStore.push({ kind: "step", label: "safe" })).not.toThrow();
+    expect(traceStore.list()).toHaveLength(1);
+    expect(errors).toEqual([observerError]);
+  });
+});
+
 describe("Physics module", () => {
   it("syncs world components, emits contact events, and writes trace entries", () => {
     const world = createMemoryWorld();

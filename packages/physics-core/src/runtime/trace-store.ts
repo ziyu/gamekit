@@ -3,6 +3,7 @@ import type { PhysicsTraceEntry, PhysicsTraceStore } from "./types";
 export type CreatePhysicsTraceStoreOptions = {
   limit?: number;
   onEntry?(entry: PhysicsTraceEntry): void;
+  onEntryError?(error: unknown, entry: PhysicsTraceEntry): void;
 };
 
 export function createPhysicsTraceStore(
@@ -23,7 +24,7 @@ export function createPhysicsTraceStore(
       if (entries.length > limit) {
         entries.splice(0, entries.length - limit);
       }
-      options.onEntry?.(materialized);
+      notifyEntry(options, materialized);
 
       return materialized;
     },
@@ -34,4 +35,19 @@ export function createPhysicsTraceStore(
       entries.length = 0;
     }
   };
+}
+
+function notifyEntry(options: CreatePhysicsTraceStoreOptions, entry: PhysicsTraceEntry): void {
+  if (!options.onEntry) {
+    return;
+  }
+  try {
+    options.onEntry(entry);
+  } catch (error) {
+    try {
+      options.onEntryError?.(error, entry);
+    } catch {
+      // Trace observers are diagnostic-only and must never interrupt gameplay.
+    }
+  }
 }

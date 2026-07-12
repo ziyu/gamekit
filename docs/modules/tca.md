@@ -213,7 +213,7 @@ TCA trace 必须回答：
 
 Trace entry 保留触发事件的 correlation 和 parent；内置 `event.emit` action 会把派生 fact 的 parent 指向当前 TCA trace。这样 DevTools 可以确定性连接 trigger、condition、action 和后续 GAS/World/Cue，而不依赖时间窗口猜测。
 
-Trace store 可配置轻量 entry hook，让 App Host 组合层把已物化 entry 增量写入 DevTools correlation source。TCA core 不依赖 DevTools，也不在每次 DevTools snapshot 时重新扫描或复制完整 trace history。
+Trace store 可配置轻量 entry hook，让 App Host 组合层把已物化 entry 增量写入 DevTools correlation source。Hook 和 error reporter 的异常会被 store 隔离，不能改变 rule execution 的状态或异常路径。TCA core 不依赖 DevTools，也不在每次 DevTools snapshot 时重新扫描或复制完整 trace history。
 
 ## 与 EventBus 的关系
 

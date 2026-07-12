@@ -1,9 +1,6 @@
 import { performance } from "node:perf_hooks";
-import {
-  createDevToolsCorrelationSource,
-  createDevToolsRuntime,
-  type DevToolsTraceKind
-} from "../packages/devtools/src";
+import { createGameplayDevToolsCorrelation } from "../packages/app-host/src";
+import { createDevToolsRuntime } from "../packages/devtools/src";
 import {
   checkDiagnosticsBudgets,
   diagnosticsBudgetCount,
@@ -14,22 +11,25 @@ const TRACE_COUNT = 50_000;
 const SNAPSHOT_COUNT = 500;
 const TRACE_LIMIT = 512;
 const CORRELATION_LIMIT = 64;
-const KINDS: DevToolsTraceKind[] = ["multiplayer", "physics", "gas", "tca", "world"];
+const DOMAIN_TRACE_LIMIT = 64;
 
 function main(): void {
   let now = 0;
   const runtime = createDevToolsRuntime({ traceLimit: TRACE_LIMIT, clock: () => now++ });
-  const correlation = createDevToolsCorrelationSource(runtime, {
+  const correlation = createGameplayDevToolsCorrelation({
+    devtools: runtime,
     correlationLimit: CORRELATION_LIMIT,
-    rootLimitPerCorrelation: 4
+    rootLimitPerCorrelation: 4,
+    tcaTraceLimit: DOMAIN_TRACE_LIMIT,
+    gasTraceLimit: DOMAIN_TRACE_LIMIT,
+    physicsTraceLimit: DOMAIN_TRACE_LIMIT
   });
-  runtime.registerDataSource(correlation.dataSource);
 
   for (let index = 0; index < 1_000; index += 1) {
     pushTrace(correlation, index);
   }
   runtime.clear({ traces: true });
-  correlation.clear();
+  correlation.source.clear();
 
   const ingestStartedAt = performance.now();
   for (let index = 0; index < TRACE_COUNT; index += 1) {
@@ -44,7 +44,7 @@ function main(): void {
     checksum += snapshot.traces.length + (snapshot.sourceSnapshots?.length ?? 0);
   }
   const snapshotMs = performance.now() - snapshotStartedAt;
-  const sourceSnapshot = correlation.snapshot();
+  const sourceSnapshot = correlation.source.snapshot();
   const runtimeSnapshot = runtime.snapshot();
   const result: DiagnosticsBenchmarkResult = {
     traces: TRACE_COUNT,
@@ -52,7 +52,11 @@ function main(): void {
     microsecondsPerTrace: round((ingestMs * 1_000) / TRACE_COUNT),
     millisecondsPerRuntimeSnapshot: round(snapshotMs / SNAPSHOT_COUNT),
     retainedTraces: runtimeSnapshot.traces.length,
-    retainedCorrelations: sourceSnapshot.retainedCorrelationCount
+    retainedCorrelations: sourceSnapshot.retainedCorrelationCount,
+    retainedDomainTraces:
+      correlation.tcaTraceStore.list().length +
+      correlation.gasTraceStore.list().length +
+      correlation.physicsTraceStore.list().length
   };
   const checkEnabled = process.argv.includes("--check");
   const failures = checkEnabled ? checkDiagnosticsBudgets(result) : [];
@@ -60,11 +64,18 @@ function main(): void {
   console.log(
     JSON.stringify(
       {
-        benchmark: "devtools-correlation",
-        packages: ["@gamekit/devtools"],
+        benchmark: "gameplay-trace-bridge",
+        packages: [
+          "@gamekit/app-host",
+          "@gamekit/devtools",
+          "@gamekit/tca",
+          "@gamekit/gas",
+          "@gamekit/physics-core"
+        ],
         profile: {
           traceLimit: TRACE_LIMIT,
           correlationLimit: CORRELATION_LIMIT,
+          domainTraceLimit: DOMAIN_TRACE_LIMIT,
           checksum
         },
         result,
@@ -85,22 +96,45 @@ function main(): void {
   if (failures.length > 0) {
     process.exitCode = 1;
   }
+  correlation.dispose();
 }
 
 function pushTrace(
-  correlation: ReturnType<typeof createDevToolsCorrelationSource>,
+  correlation: ReturnType<typeof createGameplayDevToolsCorrelation>,
   index: number
 ): void {
   const chainIndex = index % 256;
   const correlationId = `combat-${chainIndex}`;
-  const step = index % KINDS.length;
-  correlation.push({
-    id: `trace-${index}`,
-    kind: KINDS[step] ?? "custom",
-    label: `benchmark.step.${step}`,
-    source: "benchmark",
+  const step = index % 3;
+  if (step === 0) {
+    correlation.physicsTraceStore.push({
+      kind: "step",
+      label: "physics.step",
+      tick: index,
+      correlationId
+    });
+    return;
+  }
+  if (step === 1) {
+    correlation.gasTraceStore.add({
+      type: "ability.activated",
+      timestamp: index,
+      actorId: "benchmark.actor",
+      abilityId: "benchmark.ability",
+      correlationId,
+      parentId: `physics-trace-${index}`
+    });
+    return;
+  }
+  correlation.tcaTraceStore.add({
+    ruleId: "benchmark.rule",
+    eventType: "benchmark.event",
+    timestamp: index,
     correlationId,
-    ...(step === 0 ? {} : { parentId: `trace-${Math.max(0, index - 1)}` })
+    parentId: `gas-trace-${index}`,
+    status: "passed",
+    conditions: [],
+    actions: []
   });
 }
 

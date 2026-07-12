@@ -530,7 +530,7 @@ Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务�
 - `multiplayer` 标准游戏模块负责从 `services.multiplayer` 或显式 facade 订阅归一化消息，把 command 入站队列放到 tick 边界处理；如果 profile 声明 presentation binding，则在 GameRuntime tick 中自动推进 core snapshot playback，没收到新 authoritative snapshot 的帧也继续 advance 既有 buffer，并通过 reusable presentation projector 根据声明的 `Network*` tracks 产出 typed presented values，再交给游戏提供的 apply hook。GameRuntime dispose 时释放订阅并重置 playback/projector。
 - 标准游戏模块只能依赖稳定 facade、App Host services 和 profile 注入的定义，不能直接依赖 Phaser、DOM、Tauri 或具体 app 入口。
 
-`createGameplayDevToolsCorrelation(...)` 是 App Host 的可选跨模块诊断组合 helper。它创建有界 TCA/GAS/Physics trace store，并将 entry 增量映射到一个 domain-neutral DevTools correlation source；它不拥有 gameplay runtime，也不把 DevTools 依赖下推到 domain package。
+`createGameplayDevToolsCorrelation(...)` 是 App Host 的可选跨模块诊断组合 helper。它创建有界 TCA/GAS/Physics trace store、注册一个 domain-neutral DevTools correlation source，并通过单一 `dispose()` 注销和释放组合资源；它不拥有 gameplay runtime，也不把 DevTools 依赖下推到 domain package。默认映射只保留稳定白名单摘要，不透传 GAS details 或 Physics payload。游戏需要补充字段时显式提供小型 summary mapper，并可用统一 redaction hook 清理敏感内容；mapper 或 DevTools bridge 失败只报告 warning diagnostic，不能中断玩法 trace 写入。
 
 ## Test Host
 

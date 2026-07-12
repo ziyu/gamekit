@@ -3,6 +3,7 @@ import type { TcaTraceEntry, TcaTraceSnapshot, TcaTraceStore } from "./types";
 export type CreateTcaTraceStoreOptions = {
   limit?: number | undefined;
   onEntry?(entry: TcaTraceEntry): void;
+  onEntryError?(error: unknown, entry: TcaTraceEntry): void;
 };
 
 export function createTcaTraceStore(options: CreateTcaTraceStoreOptions = {}): TcaTraceStore {
@@ -21,7 +22,7 @@ export function createTcaTraceStore(options: CreateTcaTraceStoreOptions = {}): T
       while (entries.length > limit) {
         entries.shift();
       }
-      options.onEntry?.(traceEntry);
+      notifyEntry(options, traceEntry);
       return traceEntry;
     },
     list() {
@@ -36,4 +37,19 @@ export function createTcaTraceStore(options: CreateTcaTraceStoreOptions = {}): T
       };
     }
   };
+}
+
+function notifyEntry(options: CreateTcaTraceStoreOptions, entry: TcaTraceEntry): void {
+  if (!options.onEntry) {
+    return;
+  }
+  try {
+    options.onEntry(entry);
+  } catch (error) {
+    try {
+      options.onEntryError?.(error, entry);
+    } catch {
+      // Trace observers are diagnostic-only and must never interrupt gameplay.
+    }
+  }
 }

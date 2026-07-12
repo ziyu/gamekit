@@ -3,6 +3,7 @@ import type { GasTraceEntry, GasTraceStore } from "./types";
 export type CreateGasTraceStoreOptions = {
   limit?: number;
   onEntry?(entry: GasTraceEntry): void;
+  onEntryError?(error: unknown, entry: GasTraceEntry): void;
 };
 
 export function createGasTraceStore(options: CreateGasTraceStoreOptions = {}): GasTraceStore {
@@ -21,7 +22,7 @@ export function createGasTraceStore(options: CreateGasTraceStoreOptions = {}): G
       if (entries.length > limit) {
         entries.shift();
       }
-      options.onEntry?.(trace);
+      notifyEntry(options, trace);
       return trace;
     },
     list() {
@@ -36,4 +37,19 @@ export function createGasTraceStore(options: CreateGasTraceStoreOptions = {}): G
       };
     }
   };
+}
+
+function notifyEntry(options: CreateGasTraceStoreOptions, entry: GasTraceEntry): void {
+  if (!options.onEntry) {
+    return;
+  }
+  try {
+    options.onEntry(entry);
+  } catch (error) {
+    try {
+      options.onEntryError?.(error, entry);
+    } catch {
+      // Trace observers are diagnostic-only and must never interrupt gameplay.
+    }
+  }
 }

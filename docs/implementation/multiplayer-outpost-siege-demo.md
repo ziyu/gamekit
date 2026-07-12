@@ -199,7 +199,10 @@ Status: Verified on 2026-07-12.
 - Multiplayer standard module 的 command fact 继承 message correlation，并以 message id 为 parent；同一 `combat-1` 的 Multiplayer → Physics → GAS → TCA 五段 trace 已进入统一 DevTools timeline。
 - DevTools 提供 domain-neutral bounded correlation source；App Host 提供 TCA/GAS/Physics 增量映射 helper。Runtime trace、recent correlation 和 per-correlation roots 分别有界，domain package 不依赖 DevTools。
 - `@gamekit/devtools` 8 tests、`@gamekit/app-host` 29 tests、`@gamekit/multiplayer-core` 43 tests、`@gamekit/tca` 10 tests 和 `@gamekit/gas` 15 tests 通过。
-- 新增 `bench:diagnostics:check` 4 项预算；50,000 条多模块 trace 的 Wave 2 最终隔离结果约 0.40 µs/条，包含 512 条 trace 和 64 条 correlation summary 的 runtime snapshot 约 0.01 ms。
+- 架构复查后收紧通用 correlation helper：TCA/GAS/Physics observer 与 error reporter 失败均不影响 gameplay；默认 GAS details / Physics payload 不进入 DevTools，自定义摘要经过显式 redaction；helper 自动注册 DataSource 并以单一 `dispose()` 关闭生命周期。
+- Abyss Delve 作为第二个现有游戏注入同一套通用 GAS/TCA trace store，证明组合能力不依赖 Outpost 业务类型或玩法入口。
+- `bench:diagnostics:check` 扩展为 5 项端到端预算；50,000 条 App Host → TCA/GAS/Physics → DevTools trace 的代表结果约 0.84 µs/条，runtime snapshot 约 0.0105 ms，保留 512 条 timeline、64 条 correlation summary 和 192 条 domain trace，全部有界并通过预算。
+- 架构加固后的全仓库 70 个 test task、39 个 build task、lint、format 和 `bench:world` 均通过；`bench:gameplay:check` 9/9、`bench:diagnostics:check` 5/5 预算通过。
 
 Wave 2 已关闭。下一步进入 Wave 3，创建 Outpost Siege app skeleton、app-owned DataType/content contract、资源分组和共享 profile definition。
 
