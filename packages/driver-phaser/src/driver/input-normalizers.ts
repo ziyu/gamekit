@@ -73,10 +73,14 @@ export function normalizePhaserPointerEvent(args: {
   type: "pointerdown" | "pointerup" | "pointermove";
   timestamp: number;
   source?: string;
+  coordinateScale?: number;
   originalEvent?: unknown;
 }): NormalizedInputEvent {
-  const x = args.event.x ?? args.event.position?.x ?? 0;
-  const y = args.event.y ?? args.event.position?.y ?? 0;
+  const coordinateScale = normalizeCoordinateScale(args.coordinateScale);
+  const x = (args.event.x ?? args.event.position?.x ?? 0) / coordinateScale;
+  const y = (args.event.y ?? args.event.position?.y ?? 0) / coordinateScale;
+  const previousX = (args.event.prevPosition?.x ?? x * coordinateScale) / coordinateScale;
+  const previousY = (args.event.prevPosition?.y ?? y * coordinateScale) / coordinateScale;
 
   return withOptionalFields(
     {
@@ -86,8 +90,8 @@ export function normalizePhaserPointerEvent(args: {
       pointerId: String(args.event.pointerId ?? args.event.id ?? 0),
       x,
       y,
-      dx: args.event.movementX ?? x - (args.event.prevPosition?.x ?? x),
-      dy: args.event.movementY ?? y - (args.event.prevPosition?.y ?? y),
+      dx: args.event.movementX || x - previousX,
+      dy: args.event.movementY || y - previousY,
       modifiers: modifiersFromEvent(args.event),
       timestamp: args.timestamp
     },
@@ -104,16 +108,18 @@ export function normalizePhaserWheelEvent(args: {
   event: PhaserWheelEventLike;
   timestamp: number;
   source?: string;
+  coordinateScale?: number;
   originalEvent?: unknown;
 }): NormalizedInputEvent {
+  const coordinateScale = normalizeCoordinateScale(args.coordinateScale);
   return withOptionalFields(
     {
       id: args.id,
       device: "mouse",
       phase: "scrolled",
       pointerId: String(args.event.pointerId ?? args.event.id ?? 0),
-      x: args.event.x ?? args.event.position?.x ?? 0,
-      y: args.event.y ?? args.event.position?.y ?? 0,
+      x: (args.event.x ?? args.event.position?.x ?? 0) / coordinateScale,
+      y: (args.event.y ?? args.event.position?.y ?? 0) / coordinateScale,
       wheelDelta: args.event.deltaY ?? 0,
       modifiers: modifiersFromEvent(args.event),
       timestamp: args.timestamp
@@ -123,6 +129,10 @@ export function normalizePhaserWheelEvent(args: {
       originalEvent: args.originalEvent
     }
   );
+}
+
+function normalizeCoordinateScale(value: number | undefined): number {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 function modifiersFromEvent(

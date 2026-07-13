@@ -222,13 +222,38 @@ Status: Active.
 当前已完成首个内容与身份切片：
 
 - 创建独立 app package 及 `domain`、`content`、`gameplay`、`server`、`realtime`、`presentation`、`ui`、`profiles`、`test` 边界；共享 app definition 固定完整 service graph。
-- App-owned player、enemy、weapon、buildable、wave、objective 和 render object DataType 已接入同一 DataRegistry；首批 51 个 Asset/GAS/TCA/Physics/Render/Outpost document 形成 50 条显式引用，没有 gameplay URL 旁路。
+- App-owned player、enemy、weapon、buildable、wave、objective、render object 和 arena DataType 已接入同一 DataRegistry；当前 66 个 Asset/GAS/TCA/Physics/Render/Outpost document 形成 158 条显式引用，没有 gameplay URL 旁路。Arena document 的静态物体实例同时持有 render/collider DataRef，并且是 placement 与 `physics.layout` shape 的共同来源。
 - boot、match、combat、boss group 与 Browser Web、headless server、deterministic test、Tauri smoke 的加载策略已定义；headless 不产生视觉加载，boss 保持 lazy。
 - `@gamekit/asset` 增加通用有界 group retry 和 missing-group diagnostic；成功 member 不重复加载，Outpost 只负责选择 group。
 - App-owned identity registry 已建立 gameplay object、EntityId、actor、physics body/collider、network generation 和 RenderObjectId 的双向索引，并拒绝产生半注册状态的 identity 冲突。
-- `bench:outpost:content:check` 建立 6 项粗粒度预算；500 次 content boot 代表结果约 0.12 ms/次，25,000 identity 注册约 2.86 µs/个，三类零分配反向查询约 0.33 µs/次，预算全部通过。
+- `bench:outpost:content:check` 建立 8 项粗粒度预算；除 content boot、identity 注册/查询和 retained state 外，也限制 Browser runtime image 总字节与最大单文件。当前 11 张 imagegen WebP 合计约 284 KiB，最大 arena floor 约 202 KiB，低于 384 KiB / 320 KiB 预算。
 - 包级测试覆盖引用 source/path、duplicate、headless 资源隔离、lazy retry/failure diagnostic、profile policy 和 identity cleanup。Browser/Tauri 的真实 AppProfile factory、Phaser Driver boot 与可视入口仍属于本 Wave 后续切片。
-- 当前切片的全仓库 71 个 test task、40 个 build task、lint、format 与 `bench:world` 均通过；Outpost 9 tests、Asset 8 tests 和内容/身份 6/6 performance budgets 通过。
+- 当前切片的全仓库 72 个 test task、40 个 build task、lint、format 与 `bench:world` 均通过；Outpost 14 tests、Asset 8 tests 和内容/身份/运行时图片 8/8 performance budgets 通过。
+
+当前已完成 Browser 可运行纵切片：
+
+- Browser Web 已通过 configured App Host 真实组合 Platform Web、Phaser Driver、Data、Asset、Input、UI、GameRuntime、Save 和 DevTools service；GameRuntime 继续只持有 World、EventBus、system 和 GameModule。
+- Phaser Driver 在 `host.boot()` 持有 renderer、asset cache、pointer input 和 camera runtime；Outpost presentation 只在首个 runtime tick 物化 RenderObject，未在 GameModule install 阶段越过 Driver lifecycle。
+- 首个 data-driven ranger 从 `outpost.player`、`physics.body`、`physics.collider` 和 `render.object` materialize 为 Koota entity。Arena floor WebP 已移除全部凸起实体；32 个模块化外墙/路障/掩体/立柱实例复用 4 张透明纹理，每个实例的唯一 position/rotation/size 同时生成 RenderObject 与 collider，并批到一个 static architecture body。通用 `createPhysicsLayoutModule(...)` 负责 Physics World 物化；Rapier 2D 负责移动和真实场景碰撞，没有坐标 clamp、逐像素碰撞、人工维护的第二套坐标或 app-local physics 替身。
+- Browser 使用 Input Router 的 game scope 消费 WASD、pointer、wheel 和 ability/build action；Camera Core follow/bounds/zoom 通过 Phaser Driver camera adapter 同步。游戏 HUD 不轮询 World 或诊断快照，physics/camera/render system 保持逐帧运行，静止 RenderObject 的 native patch 通过签名缓存跳过。
+- Physics Core 的 opt-in interpolation store 由同一个 fixed-step Physics module 推进，Outpost RenderObject 与 follow camera 复用 transient sample；权威 World、碰撞、Save 和 multiplayer snapshot 不读取插值状态。Phaser Driver 按 Browser profile 把 pixel ratio 上限设为 1.5，并成套归一化 canvas backing store、native camera center 和 input coordinate；round-pixel render policy 与按 display footprint × pixel ratio 构建的模块纹理共同降低移动时的边缘闪烁。
+- App Host、Data/Asset、World、Physics、Multiplayer、trace 和 profiler 证据统一由框架 DevTools launcher/shell 承载，不在游戏 HUD 常驻复制。DevTools、modal、text input 或其他 UI 持有焦点时，DOM keyboard adapter 会把输入切出 game scope。
+- boot/match/combat 组的十个 imagegen WebP 运行时资源通过 AssetManager 和 Phaser Driver loader 进入共享 texture cache；boss WebP 保持已注册但未加载的 lazy asset。十一个高分辨率 generated art source 位于 `public` 之外，由 `assets:build:outpost` 统一透明清理、裁切、缩放和压缩为 manifest 声明尺寸；测试读取 WebP header 锁定 URL、格式和尺寸，Driver 没有 Outpost/imagegen 特判。页面明确标记当前 Multiplayer 为 memory local-authority preview，不把它冒充 Wave 4 的 Colyseus Room authority。
+- Browser smoke 已验证页面进入 running，34 个 World entity、2 个 Physics body / 33 个 collider、33 个 arena RenderObject definition 和 10/11 loaded assets 与自动化一致。拉远镜头后可见纯地面、12 个模块化外围墙段、4 组 L 型路障、8 个掩体和 4 个立柱；背景没有重复实体，全部静态资源正常加载，页面无新增运行错误，仅保留 Rapier 初始化 API 的既有 deprecated warning。
+- 新增 Outpost physical preview integration tests，覆盖 Data layout reference、纹理/layout bounds 对齐、单 static body 批量 collider materialization、固定步移动与 120 Hz 半步表现插值、Rapier 掩体/外墙阻挡、identity 反向索引、PhysicsHandle/interpolation unbind、World/entity cleanup、transient input reset、DevTools/UI keyboard scope 隔离和 runtime image 格式/尺寸；Outpost 当前 18 tests 通过。
+- `bench:outpost:preview:check` 扩展为六项预算。代表性 34 entity / 2 body / 33 collider profile 中，runtime boot/dispose 约 0.26 ms/次，33-object arena render plan 约 24.2 µs/次，physical tick 约 63.4 µs/tick，reusable-target interpolation sample 约 0.186 µs/transform，Physics trace 固定保留 180 条，dispose 后 retained entity 为 0。
+- 生产构建把 Rapier 初始化改为动态加载：React 启动壳先呈现，随后加载约 1.7 MB 的 physics chunk 和 Phaser chunk；主入口 gzip 约 123 KB。Phaser/Rapier backend chunk 仍是后续 browser load profiling 的明确观察项。
+
+2026-07-13 完成一次框架通用性与耦合复审：
+
+- GitNexus 影响分析确认 `createPhysicsModule` 是跨 App Host、2D/3D Lab、Outpost 和 benchmark 的高影响公共入口，`createPhaserDriver` 同时被 Abyss、Outpost 和 Sandbox 消费；因此没有把当前 demo 的对象类型、坐标、速度或资源约束写进 package。
+- Physics layout 补齐 backend-neutral body instance override 和一致的 2D/3D bounds validation；Outpost 的 wall/barricade/cover/pylon 仍只是 app-owned arena data。Physics package、Phaser Driver 和 App Host standard helper 中不存在 Outpost/Siege gameplay concept。
+- Fixed-step interpolation 把定制曲线与 teleport/rollback discontinuity 判定收敛为可注入 policy，history callback 输入为深只读 view；默认只提供通用数学和 lifecycle。App Host `standardModules.physics` 可直接透传 store，普通游戏不需要复制自定义装配。
+- Phaser render option 的默认值、校验、boot 和 snapshot 共用一份 resolved configuration；diagnostics 暴露完整配置，不再只为 Outpost 当前使用的 pixel ratio / round-pixel 字段维护平行逻辑。
+- 通用 Physics benchmark 增加 3,000 moving body tracking、300,000 reusable-target sample 和 dispose retained-state 门禁。本机复审结果为 4.704 ms/tick、0.0956 µs/sample、dispose 后 0 retained body；Outpost preview 六项预算复审为 0.1484 ms boot/dispose、15.0952 µs render plan、35.8287 µs physical tick、0.0673 µs interpolation sample，全部通过。
+- 全仓库 72/72 test task、40/40 build task 和 72/72 lint task 通过，`bench:world`、`bench:physics:check`、`bench:outpost:content:check`、`bench:outpost:preview:check` 通过。任务相关文件全部通过 oxfmt；root `format` 仍只被工作区原有 `.claude/`、`AGENTS.md`、`CLAUDE.md` 八个非本工作流文件阻挡，未在本切片改写这些文件。
+
+本切片仍属于 Wave 3。Headless server、deterministic test 和 Tauri smoke 的真实 AppProfile factory，以及正式 Colyseus Room-owned Browser multiplayer lane 仍未完成；后者继续由 Wave 4 承担。
 
 ### Wave 4: Room-owned Multiplayer Vertical Slice
 

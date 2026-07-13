@@ -1,17 +1,27 @@
-import { createAssetManager } from "@gamekit/asset";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createAssetManager, type AssetDefinition } from "@gamekit/asset";
 import type { DataPack } from "@gamekit/data";
+import type { PhysicsLayoutData } from "@gamekit/physics-core";
 import { describe, expect, it } from "vitest";
 import { outpostAppDefinition } from "../app-definition";
 import {
   createOutpostDataRegistry,
+  OUTPOST_ARENA,
+  OUTPOST_ARENA_DEFINITION_ID,
+  OUTPOST_ARENA_PHYSICS_LAYOUT_ID,
   outpostContentPack,
+  outpostRuntimeImageAssets,
   registerOutpostDataTypes
 } from "../content";
 import {
   OUTPOST_PLAYER_TYPE,
+  OUTPOST_ARENA_TYPE,
   OUTPOST_RENDER_OBJECT_TYPE,
   OUTPOST_WAVE_TYPE,
   OUTPOST_WEAPON_TYPE,
+  type OutpostArenaDefinition,
   type OutpostPlayerDefinition
 } from "../domain";
 import {
@@ -19,7 +29,10 @@ import {
   loadOutpostLazyAssetGroup,
   outpostProfileDefinition
 } from "../profiles";
+import { createOutpostArenaRenderObjectDefinitions } from "../presentation";
 import { createDataRegistry } from "@gamekit/data";
+
+const APP_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 describe("Outpost content pipeline", () => {
   it("registers app and framework content through one reference graph", () => {
@@ -36,6 +49,7 @@ describe("Outpost content pipeline", () => {
         "physics.body",
         "physics.collider",
         "tca.rule",
+        OUTPOST_ARENA_TYPE,
         OUTPOST_RENDER_OBJECT_TYPE,
         OUTPOST_PLAYER_TYPE,
         OUTPOST_WAVE_TYPE
@@ -173,6 +187,82 @@ describe("Outpost content pipeline", () => {
     });
   });
 
+  it("keeps authoring masters separate from runtime textures", () => {
+    const registry = createOutpostDataRegistry();
+
+    for (const manifestAsset of outpostRuntimeImageAssets) {
+      expect(manifestAsset.authoringSource).toMatch(/\.webp$/);
+      expect(manifestAsset.runtimeUrl).toMatch(/\.webp$/);
+
+      const definition = registry.get<AssetDefinition>("asset.definition", manifestAsset.id).data;
+      expect(definition.source).toEqual({ type: "url", url: manifestAsset.runtimeUrl });
+      expect(definition.metadata).toMatchObject({
+        authoringSource: manifestAsset.authoringSource,
+        runtimeFormat: manifestAsset.runtimeFormat,
+        width: manifestAsset.width,
+        height: manifestAsset.height
+      });
+
+      const authoringFile = readFileSync(join(APP_ROOT, manifestAsset.authoringSource));
+      expect(authoringFile.subarray(0, 4).toString("ascii")).toBe("RIFF");
+      expect(authoringFile.subarray(8, 12).toString("ascii")).toBe("WEBP");
+
+      const runtimeFile = readFileSync(join(APP_ROOT, "public", manifestAsset.runtimeUrl.slice(1)));
+      expect(runtimeFile.subarray(0, 4).toString("ascii")).toBe("RIFF");
+      expect(runtimeFile.subarray(8, 12).toString("ascii")).toBe("WEBP");
+      expect(readWebpDimensions(runtimeFile)).toEqual({
+        width: manifestAsset.width,
+        height: manifestAsset.height
+      });
+    }
+  });
+
+  it("derives every static render placement and collider from the same arena object", () => {
+    const registry = createOutpostDataRegistry();
+    const arenaAsset = outpostRuntimeImageAssets.find(
+      (asset) => asset.id === "asset.outpost.arena"
+    );
+    const layout = registry.getValue<PhysicsLayoutData>(
+      "physics.layout",
+      OUTPOST_ARENA_PHYSICS_LAYOUT_ID
+    );
+    const arena = registry.getValue<OutpostArenaDefinition>(
+      OUTPOST_ARENA_TYPE,
+      OUTPOST_ARENA_DEFINITION_ID
+    );
+    const renderObjects = createOutpostArenaRenderObjectDefinitions(registry);
+
+    expect(arenaAsset).toMatchObject(OUTPOST_ARENA);
+    expect(layout.bounds).toEqual({
+      min: { x: 0, y: 0 },
+      max: { x: OUTPOST_ARENA.width, y: OUTPOST_ARENA.height }
+    });
+    expect(layout.bodies).toHaveLength(1);
+    expect(layout.bodies[0]?.colliders).toHaveLength(arena.staticObjects.length);
+    expect(renderObjects).toHaveLength(arena.staticObjects.length + 1);
+    for (const object of arena.staticObjects) {
+      const collider = layout.bodies[0]?.colliders?.find((candidate) => candidate.id === object.id);
+      const renderObject = renderObjects.find(
+        (candidate) => candidate.id === `outpost.preview.arena.${object.id}`
+      );
+      expect(collider?.collider).toEqual(object.collider);
+      expect(collider?.overrides).toMatchObject({
+        shape: { type: "box", width: object.size.width, height: object.size.height },
+        offset: {
+          position: object.position,
+          ...(object.rotation === undefined ? {} : { rotation: object.rotation })
+        }
+      });
+      expect(renderObject).toMatchObject({
+        transform: {
+          position: object.position,
+          rotation: { z: object.rotation ?? 0 }
+        },
+        props: { width: object.size.width, height: object.size.height }
+      });
+    }
+  });
+
   it("declares a shared service graph for all runtime profiles", () => {
     expect(outpostAppDefinition.services.map((service) => service.id)).toEqual([
       "platform",
@@ -192,3 +282,40 @@ describe("Outpost content pipeline", () => {
     ).toEqual(["data", "drivers", "renderer"]);
   });
 });
+
+function readWebpDimensions(file: Buffer): { width: number; height: number } {
+  for (let offset = 12; offset + 8 <= file.length; ) {
+    const chunkType = file.subarray(offset, offset + 4).toString("ascii");
+    const chunkSize = file.readUInt32LE(offset + 4);
+    const chunkOffset = offset + 8;
+
+    if (chunkType === "VP8X") {
+      return {
+        width: file.readUIntLE(chunkOffset + 4, 3) + 1,
+        height: file.readUIntLE(chunkOffset + 7, 3) + 1
+      };
+    }
+
+    if (chunkType === "VP8L") {
+      const first = file[chunkOffset + 1]!;
+      const second = file[chunkOffset + 2]!;
+      const third = file[chunkOffset + 3]!;
+      const fourth = file[chunkOffset + 4]!;
+      return {
+        width: 1 + first + ((second & 0x3f) << 8),
+        height: 1 + (second >> 6) + (third << 2) + ((fourth & 0x0f) << 10)
+      };
+    }
+
+    if (chunkType === "VP8 ") {
+      return {
+        width: file.readUInt16LE(chunkOffset + 6) & 0x3fff,
+        height: file.readUInt16LE(chunkOffset + 8) & 0x3fff
+      };
+    }
+
+    offset = chunkOffset + chunkSize + (chunkSize % 2);
+  }
+
+  throw new Error("WebP dimensions are missing");
+}

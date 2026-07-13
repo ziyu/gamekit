@@ -145,6 +145,8 @@ Phaser Driver 可以暴露：
 - Physics scene 仍通过 GameModule helper 跟随 GameRuntime lifecycle；Phaser Driver 只提供绑定 Phaser Scene 的 physics backend adapter。
 - Phaser 原生类型只出现在 `@gamekit/driver-phaser`、`@gamekit/renderer-phaser` 或显式选择 Phaser 的 app/tooling 代码中，不进入 renderer-core、Data、Save 或可复用 gameplay module。
 
+Phaser Driver 的 render options 可以选择 pixel ratio、antialias、round pixels 和 mipmap filter。Factory 创建时统一补全并校验配置，boot、resize 和 diagnostic snapshot 复用同一份 resolved render options，不能根据某个 app 当前使用的字段维护平行默认值。Canvas CSS size、CameraState、Input event 和 RenderObject/world transform 始终使用 logical viewport/world units；Driver 内部才把 backing store 与 native zoom 放大到 profile pixel ratio，并把 pointer coordinate 归一化回来。Camera sync 优先使用 Phaser native center operation，不能把 Camera Core 的 world-view top-left 直接写成 raw `scrollX/scrollY`，因为 native camera viewport 和 zoom 会改变 Phaser scroll property 的实际语义。
+
 ## Three.js Driver
 
 Three.js 也应该按 Driver 集成，而不是让 renderer、asset、input、camera 各自持有 Three 相关句柄。Three.js 本身不是物理引擎；3D 物理应通过 `physics-*` backend adapter 接入，再同步到 Three render object。
@@ -224,6 +226,7 @@ Driver snapshot 应能说明：
 - active external runtime 状态。
 - exposed adapter map。
 - viewport size / render surface 状态。
+- logical viewport、backing-store pixel ratio 和低频 native camera summary；不暴露 native handle。
 - loaded asset / texture / cache 摘要。
 - input source 状态。
 - camera sync 状态。
@@ -249,6 +252,7 @@ Driver diagnostic 是低频应用事实，进入 App Host diagnostics 或 DevToo
 - Driver 是外部 runtime owner：负责 boot、resize、pause/resume、dispose、diagnostics 和 adapter 暴露；Adapter 是协议映射者，不重新创建 runtime。
 - Profile 必须显式选择标准服务使用哪个 driver adapter。多 Driver 并存时不要靠默认顺序或包名猜测。
 - 新增 Three、Pixi、Godot bridge 等 Driver 时，先复用现有 Renderer/Input/Asset/Camera/Physics 协议，不够用再通过 ADR 调整协议。
+- Driver 调整 render density 时必须把 backing store、camera、input/picking 和 resize 作为一个坐标契约测试；profile 对 pixel ratio 设置设备上限，默认值保持 1 以避免让所有应用承担额外 fill-rate。
 - 测试 Driver 时优先使用 fake runtime/driver harness 验证 lifecycle、adapter mapping 和 native handle boundary，浏览器或真实 canvas 只用于少量端到端验证。
 
 ### 模块使用

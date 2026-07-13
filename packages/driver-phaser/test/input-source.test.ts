@@ -36,16 +36,47 @@ describe("createPhaserDriverInputSource", () => {
       }
     ]);
   });
+
+  it("normalizes high-density pointer coordinates back to the logical viewport", () => {
+    const events: NormalizedInputEvent[] = [];
+    const runtime = createFakeRuntime(2);
+    const source = createPhaserDriverInputSource({
+      runtime: () => runtime,
+      onInput(event) {
+        events.push(event);
+      },
+      clock: () => 10
+    });
+
+    source.start();
+    runtime.emit("pointermove", {
+      x: 400,
+      y: 240,
+      prevPosition: { x: 380, y: 220 },
+      pointerId: 3
+    });
+
+    expect(events).toMatchObject([
+      {
+        phase: "moved",
+        x: 200,
+        y: 120,
+        dx: 10,
+        dy: 10
+      }
+    ]);
+  });
 });
 
 type Listener = (...args: unknown[]) => void;
 
-function createFakeRuntime(): PhaserDriverInputRuntime & {
+function createFakeRuntime(coordinateScale?: number): PhaserDriverInputRuntime & {
   emit(eventName: string, ...args: unknown[]): void;
 } {
   const listeners = new Map<string, Set<Listener>>();
 
   return {
+    ...(coordinateScale === undefined ? {} : { coordinateScale }),
     on(eventName, listener) {
       const eventListeners = listeners.get(eventName) ?? new Set<Listener>();
       eventListeners.add(listener);

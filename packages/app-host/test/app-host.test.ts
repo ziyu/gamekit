@@ -26,7 +26,11 @@ import {
   type NetworkVector2
 } from "@gamekit/multiplayer-core";
 import { createMemoryMultiplayerBackend } from "@gamekit/multiplayer-memory";
-import { createMemoryPhysicsBackend, createPhysicsHandle } from "@gamekit/physics-core";
+import {
+  createMemoryPhysicsBackend,
+  createPhysicsHandle,
+  createPhysicsInterpolationStore
+} from "@gamekit/physics-core";
 import { createMemorySaveStore } from "@gamekit/save";
 import { type GameWorld } from "@gamekit/world";
 import { createTcaHandle, createTcaRuleDataType } from "@gamekit/tca";
@@ -777,6 +781,7 @@ describe("configured app host", () => {
 
   it("injects and disposes the standard physics game module", async () => {
     const physics = createPhysicsHandle({ id: "standard.physics" });
+    const interpolation = createPhysicsInterpolationStore({ id: "standard.interpolation" });
     const app = defineGameApp({
       id: "standard-physics-module",
       services: [{ id: "game" }]
@@ -789,6 +794,7 @@ describe("configured app host", () => {
             physics: {
               backend: createMemoryPhysicsBackend(),
               handle: physics,
+              interpolationStore: interpolation,
               fixedDeltaMs: 20,
               scene: { gravity: { x: 0, y: 0 } }
             }
@@ -809,12 +815,14 @@ describe("configured app host", () => {
     const configured = createConfiguredAppHost({ app, profile, context: {} });
 
     expect(physics.isBound()).toBe(true);
+    expect(interpolation.isBound()).toBe(true);
     await configured.host.start();
     configured.host.tick(20, 20);
     expect(physics.snapshot()).toMatchObject({ backend: "memory-physics" });
 
     await configured.host.dispose();
     expect(physics.isBound()).toBe(false);
+    expect(interpolation.isBound()).toBe(false);
   });
 
   it("processes memory multiplayer commands through the standard bridge on runtime ticks", async () => {

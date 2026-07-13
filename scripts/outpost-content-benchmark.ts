@@ -1,7 +1,10 @@
 import { performance } from "node:perf_hooks";
+import { statSync } from "node:fs";
+import { join } from "node:path";
 import {
   createOutpostDataRegistry,
-  createOutpostIdentityRegistry
+  createOutpostIdentityRegistry,
+  outpostRuntimeImageAssets
 } from "../apps/multiplayer-outpost-siege-demo/src";
 import {
   checkOutpostContentBudgets,
@@ -51,6 +54,12 @@ function main(): void {
         : 0;
   }
   const lookupMs = performance.now() - lookupStartedAt;
+  const runtimeImageSizes = outpostRuntimeImageAssets.map(
+    (asset) =>
+      statSync(
+        join(process.cwd(), "apps/multiplayer-outpost-siege-demo/public", asset.runtimeUrl.slice(1))
+      ).size
+  );
 
   const result: OutpostContentBenchmarkResult = {
     millisecondsPerContentBoot: round(contentDurationMs / CONTENT_BOOT_ITERATIONS),
@@ -58,7 +67,9 @@ function main(): void {
     microsecondsPerIdentityLookup: round((lookupMs * 1_000) / (IDENTITY_COUNT * 3)),
     retainedDocuments: contentSnapshot.documents.length,
     retainedReferences: contentSnapshot.references.length,
-    retainedIdentities: identities.snapshot().length
+    retainedIdentities: identities.snapshot().length,
+    runtimeImageBytes: runtimeImageSizes.reduce((total, size) => total + size, 0),
+    largestRuntimeImageBytes: Math.max(...runtimeImageSizes)
   };
   const checkEnabled = process.argv.includes("--check");
   const failures = checkEnabled ? checkOutpostContentBudgets(result) : [];

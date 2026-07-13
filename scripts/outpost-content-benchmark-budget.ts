@@ -5,6 +5,8 @@ export type OutpostContentBenchmarkResult = {
   retainedDocuments: number;
   retainedReferences: number;
   retainedIdentities: number;
+  runtimeImageBytes: number;
+  largestRuntimeImageBytes: number;
 };
 
 export type OutpostContentBenchmarkFailure = {
@@ -22,7 +24,9 @@ const BUDGETS: Array<{
   { metric: "microsecondsPerIdentityLookup", maximum: 5 },
   { metric: "retainedDocuments", maximum: 128 },
   { metric: "retainedReferences", maximum: 256 },
-  { metric: "retainedIdentities", maximum: 25_000 }
+  { metric: "retainedIdentities", maximum: 25_000 },
+  { metric: "runtimeImageBytes", maximum: 384 * 1024 },
+  { metric: "largestRuntimeImageBytes", maximum: 320 * 1024 }
 ];
 
 export function checkOutpostContentBudgets(

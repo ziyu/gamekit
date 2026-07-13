@@ -159,7 +159,11 @@ GAS/TCA 的内部 runtime state、trace 和 handler 不复制到客户端。客�
 所有内容定义都从已物化 DataPack 进入 DataRegistry，不在 gameplay system 中维护平行常量表。
 
 ```txt
-app content modules
+imagegen art sources outside public runtime root
+  -> deterministic WebP runtime artifacts with declared dimensions
+  -> app-owned arena object instances with one transform/footprint
+  -> RenderObject placements + physics.layout generated from those instances
+  -> app content modules
   -> materialized DataPack[]
   -> DataType normalize / validate / references / indexes
   -> DataRegistry reference graph
@@ -169,15 +173,19 @@ app content modules
   -> entity archetype materialization
 ```
 
-Outpost app 自定义 DataType 可以描述 player archetype、enemy archetype、weapon、buildable、wave 和 objective，并通过 DataRef 组合：
+Outpost app 自定义 DataType 可以描述 player archetype、enemy archetype、weapon、buildable、wave、objective 和 arena scene placement，并通过 DataRef 组合：
 
 - `gas.actor`、`gas.ability`、`gas.effect`、`gas.tag`、`gas.cue`
 - `tca.rule`
-- `physics.body`、`physics.collider`、`physics.material`
+- `physics.body`、`physics.collider`、`physics.material`、`physics.scene`、`physics.layout`
 - `render.object`
 - `asset.definition`
 
 资源只能通过 AssetRef / asset id 进入 render、UI 或 cue presentation。Gameplay definition 不直接保存 URL，Renderer 不自行加载资源，Phaser asset loader 不读取 gameplay DataPack。
+
+当前 2D 地面、模块化静态物体、单位和标题徽章由内置 imagegen 生成高分辨率美术源，保存在 Web `public` 之外；Browser profile 只加载经过裁切、透明边界清理、尺寸归一和压缩的 WebP，运行时 manifest 同时记录源路径、产物 URL、像素尺寸和 fit/padding。格式转换属于 app 内容构建，不在 Phaser Driver 或 gameplay 中增加 Outpost 特判。墙段、路障、掩体和立柱各自复用一张紧边界透明纹理；重复关卡实例不重复加载资源。后续大规模单位动画应继续演进为 atlas/压缩纹理 variant，而不是逐实体加载独立源图。
+
+Arena floor WebP 只包含无碰撞地面、标线和嵌入式装饰，不能从像素或画面轮廓推导权威碰撞。App-owned `outpost.arena` document 为每个外墙、L 型路障、中央/侧路掩体和支撑柱保存唯一的 render ref、collider ref、position、rotation 和 size；Presentation RenderObject 与 `physics.layout` collider 都从同一实例派生。所有静态 collider instance 批到一个 static architecture body，Physics Core 的通用 layout module 负责 World materialization。内容测试逐物体锁定 render transform/size 与 collider ref/offset/shape 一致，而不只检查共享 bounds 或 shape 数量。AssetManager、Phaser Driver 和 Physics Core 都不包含 Outpost 专用 scene authoring 逻辑。
 
 预载至少分为 `boot`、`match`、`combat` 和 `boss`。Boss 或可选视觉资源使用 lazy load；加载失败、重试、缺失引用和不支持 source 必须形成不同 diagnostics。Headless server 使用相同 DataPack 和引用校验，但不加载纯客户端视觉 payload。
 

@@ -258,6 +258,8 @@ Driver 是外部运行时的统一集成层。Phaser、Three.js 这类同时拥�
 
 Adapter 是单协议实现；Driver 是跨协议外部 runtime owner。App Host 管理 Driver lifecycle，GameRuntime 不直接拥有 Driver。Driver / Adapter 的具体包可以导出 typed native bridge 给显式选择该 renderer 的 app presentation 或 tooling 使用，但 App Host、driver-core 和 renderer-core 不理解 Phaser / Three 原生类型。
 
+外部 runtime 的 render density 也是跨协议组合问题：Driver 统一持有 logical viewport、canvas/backing store、native camera 和 input source 的换算。Renderer Core、Camera Core、Input Core 和 gameplay 坐标不暴露设备物理像素；具体 App profile 只选择 Driver render policy。
+
 详细设计见 `docs/modules/driver.md`，决策背景见 `docs/adr/0007-driver-integration-layer.md`。
 
 ### Input
@@ -279,6 +281,8 @@ Camera 是 gameplay/session 能力，不是 App Host 标准服务，也不是 Ph
 Physics 是 gameplay/session 能力和多后端 facade，不是 Renderer、Input 或 App Host 默认标准服务。Physics Core 定义 body、collider、material、query、contact event、trace、Save contributor 和标准 GameModule helper；Rapier、Matter.js、Phaser Physics 等底层能力通过 backend adapter 或 Driver runtime slice 接入。
 
 独立物理库使用 `@gamekit/physics-*` adapter。Phaser Arcade / Matter Physics 这类绑定在 Phaser Scene runtime 内的能力由 `@gamekit/driver-phaser` 持有外部 runtime，再暴露 physics backend adapter；adapter 不单独创建 Phaser.Game 或 Scene。Gameplay 通过 World component、Physics query 和低频 contact event 消费物理事实，不保存 backend native handle、broadphase cache 或 contact manifold。
+
+Fixed-step Physics module 可以提供 opt-in transient interpolation store 给 Renderer sync 和 Camera follow target 共用。该 store 不改变 World authority、Save 或 multiplayer snapshot，也不成为 Renderer/Camera 对 Physics 的包级依赖；组合层负责显式注入，并通过可选 policy 提供游戏尺度相关的不连续判定或表现曲线，Physics Core 不写死玩法阈值。
 
 详细设计见 `docs/modules/physics.md`，facade / adapter 决策背景见 `docs/adr/0010-unified-physics-facade.md`，query / cast / filter 公共协议见 `docs/adr/0011-physics-query-and-filter-api.md`。
 

@@ -12,3 +12,4 @@ export type OutpostUiSnapshot = {
   sharedResource: number;
   objectiveId?: string | undefined;
 };
+export * from "./OutpostApp";

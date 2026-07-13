@@ -56,6 +56,7 @@
 - App Host 统一推进 App Service lifecycle：boot、start、stop、dispose、snapshot。底层服务对象不需要为了 Host 继承私有基类，生命周期通过 binding 描述。
 - GameModule 的订阅、system、trace store、controller runtime 和 cleanup 跟随 GameRuntime lifecycle；`stop()` 停 tick，`dispose()` 释放订阅和长期句柄。
 - Driver 先 boot，再派生 renderer/asset/input/camera/physics adapter；adapter 不单独创建同一套外部 runtime。
+- App Host 的 service factory 构造不等于 service boot；`game.createRuntime` 和 GameModule `install()` 可能在 Driver `boot()` 前执行。依赖 renderer/asset/input/camera native runtime 的 GameModule 不应在 `install()` 中立即创建 RenderObject 或读取 native handle，应在 Host start 后的首个 tick、显式 start hook 或可验证的 boot gate 中幂等物化，并在 GameRuntime dispose 时先于 Driver 释放。
 - Save/load、asset preload、data registration 和 renderer boot 应由 App Host 或 app profile 编排顺序，不藏在 GameRuntime 内部。
 - Multiplayer create/join/reconnect/leave 应由 App Host、lobby UI、server host 或测试夹具显式触发；GameModule 不隐式创建 socket、Colyseus Room、Nakama match 或 provider room。
 - Headless 测试应能用 memory platform、memory renderer、memory save store、deterministic clock、fake asset loader 和 fake physics backend 启动主要组合路径。
@@ -214,8 +215,11 @@
 - Trace observer、跨模块 mapper、redactor 和 diagnostic reporter 属于旁路诊断，任何一层失败都不能改变 gameplay 结果；默认 trace payload 使用白名单摘要，完整业务 payload 和敏感字段只有在显式 opt-in、脱敏且单独预算后才能进入工具链。
 - 每个热点模块都应定义自己的预算语义，例如 runtime tick、render sync、asset load group、service boot、UI refresh；预算超限只产生诊断，不改变 gameplay。
 - profiler disabled 时，高频路径不能留下明显对象分配、数组复制或 React state 更新。
+- Fixed-step simulation 与高刷新率 presentation 之间使用模块提供的 opt-in transient interpolation store；Renderer 和 follow camera 复用同一采样时刻，权威 World/Save/multiplayer state 不读取或保存插值结果。游戏尺度、teleport 判定和表现曲线通过组合层 policy 注入，core 不写死阈值；热点 sampling API 应允许复用 caller-owned target，并建立 tracking、sampling 和 dispose retained-state 粗粒度预算。
+- 高密度 canvas 的 logical viewport、backing store、camera 和 input 必须由同一个 Driver 成套归一化。App profile 对 pixel ratio 设置上限，并同时测 fill-rate、纹理尺寸和交互坐标；不能只提高 backing resolution 后用肉眼判断。
 - Performance UI 刷新必须节流，不能跟随 gameplay tick 每帧重渲染。
 - 发现慢点后先确认归因维度：system 慢、adapter 慢、asset IO 慢、UI 刷新慢、DevTools 自身慢，避免用错误层级修问题。
+- 游戏 HUD 只承载玩家决策所需的状态、目标和操作反馈；service graph、adapter 状态、trace、entity count、资源诊断等框架证据统一进入 DevTools，不在游戏界面复制常驻监控面板。DevTools 展开或聚焦时必须通过 UI/Input Scope 阻断 gameplay 输入。
 
 ## Sandbox
 

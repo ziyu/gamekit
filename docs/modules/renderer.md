@@ -192,6 +192,7 @@ Phaser Driver 暴露的 RendererAdapter：
 - `props` 可作为对象创建参数或简单 adapter hint；复杂运行时控制应直接使用 Phaser native API。
 - 不承担 gameplay input；input 归 `input-*` 模块。
 - 不创建 `Phaser.Game`，不读取 Phaser input，不同步 Phaser camera，不加载 gameplay asset；这些能力由同一个 Phaser Driver 的独立 adapter 或 native bridge 提供。
+- Canvas backing-store pixel ratio、antialias、round pixels、texture filtering 和 native camera/input coordinate normalization 属于 Phaser Driver render policy；Renderer Core 和 RenderObject definition 始终使用 logical viewport/world units。
 
 Three Driver 暴露的 RendererAdapter：
 
@@ -248,6 +249,7 @@ Animation 不作为默认独立业务模块。动画主要归入：
 - RendererAdapter 由 Driver runtime slice 创建或绑定；不要在 renderer adapter 内部创建 Phaser.Game、Three renderer、input plugin、asset loader 或 gameplay camera。
 - Renderer 测试应覆盖 object tree、native handle resolution、unknown object type、missing object、command dispatch、diagnostics callback 和 lifecycle cleanup。
 - App Host/profile 负责 renderer boot、surface/container 注入、diagnostics bridge 和 resize；GameRuntime 不拥有 renderer lifecycle。
+- 高密度 canvas 必须由持有 renderer、camera 和 input plugin 的 Driver 统一实现：CSS viewport 保持 logical size，backing store 可以按 profile pixel ratio 放大，camera/input adapter 再归一化回 GameKit 坐标。不要只缩放 canvas 或只修改 RendererAdapter。
 - Adapter / Driver 包可以导出具体 native bridge 类型；renderer-core 只能使用 generic `unknown` 边界。
 - 具体 renderer 的 native bridge 应使用真实后端类型；若 adapter 内部需要测试或跨真实/假 runtime 的结构化 helper，类型必须保持 internal、窄能力命名，并且不能演变成完整后端 API 的 `*Like` 镜像。
 - Adapter-specific state writer 应放在对应 adapter / driver 包中，并让对象创建和运行时表现状态复用同一套后端映射逻辑；app module 不应重复维护 Phaser / Three object duck type。
@@ -260,4 +262,5 @@ Animation 不作为默认独立业务模块。动画主要归入：
 - `props` 只适合作为创建定义或简单 adapter hint；不要把运行时后端 API 塞进 `RenderObjectPatch` 或 renderer-core 字段。
 - 可复用模块优先通过 object tree、少量通用状态和 command 表达。具体游戏表现层可以显式拿 native handle 调用 Phaser / Three API，或调用对应 adapter 包导出的 renderer-specific state writer。
 - 高频 render sync 只同步必要变更，不通过 EventBus 发每帧 patch。object create/destroy、unsupported type、adapter lifecycle 可以发低频 diagnostics。
+- Fixed-step dynamic object 的表现 transform 可以从 Physics interpolation store 采样，但 interpolation state 不进入 RenderObject definition、World authority 或 Renderer Core。
 - Escape hatch 只用于表现层热点路径、DevTools、Editor 后端专属面板或 adapter extension。使用 direct/native path 时必须保持 GameKit object lifecycle 可追踪。

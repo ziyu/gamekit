@@ -19,12 +19,22 @@ import type {
   PhysicsColliderId,
   PhysicsContactEvent,
   PhysicsHandle,
+  PhysicsInterpolationStore,
   PhysicsScene,
   PhysicsSceneConfig,
   PhysicsTraceStore
 } from "./types";
 import { bindPhysicsHandle, unbindPhysicsHandle } from "./create-physics-handle";
 import { createPhysicsCheckpointController } from "./checkpoint";
+import {
+  bindPhysicsInterpolationStore,
+  clearPhysicsInterpolationStore,
+  recordPhysicsInterpolationBody,
+  removePhysicsInterpolationBody,
+  resetPhysicsInterpolationBody,
+  setPhysicsInterpolationAccumulator,
+  unbindPhysicsInterpolationStore
+} from "./interpolation-store";
 
 export type PhysicsWorldBindings = {
   body?: ComponentDef<PhysicsBodyComponentState>;
@@ -48,6 +58,7 @@ export type PhysicsModuleOptions = {
   eventPolicy?: PhysicsEventPolicy;
   traceStore?: PhysicsTraceStore;
   handle?: PhysicsHandle;
+  interpolationStore?: PhysicsInterpolationStore;
 };
 
 type ResolvedPhysicsBindings = {
@@ -81,6 +92,8 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
     id: moduleId,
     install(ctx: GameInstallContext) {
       const nextScene = options.backend.createScene(options.scene);
+      let handleBound = false;
+      let interpolationStoreBound = false;
       try {
         if (options.handle !== undefined) {
           bindPhysicsHandle(
@@ -96,11 +109,26 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
               accumulator: () => accumulator,
               setAccumulator(value) {
                 accumulator = value;
+                if (options.interpolationStore) {
+                  clearPhysicsInterpolationStore(options.interpolationStore);
+                  setPhysicsInterpolationAccumulator(options.interpolationStore, accumulator);
+                }
               }
             })
           );
+          handleBound = true;
+        }
+        if (options.interpolationStore !== undefined) {
+          bindPhysicsInterpolationStore(options.interpolationStore, moduleId, fixedDeltaMs);
+          interpolationStoreBound = true;
         }
       } catch (error) {
+        if (interpolationStoreBound && options.interpolationStore) {
+          unbindPhysicsInterpolationStore(options.interpolationStore, moduleId);
+        }
+        if (handleBound && options.handle) {
+          unbindPhysicsHandle(options.handle, moduleId);
+        }
         nextScene.dispose();
         throw error;
       }
@@ -112,7 +140,14 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
             return;
           }
 
-          syncWorldToScene(systemCtx.world, scene, bindings, entityIndex, pendingSleeping);
+          syncWorldToScene(
+            systemCtx.world,
+            scene,
+            bindings,
+            entityIndex,
+            pendingSleeping,
+            options.interpolationStore
+          );
           accumulator += systemCtx.delta;
           let subSteps = 0;
           while (accumulator >= fixedDeltaMs && subSteps < maxSubSteps) {
@@ -120,7 +155,7 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
               tick: systemCtx.tick,
               elapsed: systemCtx.elapsed
             });
-            syncSceneToWorld(systemCtx.world, scene, bindings);
+            syncSceneToWorld(systemCtx.world, scene, bindings, options.interpolationStore);
             const contacts = withContactEntities(result.contacts, entityIndex);
             writeContacts(systemCtx.world, contacts, bindings);
             if (emitContacts) {
@@ -170,6 +205,9 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
               payload: { fixedDeltaMs, maxSubSteps }
             });
           }
+          if (options.interpolationStore) {
+            setPhysicsInterpolationAccumulator(options.interpolationStore, accumulator);
+          }
         }
       });
 
@@ -177,6 +215,9 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
         dispose() {
           if (options.handle !== undefined) {
             unbindPhysicsHandle(options.handle, moduleId);
+          }
+          if (options.interpolationStore !== undefined) {
+            unbindPhysicsInterpolationStore(options.interpolationStore, moduleId);
           }
           scene?.dispose();
           scene = undefined;
@@ -205,7 +246,8 @@ function syncWorldToScene(
   scene: PhysicsScene,
   bindings: ResolvedPhysicsBindings,
   entityIndex: PhysicsEntityIndex,
-  pendingSleeping: Map<EntityId, boolean>
+  pendingSleeping: Map<EntityId, boolean>,
+  interpolationStore: PhysicsInterpolationStore | undefined
 ): void {
   const nextBodies = new Map<PhysicsBodyId, EntityId>();
   const nextColliders = new Map<PhysicsColliderId, EntityId>();
@@ -215,6 +257,9 @@ function syncWorldToScene(
     if (!body?.enabled) {
       if (body?.bodyId && scene.getBodyState(body.bodyId)) {
         scene.destroyBody(body.bodyId);
+      }
+      if (body?.bodyId && interpolationStore) {
+        removePhysicsInterpolationBody(interpolationStore, body.bodyId);
       }
       continue;
     }
@@ -239,6 +284,10 @@ function syncWorldToScene(
           : { angularVelocity: velocity.angular })
       });
       world.set(entity, bindings.body, { bodyId });
+      const initialState = scene.getBodyState(bodyId);
+      if (initialState && shouldTrackInterpolation(body) && interpolationStore) {
+        resetPhysicsInterpolationBody(interpolationStore, bodyId, initialState);
+      }
     }
     nextBodies.set(bodyId, entity);
 
@@ -257,6 +306,9 @@ function syncWorldToScene(
           }
         : {};
     const restoredSleeping = pendingSleeping.get(entity);
+    if (!shouldTrackInterpolation(body) && interpolationStore) {
+      removePhysicsInterpolationBody(interpolationStore, bodyId);
+    }
     scene.updateBody(bodyId, {
       ...patch,
       ...velocityPatch,
@@ -265,7 +317,7 @@ function syncWorldToScene(
     pendingSleeping.delete(entity);
   }
 
-  destroyStaleBodies(scene, entityIndex.bodies, nextBodies);
+  destroyStaleBodies(scene, entityIndex.bodies, nextBodies, interpolationStore);
 
   for (const entity of world.query([bindings.collider])) {
     const collider = world.get(entity, bindings.collider);
@@ -299,11 +351,15 @@ function syncWorldToScene(
 function destroyStaleBodies(
   scene: PhysicsScene,
   previousBodies: Map<PhysicsBodyId, EntityId>,
-  nextBodies: Map<PhysicsBodyId, EntityId>
+  nextBodies: Map<PhysicsBodyId, EntityId>,
+  interpolationStore: PhysicsInterpolationStore | undefined
 ): void {
   for (const bodyId of previousBodies.keys()) {
     if (!nextBodies.has(bodyId) && scene.getBodyState(bodyId)) {
       scene.destroyBody(bodyId);
+    }
+    if (!nextBodies.has(bodyId) && interpolationStore) {
+      removePhysicsInterpolationBody(interpolationStore, bodyId);
     }
   }
 }
@@ -323,7 +379,8 @@ function destroyStaleColliders(
 function syncSceneToWorld(
   world: GameWorld,
   scene: PhysicsScene,
-  bindings: ResolvedPhysicsBindings
+  bindings: ResolvedPhysicsBindings,
+  interpolationStore: PhysicsInterpolationStore | undefined
 ): void {
   for (const entity of world.query([bindings.body])) {
     const body = world.get(entity, bindings.body);
@@ -334,6 +391,10 @@ function syncSceneToWorld(
     const state = scene.getBodyState(body.bodyId);
     if (!state) {
       continue;
+    }
+
+    if (interpolationStore && shouldTrackInterpolation(body)) {
+      recordPhysicsInterpolationBody(interpolationStore, body.bodyId, state);
     }
 
     if (world.get(entity, bindings.transform)) {
@@ -360,6 +421,10 @@ function syncSceneToWorld(
       });
     }
   }
+}
+
+function shouldTrackInterpolation(body: PhysicsBodyComponentState): boolean {
+  return body.syncToWorld && !body.syncFromWorld && body.definition.kind !== "static";
 }
 
 function withContactEntities(

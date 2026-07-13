@@ -12,7 +12,15 @@ import type {
   PhysicsMaterialDefinition
 } from "@gamekit/physics-core";
 import type { TcaRule } from "@gamekit/tca";
+import { outpostRuntimeImageAssets, type OutpostRuntimeImageAsset } from "./runtime-image-assets";
+import { OUTPOST_ARENA_SOLID_COLLIDER_ID, outpostArenaDefinition } from "./arena-scene";
 import {
+  OUTPOST_ARENA_STATIC_BODY_ID,
+  outpostArenaPhysicsLayout,
+  outpostArenaPhysicsScene
+} from "./arena-physics";
+import {
+  OUTPOST_ARENA_TYPE,
   OUTPOST_BUILDABLE_TYPE,
   OUTPOST_ENEMY_TYPE,
   OUTPOST_OBJECTIVE_TYPE,
@@ -21,6 +29,7 @@ import {
   OUTPOST_WAVE_TYPE,
   OUTPOST_WEAPON_TYPE,
   type OutpostBuildableDefinition,
+  type OutpostArenaDefinition,
   type OutpostEnemyDefinition,
   type OutpostObjectiveDefinition,
   type OutpostPlayerDefinition,
@@ -29,15 +38,7 @@ import {
   type OutpostWeaponDefinition
 } from "../domain";
 
-const assets: AssetDefinition[] = [
-  imageAsset("asset.outpost.logo", "/assets/outpost/ui/logo.png", "boot", true),
-  imageAsset("asset.outpost.arena", "/assets/outpost/match/arena.png", "match", true),
-  imageAsset("asset.outpost.player", "/assets/outpost/combat/player.png", "combat", true),
-  imageAsset("asset.outpost.raider", "/assets/outpost/combat/raider.png", "combat", true),
-  imageAsset("asset.outpost.turret", "/assets/outpost/combat/turret.png", "combat", true),
-  imageAsset("asset.outpost.projectile", "/assets/outpost/combat/projectile.png", "combat", true),
-  imageAsset("asset.outpost.overseer", "/assets/outpost/boss/overseer.png", "boss", false, true)
-];
+const assets: AssetDefinition[] = outpostRuntimeImageAssets.map(imageAsset);
 
 const attributes: GasAttributeDefinition[] = [
   { id: "health", min: 0, max: 1000, defaultValue: 100 },
@@ -127,7 +128,8 @@ const actors: GasActorDefinition[] = [
 
 const materials: PhysicsMaterialDefinition[] = [
   { id: "material.outpost.actor", friction: 0.1, restitution: 0 },
-  { id: "material.outpost.projectile", friction: 0, restitution: 0 }
+  { id: "material.outpost.projectile", friction: 0, restitution: 0 },
+  { id: "material.outpost.arena", friction: 0.35, restitution: 0 }
 ];
 
 const colliders: Array<{ id: string; data: PhysicsColliderData }> = [
@@ -135,7 +137,16 @@ const colliders: Array<{ id: string; data: PhysicsColliderData }> = [
   circleCollider("collider.outpost.raider", 13, "material.outpost.actor"),
   circleCollider("collider.outpost.overseer", 32, "material.outpost.actor"),
   circleCollider("collider.outpost.turret", 18, "material.outpost.actor"),
-  circleCollider("collider.outpost.projectile", 4, "material.outpost.projectile", true)
+  circleCollider("collider.outpost.projectile", 4, "material.outpost.projectile", true),
+  {
+    id: OUTPOST_ARENA_SOLID_COLLIDER_ID,
+    data: {
+      id: OUTPOST_ARENA_SOLID_COLLIDER_ID,
+      shape: { type: "box", width: 1, height: 1 },
+      material: "material.outpost.arena",
+      tags: ["outpost", "arena", "solid"]
+    }
+  }
 ];
 
 const bodies: Array<{ id: string; data: PhysicsBodyData }> = [
@@ -143,10 +154,27 @@ const bodies: Array<{ id: string; data: PhysicsBodyData }> = [
   dynamicBody("body.outpost.raider", "collider.outpost.raider"),
   dynamicBody("body.outpost.overseer", "collider.outpost.overseer"),
   staticBody("body.outpost.turret", "collider.outpost.turret"),
-  dynamicBody("body.outpost.projectile", "collider.outpost.projectile", 0)
+  dynamicBody("body.outpost.projectile", "collider.outpost.projectile", 0),
+  {
+    id: OUTPOST_ARENA_STATIC_BODY_ID,
+    data: {
+      id: OUTPOST_ARENA_STATIC_BODY_ID,
+      kind: "static",
+      tags: ["outpost", "arena"]
+    }
+  }
 ];
 
+const physicsScenes = [outpostArenaPhysicsScene];
+const physicsLayouts = [outpostArenaPhysicsLayout];
+const arenas: OutpostArenaDefinition[] = [outpostArenaDefinition];
+
 const renderObjects: OutpostRenderObjectDefinition[] = [
+  renderObject("render.outpost.arena", "asset.outpost.arena", "arena"),
+  renderObject("render.outpost.wall", "asset.outpost.wall", "architecture"),
+  renderObject("render.outpost.barricade", "asset.outpost.barricade", "architecture"),
+  renderObject("render.outpost.cover", "asset.outpost.cover", "architecture"),
+  renderObject("render.outpost.pylon", "asset.outpost.pylon", "architecture"),
   renderObject("render.outpost.player", "asset.outpost.player", "actors"),
   renderObject("render.outpost.raider", "asset.outpost.raider", "actors"),
   renderObject("render.outpost.overseer", "asset.outpost.overseer", "actors"),
@@ -257,7 +285,10 @@ export const outpostContentPack: DataPack = {
     ...entries("physics.material", materials),
     ...colliders.map(({ id, data }) => entry("physics.collider", id, data)),
     ...bodies.map(({ id, data }) => entry("physics.body", id, data)),
+    ...entries("physics.scene", physicsScenes),
+    ...entries("physics.layout", physicsLayouts),
     ...entries(OUTPOST_RENDER_OBJECT_TYPE, renderObjects),
+    ...entries(OUTPOST_ARENA_TYPE, arenas),
     ...entries(OUTPOST_WEAPON_TYPE, weapons),
     ...entries(OUTPOST_PLAYER_TYPE, players),
     ...entries(OUTPOST_ENEMY_TYPE, enemies),
@@ -280,21 +311,21 @@ function ref<TType extends string>(type: TType, id: string): DataRef<TType> {
   return { type, id };
 }
 
-function imageAsset(
-  id: string,
-  url: string,
-  group: "boot" | "match" | "combat" | "boss",
-  preload: boolean,
-  lazy = false
-): AssetDefinition {
+function imageAsset(asset: OutpostRuntimeImageAsset): AssetDefinition {
   return {
-    id,
+    id: asset.id,
     type: "image",
-    source: { type: "url", url },
-    group,
-    preload,
-    lazy,
-    tags: ["outpost", group]
+    source: { type: "url", url: asset.runtimeUrl },
+    group: asset.group,
+    preload: asset.preload,
+    lazy: asset.lazy ?? false,
+    tags: ["outpost", asset.group],
+    metadata: {
+      authoringSource: asset.authoringSource,
+      runtimeFormat: asset.runtimeFormat,
+      width: asset.width,
+      height: asset.height
+    }
   };
 }
 

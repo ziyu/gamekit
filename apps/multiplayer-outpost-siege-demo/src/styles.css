@@ -1,0 +1,544 @@
+:root {
+  color-scheme: dark;
+  --hud-ink: #07110f;
+  --hud-glass: rgba(4, 13, 11, 0.78);
+  --hud-line: rgba(151, 205, 183, 0.34);
+  --hud-mint: #82efd2;
+  --hud-amber: #f2bd50;
+  --hud-paper: #edf5ee;
+  --hud-muted: #8da99b;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+body {
+  overflow: hidden;
+  background: #020806;
+  color: var(--hud-paper);
+  font-family: "Avenir Next Condensed", "DIN Condensed", "Helvetica Neue", sans-serif;
+}
+button,
+kbd {
+  font: inherit;
+}
+
+.outpost-app,
+.outpost-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.outpost-app {
+  background: radial-gradient(circle at 50% 46%, #143129 0, #06100d 58%, #020706 100%);
+}
+.outpost-stage {
+  outline: none;
+}
+.outpost-renderer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.outpost-renderer canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.92) contrast(1.05) brightness(0.92);
+}
+
+.outpost-cinematic-frame {
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  border: 10px solid rgba(2, 7, 6, 0.72);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(1, 6, 5, 0.48),
+      transparent 18%,
+      transparent 70%,
+      rgba(1, 6, 5, 0.64)
+    ),
+    radial-gradient(circle at 50% 48%, transparent 40%, rgba(1, 6, 5, 0.36) 100%);
+  box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.4);
+}
+.outpost-cinematic-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.11;
+  background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(0, 0, 0, 0.24) 3px 4px);
+}
+
+.outpost-brand,
+.outpost-objective,
+.outpost-squad,
+.outpost-vitals,
+.outpost-abilities,
+.outpost-control-hint,
+.outpost-boot {
+  position: absolute;
+  z-index: 4;
+}
+
+.outpost-brand {
+  top: 26px;
+  left: 30px;
+  display: grid;
+  padding-left: 12px;
+  border-left: 3px solid var(--hud-amber);
+  text-shadow: 0 2px 14px #000;
+  pointer-events: none;
+}
+.outpost-brand span {
+  color: var(--hud-mint);
+  font:
+    700 9px/1 "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.2em;
+}
+.outpost-brand strong {
+  margin-top: 5px;
+  font-size: 24px;
+  line-height: 0.78;
+  letter-spacing: -0.045em;
+}
+
+.outpost-objective {
+  top: 24px;
+  left: 50%;
+  min-width: 360px;
+  padding: 10px 46px 12px;
+  transform: translateX(-50%);
+  text-align: center;
+  text-shadow: 0 2px 12px #000;
+  pointer-events: none;
+}
+.outpost-objective::before,
+.outpost-objective::after {
+  content: "";
+  position: absolute;
+  top: 20px;
+  width: 58px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--hud-line));
+}
+.outpost-objective::before {
+  left: -24px;
+}
+.outpost-objective::after {
+  right: -24px;
+  transform: scaleX(-1);
+}
+.outpost-objective > div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.outpost-objective > div span {
+  color: var(--hud-amber);
+  font:
+    700 9px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.18em;
+}
+.outpost-objective > div i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--hud-amber);
+  box-shadow: 0 0 8px var(--hud-amber);
+}
+.outpost-objective > strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 18px;
+  letter-spacing: 0.08em;
+}
+.outpost-objective > small {
+  display: block;
+  margin-top: 1px;
+  color: var(--hud-muted);
+  font-size: 10px;
+  letter-spacing: 0.035em;
+}
+
+.outpost-squad {
+  top: 30px;
+  right: 34px;
+  width: 150px;
+  pointer-events: none;
+}
+.outpost-squad > span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--hud-muted);
+  font:
+    8px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.18em;
+  text-align: right;
+}
+.outpost-squad__member {
+  display: grid;
+  grid-template-columns: 28px 1fr 5px;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 8px;
+  border: 1px solid var(--hud-line);
+  border-right: 2px solid var(--hud-mint);
+  background: var(--hud-glass);
+  backdrop-filter: blur(8px);
+}
+.outpost-squad__member > i {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 1px solid rgba(130, 239, 210, 0.34);
+  color: var(--hud-mint);
+  font:
+    9px "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.outpost-squad__member > div {
+  display: grid;
+}
+.outpost-squad__member strong {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.outpost-squad__member span {
+  color: var(--hud-mint);
+  font:
+    7px "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.outpost-squad__member > b {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--hud-mint);
+  box-shadow: 0 0 8px var(--hud-mint);
+}
+
+.outpost-vitals {
+  bottom: 26px;
+  left: 28px;
+  display: grid;
+  grid-template-columns: 58px 190px;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 12px 9px 9px;
+  border: 1px solid var(--hud-line);
+  border-left: 3px solid var(--hud-mint);
+  background: linear-gradient(90deg, rgba(3, 12, 10, 0.9), rgba(3, 12, 10, 0.62));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(9px);
+}
+.outpost-vitals__portrait {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  border: 1px solid rgba(130, 239, 210, 0.4);
+  background: radial-gradient(circle, #2e7767, #0a211b 68%);
+  color: var(--hud-paper);
+  font-size: 18px;
+  font-weight: 900;
+  clip-path: polygon(12% 0, 100% 0, 100% 80%, 84% 100%, 0 100%, 0 16%);
+}
+.outpost-vitals__body > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+.outpost-vitals__body > div:first-child strong {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.outpost-vitals__body > div:first-child span {
+  color: var(--hud-amber);
+  font:
+    8px "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.outpost-meter {
+  display: grid;
+  grid-template-columns: 18px 1fr 24px;
+  gap: 6px;
+  align-items: center;
+  margin-top: 5px;
+}
+.outpost-meter > span,
+.outpost-meter > strong {
+  font:
+    8px "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.outpost-meter > span {
+  color: var(--hud-muted);
+}
+.outpost-meter > strong {
+  color: var(--hud-paper);
+  text-align: right;
+}
+.outpost-meter > div {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.09);
+}
+.outpost-meter > div i {
+  display: block;
+  height: 100%;
+}
+.outpost-meter--health > div i {
+  background: linear-gradient(90deg, #48a970, #8cf2ad);
+}
+.outpost-meter--shield > div i {
+  background: linear-gradient(90deg, #2a8393, #71e2e6);
+}
+
+.outpost-abilities {
+  bottom: 26px;
+  left: 50%;
+  display: flex;
+  gap: 8px;
+  transform: translateX(-50%);
+}
+.outpost-ability {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px 40px minmax(64px, auto);
+  align-items: center;
+  min-width: 146px;
+  height: 62px;
+  padding: 6px 10px 6px 6px;
+  overflow: hidden;
+  border: 1px solid var(--hud-line);
+  background: var(--hud-glass);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(9px);
+}
+.outpost-ability::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 2px;
+  background: var(--hud-amber);
+}
+.outpost-ability kbd {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  z-index: 2;
+  min-width: 28px;
+  padding: 2px 4px;
+  border: 1px solid rgba(242, 189, 80, 0.55);
+  background: rgba(0, 0, 0, 0.45);
+  color: var(--hud-amber);
+  font:
+    7px "SFMono-Regular",
+    Consolas,
+    monospace;
+  text-align: center;
+}
+.outpost-ability > i {
+  grid-column: 2;
+  color: var(--hud-mint);
+  font-size: 25px;
+  font-style: normal;
+  text-align: center;
+  text-shadow: 0 0 12px rgba(130, 239, 210, 0.38);
+}
+.outpost-ability > div {
+  grid-column: 3;
+  display: grid;
+}
+.outpost-ability > div strong {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.outpost-ability > div span {
+  margin-top: 2px;
+  color: var(--hud-mint);
+  font:
+    7px "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+
+.outpost-control-hint {
+  right: 30px;
+  bottom: 28px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--hud-muted);
+  font:
+    8px "SFMono-Regular",
+    Consolas,
+    monospace;
+  text-shadow: 0 1px 7px #000;
+  pointer-events: none;
+}
+.outpost-control-hint kbd {
+  padding: 4px 6px;
+  border: 1px solid var(--hud-line);
+  color: var(--hud-paper);
+  font:
+    8px "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.outpost-control-hint i {
+  width: 1px;
+  height: 13px;
+  margin: 0 2px;
+  background: var(--hud-line);
+}
+
+.outpost-boot {
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  background: rgba(2, 8, 6, 0.84);
+  backdrop-filter: blur(8px);
+  text-align: center;
+}
+.outpost-boot__mark {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.outpost-boot__mark i {
+  width: 28px;
+  height: 3px;
+  background: var(--hud-mint);
+  animation: outpost-loader 1s infinite ease-in-out;
+}
+.outpost-boot__mark i:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.outpost-boot__mark i:nth-child(3) {
+  animation-delay: 0.24s;
+}
+.outpost-boot > span {
+  color: var(--hud-amber);
+  font:
+    700 11px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.2em;
+}
+.outpost-boot > strong {
+  margin-top: 8px;
+  color: var(--hud-muted);
+  font:
+    9px "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.outpost-boot--failed .outpost-boot__mark i {
+  background: #ff765b;
+  animation: none;
+}
+
+.gamekit-devtools-launcher {
+  opacity: 0.52;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+.gamekit-devtools-launcher:hover {
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+@keyframes outpost-loader {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scaleX(0.5);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@media (max-width: 1000px) {
+  .outpost-abilities {
+    bottom: 22px;
+    gap: 5px;
+  }
+  .outpost-ability {
+    grid-template-columns: 26px 34px;
+    min-width: 66px;
+    width: 70px;
+    padding: 4px;
+  }
+  .outpost-ability > div {
+    display: none;
+  }
+  .outpost-vitals {
+    grid-template-columns: 45px 150px;
+  }
+  .outpost-vitals__portrait {
+    width: 43px;
+    height: 48px;
+  }
+  .outpost-control-hint {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .outpost-brand {
+    top: 18px;
+    left: 18px;
+  }
+  .outpost-objective {
+    top: 76px;
+    min-width: 290px;
+  }
+  .outpost-squad {
+    display: none;
+  }
+  .outpost-vitals {
+    bottom: 94px;
+    left: 16px;
+  }
+  .outpost-abilities {
+    bottom: 18px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

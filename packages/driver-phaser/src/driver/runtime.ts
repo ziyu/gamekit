@@ -3,17 +3,31 @@ import type { PhaserRendererRuntime } from "@gamekit/renderer-phaser";
 import type { PhaserDriverAssetRuntime } from "./assets";
 import type { PhaserDriverCameraRuntime } from "./camera";
 import type { PhaserDriverInputRuntime } from "./input-source";
+import type { ResolvedPhaserDriverRenderOptions } from "./render-options";
 
 export type PhaserDriverRuntimeOptions = {
   backgroundColor: string;
+  render: ResolvedPhaserDriverRenderOptions;
 };
 
 export type PhaserDriverRuntime = {
   view: HTMLCanvasElement;
+  pixelRatio: number;
   renderer: PhaserRendererRuntime;
   assets: PhaserDriverAssetRuntime;
   camera: PhaserDriverCameraRuntime;
   input: PhaserDriverInputRuntime;
+  diagnostics(): {
+    pixelRatio: number;
+    canvas: { width: number; height: number };
+    camera: {
+      width: number;
+      height: number;
+      zoom: number;
+      scrollX: number;
+      scrollY: number;
+    };
+  };
   resize(width: number, height: number): void;
   destroy(): void;
 };
@@ -23,6 +37,7 @@ export async function createPhaserDriverRuntime(
   options: PhaserDriverRuntimeOptions
 ): Promise<PhaserDriverRuntime> {
   const Phaser = await import("phaser");
+  const render = options.render;
   let sceneRef: any;
   let gameRef: any;
 
@@ -44,10 +59,16 @@ export async function createPhaserDriverRuntime(
 
     const gameConfig: any = {
       type: Phaser.AUTO,
-      width: ctx.width,
-      height: ctx.height,
+      width: internalSize(ctx.width, render.pixelRatio),
+      height: internalSize(ctx.height, render.pixelRatio),
       backgroundColor: options.backgroundColor,
       scene: GameKitScene,
+      render: {
+        antialias: render.antialias,
+        antialiasGL: render.antialiasGL,
+        roundPixels: render.roundPixels,
+        mipmapFilter: render.mipmapFilter
+      },
       audio: {
         noAudio: true
       },
@@ -64,14 +85,16 @@ export async function createPhaserDriverRuntime(
 
   await ready;
   const view = gameRef.canvas as HTMLCanvasElement;
+  applyLogicalCanvasSize(gameRef, view, ctx.width, ctx.height);
 
   return {
     view,
+    pixelRatio: render.pixelRatio,
     renderer: {
       view,
       scene: sceneRef,
       resize(width, height) {
-        gameRef.scale.resize(width, height);
+        resizeGame(gameRef, view, width, height, render.pixelRatio);
       }
     },
     assets: {
@@ -98,14 +121,18 @@ export async function createPhaserDriverRuntime(
       setScroll(x, y) {
         sceneRef.cameras.main.setScroll(x, y);
       },
+      centerOn(x, y) {
+        sceneRef.cameras.main.centerOn(x, y);
+      },
       setZoom(zoom) {
-        sceneRef.cameras.main.setZoom(zoom);
+        sceneRef.cameras.main.setZoom(zoom * render.pixelRatio);
       },
       setRotation(rotation) {
         sceneRef.cameras.main.setRotation(rotation);
       }
     },
     input: {
+      coordinateScale: render.pixelRatio,
       on(eventName, listener) {
         inputEmitter(sceneRef, eventName)?.on(eventName, listener);
       },
@@ -113,13 +140,53 @@ export async function createPhaserDriverRuntime(
         inputEmitter(sceneRef, eventName)?.off(eventName, listener);
       }
     },
+    diagnostics() {
+      const camera = sceneRef.cameras.main;
+      return {
+        pixelRatio: render.pixelRatio,
+        canvas: { width: view.width, height: view.height },
+        camera: {
+          width: camera.width,
+          height: camera.height,
+          zoom: camera.zoom,
+          scrollX: camera.scrollX,
+          scrollY: camera.scrollY
+        }
+      };
+    },
     resize(width, height) {
-      gameRef.scale.resize(width, height);
+      resizeGame(gameRef, view, width, height, render.pixelRatio);
     },
     destroy() {
       gameRef.destroy(true);
     }
   };
+}
+
+function internalSize(logicalSize: number, pixelRatio: number): number {
+  return Math.max(1, Math.round(logicalSize * pixelRatio));
+}
+
+function applyLogicalCanvasSize(
+  game: { scale: { refresh?(): void } },
+  view: HTMLCanvasElement,
+  width: number,
+  height: number
+): void {
+  view.style.width = `${width}px`;
+  view.style.height = `${height}px`;
+  game.scale.refresh?.();
+}
+
+function resizeGame(
+  game: { scale: { resize(width: number, height: number): void; refresh?(): void } },
+  view: HTMLCanvasElement,
+  width: number,
+  height: number,
+  pixelRatio: number
+): void {
+  game.scale.resize(internalSize(width, pixelRatio), internalSize(height, pixelRatio));
+  applyLogicalCanvasSize(game, view, width, height);
 }
 
 function inputEmitter(

@@ -23,6 +23,7 @@ import type {
   PhysicsBackendAdapter,
   PhysicsEventPolicy,
   PhysicsHandle,
+  PhysicsInterpolationStore,
   PhysicsSceneConfig,
   PhysicsTraceStore,
   PhysicsWorldBindings
@@ -259,6 +260,7 @@ export type StandardPhysicsGameModuleOptions<TContext> = {
   eventPolicy?: StandardValue<PhysicsEventPolicy, TContext> | undefined;
   traceStore?: StandardValue<PhysicsTraceStore, TContext> | undefined;
   handle?: StandardValue<PhysicsHandle, TContext> | undefined;
+  interpolationStore?: StandardValue<PhysicsInterpolationStore, TContext> | undefined;
 };
 
 export type StandardCameraGameModuleOptions<TContext> = {

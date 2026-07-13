@@ -11,7 +11,9 @@ import {
   PhysicsVelocityComponent,
   createMemoryPhysicsBackend,
   createPhysicsHandle,
+  createPhysicsInterpolationStore,
   createPhysicsDataTypes,
+  createPhysicsLayoutModule,
   createPhysicsModule,
   createPhysicsSaveContributor,
   createPhysicsTraceStore,
@@ -53,6 +55,26 @@ describe("Physics data types", () => {
             kind: "dynamic",
             colliders: [{ type: "physics.collider", id: "collider.hero" }]
           }
+        },
+        {
+          type: "physics.scene",
+          id: "scene.test",
+          data: { id: "scene.test", dimension: "2d", gravity: { x: 0, y: 0 } }
+        },
+        {
+          type: "physics.layout",
+          id: "layout.test",
+          data: {
+            id: "layout.test",
+            scene: { type: "physics.scene", id: "scene.test" },
+            bodies: [
+              {
+                id: "hero",
+                body: { type: "physics.body", id: "body.hero" },
+                position: { x: 2, y: 3 }
+              }
+            ]
+          }
         }
       ]
     });
@@ -64,6 +86,143 @@ describe("Physics data types", () => {
     expect(
       registry.referencesFrom({ type: "physics.collider", id: "collider.hero" })
     ).toMatchObject([{ to: { type: "physics.material", id: "mat.stone" } }]);
+    expect(registry.referencesFrom({ type: "physics.layout", id: "layout.test" })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ to: { type: "physics.scene", id: "scene.test" } }),
+        expect.objectContaining({ to: { type: "physics.body", id: "body.hero" } })
+      ])
+    );
+  });
+
+  it("validates two- and three-dimensional layout bounds consistently", () => {
+    const registry = createDataRegistry();
+    for (const definition of createPhysicsDataTypes()) {
+      registry.registerType(definition);
+    }
+
+    const validation = registry.validatePack({
+      id: "invalid-3d-layout",
+      version: "1.0.0",
+      entries: [
+        {
+          type: "physics.layout",
+          id: "layout.invalid-3d",
+          data: {
+            id: "layout.invalid-3d",
+            bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 10, y: 10 } },
+            bodies: []
+          }
+        }
+      ]
+    });
+
+    expect(validation.diagnostics).toEqual([
+      expect.objectContaining({ code: "physics.layout_invalid_bounds" })
+    ]);
+  });
+});
+
+describe("Physics layout module", () => {
+  it("materializes one shared body with independently placed collider instances", () => {
+    const registry = createDataRegistry();
+    for (const definition of createPhysicsDataTypes()) {
+      registry.registerType(definition);
+    }
+    registry.registerPack({
+      id: "layout-fixture",
+      version: "1.0.0",
+      entries: [
+        {
+          type: "physics.collider",
+          id: "collider.solid",
+          data: { id: "collider.solid", shape: { type: "box", width: 1, height: 1 } }
+        },
+        {
+          type: "physics.body",
+          id: "body.architecture",
+          data: { id: "body.architecture", kind: "static" }
+        },
+        {
+          type: "physics.layout",
+          id: "layout.arena",
+          data: {
+            id: "layout.arena",
+            bounds: { min: { x: 0, y: 0 }, max: { x: 20, y: 10 } },
+            bodies: [
+              {
+                id: "architecture",
+                body: { type: "physics.body", id: "body.architecture" },
+                overrides: {
+                  damping: { linear: 0.5 },
+                  userData: { source: "layout-fixture" }
+                },
+                colliders: [
+                  {
+                    id: "wall.left",
+                    collider: { type: "physics.collider", id: "collider.solid" },
+                    overrides: {
+                      shape: { type: "box", width: 2, height: 10 },
+                      offset: { position: { x: 1, y: 5 } }
+                    }
+                  },
+                  {
+                    id: "wall.right",
+                    collider: { type: "physics.collider", id: "collider.solid" },
+                    overrides: {
+                      shape: { type: "box", width: 2, height: 10 },
+                      offset: { position: { x: 19, y: 5 } }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    });
+    const world = createMemoryWorld();
+    const physics = createPhysicsHandle({ id: "layout.physics" });
+    const runtime = createGame({
+      modules: [
+        createPhysicsLayoutModule({ dataRegistry: registry, layoutId: "layout.arena" }),
+        createPhysicsModule({
+          backend: createMemoryPhysicsBackend(),
+          fixedDeltaMs: 16,
+          scene: { gravity: { x: 0, y: 0 } },
+          handle: physics
+        })
+      ],
+      world,
+      eventBus: createEventBus({ clock: () => 1 }),
+      seed: "physics-layout"
+    });
+
+    expect(world.count()).toBe(3);
+    const bodyEntity = [...world.query([PhysicsBodyComponent])][0];
+    expect(bodyEntity).toBeDefined();
+    if (bodyEntity === undefined) {
+      throw new Error("Expected materialized layout body");
+    }
+    expect(world.get(bodyEntity, PhysicsBodyComponent)?.definition).toMatchObject({
+      damping: { linear: 0.5 },
+      userData: {
+        source: "layout-fixture",
+        physicsLayoutId: "layout.arena",
+        physicsLayoutBodyInstanceId: "architecture"
+      }
+    });
+    runtime.start();
+    runtime.tick(16);
+    expect(physics.snapshot()).toMatchObject({ bodyCount: 1, colliderCount: 2 });
+    expect(physics.queryPoint({ x: 1, y: 5 }).map((hit) => hit.colliderId)).toEqual([
+      "layout.arena.architecture.wall.left.collider"
+    ]);
+    expect(physics.queryPoint({ x: 19, y: 5 }).map((hit) => hit.colliderId)).toEqual([
+      "layout.arena.architecture.wall.right.collider"
+    ]);
+
+    runtime.dispose();
+    expect(world.count()).toBe(0);
   });
 });
 
@@ -279,6 +438,159 @@ describe("Physics trace store", () => {
 });
 
 describe("Physics module", () => {
+  it("samples fixed-step transforms smoothly without changing authoritative world state", () => {
+    const world = createMemoryWorld();
+    const mover = world.spawn();
+    world.add(mover, PhysicsBodyComponent, {
+      definition: { kind: "dynamic" }
+    });
+    world.add(mover, PhysicsTransformComponent, {
+      position: { x: 0, y: 0 }
+    });
+    world.add(mover, PhysicsVelocityComponent, {
+      linear: { x: 10, y: 0 }
+    });
+
+    const interpolation = createPhysicsInterpolationStore({ id: "test.interpolation" });
+    const runtime = createGame({
+      modules: [
+        createPhysicsModule({
+          backend: createMemoryPhysicsBackend(),
+          fixedDeltaMs: 1_000,
+          scene: { gravity: { x: 0, y: 0 } },
+          interpolationStore: interpolation
+        })
+      ],
+      world,
+      eventBus: createEventBus({ clock: () => 1 }),
+      seed: "physics-interpolation"
+    });
+
+    runtime.start();
+    runtime.tick(1_000);
+    const bodyId = world.get(mover, PhysicsBodyComponent)?.bodyId;
+    expect(bodyId).toBeDefined();
+    if (!bodyId) {
+      throw new Error("Expected interpolated physics body id");
+    }
+    expect(world.get(mover, PhysicsTransformComponent)?.position.x).toBe(10);
+    expect(interpolation.sample(bodyId)?.position.x).toBe(0);
+
+    const reusable = { position: { x: 0, y: 0 } };
+    runtime.tick(500);
+    expect(interpolation.sample(bodyId, reusable)).toBe(reusable);
+    expect(reusable.position.x).toBe(5);
+    expect(world.get(mover, PhysicsTransformComponent)?.position.x).toBe(10);
+    expect(interpolation.snapshot()).toMatchObject({
+      alpha: 0.5,
+      fixedDeltaMs: 1_000,
+      trackedBodyCount: 1
+    });
+
+    runtime.tick(500);
+    expect(interpolation.sample(bodyId, reusable)?.position.x).toBe(10);
+    expect(world.get(mover, PhysicsTransformComponent)?.position.x).toBe(20);
+    runtime.dispose();
+    expect(interpolation.isBound()).toBe(false);
+    expect(interpolation.snapshot()).toMatchObject({ trackedBodyCount: 0 });
+  });
+
+  it("supports application-defined interpolation and discontinuity policies", () => {
+    const world = createMemoryWorld();
+    const mover = world.spawn();
+    world.add(mover, PhysicsBodyComponent, {
+      definition: { kind: "dynamic" }
+    });
+    world.add(mover, PhysicsTransformComponent, {
+      position: { x: 0, y: 0 }
+    });
+    world.add(mover, PhysicsVelocityComponent, {
+      linear: { x: 100, y: 0 }
+    });
+
+    const resetBodies: string[] = [];
+    const interpolation = createPhysicsInterpolationStore({
+      policy: {
+        shouldResetHistory(bodyId, previous, current) {
+          const shouldReset = Math.abs(current.position.x - previous.position.x) > 50;
+          if (shouldReset) {
+            resetBodies.push(bodyId);
+          }
+          return shouldReset;
+        },
+        interpolate(_previous, current, _alpha, target) {
+          const output = target ?? { position: { x: 0, y: 0 } };
+          output.position.x = current.position.x;
+          output.position.y = current.position.y;
+          return output;
+        }
+      }
+    });
+    const runtime = createGame({
+      modules: [
+        createPhysicsModule({
+          backend: createMemoryPhysicsBackend(),
+          fixedDeltaMs: 1_000,
+          scene: { gravity: { x: 0, y: 0 } },
+          interpolationStore: interpolation
+        })
+      ],
+      world,
+      eventBus: createEventBus({ clock: () => 1 }),
+      seed: "physics-interpolation-policy"
+    });
+
+    runtime.start();
+    runtime.tick(1_000);
+    runtime.tick(500);
+    const bodyId = world.get(mover, PhysicsBodyComponent)?.bodyId;
+    expect(bodyId).toBeDefined();
+    if (!bodyId) {
+      throw new Error("Expected interpolated physics body id");
+    }
+    const reusable = { position: { x: 0, y: 0 } };
+    expect(interpolation.sample(bodyId, reusable)).toBe(reusable);
+    expect(reusable.position.x).toBe(100);
+    expect(resetBodies).toEqual([bodyId]);
+    runtime.dispose();
+  });
+
+  it("tracks only physics-owned moving bodies", () => {
+    const world = createMemoryWorld();
+    const dynamicBody = world.spawn();
+    world.add(dynamicBody, PhysicsBodyComponent, {
+      definition: { kind: "dynamic" }
+    });
+    const staticBody = world.spawn();
+    world.add(staticBody, PhysicsBodyComponent, {
+      definition: { kind: "static" },
+      syncToWorld: true
+    });
+    const worldDrivenBody = world.spawn();
+    world.add(worldDrivenBody, PhysicsBodyComponent, {
+      definition: { kind: "kinematic" }
+    });
+
+    const interpolation = createPhysicsInterpolationStore();
+    const runtime = createGame({
+      modules: [
+        createPhysicsModule({
+          backend: createMemoryPhysicsBackend(),
+          fixedDeltaMs: 20,
+          interpolationStore: interpolation
+        })
+      ],
+      world,
+      eventBus: createEventBus({ clock: () => 1 }),
+      seed: "physics-interpolation-ownership"
+    });
+
+    runtime.start();
+    runtime.tick(20);
+    expect(interpolation.snapshot().trackedBodyCount).toBe(1);
+    runtime.dispose();
+  });
+
   it("syncs world components, emits contact events, and writes trace entries", () => {
     const world = createMemoryWorld();
     const mover = world.spawn();

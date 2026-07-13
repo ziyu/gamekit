@@ -5,9 +5,27 @@ import type { RendererAdapter, RendererBootContext } from "@gamekit/renderer-cor
 import type { PhaserRendererOptions } from "@gamekit/renderer-phaser";
 import type { PhaserDriverCameraAdapter } from "./camera";
 
+export type PhaserMipmapFilter =
+  | "none"
+  | "NEAREST"
+  | "LINEAR"
+  | "NEAREST_MIPMAP_NEAREST"
+  | "LINEAR_MIPMAP_NEAREST"
+  | "NEAREST_MIPMAP_LINEAR"
+  | "LINEAR_MIPMAP_LINEAR";
+
+export type PhaserDriverRenderOptions = {
+  pixelRatio?: number;
+  antialias?: boolean;
+  antialiasGL?: boolean;
+  roundPixels?: boolean;
+  mipmapFilter?: PhaserMipmapFilter;
+};
+
 export type PhaserDriverOptions = {
   id?: string;
   backgroundColor?: string;
+  render?: PhaserDriverRenderOptions;
   renderer?: Omit<PhaserRendererOptions, "id" | "runtime">;
 };
 

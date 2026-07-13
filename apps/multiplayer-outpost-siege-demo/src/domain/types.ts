@@ -10,6 +10,7 @@ export const OUTPOST_BUILDABLE_TYPE = "outpost.buildable";
 export const OUTPOST_WAVE_TYPE = "outpost.wave";
 export const OUTPOST_OBJECTIVE_TYPE = "outpost.objective";
 export const OUTPOST_RENDER_OBJECT_TYPE = "render.object";
+export const OUTPOST_ARENA_TYPE = "outpost.arena";
 
 export type OutpostAssetGroup = "boot" | "match" | "combat" | "boss";
 
@@ -19,6 +20,24 @@ export type OutpostRenderObjectDefinition = {
   assetRefs: Record<string, AssetRef>;
   layer?: string | undefined;
   tags?: string[] | undefined;
+};
+
+export type OutpostArenaStaticObjectDefinition = {
+  id: string;
+  renderObject: DataRef<typeof OUTPOST_RENDER_OBJECT_TYPE>;
+  collider: DataRef<"physics.collider">;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  rotation?: number | undefined;
+  depth?: number | undefined;
+};
+
+export type OutpostArenaDefinition = {
+  id: string;
+  width: number;
+  height: number;
+  floor: DataRef<typeof OUTPOST_RENDER_OBJECT_TYPE>;
+  staticObjects: OutpostArenaStaticObjectDefinition[];
 };
 
 export type OutpostPlayerDefinition = {

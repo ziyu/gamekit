@@ -5,6 +5,7 @@ import {
   PhysicsBodyComponent,
   PhysicsColliderComponent,
   PhysicsTransformComponent,
+  createPhysicsInterpolationStore,
   createPhysicsModule,
   type PhysicsBackendAdapter,
   type PhysicsBodyId,
@@ -17,19 +18,47 @@ import {
 import { createKootaWorld } from "../packages/world-koota/src";
 
 const TICK_MS = 50;
-const cases = [runCase(250, 200), runCase(1_000, 100), runCase(3_000, 40)];
+const contactCases = [
+  runContactCase(250, 200),
+  runContactCase(1_000, 100),
+  runContactCase(3_000, 40)
+];
+const interpolationCase = runInterpolationCase(3_000, 40, 100);
 const checkEnabled = process.argv.includes("--check");
-const largestCase = cases.at(-1);
-const failures =
-  checkEnabled && largestCase && largestCase.msPerTick > 50
-    ? [`3,000 entity physics module frame exceeded 50ms: ${largestCase.msPerTick}ms`]
-    : [];
+const largestContactCase = contactCases.at(-1);
+const failures: string[] = [];
+if (checkEnabled && largestContactCase && largestContactCase.msPerTick > 50) {
+  failures.push(
+    `3,000 entity physics module frame exceeded 50ms: ${largestContactCase.msPerTick}ms`
+  );
+}
+if (checkEnabled && interpolationCase.msPerTick > 50) {
+  failures.push(
+    `3,000 body interpolation tracking frame exceeded 50ms: ${interpolationCase.msPerTick}ms`
+  );
+}
+if (checkEnabled && interpolationCase.microsecondsPerSample > 5) {
+  failures.push(
+    `Interpolation sampling exceeded 5us: ${interpolationCase.microsecondsPerSample}us`
+  );
+}
+if (checkEnabled && interpolationCase.trackedBodyCount !== interpolationCase.entityCount) {
+  failures.push(
+    `Interpolation tracked ${interpolationCase.trackedBodyCount}/${interpolationCase.entityCount} bodies`
+  );
+}
+if (checkEnabled && interpolationCase.retainedBodyCountAfterDispose !== 0) {
+  failures.push(
+    `Interpolation retained ${interpolationCase.retainedBodyCountAfterDispose} bodies after dispose`
+  );
+}
 
 console.log(
   JSON.stringify(
     {
-      benchmark: "physics-module-contact-index",
-      cases,
+      benchmark: "physics-module-hot-paths",
+      contactCases,
+      interpolationCase,
       ...(checkEnabled ? { check: { passed: failures.length === 0, failures } } : {})
     },
     null,
@@ -41,7 +70,7 @@ if (failures.length > 0) {
   process.exitCode = 1;
 }
 
-function runCase(entityCount: number, ticks: number) {
+function runContactCase(entityCount: number, ticks: number) {
   const world = createKootaWorld();
   for (let index = 0; index < entityCount; index += 1) {
     const entity = world.spawn();
@@ -87,6 +116,76 @@ function runCase(entityCount: number, ticks: number) {
     durationMs: round(durationMs),
     msPerTick: round(durationMs / ticks),
     microsecondsPerEntity: round((durationMs * 1000) / (ticks * entityCount))
+  };
+}
+
+function runInterpolationCase(entityCount: number, ticks: number, sampleIterations: number) {
+  const world = createKootaWorld();
+  const entities: number[] = [];
+  for (let index = 0; index < entityCount; index += 1) {
+    const entity = world.spawn();
+    entities.push(entity);
+    world.add(entity, PhysicsBodyComponent, {
+      definition: { kind: "dynamic", position: { x: index, y: 0 } }
+    });
+    world.add(entity, PhysicsTransformComponent, {
+      position: { x: index, y: 0 }
+    });
+  }
+
+  const interpolation = createPhysicsInterpolationStore({ id: "physics-benchmark" });
+  const runtime = createGame({
+    modules: [
+      createPhysicsModule({
+        backend: createContactBenchmarkBackend(),
+        fixedDeltaMs: TICK_MS,
+        eventPolicy: { emitContacts: false },
+        interpolationStore: interpolation
+      })
+    ],
+    world,
+    eventBus: createEventBus({ clock: () => 0 }),
+    seed: `physics-interpolation-benchmark-${entityCount}`
+  });
+  runtime.start();
+  for (let tick = 0; tick < 5; tick += 1) {
+    runtime.tick(TICK_MS);
+  }
+
+  const bodyIds = entities.map((entity) => {
+    const bodyId = world.get(entity, PhysicsBodyComponent)?.bodyId;
+    if (!bodyId) {
+      throw new Error(`Physics benchmark body was not created for entity ${entity}`);
+    }
+    return bodyId;
+  });
+  const tickStart = performance.now();
+  for (let tick = 0; tick < ticks; tick += 1) {
+    runtime.tick(TICK_MS);
+  }
+  const tickDurationMs = performance.now() - tickStart;
+
+  const reusable = { position: { x: 0, y: 0 } };
+  const sampleStart = performance.now();
+  for (let iteration = 0; iteration < sampleIterations; iteration += 1) {
+    for (const bodyId of bodyIds) {
+      interpolation.sample(bodyId, reusable);
+    }
+  }
+  const sampleDurationMs = performance.now() - sampleStart;
+  const trackedBodyCount = interpolation.snapshot().trackedBodyCount;
+  runtime.dispose();
+
+  return {
+    entityCount,
+    ticks,
+    sampleCount: entityCount * sampleIterations,
+    tickDurationMs: round(tickDurationMs),
+    msPerTick: round(tickDurationMs / ticks),
+    sampleDurationMs: round(sampleDurationMs),
+    microsecondsPerSample: round((sampleDurationMs * 1_000) / (entityCount * sampleIterations)),
+    trackedBodyCount,
+    retainedBodyCountAfterDispose: interpolation.snapshot().trackedBodyCount
   };
 }
 

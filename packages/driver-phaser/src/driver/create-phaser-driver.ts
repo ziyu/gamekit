@@ -6,6 +6,7 @@ import { createPhaserRenderer } from "@gamekit/renderer-phaser";
 import { createPhaserDriverAssetLoader, type PhaserDriverAssetRuntime } from "./assets";
 import { createPhaserDriverCameraAdapter, type PhaserDriverCameraAdapter } from "./camera";
 import { createPhaserDriverInputSource } from "./input-source";
+import { resolvePhaserDriverRenderOptions } from "./render-options";
 import { createPhaserDriverRuntime, type PhaserDriverRuntime } from "./runtime";
 import type { PhaserDriverAdapters, PhaserDriverOptions, PhaserGameDriver } from "./types";
 
@@ -13,6 +14,7 @@ const DEFAULT_BACKGROUND_COLOR = "#171813";
 
 export function createPhaserDriver(options: PhaserDriverOptions = {}): PhaserGameDriver {
   const driverId = options.id ?? "phaser";
+  const render = resolvePhaserDriverRenderOptions(options.render);
   let phase: DriverLifecyclePhase = "registered";
   let runtime: PhaserDriverRuntime | undefined;
 
@@ -48,7 +50,8 @@ export function createPhaserDriver(options: PhaserDriverOptions = {}): PhaserGam
       }
 
       runtime = await createPhaserDriverRuntime(ctx, {
-        backgroundColor: options.backgroundColor ?? DEFAULT_BACKGROUND_COLOR
+        backgroundColor: options.backgroundColor ?? DEFAULT_BACKGROUND_COLOR,
+        render
       });
       await renderer.boot(ctx);
       phase = "booted";
@@ -98,7 +101,9 @@ export function createPhaserDriver(options: PhaserDriverOptions = {}): PhaserGam
         adapters: ["renderer", "assetLoader", "camera", "inputSource"],
         details: {
           rendererId: renderer.id,
-          runtimeReady: runtime !== undefined
+          runtimeReady: runtime !== undefined,
+          render: { ...render },
+          ...(runtime === undefined ? {} : { runtime: runtime.diagnostics() })
         }
       };
     }

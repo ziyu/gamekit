@@ -207,6 +207,9 @@ Renderer adapter 可以持有底层资源句柄，但这些句柄不进入 gamep
 
 - App Host/profile 负责按 Data → AssetManager → adapter preload 的顺序集成资源系统；AssetManager 不自己读取 DataPack 或猜测 gameplay document。
 - Phaser、Three 等资源加载必须通过 Driver 暴露的 asset loader adapter，共享同一个外部 runtime cache；不要为 Asset 单独创建另一套 Phaser/Three runtime。
+- 美术源文件与运行时资源必须显式分层：SVG、PSD、Blender 等 authoring source 留在源码目录，由可复现的内容构建步骤生成 PNG/WebP、atlas、压缩纹理或模型产物；`AssetDefinition.source` 只指向当前 profile 实际加载的运行时产物。源文件不应因为位于 Web `public` 目录而被意外发布。
+- 运行时格式由内容构建和目标平台决定，不由 gameplay 或 Renderer 临时猜测。SVG 适合编辑、图标 UI 或确实需要无级缩放的少量内容；大量场景/实体纹理默认应预栅格化或进入 atlas，避免在加载和渲染路径重复解析、栅格化或产生额外纹理切换。
+- 烘焙场景纹理只描述视觉，不隐式拥有 gameplay collision。有关墙体、掩体、trigger 或 nav 区域的数据应进入 Physics/Data 或对应关卡 DataType；AssetManager 不解析或物化碰撞体。对模块化静态场景，优先把有碰撞物拆成可复用的紧边界资源，并让 app-owned scene instance 的单一 transform/footprint 同时派生 RenderObject placement 与 physics companion；内容测试应逐实例对齐，不能只比较整张场景 bounds。
 - Preload group 应面向启动体验和场景切换，不应把所有资源一次性塞进首屏加载。大资源、可选包和编辑器预览应支持 lazy/retry/unload。
 - 有界 group retry 使用 `loadAssetGroupWithRetry(...)`；已成功资源由 AssetManager cache 跳过，只重试 failed member。调用方必须显式设置最大尝试次数并通过 attempt hook 接入进度或诊断，不能在 app 内实现无界重试循环；attempt observer 及其 error reporter 的异常不能改变资源加载结果。
 - 空 group 返回失败结果并产生 `asset.group_missing` diagnostic，不把“没有任何加载目标”当成成功，也不重复空重试。
@@ -216,5 +219,7 @@ Renderer adapter 可以持有底层资源句柄，但这些句柄不进入 gamep
 - AssetDefinition 是资源声明，AssetManager 是运行时加载状态管理；不要把 gameplay data、DataPack 解析或 renderer native object 放进 AssetManager。
 - 资源引用应使用 AssetRef 或业务数据里的明确资源引用字段，不要求资源定义与使用者处于同一 DataPack。
 - AssetManager 默认只读取 `asset.definition` 或外部显式指定的同形资源定义；不要让它扫描任意 gameplay document 猜测资源。
+- 内容 manifest 应记录运行时资源的格式、尺寸和必要 variant，并用构建或测试校验产物真实存在且与声明一致；对首屏纹理数量、总传输字节和最大单文件建立粗粒度预算，不能只测 AssetManager 的内存注册耗时。
+- 栅格运行时纹理尺寸应接近“最大预期 display footprint × profile pixel ratio”，并为 zoom/atlas/filtering 留出有数据支撑的余量。不要把任意高分辨率 authoring source 原样发布，也不要让同一透明小物体在默认视角长期做大比例 minification；传输字节、纹理内存、fill-rate 和闪烁风险需要一起衡量。
 - 资源加载失败、缺失引用和平台 source 不支持要分成不同 diagnostics，方便编辑器和 DevTools 给出正确修复建议。
 - Renderer 使用 asset id 或 adapter-specific props 取资源句柄；gameplay、DataType 和 Save payload 不保存 texture、image element、WebGL resource 或 Phaser cache object。

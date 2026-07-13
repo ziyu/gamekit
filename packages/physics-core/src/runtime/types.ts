@@ -138,6 +138,54 @@ export type PhysicsBodyState = {
   userData?: Record<string, unknown>;
 };
 
+export type PhysicsInterpolationTransform = {
+  position: PhysicsVector;
+  rotation?: PhysicsRotation;
+};
+
+export type ReadonlyPhysicsRotation =
+  | number
+  | Readonly<PhysicsVector>
+  | Readonly<PhysicsQuaternion>;
+
+export type ReadonlyPhysicsInterpolationTransform = {
+  readonly position: Readonly<PhysicsVector>;
+  readonly rotation?: ReadonlyPhysicsRotation;
+};
+
+export type PhysicsTransformInterpolator = (
+  previous: ReadonlyPhysicsInterpolationTransform,
+  current: ReadonlyPhysicsInterpolationTransform,
+  alpha: number,
+  target?: PhysicsInterpolationTransform
+) => PhysicsInterpolationTransform;
+
+export type PhysicsInterpolationResetPredicate = (
+  bodyId: PhysicsBodyId,
+  previous: ReadonlyPhysicsInterpolationTransform,
+  current: ReadonlyPhysicsInterpolationTransform
+) => boolean;
+
+export type PhysicsInterpolationPolicy = {
+  interpolate?: PhysicsTransformInterpolator;
+  shouldResetHistory?: PhysicsInterpolationResetPredicate;
+};
+
+export type PhysicsInterpolationSnapshot = {
+  alpha: number;
+  fixedDeltaMs: number;
+  trackedBodyCount: number;
+};
+
+export type PhysicsInterpolationStore = {
+  sample(
+    bodyId: PhysicsBodyId,
+    target?: PhysicsInterpolationTransform
+  ): PhysicsInterpolationTransform | undefined;
+  snapshot(): PhysicsInterpolationSnapshot;
+  isBound(): boolean;
+};
+
 export type PhysicsColliderState = {
   id: PhysicsColliderId;
   bodyId?: PhysicsBodyId;
@@ -396,6 +444,31 @@ export type PhysicsColliderData = PhysicsColliderDefinition & {
 
 export type PhysicsSceneData = PhysicsSceneConfig & {
   materials?: Array<DataRef<"physics.material">>;
+};
+
+export type PhysicsLayoutColliderInstanceData = {
+  id: string;
+  collider: DataRef<"physics.collider">;
+  overrides?: Partial<Omit<PhysicsColliderDefinition, "id" | "bodyId">>;
+  enabled?: boolean;
+};
+
+export type PhysicsLayoutBodyInstanceData = {
+  id: string;
+  body: DataRef<"physics.body">;
+  position?: PhysicsVector;
+  rotation?: PhysicsRotation;
+  overrides?: Partial<Omit<PhysicsBodyDefinition, "id" | "position" | "rotation">>;
+  colliders?: PhysicsLayoutColliderInstanceData[];
+  enabled?: boolean;
+};
+
+export type PhysicsLayoutData = {
+  id: string;
+  scene?: DataRef<"physics.scene">;
+  bounds?: PhysicsBounds;
+  bodies: PhysicsLayoutBodyInstanceData[];
+  tags?: string[];
 };
 
 export type PhysicsTraceKind = "step" | "contact" | "query" | "diagnostic";

@@ -20,7 +20,7 @@ Physics 是统一物理 facade 和 GameModule toolkit。它负责把刚体、碰
 
 Physics 不是 App Host 默认标准服务。物理模拟需要 world、tick、entity binding、gameplay filter、save contributor 和 session lifecycle，应通过 `createPhysicsModule(...)` 这类标准 GameModule helper 安装。App Host 或 profile 可以提供 backend factory、driver adapter、DataRegistry、DevTools 和 SaveManager，但不直接拥有 gameplay physics scene。
 
-使用 configured App Host 时，可以通过 `profile.standard.game.standardModules.physics` 声明 backend、scene、handle、bindings 和 trace policy。App Host helper 只解析这些 profile value 并调用 `@gamekit/physics-core` 的 `createPhysicsModule(...)`；live scene、fixed step、World sync 和 cleanup 仍完全属于 Physics GameModule。
+使用 configured App Host 时，可以通过 `profile.standard.game.standardModules.physics` 声明 backend、scene、handle、interpolation store、bindings 和 trace policy。App Host helper 只解析这些 profile value 并调用 `@gamekit/physics-core` 的 `createPhysicsModule(...)`；live scene、fixed step、World sync 和 cleanup 仍完全属于 Physics GameModule。
 
 ## 非目标
 
@@ -263,6 +263,7 @@ export type PhysicsModuleOptions = {
   backend: PhysicsBackendAdapter | PhysicsBackendFactory;
   scene: PhysicsSceneConfig;
   handle?: PhysicsHandle;
+  interpolationStore?: PhysicsInterpolationStore;
   bindings: PhysicsWorldBindings;
   eventPolicy?: PhysicsEventPolicy;
   save?: PhysicsSaveOptions;
@@ -273,6 +274,14 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule;
 ```
 
 Physics module 跟随 GameRuntime lifecycle。`stop()` 后不继续 step；`dispose()` 必须释放 backend scene、订阅、body/collider handle map、query cache 和 trace buffer。
+
+### Fixed-step presentation interpolation
+
+Physics module 可以绑定由组合层创建的 `PhysicsInterpolationStore`，为 Renderer 和 follow camera 提供 previous/current fixed-step transform 与当前 accumulator alpha。Store 只跟踪会从 backend 同步回 World 的动态 body；static body、`syncFromWorld` body 和 gameplay authority 不读取该表现状态。
+
+默认 policy 对 position/vector 做线性插值、对 2D number rotation 做最短角插值、对 quaternion 做归一化线性插值。需要 step/snap、定制曲线或识别 teleport 等不连续状态时，组合层可以在创建 store 时注入 `policy.interpolate` 和 `policy.shouldResetHistory`；回调输入是深只读 history view，避免扩展代码污染 store 内部缓存。Physics Core 不内置游戏单位、移动速度或 teleport 阈值。自定义 interpolator 仍只能产生 transient presentation transform，不能改变权威 state。
+
+`sample(bodyId, target?)` 支持 caller-owned reusable target，避免 transform hot path 每帧分配。World、PhysicsScene、Save、multiplayer snapshot 和 query 始终使用 fixed-step 后的权威 transform；checkpoint restore、body removal 和 module dispose 必须清理或重置插值历史。远端网络 snapshot interpolation 属于 Multiplayer presentation buffer，不由这个 store 代替。
 
 ## Physics Handle 与依赖注入
 
@@ -388,8 +397,13 @@ Physics Core 可以注册内置 DataType：
 - `physics.body`
 - `physics.collider`
 - `physics.scene`
+- `physics.layout`
 
 这些类型只描述可重建配置，不表达具体玩法业务语义。
+
+`physics.layout` 是关卡或场景的 companion gameplay data：它引用 `physics.body` / `physics.collider` prototype，并用稳定 instance id、transform 和可选 body/collider override 描述批量静态或动态几何。Body override 不重复定义 instance position/rotation，只覆盖 prototype 的 kind、damping、gravity、velocity 或 user data；布局坐标始终只有一个来源。2D bounds 不带 z，3D bounds 必须同时提供有效的 min/max z。`createPhysicsLayoutModule(...)` 负责在 GameRuntime install 时把布局物化为标准 World physics components，并只清理自己创建的 entity。它不读取纹理像素、不依赖 Renderer，也不把图片、tilemap 或具体 backend handle 放入 Physics Core。
+
+同一 layout body 可以承载多个 collider instance。墙体、掩体等静态场景几何应优先批到少量 static body 上，保留独立 collider id 供 query/contact/DevTools 使用，避免为了每个矩形创建一个刚体。动态对象仍应使用独立 body entity。
 
 示例：
 
@@ -536,6 +550,7 @@ Load 时应先恢复 World entity，再由 Physics contributor 重建 backend sc
 Physics 必须从一开始提供可解释入口：
 
 - Physics scene snapshot：body/collider count、dimension、backend kind、gravity、fixed step、active/sleeping summary。
+- Presentation interpolation snapshot：alpha、fixed delta、tracked body count；不展开每个 body 的逐帧 transform。
 - Body / collider detail：entity binding、definition id、shape summary、material、filter、last transform。
 - Contact trace：enter/exit、sensor、filter、entity ids、correlation id。
 - Query trace：query type、filter、hit count、duration、caller source。
@@ -552,6 +567,7 @@ Physics module 应默认使用 fixed timestep 和稳定 system order，减少不
 长期规则：
 
 - Physics step 使用固定 `fixedDelta`，外部 Host tick delta 只用于 accumulator。
+- Presentation 可以读取 accumulator alpha 做 transient interpolation，但不能把插值结果写回 World 或用于 gameplay decision。
 - 同一 tick 内的 create/destroy/update 顺序应稳定。
 - Contact event 排序应按稳定 body/collider id 或 backend-provided pair id 归一化。
 - Backend snapshot 只承诺 GameKit 层稳定字段，不承诺 native memory layout。
@@ -565,6 +581,7 @@ Physics module 应默认使用 fixed timestep 和稳定 system order，减少不
 - create/update/destroy body。
 - create/update/destroy collider。
 - fixed step 后 transform / velocity 行为。
+- fixed step 间的 presentation sample、最短角/向量/quaternion 插值、reusable target 和 dispose/reset cleanup。
 - static / dynamic / kinematic 基本语义。
 - sensor 与 solid contact enter/exit。
 - collision filter。
@@ -586,11 +603,14 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
 - 使用 App Host 标准组合时优先声明 `standardModules.physics`；需要自定义安装顺序或多 scene 时，仍可在 `game.modules` 中直接调用 `createPhysicsModule(...)`。
 - App Host/profile 可以准备 backend factory、driver physics adapter、DataRegistry、SaveManager 和 DevToolsRuntime，但 Physics scene 生命周期跟随 GameRuntime。
 - 组合层为每个 live physics scene 创建一个具名 `PhysicsHandle`，并把它同时注入 `createPhysicsModule(...)` 和需要查询的 gameplay module；handle 不拥有 scene，只由 Physics module 绑定和解绑。
+- 需要平滑本地物理表现时，由组合层创建一个 `PhysicsInterpolationStore` 并通过 `standardModules.physics.interpolationStore` 或直接 module option 注入 Physics module，同时注入 Renderer sync 和 camera target resolver；不要在游戏、Renderer 或 Camera 中各自维护 previous transform 与 accumulator。
+- 只有应用组合层知道的移动尺度、teleport 语义或表现曲线应通过 interpolation policy 注入；Physics Core 只提供默认数学策略和 history lifecycle，不写死游戏阈值或对象类别。
 - 独立物理库进入 `physics-*` adapter 包；绑定完整外部 scene runtime 的物理能力由对应 Driver 暴露 runtime slice。
 - Physics module 的 World sync 顺序必须明确。常见顺序是 input/AI 写意图，physics step 推进，再把 transform/velocity 写回 World，最后 renderer sync。
 - Physics module 在 World sync 时维护 body/collider handle 到 entity 的反向索引，并在 component disabled、entity despawn 或 handle replacement 时释放 stale backend handle；contact 热路径不能为每个 contact 扫描 World。
+- 场景几何通过 `physics.layout` + `createPhysicsLayoutModule(...)` 物化；layout module 与 Physics module 使用同一组 World component binding，并安装在 Physics step module 之前。每个 module 只清理自己创建的 entity，不以全量 World despawn 代替 lifecycle ownership。
 - 新 backend 先通过 physics conformance tests，再补 backend-specific behavior test。真实 canvas 或 Phaser Scene 只用于少量集成测试。
-- 改动 Physics World sync、contact mapping 或 handle lifecycle 时运行 `corepack pnpm bench:physics:check`，用大实体/固定 contact profile 观察数量级回归。
+- 改动 Physics World sync、contact mapping、interpolation sampling 或 handle lifecycle 时运行 `corepack pnpm bench:physics:check`，用大实体/固定 contact profile 与大量 reusable-target sampling 观察数量级回归和 dispose 后 retained state。
 - 把 Physics trace 接入跨模块 timeline 时使用有界 trace store 和增量 entry hook；不要每帧读取并合并完整 trace history。修改该路径时运行 `corepack pnpm bench:diagnostics:check`。
 
 ### 模块使用
@@ -599,7 +619,9 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
 - 需要 raycast、overlap、check 或 point query 的业务模块通过 DI 接收 `PhysicsQueries` / `PhysicsHandle`；测试中注入 fake queries，生产组合中注入 Physics module 绑定的 handle。
 - Damage、team/faction、hit/hurt rule、projectile owner、pierce、ability activation 等玩法语义应在游戏模块、GAS 或 TCA 中解释；Physics 只回答空间、碰撞和运动事实。
 - Collision layer/mask 只表达物理过滤；不要把所有玩法 target rule 都塞进 physics filter。需要命中后解释的规则应放在 gameplay 数据中。
+- 整张背景图、tilemap 或模型只负责表现，不能被 gameplay 当成隐式碰撞来源。关卡必须提供显式 `physics.layout`、tile collision layer 或 mesh collider companion；运行时不要逐像素扫描图片生成 collider。模块化静态场景应以 app-owned scene instance 为唯一 transform/footprint 来源，同时派生 RenderObject placement 与 collider，并用内容测试逐实例比较 position、rotation 和 shape；只锁定整张场景 bounds 不能防止物体漂移。
 - 高频移动、碰撞和查询留在 physics/world system 内；不要把每帧 contact manifold、position patch 或 query result 全量发到 EventBus、React UI 或 DevTools UI。
+- Renderer/camera 可以读取 interpolation store 的 transient sample；碰撞、能力目标、AI、Save 和 multiplayer authority 仍只读取 World / PhysicsScene 权威 transform。
 - Save 只保存可恢复 physics state，不保存 backend cache。Load 后由 Physics module 重建 scene 并恢复 stable body/entity mapping。
 - 修改 Physics checkpoint、backend reset 或 restore rebuild 时运行 `corepack pnpm bench:checkpoint:check`；该基准将 restore 与首个 rebuild tick 一起计量。
 - 需要后端专属能力时，通过显式 native path 使用具体 adapter 包，并把这段代码限制在 app-specific integration、Editor backend panel 或 DevTools plugin 中。

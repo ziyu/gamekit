@@ -524,7 +524,7 @@ Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务�
 简单组合可以使用 `standardModules` 默认顺序。需要把 app intent、AI、contact/combat、checkpoint、replication、commit 等 module 插入标准模块之间时，app 应在 `game.modules(ctx)` 中按顺序调用公开的 standard module helper 和 app factory。App Host 不引入全局 phase catalog；headless composition test 必须固定 module/system id 顺序和逆序 cleanup。
 
 - `camera` 标准游戏模块负责把已经归一化的 input action fact 转成 CameraController 目标状态，可选平滑插值显示状态，并通过 app/profile 提供的 sync hook 同步 renderer camera adapter 或 UI。
-- `physics` 标准游戏模块负责从 DataRegistry/World 物化 body 与 collider，用 fixed timestep 推进 backend scene，写回 World transform/velocity，桥接低频 contact event，并在 GameRuntime dispose 时释放 backend scene。
+- `physics` 标准游戏模块负责从 DataRegistry/World 物化 body 与 collider，用 fixed timestep 推进 backend scene，写回 World transform/velocity，桥接低频 contact event，并在 GameRuntime dispose 时释放 backend scene。Profile 可以注入 `PhysicsHandle` 和 transient `PhysicsInterpolationStore`；App Host 只透传这些 facade，不读取物理或表现状态。
 - `tca` 标准游戏模块负责从 DataRegistry 读取 `tca.rule`、编译规则、桥接 EventBus、写入 trace，并在 GameRuntime dispose 时清理订阅。
 - `gas` 标准游戏模块负责从 DataRegistry 读取 GAS 定义、创建 ECS-backed GAS runtime、注册 effect tick system、写入 trace，并在 GameRuntime dispose 时释放。Profile 可以提供 `GasHandle`，让同一 GameRuntime 内的业务模块通过稳定 facade 使用该 runtime；handle 仍跟随 GameModule 绑定/解绑，不进入 `services.xxx`。
 - `multiplayer` 标准游戏模块负责从 `services.multiplayer` 或显式 facade 订阅归一化消息，把 command 入站队列放到 tick 边界处理；如果 profile 声明 presentation binding，则在 GameRuntime tick 中自动推进 core snapshot playback，没收到新 authoritative snapshot 的帧也继续 advance 既有 buffer，并通过 reusable presentation projector 根据声明的 `Network*` tracks 产出 typed presented values，再交给游戏提供的 apply hook。GameRuntime dispose 时释放订阅并重置 playback/projector。

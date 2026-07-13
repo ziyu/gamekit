@@ -5,6 +5,7 @@ import type {
   DataTypeDefinition
 } from "@gamekit/data";
 import {
+  OUTPOST_ARENA_TYPE,
   OUTPOST_BUILDABLE_TYPE,
   OUTPOST_ENEMY_TYPE,
   OUTPOST_OBJECTIVE_TYPE,
@@ -13,6 +14,7 @@ import {
   OUTPOST_WAVE_TYPE,
   OUTPOST_WEAPON_TYPE,
   type OutpostBuildableDefinition,
+  type OutpostArenaDefinition,
   type OutpostEnemyDefinition,
   type OutpostObjectiveDefinition,
   type OutpostPlayerDefinition,
@@ -29,7 +31,8 @@ export function createOutpostDataTypes(): Array<DataTypeDefinition<any>> {
     createOutpostBuildableDataType(),
     createOutpostWaveDataType(),
     createOutpostObjectiveDataType(),
-    createOutpostRenderObjectDataType()
+    createOutpostRenderObjectDataType(),
+    createOutpostArenaDataType()
   ];
 }
 
@@ -198,6 +201,54 @@ export function createOutpostRenderObjectDataType(): DataTypeDefinition<OutpostR
   };
 }
 
+export function createOutpostArenaDataType(): DataTypeDefinition<OutpostArenaDefinition> {
+  return {
+    type: OUTPOST_ARENA_TYPE,
+    getTags: () => ["outpost", "arena", "scene"],
+    references(document) {
+      return [
+        dataRef(document.data.floor, "floor"),
+        ...document.data.staticObjects.flatMap((object, objectIndex) => [
+          dataRef(object.renderObject, `staticObjects[${objectIndex}].renderObject`),
+          dataRef(object.collider, `staticObjects[${objectIndex}].collider`)
+        ])
+      ];
+    },
+    validate(document) {
+      const diagnostics = [
+        ...matchingId(document),
+        ...positive(document, document.data.width, "width"),
+        ...positive(document, document.data.height, "height")
+      ];
+      const ids = new Set<string>();
+      for (const [objectIndex, object] of document.data.staticObjects.entries()) {
+        const path = `staticObjects[${objectIndex}]`;
+        if (ids.has(object.id)) {
+          diagnostics.push(
+            diagnostic(
+              document,
+              "outpost.arena_duplicate_object",
+              `Arena static object id must be unique: ${object.id}`,
+              `${path}.id`
+            )
+          );
+        }
+        ids.add(object.id);
+        diagnostics.push(
+          ...finite(document, object.position.x, `${path}.position.x`),
+          ...finite(document, object.position.y, `${path}.position.y`),
+          ...positive(document, object.size.width, `${path}.size.width`),
+          ...positive(document, object.size.height, `${path}.size.height`),
+          ...(object.rotation === undefined
+            ? []
+            : finite(document, object.rotation, `${path}.rotation`))
+        );
+      }
+      return diagnostics;
+    }
+  };
+}
+
 function matchingId<TData extends { id: string }>(document: DataDocument<TData>): DataDiagnostic[] {
   return document.data.id === document.id
     ? []
@@ -230,6 +281,12 @@ function positive(
   return value !== undefined && Number.isFinite(value) && value > 0
     ? []
     : [diagnostic(document, "outpost.data_positive_number", `${path} must be positive`, path)];
+}
+
+function finite(document: DataDocument<unknown>, value: number, path: string): DataDiagnostic[] {
+  return Number.isFinite(value)
+    ? []
+    : [diagnostic(document, "outpost.data_finite_number", `${path} must be finite`, path)];
 }
 
 function nonNegative(
