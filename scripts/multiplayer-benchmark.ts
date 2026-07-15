@@ -4,6 +4,7 @@ import {
   createMultiplayerAuthorityBindingStore,
   createMultiplayerAuthorityHostLoop,
   createMultiplayerAuthorityReceiver,
+  createMultiplayerClientReplication,
   createMultiplayerLocalAuthorityLoop,
   createMultiplayerModule,
   createMultiplayerPredictionBuffer,
@@ -89,6 +90,7 @@ const suites: BenchmarkSuite[] = [
   runLocalAuthorityLoopBenchmark(),
   runPredictionReconciliationBenchmark(),
   runPredictionPresentationBenchmark(),
+  runManagedClientReplicationBenchmark(),
   runSnapshotPlaybackBenchmark(),
   runPresentationProjectionBenchmark()
 ];
@@ -785,6 +787,101 @@ function runPredictionPresentationBenchmark(): BenchmarkSuite {
 
   return {
     suite: "prediction-presentation",
+    cases
+  };
+}
+
+function runManagedClientReplicationBenchmark(): BenchmarkSuite {
+  const cases = [4, 128].map((entityCount) => {
+    const runtime = createBenchmarkRuntime();
+    const positions = Array.from({ length: entityCount }, (_, index) => ({
+      x: index * 2,
+      y: index * 3
+    }));
+    const frames = 30_000;
+    let snapshotTick = 0;
+    let checksum = 0;
+    const replication = createMultiplayerClientReplication({
+      runtime,
+      installContext: {},
+      options: {
+        playback: {
+          interpolationDelayMs: TICK_MS,
+          timeSource: "tick",
+          readTime(entry) {
+            return entry.tick === undefined ? undefined : entry.tick * TICK_MS;
+          }
+        },
+        tracks: [
+          defineSnapshotVector2Track<BenchmarkSnapshot>({
+            selectInto(snapshot, writer) {
+              for (let index = 0; index < snapshot.positions.length; index += 1) {
+                const position = snapshot.positions[index];
+                if (position !== undefined) {
+                  writer.add(index, position);
+                }
+              }
+            }
+          })
+        ],
+        readSnapshot(payload) {
+          return payload as BenchmarkSnapshot;
+        },
+        toBufferEntry({ snapshot }) {
+          return { snapshot, tick: snapshot.tick };
+        },
+        applyFrame({ presented }) {
+          const last = presented.vector2(entityCount - 1, { x: 0, y: 0 });
+          checksum += last.x + last.y;
+        }
+      }
+    });
+
+    const start = performance.now();
+    for (let frame = 0; frame < frames; frame += 1) {
+      if (frame % 3 === 0) {
+        snapshotTick += 1;
+        for (let index = 0; index < positions.length; index += 1) {
+          const position = positions[index];
+          if (position !== undefined) {
+            position.x += 0.25;
+            position.y += 0.125;
+          }
+        }
+        runtime.emit({
+          id: `managed-snapshot-${snapshotTick}`,
+          sessionId: SESSION_ID,
+          channel: RELIABLE_CHANNEL,
+          kind: MULTIPLAYER_SNAPSHOT_KIND,
+          sourcePeerId: AUTHORITY_PEER_ID,
+          tick: snapshotTick,
+          timestamp: snapshotTick * TICK_MS,
+          payload: {
+            tick: snapshotTick,
+            positions: positions.map((position) => ({ ...position }))
+          }
+        });
+      }
+      replication.update({ delta: 1000 / 60, elapsed: frame * (1000 / 60), tick: frame });
+    }
+    const durationMs = performance.now() - start;
+    const diagnostics = replication.diagnostics();
+    replication.dispose();
+
+    return {
+      entityCount,
+      frames,
+      snapshots: snapshotTick,
+      durationMs: round(durationMs),
+      microsecondsPerFrame: round((durationMs * 1000) / frames),
+      acceptedSnapshots: diagnostics.appliedSnapshots,
+      rejectedSnapshots: diagnostics.rejectedSnapshots,
+      checksum: round(checksum)
+    };
+  });
+
+  return {
+    suite: "managed-client-replication",
     cases
   };
 }

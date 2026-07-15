@@ -13,3 +13,4 @@ export type OutpostUiSnapshot = {
   objectiveId?: string | undefined;
 };
 export * from "./OutpostApp";
+export * from "./OutpostLobby";

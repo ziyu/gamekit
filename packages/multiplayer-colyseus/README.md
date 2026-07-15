@@ -19,6 +19,7 @@ This package is responsible for:
 - Sending and receiving GameKit semantic message envelopes through Colyseus room messages.
 - Providing opt-in provider-native capability bridges for Colyseus Schema state sync, room metadata, reconnect / seat reservation summaries, and provider diagnostics.
 - Providing server-only helpers for local Colyseus test/demo servers.
+- Implementing Room-side backend connections that are consumed by multiplayer-core instead of replacing its runtime/session facade.
 - Providing a typed native bridge for app-specific tooling that explicitly opts into Colyseus types.
 - Keeping Colyseus Room, Client, Schema, matchmaker, reconnection token, socket, and server objects out of `@gamekit/multiplayer-core`, gameplay modules, DataType, Save payloads, and reusable GameModule public APIs.
 
@@ -64,6 +65,43 @@ const server = await createGameKitColyseusServer({
 });
 ```
 
+Room-owned authority apps should compose their own Room around the typed lifecycle bridge:
+
+```ts
+import { Room, type Client } from "@colyseus/core";
+import { createColyseusRoomRuntimeBridge } from "@gamekit/multiplayer-colyseus/server";
+
+type GameRoomOptions = { sessionId?: string };
+
+class GameRoom extends Room {
+  private readonly authority = createColyseusRoomRuntimeBridge<GameRoom, Client, GameRoomOptions>({
+    resolveSessionId: (room, options) => options.sessionId ?? room.roomId,
+    createRuntime: ({ multiplayer }) => createGameServerRuntime({ multiplayer })
+  });
+
+  async onCreate(options) {
+    await this.authority.create(this, options);
+    this.onMessage("gamekit.message", (client, message) => {
+      this.authority.receive(client, message);
+    });
+  }
+
+  onJoin(client, options) {
+    this.authority.join(client, resolveGamePeer(options));
+  }
+
+  onLeave(client, code) {
+    this.authority.leave(client, code);
+  }
+
+  async onDispose() {
+    await this.authority.dispose();
+  }
+}
+```
+
+The bridge owns one Room simulation interval and exposes a server-side `MultiplayerRuntime` created by multiplayer-core. Internally, a private Room-side backend connection binds the existing provider Room to the stable GameKit session without creating a server-to-self Colyseus client. The app still owns Room metadata, authentication, peer/participant policy, command payload validation, gameplay modules, field-level Schema, replication projection, and close/reconnect policy. The bridge performs the one core session binding during Room creation; app code does not create, replace, leave, or reconnect that session afterward.
+
 The root entry must not re-export `Room`, `Client`, `Schema`, server transports, or test server helpers. Server-side exports must stay behind `@gamekit/multiplayer-colyseus/server` or app-specific server packages.
 
 ## Capability Lanes
@@ -88,11 +126,11 @@ Provider-native bridge rules:
 
 Expected dependency ownership:
 
-| Area           | Allowed dependencies                              | Notes                                                        |
-| -------------- | ------------------------------------------------- | ------------------------------------------------------------ |
-| Root adapter   | `@gamekit/multiplayer-core`, Colyseus client SDK  | Browser/client-facing integration only.                      |
-| Server subpath | Colyseus server packages, Colyseus schema package | Server-only exports and local test/demo harnesses.           |
-| Tests          | Vitest, Colyseus local server harness             | Must clean up ports, rooms, listeners, and pending messages. |
+| Area           | Allowed dependencies                                                           | Notes                                                                         |
+| -------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Root adapter   | `@gamekit/multiplayer-core`, Colyseus client SDK                               | Browser/client-facing integration only.                                       |
+| Server subpath | `@gamekit/multiplayer-core`, Colyseus server packages, Colyseus schema package | Room-side backend mapping, server-only exports and local test/demo harnesses. |
+| Tests          | Vitest, Colyseus local server harness                                          | Must clean up ports, rooms, listeners, and pending messages.                  |
 
 Colyseus SDK types can appear in `@gamekit/multiplayer-colyseus` public native bridge types, but not in `@gamekit/multiplayer-core`, app gameplay modules, Data definitions, Save contributors, or provider-neutral DevTools sources.
 
@@ -100,15 +138,16 @@ Colyseus SDK types can appear in `@gamekit/multiplayer-colyseus` public native b
 
 The adapter maps Colyseus concepts into provider-neutral GameKit summaries:
 
-| GameKit concept     | Colyseus source                             | Notes                                                                                 |
-| ------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `backend.id`        | Adapter option                              | Stable id such as `colyseus` or `colyseus:sandbox`.                                   |
-| `session.id`        | Room id                                     | Do not expose the Room object in snapshots.                                           |
-| `session.kind`      | Room metadata / adapter option              | Examples: `private`, `public`, `matchmade`, `local-dev`.                              |
-| `session.authority` | Adapter option / room metadata              | Common first demo value: `host-authoritative` or `server-authoritative`.              |
-| `peer.id`           | Colyseus session id or app-provided peer id | Prefer stable app-provided id when available.                                         |
-| `peer.playerId`     | App/account metadata                        | Do not infer from secrets or tokens.                                                  |
-| `phase`             | Client/room lifecycle                       | Normalize to GameKit phases such as `connecting`, `in-session`, `closed`, `disposed`. |
+| GameKit concept     | Colyseus source                            | Notes                                                                                 |
+| ------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `backend.id`        | Adapter option                             | Stable id such as `colyseus` or `colyseus:sandbox`.                                   |
+| `session.id`        | Stable GameKit id supplied in Room options | Maps deterministically to a provider room; it is not a Colyseus Client session id.    |
+| Provider room id    | Colyseus `roomId`                          | Private adapter mapping target; do not expose the Room object in core snapshots.      |
+| `session.kind`      | Room metadata / adapter option             | Examples: `private`, `public`, `matchmade`, `local-dev`.                              |
+| `session.authority` | Adapter option / room metadata             | Common first demo value: `host-authoritative` or `server-authoritative`.              |
+| `peer.id`           | App-provided peer id                       | Stable GameKit identity; use Colyseus Client session id only as a private fallback.   |
+| `peer.playerId`     | App/account metadata                       | Do not infer from secrets or tokens.                                                  |
+| `phase`             | Client/room lifecycle                      | Normalize to GameKit phases such as `connecting`, `in-session`, `closed`, `disposed`. |
 
 Current `multiplayer-core` exposes `createSession()` and `joinSession()`. A Colyseus adapter can map them to Colyseus room operations as follows:
 
@@ -162,6 +201,7 @@ Recommended Colyseus message types:
 | Colyseus message type    | Purpose                                                   |
 | ------------------------ | --------------------------------------------------------- |
 | `gamekit.message`        | Provider-neutral GameKit semantic envelope.               |
+| `gamekit.presence`       | Core session/peer presence summary.                       |
 | `gamekit.command.result` | Low-frequency accepted/rejected command result summary.   |
 | `gamekit.state.summary`  | Redacted provider-neutral state summary for HUD/DevTools. |
 | `gamekit.diagnostic`     | Low-frequency backend diagnostic event.                   |
@@ -185,6 +225,7 @@ The generic server helpers should provide Colyseus integration without importing
 - Normalize join, leave, drop, reconnect, and close events into provider-neutral summaries.
 - Optionally expose a state-summary hook for DevTools/HUD snapshots.
 - Allow an app-specific room to attach a headless GameRuntime or host-authoritative command handler.
+- Provide a Room-owned lifecycle bridge that boots/starts/ticks/stops/disposes an app-provided runtime, implements a private Room-side `MultiplayerBackendConnection`, and delegates the server facade to multiplayer-core without a server self-connection.
 - Keep app command decoders and authority policy outside `@gamekit/multiplayer-core`.
 
 Tiny Camp's Colyseus Room belongs in Sandbox app/server code or a Sandbox-specific helper. This package may provide the reusable Colyseus bridge it uses, but it must not export Tiny Camp worker/building/monster command types from the adapter root.

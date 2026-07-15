@@ -466,6 +466,422 @@ kbd {
   animation: none;
 }
 
+.outpost-stage.is-deployment .outpost-vitals,
+.outpost-stage.is-deployment .outpost-abilities,
+.outpost-stage.is-deployment .outpost-control-hint {
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+}
+
+.outpost-lobby {
+  position: absolute;
+  z-index: 6;
+  color: var(--hud-paper);
+}
+
+.outpost-lobby button,
+.outpost-lobby input {
+  border-radius: 0;
+  font: inherit;
+}
+
+.outpost-lobby--gate {
+  top: 50%;
+  left: 50%;
+  display: grid;
+  grid-template-columns: minmax(310px, 1.15fr) minmax(300px, 0.85fr);
+  width: min(820px, calc(100vw - 48px));
+  min-height: 390px;
+  overflow: hidden;
+  border: 1px solid rgba(130, 239, 210, 0.28);
+  background:
+    linear-gradient(110deg, rgba(3, 14, 12, 0.97) 0 56%, rgba(4, 18, 15, 0.92) 56%),
+    var(--hud-glass);
+  box-shadow:
+    0 38px 90px rgba(0, 0, 0, 0.66),
+    inset 0 1px rgba(255, 255, 255, 0.035);
+  transform: translate(-50%, -48%);
+  backdrop-filter: blur(18px);
+  animation: outpost-gate-enter 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.outpost-lobby--gate::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 56%;
+  width: 1px;
+  background: linear-gradient(transparent, rgba(130, 239, 210, 0.32), transparent);
+}
+
+.outpost-lobby__serial {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: rgba(141, 169, 155, 0.66);
+  font:
+    700 7px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.16em;
+}
+
+.outpost-lobby__serial i {
+  width: 22px;
+  height: 1px;
+  background: var(--hud-amber);
+}
+
+.outpost-lobby__intro {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 52px 52px 48px;
+  background:
+    linear-gradient(180deg, transparent 42%, rgba(1, 8, 6, 0.9)),
+    radial-gradient(circle at 22% 22%, rgba(37, 102, 83, 0.36), transparent 48%);
+}
+
+.outpost-lobby__intro p,
+.outpost-lobby--connecting p,
+.outpost-lobby--failed p {
+  margin: 0 0 15px;
+  color: var(--hud-amber);
+  font:
+    700 8px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.22em;
+}
+
+.outpost-lobby__intro h1 {
+  max-width: 390px;
+  margin: 0;
+  font-size: clamp(38px, 4vw, 61px);
+  line-height: 0.83;
+  letter-spacing: -0.055em;
+}
+
+.outpost-lobby__intro h1 em {
+  color: var(--hud-mint);
+  font-style: normal;
+  text-shadow: 0 0 34px rgba(130, 239, 210, 0.2);
+}
+
+.outpost-lobby__intro > span {
+  max-width: 300px;
+  margin-top: 24px;
+  color: var(--hud-muted);
+  font-size: 11px;
+  letter-spacing: 0.035em;
+}
+
+.outpost-lobby__form {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  padding: 66px 38px 42px;
+}
+
+.outpost-lobby__mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 5px;
+  border-bottom: 1px solid rgba(141, 169, 155, 0.2);
+}
+
+.outpost-lobby__mode button {
+  padding: 11px 4px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: rgba(141, 169, 155, 0.64);
+  font:
+    700 8px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+
+.outpost-lobby__mode button.is-active {
+  border-bottom-color: var(--hud-amber);
+  color: var(--hud-paper);
+}
+
+.outpost-lobby__form label {
+  display: grid;
+  gap: 7px;
+}
+
+.outpost-lobby__form label > span {
+  color: var(--hud-muted);
+  font:
+    700 7px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.18em;
+}
+
+.outpost-lobby__form input {
+  width: 100%;
+  padding: 12px 13px;
+  border: 1px solid rgba(130, 239, 210, 0.25);
+  outline: 0;
+  background: rgba(1, 8, 6, 0.58);
+  color: var(--hud-paper);
+  font:
+    700 12px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.outpost-lobby__form input:focus {
+  border-color: var(--hud-mint);
+  box-shadow: 0 0 0 2px rgba(130, 239, 210, 0.08);
+}
+
+.outpost-lobby__primary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--hud-amber);
+  background: var(--hud-amber);
+  color: #08110e;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.outpost-lobby__primary:hover:not(:disabled) {
+  background: #ffd374;
+  transform: translateY(-1px);
+}
+
+.outpost-lobby__primary:disabled {
+  cursor: wait;
+  opacity: 0.48;
+}
+
+.outpost-lobby__primary.is-ready {
+  border-color: rgba(130, 239, 210, 0.48);
+  background: rgba(130, 239, 210, 0.08);
+  color: var(--hud-mint);
+}
+
+.outpost-lobby--connecting,
+.outpost-lobby--failed {
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: min(470px, calc(100vw - 42px));
+  min-height: 240px;
+  place-content: center;
+  justify-items: center;
+  padding: 38px;
+  overflow: hidden;
+  border: 1px solid var(--hud-line);
+  background: rgba(3, 13, 11, 0.94);
+  box-shadow: 0 34px 90px rgba(0, 0, 0, 0.62);
+  transform: translate(-50%, -50%);
+  text-align: center;
+  backdrop-filter: blur(16px);
+}
+
+.outpost-lobby--connecting h1,
+.outpost-lobby--failed h1 {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: 0.04em;
+}
+
+.outpost-lobby--connecting > span,
+.outpost-lobby--failed > span {
+  max-width: 360px;
+  margin-top: 10px;
+  color: var(--hud-muted);
+  font-size: 10px;
+}
+
+.outpost-lobby--failed .outpost-lobby__primary {
+  margin-top: 24px;
+}
+
+.outpost-lobby__scan {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: var(--hud-mint);
+  box-shadow: 0 0 28px 7px rgba(130, 239, 210, 0.26);
+  animation: outpost-relay-scan 1.6s ease-in-out infinite;
+}
+
+.outpost-lobby--roster {
+  top: 50%;
+  left: 50%;
+  width: min(700px, calc(100vw - 48px));
+  padding: 26px;
+  border: 1px solid rgba(130, 239, 210, 0.3);
+  background: rgba(3, 13, 11, 0.93);
+  box-shadow: 0 36px 90px rgba(0, 0, 0, 0.65);
+  transform: translate(-50%, -48%);
+  backdrop-filter: blur(18px);
+  animation: outpost-gate-enter 300ms ease-out both;
+}
+
+.outpost-lobby--roster > header,
+.outpost-lobby--roster > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.outpost-lobby--roster header p,
+.outpost-lobby--roster footer span {
+  margin: 0;
+  color: var(--hud-muted);
+  font:
+    700 7px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.16em;
+}
+
+.outpost-lobby--roster header h1 {
+  margin: 4px 0 0;
+  color: var(--hud-mint);
+  font:
+    700 18px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.outpost-lobby--roster header > span {
+  color: var(--hud-amber);
+  font:
+    700 8px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.15em;
+}
+
+.outpost-lobby__roster {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 25px 0;
+}
+
+.outpost-lobby__slot {
+  display: grid;
+  grid-template-columns: 42px 1fr 8px;
+  gap: 12px;
+  align-items: center;
+  min-height: 70px;
+  padding: 11px 14px;
+  border: 1px solid rgba(141, 169, 155, 0.16);
+  background: rgba(0, 0, 0, 0.18);
+  color: rgba(141, 169, 155, 0.5);
+}
+
+.outpost-lobby__slot.is-occupied {
+  border-color: rgba(130, 239, 210, 0.32);
+  color: var(--hud-paper);
+}
+
+.outpost-lobby__slot > b {
+  color: var(--hud-amber);
+  font:
+    700 11px "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+
+.outpost-lobby__slot > div {
+  display: grid;
+  gap: 4px;
+}
+
+.outpost-lobby__slot strong {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.outpost-lobby__slot span {
+  color: var(--hud-muted);
+  font:
+    700 7px "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+
+.outpost-lobby__slot > i {
+  width: 5px;
+  height: 5px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.outpost-lobby__slot.is-occupied > i {
+  border: 0;
+  background: var(--hud-mint);
+  box-shadow: 0 0 9px var(--hud-mint);
+}
+
+.outpost-lobby--roster footer > div {
+  display: grid;
+  gap: 4px;
+}
+
+.outpost-lobby--roster footer strong {
+  color: var(--hud-paper);
+  font:
+    700 13px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.outpost-lobby--roster footer .outpost-lobby__primary {
+  min-width: 190px;
+  justify-content: center;
+}
+
+.outpost-lobby__countdown {
+  display: flex !important;
+  align-items: center;
+  gap: 10px !important;
+}
+
+.outpost-lobby__countdown strong {
+  color: var(--hud-amber) !important;
+  font-size: 32px !important;
+}
+
 .gamekit-devtools-launcher {
   opacity: 0.52;
   transition:
@@ -486,6 +902,29 @@ kbd {
   50% {
     opacity: 1;
     transform: scaleX(1);
+  }
+}
+
+@keyframes outpost-gate-enter {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -45%) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -48%) scale(1);
+  }
+}
+
+@keyframes outpost-relay-scan {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.2;
+  }
+  50% {
+    transform: translateY(238px);
+    opacity: 0.9;
   }
 }
 
@@ -532,6 +971,24 @@ kbd {
   }
   .outpost-abilities {
     bottom: 18px;
+  }
+  .outpost-lobby--gate {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+  .outpost-lobby--gate::before,
+  .outpost-lobby__intro {
+    display: none;
+  }
+  .outpost-lobby__form {
+    padding: 64px 28px 30px;
+  }
+  .outpost-lobby__roster {
+    grid-template-columns: 1fr;
+  }
+  .outpost-lobby--roster > footer {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -299,11 +299,25 @@ Server-authoritative room 可以由成熟 backend 的 Room/runtime 自己持有 
 
 - Provider Room 创建并持有 headless App Host、server GameRuntime、World、Physics、replication projection 和 diagnostics；Room close 或 server shutdown 统一释放这些资源。
 - Browser creator/party leader 是 app-owned permission role，只能请求 start、rematch、leader transfer 或 close；它不能推进 authority clock、写 Schema authority state 或决定 server simulation 的存续。
-- Backend package 可以提供 typed room-side server/runtime bridge，把 provider join/leave/message/send/snapshot lifecycle 映射到 GameKit MultiplayerRuntime 或 authority ingress。该 bridge 不拥有玩法规则、participant policy、World component 或 app Schema。
+- Backend package 可以提供 typed room-side server/runtime bridge，把 provider join/leave/message/send/snapshot lifecycle 实现为 `MultiplayerBackendAdapter/Connection`，再由 multiplayer-core 创建 MultiplayerRuntime。该 bridge 不手写平行 facade，也不拥有玩法规则、participant policy、World component 或 app Schema。
 - Host-authoritative 与 Room-owned server-authoritative 模式共享 action/input、authority binding、source gate 和 diagnostics，但 host leave 的 room-close policy 只适用于 host-authoritative 模式。
 - 每个 room 只有一个 fixed-step authority clock owner。Browser render loop、UI timer、provider patch callback 和 GameRuntime tick 不能分别推进同一 simulation。
 
 Server GameRuntime 需要明确的 system 顺序：network ingress → gameplay intent/AI → Physics → combat/lifecycle → replication projection → provider commit。Authority helper 应允许把 ingress 与 commit 分为受约束的两个阶段，使 app systems 在中间运行；ack、snapshot version 和 provider commit 只能在完整 simulation tick 完成后推进。这个能力属于 Multiplayer authority toolkit，不要求 GameRuntime 预先固化一套全局 phase catalog。
+
+### Colyseus Room runtime bridge
+
+Colyseus backend 的 server subpath 提供 `createColyseusRoomRuntimeBridge(...)`，用于把 provider Room 已经拥有的 session 接到 GameKit server composition：
+
+- App-specific Room 显式转发 `onCreate`、`onJoin`、`onLeave`、经过验证的 GameKit envelope 和 `onDispose`；bridge 不生成通用玩法 Room，也不注册接收任意 payload 的 wildcard handler。
+- `createRuntime(context)` 由 app 注入，可以返回包装 headless App Host 的 runtime owner。Bridge 只调用 boot/start/tick/stop/dispose/snapshot，不理解 runtime 内部的 World、Physics、TCA/GAS、Save、Schema 或玩法状态。
+- Bridge 使用 `createMultiplayerRuntime()` 暴露 server-side facade 给 App Host standard Multiplayer service。私有 Room-side backend connection 把 provider 已拥有的 Room 绑定为 core session；这次绑定不建立 server-to-self client connection。绑定完成后 app 不再调用 create/join/leave/reconnect，backend 对重复 session lifecycle 操作明确返回 core error。
+- `MultiplayerSession.id` 是稳定 GameKit session id，Colyseus `roomId` 是 provider room id，Colyseus `Client.sessionId` 是单次 transport connection id。Adapter 可以维护三者映射，但不能互相替代；core session/peer snapshot 必须从 Room-side backend connection 进入同一个 MultiplayerRuntime。
+- Room simulation interval 是 bridge 唯一的 tick source。Runtime boot/start 成功后才启动，stop/dispose 先清 timer；app 的 authority modules 仍负责 ingress、simulation、replication projection 和 provider commit 的内部顺序。
+- Inbound envelope 在进入 listener 前验证 session/source/server target/size；app schema 和 gameplay authority validation 留在 app module。Outbound target 使用 active peer/client index，leave/dispose 必须删除索引和 listener。
+- Snapshot 只保存 phase/counter/active peer/runtime summary 和脱敏错误，不暴露 Room、Client、完整 payload 或 secret。
+
+这条 bridge 是 provider-specific server native boundary，因此可以在 `@gamekit/multiplayer-colyseus/server` 暴露 Colyseus 相关类型；它不得进入 multiplayer-core 或可复用 gameplay public API。决策背景见 ADR 0025。
 
 ## Standard Authoritative Replication
 
@@ -331,6 +345,7 @@ client action / input
 - 为模块化 server simulation 提供受约束的 authority tick 分段：ingress 消费输入并建立本 tick context，GameRuntime 在中间运行 AI/Physics/combat 等 app systems，commit 捕获并发布最终状态。不得在 commit 前推进离散 action ack，也不得允许重复 begin、跨 tick commit 或异常后复用半完成 frame。
 - 在 client side 维护 authority source gate、snapshot age、last applied tick、resync state 和 rejected non-authority payload diagnostics。
 - 提供 snapshot presentation timing + declared track toolkit：core 维护按 tick/server time 排序的短期 snapshot playback、render delay/jitter window、under-run clamp、presentation FPS、sample status、stale/drop diagnostics、类型化插值原语和 `Network*` presentation track 投影；游戏自己声明可表现字段、track key、snap/reset policy，以及如何把底层算好的 presented value 写入 render-only snapshot。
+- 提供 managed client replication runtime：标准 Multiplayer GameModule 在启用配置后自动订阅权威 snapshot、推进 playback/projector、按固定频率采样并发送 local input、维护 prediction buffer，并根据 snapshot ack 自动 reconciliation/replay/correction smoothing。游戏只声明 decoder、timeline、track、prediction transition 和最终 frame writer，不在网络 callback 或外部 render loop 中显式调用这些底层步骤。
 - 提供 peer/player binding utilities 和可配置 participant lifecycle policy resolver，统一 active、spectator、next-round、leave、disconnect、reconnect 与 round boundary decision vocabulary，避免每个 app 重复发明状态映射。Policy 可以是静态决定或读取 app-owned context 的 callback；core 不认识具体游戏 phase，也不直接增删玩法 actor、slot、team 或 round stats。
 - 提供 conformance tests，验证多 client 不会各自本地开局、非 authority snapshot 不会被应用、不同 session state 隔离、离开 peer 不继续阻塞 ready/start。
 
@@ -351,8 +366,8 @@ Authoritative snapshot 通常以固定 tick 或 provider state update 到达，�
 
 - Core 提供 temporal snapshot playback 和 declared track projection，而不是完整对象图插值器。Playback 接收带 `tick`、`serverTime` 或 provider version 的 authoritative snapshot，维护 render sampling clock、interpolation delay/jitter window、under-run clamp、presentation FPS，并采样出 `previous`、`next`、`alpha`、`status`、snapshot age、delay、dropped/stale count 等信息。固定 interpolation delay 是显式基线；标准 adaptive delay 根据新 snapshot arrival interval 相对 authority timeline 的偏差估计 jitter，在调用方声明的 min/max 内快速增加、缓慢恢复，并公开 current/target delay 与 estimated jitter。遵循标准架构的游戏默认应使用 core playback、`createSnapshotPresentationProjector()` 或 App Host standard multiplayer presentation binding，而不是在 app 里重新实现播放时钟或每帧临时插值容器。
 - Core 提供少量类型化、可组合、低分配的 interpolation primitives 和 `Network*` presentation track，例如 scalar、angle、vector2、vector3、quaternion/slerp 和 step/snap value。相关公共数据形状使用 `Network*` 命名，表示网络 snapshot / presentation value 的结构约束，不作为 GameKit 全局数学类型。Core 根据游戏声明的 track key 和 selector 输出 typed presented value；core 不递归遍历任意 snapshot object，不猜测字段语义，也不自动插值 boolean、enum、inventory、score、phase 或事件。高频路径应优先使用 `selectInto(writer)` 声明 track，并用 `vector2Into`、`vector3Into`、`quaternionInto` 等 direct-write getter 写入 caller-owned render target。
-- 游戏或 app presentation 层拥有 track declaration 和最终写入：声明哪些 entity/field 可以插值、使用什么 primitive、什么时候 snap、什么时候允许短暂 extrapolate、什么时候因为 teleport、phase change、authority binding change、snapshot version change 或 resync 直接 reset，以及如何把底层算好的 presented value 写入 render-only snapshot 或 renderer object。
-- 本地玩家 prediction / server reconciliation 与远端 entity interpolation 分开建模。Core 提供 bounded input log、ack 丢弃、authoritative rewind、pending replay、fixed-step presentation clock、correction smoothing lifecycle 和 diagnostics 的 prediction buffer；游戏声明输入如何计算下一个 predicted endpoint，以及具体 state shape 如何在本预测步的起点和终点之间插值。一个已经前进完整 fixed step 的 endpoint 不能再从终点向未来重复 extrapolate。Reconcile 必须立即校正 simulation state；只有 render-only correction offset 可以在明确 duration 和 max magnitude 内渐进消化，而且 offset 必须叠加在持续移动的新 target 上独立衰减，不能从固定旧显示状态 lerp 到移动 target。超过阈值、teleport 和 hard reset 直接 snap。Prediction 可以复用同一个 authoritative snapshot receiver 和 diagnostics，但不应被塞进 backend adapter 或通用 snapshot buffer 内部。固定 tick 的 raw predicted state 不能直接覆盖 renderer，否则本地玩家会按 prediction tick 频率阶梯移动；校正后的 raw state 也不能无条件硬切 renderer，否则会出现 prediction 后的短暂回跳。
+- 游戏或 app presentation 层拥有声明和最终写入，而不是调度 lifecycle：声明哪些 entity/field 可以插值、使用什么 primitive、什么时候 snap、什么时候允许短暂 extrapolate、什么时候因为 teleport、phase change、authority binding change、snapshot version change 或 resync 直接 reset，以及如何把 managed runtime 产出的同一帧 presented value 写入 render-only snapshot、renderer object 和 follow camera。
+- 本地玩家 prediction / server reconciliation 与远端 entity interpolation 在 Core 内使用独立 buffer，但由同一个 managed client replication frame 协调。Core 提供 bounded input log、ack 丢弃、authoritative rewind、pending replay、fixed-step presentation clock、correction smoothing lifecycle 和 diagnostics；游戏声明输入如何计算下一个 predicted endpoint，以及具体 state shape 如何在本预测步的起点和终点之间插值。一个已经前进完整 fixed step 的 endpoint 不能再从终点向未来重复 extrapolate。Reconcile 必须立即校正 simulation state；只有 render-only correction offset 可以在明确 duration 和 max magnitude 内渐进消化，而且 offset 必须叠加在持续移动的新 target 上独立衰减，不能从固定旧显示状态 lerp 到移动 target。超过阈值、teleport 和 hard reset 直接 snap。Prediction 不进入 backend adapter，也不与通用 snapshot buffer 混成一份状态，但普通游戏不再手写二者的调用顺序。固定 tick 的 raw predicted state 不能直接覆盖 renderer，否则本地玩家会按 prediction tick 频率阶梯移动；校正后的 raw state 也不能无条件硬切 renderer，否则会出现 prediction 后的短暂回跳。
 - Local/offline authority 也走同一 presentation contract。它可以使用更小或为零的 render delay，但不能绕过 snapshot/apply/presentation 路径去直接读写另一份单机显示状态。
 - Backend adapter 只提供 provider-neutral snapshot/version/tick summary、source gate 和 provider-native capability bridge。Colyseus Schema、Nakama match state 等 provider-native state sync 可以成为 authoritative source，但 presentation policy 仍由 GameKit presentation layer 和游戏 track projection 决定。
 
@@ -406,6 +421,7 @@ backend message
 - 根据 authority policy 接受、拒绝或转发命令。
 - 建立 authority binding，并把 action/input/snapshot/patch/result 交给标准权威复制 helper 或 app-provided replication strategy。
 - 拒绝非绑定 authority source 的 snapshot/patch/result，并记录 diagnostics。
+- 启用 `clientReplication` 时，自动持有 client snapshot receiver、playback/projector、continuous input sender 和 prediction/reconciliation lifecycle；App Host standard helper 只解析配置并调用 Core factory。
 - 触发 EventBus 低频事实，例如 `multiplayer.command.accepted`、`multiplayer.peer.disconnected`。
 - 调用可插拔 replication contributor 捕获 snapshot 或 patch。
 - 在 GameRuntime dispose 时清理订阅、队列和 trace buffer。
@@ -541,18 +557,22 @@ Multiplayer diagnostics 应回答：
 
 - App Host 负责 MultiplayerFacade lifecycle；GameRuntime 只通过 GameModule bridge 消费连接事实。
 - Backend adapter 必须通过 core conformance tests，至少覆盖 connect、create-or-join/leave、peer summary、message routing、disconnect、dispose 和 snapshot。
+- Room-side backend 也必须通过 core facade 验证 session、phase、peer presence、message normalization 和 dispose；不能向 App Host 注入手写的 `MultiplayerRuntime` 结构替身。
 - 优先接入成熟多人 backend，再按需补 provider adapter。不要从 raw WebSocket 开始扩展 GameKit 自己的多人核心。
 - 需要按 GameKit session id 加入指定 room 的 adapter，必须保证不同 backend 实例能解析到同一个 provider room；fallback 不能加入同 room type 下的任意可用房间。
 - `host-authoritative` backend adapter 必须定义 authority host 离开后的 room lifecycle：默认关闭该 room 并断开剩余 client，除非明确实现 host migration 并更新 authority binding。
 - `server-authoritative` Room-owned backend 必须把 party leader 与 authority endpoint 分离；leader 离开只触发 app permission transfer，不能套用 host-authoritative 的自动关房规则。
 - Headless server app 应优先复用同一套 GameRuntime、Data、World、TCA/GAS、Save 和 DevTools 协议，只替换 renderer/input/UI 为空或测试实现。
 - Room-owned server tick 应按 ingress → gameplay/Physics → replication commit 的顺序执行；输入消费、simulation 和 ack/Schema publish 不能由互不关联的 timer 分别推进。
+- Core session/peer 是连接、权威来源和参与者身份的唯一基础语义；lobby、ready、countdown、round 和 results 等玩法阶段保留在 app-owned authority state。App 可以用 core participant policy 与 peer/player binding 应用这些规则，但不能在 provider Room 或 adapter 内再维护一套平行 session/participant 真相。
 - 新增 provider backend 时，先实现 core session/message/diagnostic 协议；provider-specific matchmaking、好友、邀请、房间属性和原生控制通过 typed native bridge 或 app-specific service 扩展。
 - 多人协议变更必须同时考虑 Data schema、Save compatibility、DevTools redaction 和 server/client 版本协商。
 - 接入 realtime game demo 或真实游戏时，优先使用 multiplayer core 的 authority binding / replication helper；只有 provider-native state sync 或特殊 netcode 需求明确时，才通过 typed native bridge 替换默认复制策略。
 - 离线单机、local preview 和 multiplayer room 应共享 gameplay orchestration；差异应收敛为 authority endpoint 和 transport/delivery adapter，而不是分叉玩法代码。
 - 多客户端 headless test 不能只断言 peer count；必须断言同一 lifecycle、input 或 snapshot 来自同一个 authority state。
+- Room-owned 物理游戏的多客户端测试应至少覆盖 bounded action、latest continuous input、完整 authority begin → GameRuntime/Physics → commit、实体出生/离开清理，以及 leader 离开后剩余 peer 继续读取同一 authority state。
 - 改动多人高频路径时运行并按需扩展 `bench:multiplayer`。模块级 benchmark 应覆盖 envelope normalization、authority receiver source gate、host/local authority loop、latest-input coalescing、prediction reconciliation/presentation、snapshot playback 和 presentation projection；定时或手动 performance workflow 使用宽松预算观察数量级回归，并用模拟长时序 + GC 后 retained heap 检查有界缓存，不作为常规 PR merge gate。provider-native backend 可在对应 adapter 包中补独立 benchmark。
+- 改动 Colyseus Room runtime bridge 的 tick、ingress、peer index 或 lifecycle cleanup 时运行 `corepack pnpm bench:multiplayer:room:check`；该基准必须同时检查 dispose 后 peer 与 timer 为零。
 - 字段级 provider state model 优先保持 app-owned；只有第二个稳定应用出现相同 mapping、partition 或 interest-management 需求，并通过真实 benchmark 验证后，才评估下沉 backend package 或 core。
 
 ### 模块使用
@@ -561,8 +581,8 @@ Multiplayer diagnostics 应回答：
 - Standard Multiplayer module 派生 accepted/rejected/expired/overflow EventBus fact 时保留 message `correlationId`，并把 message id 作为 `parentId`；后续 Physics/GAS/TCA/app fact 应沿这条显式链继续传播。
 - 线上权威玩法默认使用 host/server validation；客户端预测只影响本地表现，不直接写入长期权威状态。
 - 连续移动/瞄准输入按 latest state 复制并由 authority 在新状态或超时前保持；不能把 20Hz 输入采样作为与 20Hz simulation 等速的 FIFO command 队列。必须逐条执行的交互、购买和一次性技能使用底层 action contract 的 per-source 有界 FIFO，并按玩法风险收紧每 tick 消费上限和队列上限；不能在 app 中另建无界 command 数组。
-- 使用 core snapshot playback、declared `Network*` presentation tracks 或明确的 presentation cache 连接 authoritative snapshot 和 renderer frame；通过 App Host standard multiplayer module 启动的游戏，应优先把 latest authoritative snapshot source、track declaration 和 apply hook 挂到 module presentation binding，让底层随 GameRuntime tick 自动推进 playback 并产出 typed presented values。不要让 renderer 直接按低频网络 tick 跳变，不要在 app 层重复实现通用 playback clock，也不要把 presented position 写回 authority state。
-- 本地预测使用 core prediction buffer 的 `present()` 读取 render-only state，并为 fixed tick 预测声明 prediction step duration、起点/终点插值和 correction offset policy；不要把 `state()` 返回的 raw predicted endpoint 直接写入 renderer，也不要对 endpoint 再做一整步向前 extrapolate。`reconcile()` 立即更新 prediction simulation，但小 correction 的表现误差应作为移动 target 上的 offset 在短窗口内收敛；大 correction、teleport、binding/session change、hard phase transition 和 resync 直接 snap/reset prediction presentation。
+- 普通游戏通过 standard Multiplayer module 的 `clientReplication` 配置连接 authoritative snapshot 和 renderer frame：声明 decoder、timeline、`Network*` tracks、prediction step 与统一 `applyFrame` writer 后，由底层自动接收、播放、预测和校正。只有特殊 netcode、测试或工具才直接调用 low-level playback/projector/prediction factory。不要让 renderer 直接按低频网络 tick 跳变，不要在 app 层重复实现通用 playback clock，也不要把 presented position 写回 authority state。
+- 本地预测在配置中声明 prediction step duration、起点/终点插值和 correction offset policy；managed runtime 自动调用 predict/present/reconcile。不要把 prediction buffer `state()` 的 raw endpoint 直接写入 renderer，也不要对 endpoint 再做一整步向前 extrapolate。Reconciliation 立即更新 prediction simulation，但小 correction 的表现误差应作为移动 target 上的 offset 在短窗口内收敛；大 correction、teleport、binding/session change、hard phase transition 和 resync 直接 snap/reset prediction presentation。
 - UI 和 gameplay 代码应读取 authority binding / last authoritative snapshot 来决定是否显示联网游戏状态；未绑定时只能显示连接中、观战、离线练习或等待同步。
 - 单机 UI 也应读取 local authoritative snapshot，而不是直接读写另一份 mutable gameplay state。
 - 本地 simulation 在联网模式中只能作为 prediction/interpolation cache，必须能被 authority snapshot 校正或丢弃。

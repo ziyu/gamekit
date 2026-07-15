@@ -4,6 +4,7 @@ export * from "./authority-loop";
 export * from "./authority-receiver";
 export * from "./authority-types";
 export * from "./bridge";
+export * from "./client-replication";
 export * from "./conformance";
 export * from "./errors";
 export * from "./peer-player-binding";

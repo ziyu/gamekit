@@ -15,6 +15,10 @@ import type {
   MultiplayerMessageEnvelope,
   MultiplayerRuntime
 } from "./types";
+import {
+  createMultiplayerClientReplication,
+  type MultiplayerClientReplicationOptions
+} from "./client-replication";
 import { createBoundedQueue } from "./bounded-queue";
 
 export type MultiplayerBridgeInstallContext = {
@@ -105,7 +109,9 @@ export type MultiplayerPresentationBridgeOptions<
 
 export type MultiplayerModuleOptions<
   TInstallContext extends MultiplayerBridgeInstallContext,
-  TSnapshot = any
+  TSnapshot = any,
+  TInput = any,
+  TPredictedState = any
 > = {
   id?: string;
   runtime: MultiplayerRuntime;
@@ -114,18 +120,30 @@ export type MultiplayerModuleOptions<
   authority?: MultiplayerAuthorityPolicy<TInstallContext>;
   handleCommand?: MultiplayerCommandHandler<TInstallContext>;
   presentation?: MultiplayerPresentationBridgeOptions<TSnapshot, TInstallContext>;
+  clientReplication?: MultiplayerClientReplicationOptions<
+    TSnapshot,
+    TInput,
+    TPredictedState,
+    TInstallContext
+  >;
 };
 
 /** @deprecated Use MultiplayerModuleOptions. */
 export type CreateMultiplayerBridgeModuleOptions<
   TInstallContext extends MultiplayerBridgeInstallContext,
-  TSnapshot = any
-> = MultiplayerModuleOptions<TInstallContext, TSnapshot>;
+  TSnapshot = any,
+  TInput = any,
+  TPredictedState = any
+> = MultiplayerModuleOptions<TInstallContext, TSnapshot, TInput, TPredictedState>;
 
 export function createMultiplayerModule<
   TInstallContext extends MultiplayerBridgeInstallContext = MultiplayerBridgeInstallContext,
-  TSnapshot = any
->(options: MultiplayerModuleOptions<TInstallContext, TSnapshot>): GameModule<TInstallContext> {
+  TSnapshot = any,
+  TInput = any,
+  TPredictedState = any
+>(
+  options: MultiplayerModuleOptions<TInstallContext, TSnapshot, TInput, TPredictedState>
+): GameModule<TInstallContext> {
   const moduleId = options.id ?? "gamekit.multiplayer.bridge";
   const commandKinds = new Set(options.commandKinds ?? ["game.command"]);
   const commandQueueCapacity = normalizePositiveInteger(options.commandQueue?.capacity, 256);
@@ -278,7 +296,26 @@ export function createMultiplayerModule<
         });
       }
 
-      if (options.presentation) {
+      if (options.presentation && options.clientReplication) {
+        throw new Error(
+          "Multiplayer module cannot install legacy presentation and managed client replication together"
+        );
+      }
+
+      if (options.clientReplication) {
+        const clientReplication = createMultiplayerClientReplication({
+          runtime: options.runtime,
+          installContext: ctx,
+          options: options.clientReplication
+        });
+        ctx.systems.register({
+          id: options.clientReplication.id ?? `${moduleId}.client-replication`,
+          update(frame = {}) {
+            clientReplication.update(frame);
+          }
+        });
+        cleanup.push(() => clientReplication.dispose());
+      } else if (options.presentation) {
         const presentation = options.presentation;
         const playback = createSnapshotPlayback<TSnapshot>(presentation);
         const projector = createSnapshotPresentationProjector<TSnapshot>(presentation.tracks ?? []);
@@ -331,11 +368,13 @@ export function createMultiplayerModule<
 /** @deprecated Use createMultiplayerModule. */
 export function createMultiplayerBridgeModule<
   TInstallContext extends MultiplayerBridgeInstallContext = MultiplayerBridgeInstallContext,
-  TSnapshot = any
+  TSnapshot = any,
+  TInput = any,
+  TPredictedState = any
 >(
-  options: CreateMultiplayerBridgeModuleOptions<TInstallContext, TSnapshot>
+  options: CreateMultiplayerBridgeModuleOptions<TInstallContext, TSnapshot, TInput, TPredictedState>
 ): GameModule<TInstallContext> {
-  return createMultiplayerModule<TInstallContext, TSnapshot>(options);
+  return createMultiplayerModule<TInstallContext, TSnapshot, TInput, TPredictedState>(options);
 }
 
 function normalizePositiveInteger(value: number | undefined, fallback: number): number {

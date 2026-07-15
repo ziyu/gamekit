@@ -1014,6 +1014,86 @@ describe("configured app host", () => {
     await configured.host.dispose();
   });
 
+  it("installs managed client replication through the standard multiplayer module", async () => {
+    type Snapshot = { tick: number; position: NetworkVector2 };
+    const backend = createMemoryMultiplayerBackend();
+    const server = createMultiplayerRuntime({ id: "managed-server", backend });
+    const client = createMultiplayerRuntime({ id: "managed-client", backend });
+    await server.createSession({
+      id: "managed-room",
+      authority: "server-authoritative",
+      localPeer: { id: "server", role: "server" }
+    });
+    await client.joinSession({
+      sessionId: "managed-room",
+      localPeer: { id: "client", role: "client", playerId: "player.client" }
+    });
+    const applied: number[] = [];
+    const app = defineGameApp({
+      id: "standard-managed-client-replication",
+      services: [{ id: "multiplayer" }, { id: "game", dependencies: ["multiplayer"] }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        multiplayer: { runtime: client },
+        game: {
+          standardModules: {
+            multiplayer: {
+              clientReplication: {
+                playback: { interpolationDelayMs: 50, timeSource: "tick" },
+                readSnapshot(payload) {
+                  return isRecord(payload) &&
+                    typeof payload.tick === "number" &&
+                    isRecord(payload.position) &&
+                    typeof payload.position.x === "number" &&
+                    typeof payload.position.y === "number"
+                    ? {
+                        tick: payload.tick,
+                        position: { x: payload.position.x, y: payload.position.y }
+                      }
+                    : undefined;
+                },
+                toBufferEntry({ snapshot }) {
+                  return { snapshot, tick: snapshot.tick };
+                },
+                applyFrame({ snapshot }) {
+                  applied.push(snapshot.tick);
+                }
+              }
+            }
+          },
+          createRuntime(_ctx, modules) {
+            return createGame({
+              modules,
+              world: createMemoryWorld(),
+              eventBus: createEventBus(),
+              seed: "managed-client-replication"
+            });
+          }
+        }
+      }
+    });
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+
+    await configured.host.start();
+    await server.send<Snapshot>({
+      channel: "reliable",
+      kind: "game.snapshot",
+      tick: 1,
+      payload: { tick: 1, position: { x: 10, y: 20 } }
+    });
+    configured.host.tick(16, 16);
+
+    expect(configured.host.services.game?.systems.values().map((system) => system.id)).toEqual([
+      "gamekit.multiplayer.bridge.client-replication"
+    ]);
+    expect(applied).toEqual([1]);
+
+    await configured.host.dispose();
+    await server.dispose();
+  });
+
   it("smooths standard camera module renderer sync over runtime ticks", async () => {
     const camera = createCameraController({ viewport: { width: 320, height: 180 } });
     const initialCameraX = camera.getState().x;

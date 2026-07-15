@@ -69,6 +69,8 @@ export default defineConfig({
         .pathname,
       "@gamekit/platform-web": new URL("./packages/platform-web/src/index.ts", import.meta.url)
         .pathname,
+      "@gamekit/platform-tauri": new URL("./packages/platform-tauri/src/index.ts", import.meta.url)
+        .pathname,
       "@gamekit/renderer-core": new URL("./packages/renderer-core/src/index.ts", import.meta.url)
         .pathname,
       "@gamekit/renderer-phaser": new URL(

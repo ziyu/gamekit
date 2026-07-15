@@ -181,6 +181,8 @@ Tauri 桌面端需要额外处理：
 
 - Platform service 可以进入 App Host lifecycle，但 GameRuntime 不直接依赖 Platform；需要平台能力的 GameModule 通过 app/profile 注入稳定 bridge。
 - Tauri/Web/Headless adapter 必须实现相同 core protocol，平台私有类型不能泄漏到 Save、Asset、Data、GameRuntime 或 gameplay 包。
+- Web app 应通过 `measureElementViewport()` / `observeElementViewport()` 在 renderer container 挂载后读取 logical CSS viewport。应用组合层把同一尺寸同时交给 Renderer Core `resize()` 和 Camera Core `viewport`，并在 app dispose 时释放 observer；不要只靠 CSS 拉伸 canvas，也不要让 Camera Core 或具体 Driver 反向拥有 DOM lifecycle。详细取舍见 [ADR 0027](../adr/0027-web-element-viewport-composition.md)。
+- `createMemoryPlatform()` 显式创建隔离的 memory fs/storage，适合 deterministic/headless/SSR AppProfile 和生命周期 benchmark；它可以设置诊断 id，但仍是 `platform-web` 提供的 fixture，不是生产 Node server adapter。
 - 权限按能力最小化声明。游戏运行、编辑器、mod 导入、导出文件应使用不同 permission profile，不为了方便开放整个文件系统。
 
 ### 模块使用
@@ -189,3 +191,4 @@ Tauri 桌面端需要额外处理：
 - 业务层使用语义路径和 baseDir，不写用户机器绝对路径。Save、Asset、Editor import/export 都应通过 Platform path policy。
 - Platform diagnostics 要区分 permission denied、unsupported capability、path unavailable、quota exceeded、user cancelled 等错误，不要只返回 generic failure。
 - 测试应使用 memory/headless platform 覆盖 storage/fs/permission 行为，再用少量 Web/Tauri adapter 测试验证平台映射。
+- Element viewport observer 只用于 container resize 这类低频平台事件；调用方应依赖 helper 的尺寸去重，不要从 GameRuntime tick 或 renderer frame loop 重复注册、测量或 resize。

@@ -40,6 +40,7 @@
 - 第三方库进入 Driver、Adapter、app/profile 或 app-specific presentation/tooling 层，不进入核心 facade、DataType、可复用 GameModule 公共 API 或 gameplay 包。
 - Driver 持有跨多个协议的外部 runtime，例如 Phaser Game 或 Three renderer/scene；Adapter 只把单个 GameKit 协议映射到 Driver 暴露的 runtime slice。
 - Multiplayer backend adapter 应优先接入成熟多人方案，例如 Colyseus、Nakama、PartyKit 或平台联机 SDK，并持有网络 SDK、room、matchmaker、state sync 或平台联机 runtime；App Host 管理连接 lifecycle，GameModule bridge 只消费归一化 session/message/authority 事实。
+- Adapter/Driver 集成已有 core 领域时，测试入口和生产组合都应经过 core facade/factory；不要用结构类型兼容的手写对象替代 core runtime。Provider 侧可以维护 native handle、连接索引和映射状态，但 core phase/session/snapshot/error 必须由对应 core 实现产出。
 - 具体 app presentation、Editor 后端专属面板和 DevTools renderer plugin 可以通过 typed native handle 使用底层 renderer API；这些依赖不能进入 Data、Save、core facade 或可复用 gameplay module。
 - GameRuntime 只负责模块安装、clock、system tick 和 lifecycle，不直接拥有 Platform、Driver、Renderer、Input、Camera、Physics backend provider、Data、Asset、UI、Save store 或 multiplayer connection。
 
@@ -59,7 +60,9 @@
 - App Host 的 service factory 构造不等于 service boot；`game.createRuntime` 和 GameModule `install()` 可能在 Driver `boot()` 前执行。依赖 renderer/asset/input/camera native runtime 的 GameModule 不应在 `install()` 中立即创建 RenderObject 或读取 native handle，应在 Host start 后的首个 tick、显式 start hook 或可验证的 boot gate 中幂等物化，并在 GameRuntime dispose 时先于 Driver 释放。
 - Save/load、asset preload、data registration 和 renderer boot 应由 App Host 或 app profile 编排顺序，不藏在 GameRuntime 内部。
 - Multiplayer create/join/reconnect/leave 应由 App Host、lobby UI、server host 或测试夹具显式触发；GameModule 不隐式创建 socket、Colyseus Room、Nakama match 或 provider room。
+- 普通实时多人客户端应通过 standard Multiplayer GameModule 的 managed replication 配置声明 snapshot、track 和 prediction policy。网络 callback 不直接写 Renderer，app render loop 不显式调用 playback、predict 或 reconcile；Core 统一推进 authority gate、input sampling/send、remote presentation 和 local correction，app 只执行最终批量 frame write。
 - Headless 测试应能用 memory platform、memory renderer、memory save store、deterministic clock、fake asset loader 和 fake physics backend 启动主要组合路径。
+- Browser、Tauri、headless server 和 deterministic test 应优先复用同一个 GameAppDefinition。非视觉 profile 用协议兼容 fixture 满足完整 service graph，并把 production platform/backend/runtime factory 保留为显式注入点；不要为测试删掉 service 后维护第二套启动拓扑。
 
 ## 数据驱动
 
@@ -92,6 +95,7 @@
 ## 测试策略
 
 - Facade 要有契约测试；Adapter 先跑 facade conformance，再补底层库专属行为测试。
+- Adapter 集成测试应同时断言 core facade snapshot 与 provider 行为；只验证第三方对象或 adapter 私有 snapshot 会漏掉平行状态机、生命周期漂移和消息通道不一致。
 - 数据驱动模块必须覆盖 duplicate、unknown type、missing reference、schema/path error、trace/diagnostic。
 - GameRuntime、Camera、Input、Physics、TCA、GAS、Save 等有顺序语义的模块必须覆盖顺序、幂等、stop/dispose 和 cleanup。
 - Multiplayer backend adapter 必须覆盖 provider facade 的 connect、create-or-join/leave、message routing、peer summary、disconnect、reconnect 降级、payload validation、dispose cleanup 和 diagnostics；provider 自己拥有的 room/matchmaker/state sync 逻辑不要在 GameKit core 中重写。

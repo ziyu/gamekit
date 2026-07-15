@@ -31,12 +31,7 @@ import {
   type OutpostIdentityRegistry
 } from "../domain/identity-registry";
 import { OutpostGameplayObject, OutpostPresentation } from "./components";
-import {
-  OUTPOST_ARENA,
-  OUTPOST_PREVIEW_PLAYER_ID,
-  OUTPOST_PREVIEW_SEED,
-  OUTPOST_VIEWPORT
-} from "./constants";
+import { OUTPOST_ARENA, OUTPOST_PREVIEW_PLAYER_ID, OUTPOST_PREVIEW_SEED } from "./constants";
 import {
   createOutpostPreviewPresentationModule,
   type OutpostRenderTargetWriter
@@ -346,9 +341,10 @@ function createPreviewCameraModule(
               ? transform
               : (physicsInterpolation.sample(body.bodyId, sampledTransform) ?? transform);
           if (state.input.cameraZoomDelta !== 0) {
+            const viewport = camera.getState().viewport;
             camera.zoom(state.input.cameraZoomDelta < 0 ? 1 : -1, {
-              x: state.input.cameraZoomX ?? OUTPOST_VIEWPORT.width / 2,
-              y: state.input.cameraZoomY ?? OUTPOST_VIEWPORT.height / 2
+              x: state.input.cameraZoomX ?? viewport.width / 2,
+              y: state.input.cameraZoomY ?? viewport.height / 2
             });
           }
           camera.setState({

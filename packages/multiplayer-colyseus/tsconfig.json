@@ -6,5 +6,5 @@
     "tsBuildInfoFile": "tsconfig.tsbuildinfo"
   },
   "include": ["src"],
-  "references": [{ "path": "../multiplayer-core" }]
+  "references": [{ "path": "../core" }, { "path": "../multiplayer-core" }]
 }

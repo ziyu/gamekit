@@ -179,6 +179,7 @@ Renderer camera adapter 本身是 bridge，不拥有 gameplay camera state。它
 
 - Camera 是游戏会话能力，优先通过标准 GameModule helper 启动；不要把 camera controller 默认做成 App Host standard service。
 - Camera Core 不依赖 World、Renderer、Input、Phaser、Three 或 DOM。Follow target、input action 和 renderer sync 都通过 helper/profile 注入。
+- Web container 尺寸变化由 platform/app composition 同步给 renderer 与 Camera Core；Camera Core 不直接观察 DOM。集成规则见 [Platform 模块](./platform.md#模块集成)。
 - Camera module 集成负责订阅已经归一化的 input action、解析 follow target、推进 smoothing，并调用 renderer camera adapter sync hook；renderer adapter 只应用传入状态。
 - Fixed-step physics target 应通过 Physics module 提供的 transient interpolation store 解析 display position，使 follow camera 与 RenderObject 使用同一采样时刻；Camera Core 不依赖 Physics，也不拥有该 store。
 - Follow/lookahead/shake 这类依赖游戏语境的行为可以由具体游戏模块组合 CameraController 完成；公共 helper 只提供可复用装配，不应假设所有游戏都有同一套镜头行为。

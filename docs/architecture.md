@@ -8,6 +8,21 @@ GameKit 采用“薄内核 + 成熟库 + 自定义协议 + Driver / Adapter”�
 
 当第三方库只实现单个协议时，用 Adapter 接入；当第三方库本身拥有跨 renderer、asset、input、camera 等多个能力的完整运行时，用 Driver 统一持有并派生多个 Adapter。
 
+## Core-first 语义所有权
+
+每个领域的 `*-core`、facade 或基础协议包是该领域 GameKit 语义的唯一来源。它定义的领域对象、生命周期、状态、错误、snapshot、diagnostics 和 conformance 不能在 adapter、driver、backend 或 app 中再实现一套结构相似但独立推进的平行 runtime。具体包只能把第三方对象映射到 core 协议、持有第三方 native runtime，或组合 core 已提供的创建函数与 helper。
+
+接入第三方能力前必须先判断：
+
+- Core 已有概念和行为时，具体包必须复用 core 实现并只补映射；不能因为第三方也有同名概念，就绕过 core 重建 session、world、physics、renderer、input、camera、platform、save 等 facade。
+- Core 已有协议但缺少真实 backend 能力时，由 adapter/driver 调用第三方实现该协议；第三方对象不成为新的业务事实源。
+- 只有 core 没有、且能力确实是 provider/platform/native 专属时，才留在具体包的 typed native boundary。若它后来成为跨 backend 的稳定 GameKit 概念，应先通过 ADR 和真实使用证据上移到对应 core，再由各 adapter 实现。
+- App 可以拥有玩法、内容和 provider-specific projection，但不能复制框架 core 的通用状态机或 lifecycle。发现 core 缺口时应修正 core 或明确 native escape hatch，不能用 app-local 平行实现长期绕过。
+
+Core-first 不表示把第三方底层能力重写进 core。Room、matchmaker、物理求解器、renderer、文件系统或平台 SDK 仍由成熟库负责；core 只保持 GameKit 稳定语义和组合边界。
+
+决策背景与跨包执行规则见 `docs/adr/0026-core-first-domain-semantic-ownership.md`。
+
 ## 总体分层
 
 ```txt
@@ -242,6 +257,8 @@ App Host 是应用组合层，负责统一 service registry、lifecycle、config
 
 普通 app 应优先通过 `GameAppDefinition + AppProfile` 启动 Host。Definition 描述 app 需要哪些标准服务，Profile 提供统一 adapter/对象参数包和少量 service 参数；标准 service binding 由 App Host 内部创建。底层 `createAppHost({ services })` 保留给测试、工具和少数需要手动装配的高级场景。
 
+同一个 app 的 Browser、Tauri、headless server 和 deterministic test profile 应尽量复用同一份 Definition/service graph。非视觉 profile 通过 protocol-compatible memory platform、headless renderer、memory asset loader 和可注入的 World/Physics/Multiplayer/runtime factory 提供服务，不通过删除 Renderer/Asset/UI 等 service 形成另一套应用。Memory/headless fixture 是组合与确定性验证边界；正式 dedicated server 仍应显式注入生产平台、物理和多人 backend。
+
 GameRuntime 继续保持薄内核，不直接拥有应用级 adapter 和服务。详细设计见 `docs/modules/app-host.md`。
 
 ### Renderer
@@ -289,6 +306,8 @@ Fixed-step Physics module 可以提供 opt-in transient interpolation store 给 
 ### Platform
 
 Platform 隔离 Web/Tauri/未来平台差异。文件、窗口、权限、路径、存储和系统能力都通过 platform-core。
+
+`@gamekit/platform-web` 的 memory profile helper 只为 headless、SSR 和 deterministic composition 提供显式隔离的 memory fs/storage；它不读取 browser storage，也不替代未来生产 Node/server platform adapter。调用方可以覆盖 runtime id，并通过同一个 PlatformRuntime 协议注入 AppProfile。
 
 详细设计见 `docs/modules/platform.md`。
 
@@ -346,9 +365,13 @@ Multiplayer 负责多人会话、连接、消息、玩家身份映射、authorit
 
 `@gamekit/multiplayer-core` 定义 GameKit 侧稳定 facade、App Host service shape、GameModule bridge、语义 command、authority decision、authority binding、标准复制 helper、diagnostics 和 adapter conformance helper，不依赖具体网络 SDK，也不自研通用 room server、matchmaker、reconnect、presence 或 provider state sync。Colyseus、Nakama、PartyKit、平台联机 SDK 或其他成熟后端通过 `@gamekit/multiplayer-<backend>` adapter 接入。线上 remote payload 默认是不可信输入，权威 host/server 必须重新验证 command/input 后再改写 gameplay 状态；client 只有绑定到明确 authority endpoint 后才能应用 authoritative snapshot/patch。单机/offline 绑定 local authority endpoint，省略网络 IO，但不省略 authority validation、tick boundary 或 snapshot presentation。
 
+标准 Multiplayer GameModule 可以通过 `clientReplication` 配置启用 Core 托管的客户端复制 lifecycle。Core 自动订阅并验证 authority snapshot、推进 remote playback/declared track projection、按配置频率采样和发送 local input、维护 prediction buffer，并根据 snapshot ack 执行 reconciliation/replay/correction smoothing；app 只声明 snapshot decoder、timeline、track、prediction transition 和统一的 frame writer，不在网络 callback 或外部 render loop 中显式调度这些步骤。权威 World/Physics/Save 与 transient presented/predicted state 始终分离。具体决策见 `docs/adr/0028-managed-client-replication-runtime.md`。
+
 Server-authoritative Room 可以持有 headless App Host、GameRuntime、World、Physics 和 replication lifecycle；browser creator 只拥有 app-defined party leader 权限，不成为 authority clock owner。复杂 provider-native state sync 的字段级 Schema 与 mapping 留在 app provider boundary，backend package 只提供通用 typed hook、source/version/resync gate 和 redacted diagnostics。Room-owned 与 host-authoritative 模式共享 authority contract，但不能共享 host-leave-close policy。
 
-详细设计见 `docs/modules/multiplayer.md`，决策背景见 `docs/adr/0010-multiplayer-core-and-backend-adapters.md`、`docs/adr/0012-mature-multiplayer-backend-adapter.md`、`docs/adr/0013-standard-authoritative-replication-boundary.md`、`docs/adr/0016-room-owned-server-authority-lifecycle.md` 和 `docs/adr/0017-app-owned-colyseus-field-schema-boundary.md`。
+Room-side backend bridge 可以把已经由 provider Room 拥有的 session 映射成 `MultiplayerBackendAdapter/Connection`，再统一交给 `multiplayer-core` 的 `createMultiplayerRuntime()` 暴露 server-side facade；它不能手写第二套 MultiplayerRuntime/session 状态机。Bridge 还可以组合单一 simulation interval、peer/client active index、envelope ingress/egress 与 app-provided runtime lifecycle，但不能替 app 创建 gameplay Room、解析 participant 权限或持有字段级 Schema；server facade 也不能通过自连 Room 再创建第二条 provider connection/tick lifecycle。具体决策见 `docs/adr/0025-colyseus-room-owned-runtime-bridge.md`。
+
+详细设计见 `docs/modules/multiplayer.md`，决策背景见 `docs/adr/0010-multiplayer-core-and-backend-adapters.md`、`docs/adr/0012-mature-multiplayer-backend-adapter.md`、`docs/adr/0013-standard-authoritative-replication-boundary.md`、`docs/adr/0016-room-owned-server-authority-lifecycle.md`、`docs/adr/0017-app-owned-colyseus-field-schema-boundary.md` 和 `docs/adr/0028-managed-client-replication-runtime.md`。
 
 ## 包内拆分约定
 

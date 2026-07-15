@@ -15,6 +15,7 @@ import type { GasHandle, GasRuntime, GasTraceStore } from "@gamekit/gas";
 import type { GameInstallContext, GameRuntime } from "@gamekit/game-runtime";
 import type { InputDevice, InputRouter, InputSourceAdapter } from "@gamekit/input-core";
 import type {
+  MultiplayerClientReplicationOptions,
   MultiplayerModuleOptions,
   MultiplayerPresentationBridgeOptions,
   MultiplayerRuntime
@@ -248,6 +249,10 @@ export type StandardMultiplayerGameModuleOptions<TContext> = {
   authority?: MultiplayerModuleOptions<GameInstallContext>["authority"] | undefined;
   handleCommand?: MultiplayerModuleOptions<GameInstallContext>["handleCommand"];
   presentation?: StandardValue<MultiplayerPresentationBridgeOptions, TContext> | undefined;
+  clientReplication?: StandardValue<
+    MultiplayerClientReplicationOptions<any, any, any, GameInstallContext>,
+    TContext
+  >;
 };
 
 export type StandardPhysicsGameModuleOptions<TContext> = {

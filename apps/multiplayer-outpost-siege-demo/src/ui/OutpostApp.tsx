@@ -2,6 +2,7 @@ import type { DevToolsRuntime } from "@gamekit/devtools";
 import { DevToolsOverlay } from "@gamekit/devtools-ui";
 import type { UiRuntime } from "@gamekit/ui-core";
 import { useCallback } from "react";
+import { OutpostLobby, type OutpostConnectionView } from "./OutpostLobby";
 
 export type OutpostBootPhase = "initializing" | "booting" | "running" | "failed";
 
@@ -11,7 +12,12 @@ export type OutpostAppProps = {
   bootMessage: string;
   devtools?: DevToolsRuntime | undefined;
   uiRuntime: UiRuntime;
+  connection: OutpostConnectionView;
   onGameFocus(): void;
+  onCreateSession(displayName: string): void;
+  onJoinSession(sessionId: string, displayName: string): void;
+  onReady(ready: boolean): void;
+  onResetConnection(): void;
 };
 
 const abilities = [
@@ -24,8 +30,13 @@ const abilities = [
 export function OutpostApp({
   bootMessage,
   bootPhase,
+  connection,
   devtools,
+  onCreateSession,
   onGameFocus,
+  onJoinSession,
+  onReady,
+  onResetConnection,
   rendererRoot,
   uiRuntime
 }: OutpostAppProps) {
@@ -37,12 +48,16 @@ export function OutpostApp({
     },
     [rendererRoot]
   );
+  const match = connection.match;
+  const isRunning = connection.phase === "connected" && match?.phase === "running";
+  const participants =
+    match?.participants.filter((participant) => participant.status === "active") ?? [];
 
   return (
     <main className="outpost-app">
       <section
         aria-label="Outpost Siege game viewport"
-        className="outpost-stage"
+        className={`outpost-stage ${isRunning ? "is-running" : "is-deployment"}`}
         onContextMenu={(event) => event.preventDefault()}
         onPointerDown={onGameFocus}
         ref={attachRenderer}
@@ -61,23 +76,32 @@ export function OutpostApp({
 
         <section className="outpost-objective" aria-label="Current objective">
           <div>
-            <span>WAVE 01</span>
+            <span>{isRunning ? "WAVE 01" : "DEPLOYMENT"}</span>
             <i />
           </div>
-          <strong>SECURE THE PERIMETER</strong>
-          <small>Hold the outpost and prepare the defenses</small>
+          <strong>{isRunning ? "SECURE THE PERIMETER" : "ASSEMBLE YOUR FIRETEAM"}</strong>
+          <small>
+            {isRunning
+              ? "Hold the outpost and prepare the defenses"
+              : "Create a squad channel or deploy with an existing team"}
+          </small>
         </section>
 
         <section className="outpost-squad" aria-label="Squad status">
           <span>SQUAD</span>
-          <div className="outpost-squad__member">
-            <i>01</i>
-            <div>
-              <strong>RANGER</strong>
-              <span>READY</span>
+          {(participants.length > 0
+            ? participants
+            : [{ playerId: "pending", displayName: "RANGER", ready: false }]
+          ).map((participant, index) => (
+            <div className="outpost-squad__member" key={participant.playerId}>
+              <i>{String(index + 1).padStart(2, "0")}</i>
+              <div>
+                <strong>{participant.displayName ?? "RANGER"}</strong>
+                <span>{participant.ready || isRunning ? "READY" : "STANDBY"}</span>
+              </div>
+              <b />
             </div>
-            <b />
-          </div>
+          ))}
         </section>
 
         <section className="outpost-vitals" aria-label="Player status">
@@ -123,6 +147,14 @@ export function OutpostApp({
             <strong>{bootMessage}</strong>
           </section>
         ) : null}
+
+        <OutpostLobby
+          connection={connection}
+          onCreate={onCreateSession}
+          onJoin={onJoinSession}
+          onReady={onReady}
+          onReset={onResetConnection}
+        />
       </section>
 
       {devtools ? <DevToolsOverlay runtime={devtools} uiRuntime={uiRuntime} /> : null}

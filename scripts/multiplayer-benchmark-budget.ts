@@ -82,6 +82,12 @@ const BUDGETS: MultiplayerBenchmarkBudget[] = [
     maximum: 3
   },
   {
+    suite: "managed-client-replication",
+    where: { entityCount: 128 },
+    metric: "microsecondsPerFrame",
+    maximum: 1000
+  },
+  {
     suite: "snapshot-playback",
     where: { snapshots: 100_000, maxSnapshots: 96 },
     metric: "microsecondsPerSnapshot",

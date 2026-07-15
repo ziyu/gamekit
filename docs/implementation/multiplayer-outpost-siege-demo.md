@@ -208,7 +208,7 @@ Wave 2 已关闭。下一步进入 Wave 3，创建 Outpost Siege app skeleton、
 
 ### Wave 3: App Skeleton And Content Pipeline
 
-Status: Active.
+Status: Completed on 2026-07-13.
 
 1. 创建 `apps/multiplayer-outpost-siege-demo`，拆分 `domain`、`content`、`gameplay`、`server`、`realtime`、`presentation`、`ui`、`profiles` 和 `test`。
 2. 定义 app-owned player/enemy/weapon/buildable/wave/objective DataType 和引用校验。
@@ -227,7 +227,7 @@ Status: Active.
 - `@gamekit/asset` 增加通用有界 group retry 和 missing-group diagnostic；成功 member 不重复加载，Outpost 只负责选择 group。
 - App-owned identity registry 已建立 gameplay object、EntityId、actor、physics body/collider、network generation 和 RenderObjectId 的双向索引，并拒绝产生半注册状态的 identity 冲突。
 - `bench:outpost:content:check` 建立 8 项粗粒度预算；除 content boot、identity 注册/查询和 retained state 外，也限制 Browser runtime image 总字节与最大单文件。当前 11 张 imagegen WebP 合计约 284 KiB，最大 arena floor 约 202 KiB，低于 384 KiB / 320 KiB 预算。
-- 包级测试覆盖引用 source/path、duplicate、headless 资源隔离、lazy retry/failure diagnostic、profile policy 和 identity cleanup。Browser/Tauri 的真实 AppProfile factory、Phaser Driver boot 与可视入口仍属于本 Wave 后续切片。
+- 包级测试覆盖引用 source/path、duplicate、headless 资源隔离、lazy retry/failure diagnostic、profile policy 和 identity cleanup。该首个切片尚未包含真实运行 profile；后续切片已完成并记录在下方。
 - 当前切片的全仓库 72 个 test task、40 个 build task、lint、format 与 `bench:world` 均通过；Outpost 14 tests、Asset 8 tests 和内容/身份/运行时图片 8/8 performance budgets 通过。
 
 当前已完成 Browser 可运行纵切片：
@@ -253,11 +253,20 @@ Status: Active.
 - 通用 Physics benchmark 增加 3,000 moving body tracking、300,000 reusable-target sample 和 dispose retained-state 门禁。本机复审结果为 4.704 ms/tick、0.0956 µs/sample、dispose 后 0 retained body；Outpost preview 六项预算复审为 0.1484 ms boot/dispose、15.0952 µs render plan、35.8287 µs physical tick、0.0673 µs interpolation sample，全部通过。
 - 全仓库 72/72 test task、40/40 build task 和 72/72 lint task 通过，`bench:world`、`bench:physics:check`、`bench:outpost:content:check`、`bench:outpost:preview:check` 通过。任务相关文件全部通过 oxfmt；root `format` 仍只被工作区原有 `.claude/`、`AGENTS.md`、`CLAUDE.md` 八个非本工作流文件阻挡，未在本切片改写这些文件。
 
-本切片仍属于 Wave 3。Headless server、deterministic test 和 Tauri smoke 的真实 AppProfile factory，以及正式 Colyseus Room-owned Browser multiplayer lane 仍未完成；后者继续由 Wave 4 承担。
+当前已完成多 profile 收口切片：
+
+- Browser Web 与 Tauri smoke 复用 app-local visual profile composer；两者共享 Phaser Driver、Renderer/Input/Camera/Asset、Save、DevTools 和 preview GameRuntime 装配，平台 runtime 分别由 Web/Tauri adapter 注入。Tauri factory 可以延迟创建真实 Tauri platform，也可以在自动化中注入 protocol-compatible smoke fixture。
+- Headless server 与 deterministic test 复用 app-local non-visual profile composer，并保持与 Browser 相同的 `outpostAppDefinition` service graph。Renderer、Asset、Platform、Save、Physics、Multiplayer、World 和 GameRuntime factory 都可以注入；默认 fixture 不包含 Outpost 特判，headless preload plan 为零，deterministic profile 完整加载四个资源组并使用固定 clock/seed。
+- `@gamekit/app-host` 公开已有的通用 headless renderer/memory asset fixture；`@gamekit/platform-web` 新增隔离 memory fs/storage 的 `createMemoryPlatform()`。`createWebPlatform()` 的 CRITICAL 启动链没有被改写，设计与取舍记录在 ADR 0024。
+- 新增 profile integration test，覆盖共享 Definition 的完整 boot/start/tick/dispose、headless 零视觉 load、deterministic 两次相同 input schedule 的稳定 snapshot、Tauri visual composition 和 dispose 后零 World entity。当前 Outpost 21 tests、Platform Web 9 tests 通过。
+- `bench:outpost:profiles:check` 建立四项门禁；最终复跑的 100 次 owner-supplied reusable World lifecycle 下，headless 约 1.129 ms/次、deterministic 约 1.013 ms/次，headless visual load 为 0，dispose retained entity 为 0。
+- 全仓库 73/73 test task、40/40 build task 和 73/73 lint task 通过，`bench:world` 与 profile budget 通过。当前切片 25 个任务相关文件全部通过 oxfmt；root `format` 仍只被工作区原有 `.claude/`、`AGENTS.md`、`CLAUDE.md` 八个非本工作流文件阻挡。
+
+Wave 3 已关闭。正式 Colyseus Room-owned Browser/server authority lane 继续由 Wave 4 承担；memory multiplayer 与 preview runtime 不冒充生产多人实现。
 
 ### Wave 4: Room-owned Multiplayer Vertical Slice
 
-Status: Planned.
+Status: In progress since 2026-07-13.
 
 1. 在 Multiplayer Colyseus backend 增加通用 typed Room-side runtime bridge。
 2. Room 持有 headless App Host、authority GameRuntime、Physics、TCA/GAS runtime 和统一 dispose lifecycle。
@@ -267,6 +276,41 @@ Status: Planned.
 6. 建立 app-owned field-level player Schema、authority shadow、entity generation、initial sync 和 resync。
 
 完成标准：关闭 party leader 浏览器后 Room 仍继续 authority tick；四个客户端读取同一 player entity state；不同 room 隔离；所有 Host/GameModule/backend lifecycle 可释放。
+
+当前已完成首个 Room-owned lifecycle 切片：
+
+- `@gamekit/multiplayer-colyseus/server` 新增通用 `createColyseusRoomRuntimeBridge(...)`。它只拥有单一 Room simulation interval、Room-side backend connection、active peer/client index、GameKit envelope source/session/target/size gate、targeted send、低频 diagnostics 和 app-provided runtime lifecycle；server-side MultiplayerRuntime 统一由 multiplayer-core 创建，不拥有 Outpost gameplay、participant policy 或 Schema。
+- 既有 `GameKitColyseusRoom` relay/native carrier 未修改。公共 API 与 self-connection 取舍记录在 ADR 0025；package README 和 Multiplayer 长期模块文档已补充集成/使用边界。
+- Outpost app-local `OutpostSiegeRoom` 通过 bridge 持有共享 headless profile 创建的 App Host、GameRuntime、World 和 Physics。正式默认 backend 为 Rapier 2D，测试可注入 protocol-compatible memory Physics；Browser creator 的 `host` role 在 app boundary 映射为 `party-leader`，不会触发 host-authoritative room close policy。
+- 真实本地 Colyseus server integration test 已验证：两个 peer 进入同一 Room；leader 关闭后剩余 client 仍 `in-session`，authority tick 继续；两个并行 Room 各自持有独立 App Host、World、Rapier 2D scene、ingress counter 和 lifecycle，关闭其中一个不会停止另一个；Room dispose 后 Host phase 为 disposed、World entity 为 0、Physics handle unbound、active peer 为 0。
+- Core-ownership 复审移除了 bridge 手写的 MultiplayerRuntime/phase/session/snapshot，改为私有 `MultiplayerBackendAdapter/Connection` + `createMultiplayerRuntime()`；presence 恢复独立 `gamekit.presence` 通道，并锁定 GameKit session id、provider room id、Client connection id 三者边界。
+- Backend bridge 契约测试覆盖单 timer、boot/start/tick/stop/dispose 顺序、core server facade、browser/server peer session 对称、presence、targeted send、session/source/target/size rejection、重复 lifecycle rejection、partial boot failure cleanup 和幂等 dispose。真实 Outpost integration client 也通过 `createMultiplayerRuntime()` 驱动，不再只读取 backend 私有 connection snapshot。
+- `bench:multiplayer:room:check` 建立 6 项粗粒度预算。Core-first 重构后的 500,000 tick、100,000 envelope、10,000 peer churn、1,000 lifecycle profile 约为 9.87 ns/tick bridge、0.97 µs/inbound envelope、2.37 µs/join+leave、0.0091 ms/lifecycle；dispose 后 retained peer 和 timer 都为 0。
+- 本切片验证通过：Multiplayer Colyseus 12 tests、Outpost 23 tests、全仓库 test 73/73 tasks、build 40/40 tasks、lint 73/73 tasks、World benchmark、Multiplayer 12 项预算和 Outpost profile 4 项预算。全仓库 format check 仅被任务开始前已有的 `.claude/*`、`AGENTS.md`、`CLAUDE.md` 8 个非本切片文件阻塞；本切片文件已单独通过格式检查。
+
+当前已完成第二个 authority gameplay 纵切：
+
+- 新增 backend-neutral 的 Outpost match authority composer。它只消费 multiplayer-core 的 authority binding、peer/player binding、participant policy 和 authority host loop；GameKit session/peer 仍是唯一连接与身份真相，`lobby/countdown/running` 是 app-owned match state，不在 Colyseus Room/adapter 中建立平行 session。
+- Ready 使用 core `game.action` 的 per-source bounded FIFO；movement/aim 使用 core `game.input` 的 latest-per-source coalescing、严格 sequence 和 ack。所有 payload 都先验证形状与有限数值，移动轴在 authority boundary clamp；非 participant、未开局 input 和开局后的 ready 变更会被 authority 拒绝。
+- Room tick 现在按 `authority.beginTick()` → Outpost GameRuntime → Rapier Physics → `authority.commitTick()` 执行。倒计时结束前 World 只有 33 个 arena layout entity；开局后四个 participant 通过 data-driven player/physics definitions materialize 为 Koota entity，形成 37 entity、5 body、36 collider 的权威场景。移动速度写入 PhysicsVelocityComponent，位置、碰撞、facing 和 snapshot 都来自同一个 World/Physics runtime。
+- Participant slot、ready、input ack 和物理 player snapshot 都由 authority state 捕获；leader 只是一名 app participant。其离开会释放 core action/input/sequence state 并 despawn 对应 entity，但 Room、authority clock、剩余三名玩家和 core session 继续运行。
+- 真实本地 Colyseus integration test 使用四个独立 `createMultiplayerRuntime()` client 完成 join → ready → countdown → 4-player spawn → 三次连续 input 合并为 sequence 3 → Rapier position 前进 → leader dispose → 三人继续。测试同时断言 client 收到 server `game.snapshot`、不同 Room 仍隔离、dispose 后 World 清空。
+- 新增 `bench:outpost:authority:check` 四项预算。最终复跑的代表性 6,000 tick / 1,000 churn 结果约为 39.8 µs/four-player physical tick、55.0 µs/player churn tick；Physics trace 固定保留 180 条，dispose 后 retained entity 为 0，两个热路径预算均为 250 µs。
+- 当前切片通过 Outpost 24 tests、全仓库 test 73/73 tasks、build 40/40 tasks、lint 73/73 tasks、World benchmark、Multiplayer Core 12 项预算、Colyseus Room 6 项预算和 Outpost authority 4 项预算。Browser smoke 真实打开 1920×1080 backing canvas，确认场景资源、HUD、WASD 移动/镜头链路与可展开的 GameKit DevTools；页面无运行错误，日志仅有 `@dimforge/rapier2d-compat@0.19.3` 内部 WASM wrapper 的既有 deprecated-parameter warning。该包的公共 `init()` 类型没有新参数入口，本切片不在 app 或通用 adapter 中屏蔽上游警告。
+
+当前已完成第三个 Browser multiplayer 纵切：
+
+- Browser Web profile 不再使用 memory/local-authority preview；它由应用入口注入 `createColyseusMultiplayerBackend(...)` 支持的 Multiplayer Core runtime。建房、加房、peer/session、ready/action、input 和 snapshot 全部经过 Multiplayer Core，Colyseus 只保留 backend/Room/provider 职责。
+- Browser client 使用独立的 authority-shadow GameRuntime，不创建本地 Rapier authority。`clientReplication` 由 Multiplayer Core 自动订阅和验证 `game.snapshot`，并在 client tick 内把权威值 materialize/update/despawn 到 World。当前最多接收 4 个 player 和 8 个 participant，断开和 dispose 后 entity/identity registry 回到零。
+- Input Router 只维护当前 movement/aim state；Core managed runtime 按 30 Hz 配置自动采样、分配 sequence、发送到绑定的 server authority peer，并根据 snapshot input ack 自动 reconciliation/replay/correction smoothing。React lobby/roster 只消费最多 10 Hz 的低频 view，不订阅逐帧 World transform。
+- 远端 player 使用 Core playback 与 declared vector/angle tracks，本地 player 使用同一 managed frame 的 predicted state；Renderer 与 follow Camera 消费同一份 transient presented map，不把预测/插值值写回 authority World。Transport failure 会在下一份未确认失败 sequence 的 snapshot 上自动 reset prediction history，app 不实现恢复调度。
+- Vite 与 Colyseus 由同一 app-local dev server 启动并通过只读 config endpoint 发现连接地址。React lobby 支持 form/join、call sign、squad code、ready/countdown；创建后的 URL 携带 session code，分享页面会自动进入 Join 并预填。游戏 HUD 不复制 framework diagnostics，完整运行信息继续进入 GameKit DevTools。
+- 真实双 Browser 验证完成 ALPHA 建房、BRAVO 按 code 加入、双方 roster 同步、两人 Ready、server countdown 和同一权威物理战场启动。Managed replication 验证中 ALPHA 的权威位置从 `(836, 500)` 移动到 `(836, 490.24)`，BRAVO authority shadow 收到相同结果；两端均为 0 rejected/stale/duplicate snapshot，playback diagnostics 约为 111–116 FPS，本地 2.42px correction 进入 100ms smoothing。既有真实 Room integration 继续覆盖四个 Core client 的 input coalescing、Rapier position 前进、leader leave 和三人继续。
+- `bench:outpost:client:check` 覆盖 10,000 次四人 managed snapshot/playback/presentation apply 和 2,000 次 3↔4 人 churn。当前门禁结果约为 18.20 µs/four-player snapshot、24.97 µs/churn snapshot，低于 150/200 µs 预算；rejected snapshot 为 0，dispose 后 retained entity 为 0。通用 `bench:multiplayer` 另覆盖 managed 4/128 entity frame，当前门禁结果约为 2.00/31.95 µs/frame，低于 1ms 的 128 entity 预算。
+- 修复 Web container 改成竖屏或嵌入式尺寸后仍沿用 1280×720 logical viewport 的 camera 偏移。`@gamekit/platform-web` 现在提供通用 element viewport measure/observe helper；Outpost app composition 在 boot 和后续低频 resize 时同步更新 Phaser Renderer 与 Camera Core，zoom fallback anchor 读取当前 camera viewport，不包含游戏特有方向或偏移常量。helper 对重复尺寸去重并显式释放 observer，未增加逐帧测量或 resize。
+- Managed replication 增量验证通过 Multiplayer Core 44 tests、App Host 31 tests、Outpost 27 tests、Multiplayer 13 项性能预算和 Outpost client 4 项性能预算；双 Browser start/move/remote observe 也已完成。最终全仓库 test 73/73 tasks、build 40/40 tasks、lint 73/73 tasks 和 World benchmark 通过；root format 仍只被工作区原有 `.claude/*`、`AGENTS.md`、`CLAUDE.md` 8 个非本切片文件阻挡，本切片文件单独通过。展开 DevTools profiler 时两个页面会被既有 `ProfilerList` 的重复 React key (`runtime:undefined`) 告警刷屏；该告警不来自 managed replication，关闭 DevTools 时 gameplay diagnostics 正常，但后续 DevTools 工作流应单独修正，避免污染调试期性能数据。
+
+Wave 4 仍未完成 app-owned field-level Schema、稳定 entity generation、initial sync/resync 和后续 prediction/presentation。当前 Browser 使用单一 envelope snapshot 验证 Core authority contract；接入 provider-native Schema 时必须替换这条连续状态投影，不能双写两份正式 authority state。
 
 ### Wave 5: Physical TCA/GAS Combat
 

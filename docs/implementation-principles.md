@@ -10,6 +10,19 @@
 - 业务代码通过 `@gamekit/world` 访问 ECS。
 - Sandbox 只依赖 GameKit 的公共接口。
 
+## Core 语义唯一来源
+
+实现任何 adapter、driver、backend 或 app 组合前，先列出它触及的领域概念，并定位对应 core/facade 的公共创建函数、类型、生命周期和 conformance。已有 core 概念必须由 core runtime 推进，具体包不能只实现一个同形接口就宣称完成复用。
+
+Code review 至少检查：
+
+- 是否直接调用对应 core 的 runtime/factory/helper，而不是在具体包复制 phase、session、snapshot、sequence、dispose 或错误语义。
+- 第三方对象是否只存在于 adapter/driver/native boundary，并通过 core 类型对外投影。
+- Core 缺少的能力究竟是通用协议缺口，还是 provider 专属能力；前者先修正 core 并补 conformance，后者保留 typed native path。
+- 集成测试是否从 core facade 观察结果，而不只读取 adapter 私有 snapshot 或第三方对象。仅断言两个对象字段相同，不能证明它们由同一 core runtime 驱动。
+
+允许 adapter 维护 provider id、native handle、连接索引和映射缓存；这些是实现状态，不得演化为与 core 同名的第二套业务状态机。
+
 ## Adapter 隔离
 
 第三方库不得成为业务边界。引入库时必须回答：

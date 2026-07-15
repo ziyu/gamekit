@@ -548,6 +548,8 @@ Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务�
 
 这让复杂游戏 app 可以在不启动浏览器或 Tauri 的情况下验证 Data、Asset、Runtime、Physics、TCA、GAS 和 Save 组合。
 
+`createHeadlessRenderer()` 和 `createMemoryAssetAdapter()` 是 protocol-compatible 组合 fixture。它们可以被 `createHeadlessHost()` 使用，也可以被需要保留共享 `GameAppDefinition` 的 app-specific headless/deterministic profile 直接注入标准 Renderer/Asset service。二者不解释 gameplay、不加载真实视觉 payload，也不代表生产 server renderer 或内容分发 backend。
+
 ## 设计约束
 
 - App Host 不能把第三方库类型泄漏给 gameplay。
@@ -567,6 +569,7 @@ Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务�
 - Driver 由 App Host 管 lifecycle，Renderer/Input/Asset/Camera adapter 通过 Driver capability 选择；多个 Driver 并存时 profile 必须显式选择。
 - Save service context 默认保持最小，只给 contributor 暴露必要服务；renderer/input/ui/platform 等对象必须显式 opt-in。
 - Headless Host 是标准组合路径的测试入口。新增标准 service 或标准 game module helper 时，必须能在不启动浏览器/Tauri 的情况下测试生命周期和依赖顺序。
+- 多 profile app 应复用同一份 Definition/service graph，并用 headless/memory adapter 提供非视觉 service；正式 server 的 platform、physics、multiplayer 和 runtime owner 通过 profile 参数注入，不把 memory fixture 写死为生产 backend。
 - Authority app 使用 `game.modules(ctx)` 显式交错 standard/app modules 时，测试必须同时断言 module install order、system registration order、runtime handle unbind 和 cleanup reverse order。
 
 ### 模块使用

@@ -102,7 +102,7 @@ export function createHeadlessHost(options: CreateHeadlessHostOptions = {}): App
   }).host;
 }
 
-function createMemoryAssetAdapter(): AssetLoaderAdapter {
+export function createMemoryAssetAdapter(): AssetLoaderAdapter {
   return {
     id: "headless-asset-loader",
     supports() {
@@ -114,7 +114,7 @@ function createMemoryAssetAdapter(): AssetLoaderAdapter {
   };
 }
 
-function createHeadlessRenderer(): RendererAdapter {
+export function createHeadlessRenderer(): RendererAdapter {
   let nextId = 0;
   const objects = new Map<string, RenderObjectDefinition>();
 
