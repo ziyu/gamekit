@@ -21,6 +21,7 @@ import type {
 const DEFAULT_COUNTDOWN_MS = 3_000;
 const DEFAULT_MAX_PLAYERS = 4;
 const DEFAULT_MIN_PLAYERS = 1;
+const MAX_INPUT_BACKLOG_PER_PLAYER = 32;
 const DEFAULT_SPAWN_POINTS = Object.freeze([
   { x: OUTPOST_ARENA.width / 2 - 64, y: OUTPOST_ARENA.height / 2 },
   { x: OUTPOST_ARENA.width / 2 + 64, y: OUTPOST_ARENA.height / 2 },
@@ -138,12 +139,13 @@ export function createOutpostMatchAuthority(
     inputSequence(input) {
       return input.sequence;
     },
-    inputQueueMode: "latest",
+    inputQueueMode: "fifo",
+    maxInputsPerSourcePerTick: 1,
     maxActionsPerSourcePerTick: 4,
     maxQueuedActionsPerSource: 16,
     maxQueuedActions: maxPlayers * 16,
-    maxQueuedInputs: maxPlayers,
-    maxQueuedInputsPerSource: 1,
+    maxQueuedInputs: maxPlayers * MAX_INPUT_BACKLOG_PER_PLAYER,
+    maxQueuedInputsPerSource: MAX_INPUT_BACKLOG_PER_PLAYER,
     handleAction({ message, payload }) {
       return handleAction(message.sourcePeerId, payload);
     },

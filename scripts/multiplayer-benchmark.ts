@@ -10,6 +10,8 @@ import {
   createMultiplayerPredictionBuffer,
   createSnapshotPlayback,
   createSnapshotPresentationProjector,
+  definePredictionStatePresentation,
+  definePredictionVector2StateField,
   defineSnapshotVector2Track,
   MULTIPLAYER_ACTION_KIND,
   MULTIPLAYER_INPUT_KIND,
@@ -702,6 +704,14 @@ function runPredictionPresentationBenchmark(): BenchmarkSuite {
   const cases = [60, 120].map((presentationFps) => {
     const frames = 500_000;
     const frameDeltaMs = 1000 / presentationFps;
+    const position = definePredictionVector2StateField<BenchmarkPredictionState>({
+      readX: (state) => state.x,
+      readY: (state) => state.y,
+      write(state, x, y) {
+        state.x = x;
+        state.y = y;
+      }
+    });
     const prediction = createMultiplayerPredictionBuffer<BenchmarkPredictionState, BenchmarkInput>({
       initialState: { x: 0, y: 0 },
       predictionStepMs: TICK_MS,
@@ -713,27 +723,15 @@ function runPredictionPresentationBenchmark(): BenchmarkSuite {
         state.y += input.dy;
         return state;
       },
-      presentState(fromState, toState, context) {
-        toState.x = fromState.x + (toState.x - fromState.x) * context.alpha;
-        toState.y = fromState.y + (toState.y - fromState.y) * context.alpha;
-        return toState;
-      },
-      measureCorrection(previous, next) {
-        return Math.hypot(previous.x - next.x, previous.y - next.y);
-      },
-      correctionSmoothing: {
-        durationMs: 100,
-        maxMagnitude: 10,
-        apply(target, context) {
-          target.x +=
-            (context.previousPresentedState.x - context.initialTargetState.x) *
-            context.remainingAlpha;
-          target.y +=
-            (context.previousPresentedState.y - context.initialTargetState.y) *
-            context.remainingAlpha;
-          return target;
+      presentation: definePredictionStatePresentation({
+        fields: [position],
+        correction: {
+          measure: position,
+          smooth: [position],
+          durationMs: 100,
+          maxMagnitude: 10
         }
-      }
+      })
     });
     let sequence = 0;
     let timestamp = 0;

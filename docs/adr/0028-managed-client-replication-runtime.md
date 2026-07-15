@@ -14,7 +14,8 @@ Multiplayer Core 提供 managed client replication runtime，并由标准 Multip
 
 - Runtime 自动订阅归一化 `game.snapshot`，根据显式 binding 或 core session/peer role 解析 authority endpoint，执行 session/source gate、单调 tick gate、最新完整快照 coalescing 和 binding-change reset。
 - Runtime 在 GameRuntime tick 内自动推进 snapshot playback 与 declared `Network*` track projector；游戏只配置 snapshot decoder、timeline、track declaration、snap/reset policy 和最终 `applyFrame` writer。
-- 启用 local prediction 后，Runtime 按配置频率读取当前 input state、分配 sequence、发送 `game.input`、推进 bounded prediction buffer，并在权威 snapshot 携带 ack 时自动 reconcile、replay 和 correction smoothing。
+- 启用 local prediction 后，Runtime 按配置频率读取当前 input state、分配 sequence、发送 `game.input`、推进 bounded prediction buffer，并在权威 snapshot 携带 ack 时自动 reconcile、replay 和 correction smoothing。标准字段表现通过 ADR 0029 的声明式 predicted-state fields 配置，不要求游戏回调手写插值或 correction offset。
+- Runtime 通过 `maxPredictionLeadInputs` 限制未确认 prediction input 数；达到上限时保留当前控制状态但暂停产生新的 simulation step/send，等 authority ack 释放窗口后再读取最新输入。该 backpressure 防止 client/authority timer 的微小漂移长期累积成 queue overflow、sequence gap 和周期性回拉，并通过 `throttledInputs` 暴露诊断。
 - Local GameRuntime tick 只用于客户端 prediction frame，不默认写入 outgoing authority tick 字段。Transport send 失败时，Runtime 记录失败 sequence；下一份未确认该 sequence 的 authority snapshot 会自动从权威状态 reset prediction buffer，避免未真正发送的输入永久留在 replay history。Binding generation 会隔离旧 session 的异步失败回调。
 - 同一 `applyFrame` 同时暴露 remote presented tracks 与 local predicted state。Renderer 和 follow camera 必须消费这一帧的同一 transient state；权威 World、Physics、Save 和 provider state 不读取或保存 presented/predicted 值。
 - App Host standard multiplayer module 只透传 `clientReplication` 配置到 Multiplayer Core factory；App Host、backend adapter 和 app 不复制调度 runtime。
@@ -64,3 +65,4 @@ Rejected because boolean、phase、inventory、combat fact 和 teleport 不能�
 - ADR 0013: `docs/adr/0013-standard-authoritative-replication-boundary.md`
 - ADR 0014: `docs/adr/0014-multiplayer-presentation-temporal-buffer.md`
 - ADR 0026: `docs/adr/0026-core-first-domain-semantic-ownership.md`
+- ADR 0029: `docs/adr/0029-declarative-prediction-state-presentation.md`

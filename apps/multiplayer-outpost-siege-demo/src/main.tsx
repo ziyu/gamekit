@@ -100,9 +100,14 @@ async function boot(root: HTMLElement): Promise<void> {
       const config = await loadOutpostBrowserServerConfig();
       const identity = createOutpostBrowserIdentity(intent.displayName);
       const multiplayer = createOutpostBrowserMultiplayer(config, identity);
+      const { initRapier2dPhysicsBackend } = await import("@gamekit/physics-rapier2d");
+      const physicsBackend = await initRapier2dPhysicsBackend({
+        id: `outpost.browser.prediction.${identity.playerId}`
+      });
       context = {
         ui: { rendererRoot },
         uiRuntime,
+        physicsBackend,
         inputBlocked: true,
         assetDiagnostics: []
       };

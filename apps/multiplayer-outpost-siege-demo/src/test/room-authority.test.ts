@@ -258,6 +258,7 @@ describe("Outpost Room-owned authority", () => {
       createRoomClient(server.endpoint, roomName, "ranger-4", "client")
     ];
     let replicatedPhase: string | undefined;
+    const replicatedInputAcks: number[] = [];
     const unsubscribe = clients[3]?.subscribe((message) => {
       if (
         message.kind === "game.snapshot" &&
@@ -267,6 +268,21 @@ describe("Outpost Room-owned authority", () => {
         typeof message.payload.phase === "string"
       ) {
         replicatedPhase = message.payload.phase;
+      }
+      if (
+        message.kind === "game.snapshot" &&
+        typeof message.payload === "object" &&
+        message.payload !== null &&
+        "inputAcksByPeerId" in message.payload &&
+        typeof message.payload.inputAcksByPeerId === "object" &&
+        message.payload.inputAcksByPeerId !== null
+      ) {
+        const acknowledged = (message.payload.inputAcksByPeerId as Record<string, unknown>)[
+          "ranger-4"
+        ];
+        if (typeof acknowledged === "number" && replicatedInputAcks.at(-1) !== acknowledged) {
+          replicatedInputAcks.push(acknowledged);
+        }
       }
     });
 
@@ -350,7 +366,7 @@ describe("Outpost Room-owned authority", () => {
             sequence,
             payload: {
               sequence,
-              moveX: sequence === 3 ? 1 : -1,
+              moveX: 1,
               moveY: 0,
               aimX: 1_200,
               aimY: 500
@@ -363,16 +379,18 @@ describe("Outpost Room-owned authority", () => {
         const moved = match?.players.find((player) => player.playerId === "player.ranger-4");
         return (
           match?.inputAcksByPeerId["ranger-4"] === 3 &&
+          replicatedInputAcks.includes(3) &&
           moved !== undefined &&
           playerBefore !== undefined &&
           moved.x > playerBefore.x
         );
       });
       expect(requireRoom(room).authoritySnapshot().runtime?.match.authorityInput).toMatchObject({
-        acceptedInputs: 1,
-        coalescedInputs: 2,
+        acceptedInputs: 3,
+        coalescedInputs: 0,
         queuedInputs: 0
       });
+      expect(replicatedInputAcks).toEqual(expect.arrayContaining([1, 2, 3]));
 
       const beforeLeaderLeave = requireRoom(room).authoritySnapshot();
       await clients[0]?.dispose();

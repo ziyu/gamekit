@@ -13,6 +13,8 @@ import {
   type MultiplayerRuntime,
   type MultiplayerSession
 } from "../packages/multiplayer-core/src";
+import type { PhysicsBackendAdapter, PhysicsScene } from "../packages/physics-core/src";
+import { initRapier2dPhysicsBackend } from "../packages/physics-rapier2d/src";
 import { createKootaWorld } from "../packages/world-koota/src";
 import {
   checkOutpostClientBudgets,
@@ -27,6 +29,9 @@ const FIXED_DELTA_MS = 1000 / 60;
 
 async function main(): Promise<void> {
   const multiplayer = createBenchmarkMultiplayer();
+  const physics = trackPhysicsScenes(
+    await initRapier2dPhysicsBackend({ id: "outpost-client-benchmark.rapier2d" })
+  );
   await multiplayer.runtime.createSession({
     id: "benchmark.session",
     authority: "server-authoritative",
@@ -41,6 +46,7 @@ async function main(): Promise<void> {
     dataRegistry: createOutpostDataRegistry(),
     world,
     multiplayer: multiplayer.runtime,
+    physicsBackend: physics.backend,
     localPlayerId: "benchmark.player.1"
   });
   client.runtime.start();
@@ -75,6 +81,10 @@ async function main(): Promise<void> {
     throw new Error("Outpost client benchmark expected four materialized player shadows.");
   }
   const diagnostics = client.snapshot();
+  const predictionDiagnostics = diagnostics.replication?.prediction;
+  const transitionDiagnostics = predictionDiagnostics?.transition as
+    | { cachedFrames?: number }
+    | undefined;
   client.runtime.dispose();
   await multiplayer.runtime.dispose();
 
@@ -84,7 +94,10 @@ async function main(): Promise<void> {
     ),
     microsecondsPerPlayerChurnSnapshot: round((churnDurationMs * 1_000) / CHURN_SNAPSHOTS),
     rejectedSnapshots: diagnostics.rejectedSnapshots,
-    retainedEntitiesAfterDispose: world.count()
+    predictionPendingInputs: predictionDiagnostics?.pendingInputs ?? 0,
+    predictionCachedFrames: transitionDiagnostics?.cachedFrames ?? 0,
+    retainedEntitiesAfterDispose: world.count(),
+    retainedPhysicsScenesAfterDispose: physics.activeScenes()
   };
   const checkEnabled = process.argv.includes("--check");
   const failures = checkEnabled ? checkOutpostClientBudgets(result) : [];
@@ -253,6 +266,48 @@ function createBenchmarkMultiplayer(): {
       for (const listener of listeners) {
         listener(message);
       }
+    }
+  };
+}
+
+function trackPhysicsScenes(backend: PhysicsBackendAdapter): {
+  backend: PhysicsBackendAdapter;
+  activeScenes(): number;
+} {
+  let activeScenes = 0;
+  return {
+    backend: {
+      id: `${backend.id}.tracked`,
+      kind: backend.kind,
+      dimension: backend.dimension,
+      createScene(config) {
+        const scene = backend.createScene(config);
+        activeScenes += 1;
+        return trackScene(scene, () => {
+          activeScenes -= 1;
+        });
+      },
+      capabilities() {
+        return backend.capabilities();
+      }
+    },
+    activeScenes() {
+      return activeScenes;
+    }
+  };
+}
+
+function trackScene(scene: PhysicsScene, onDispose: () => void): PhysicsScene {
+  let disposed = false;
+  return {
+    ...scene,
+    dispose() {
+      if (disposed) {
+        return;
+      }
+      disposed = true;
+      scene.dispose();
+      onDispose();
     }
   };
 }

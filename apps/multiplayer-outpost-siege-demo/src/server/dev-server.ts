@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { createGameKitColyseusServer } from "@gamekit/multiplayer-colyseus/server";
 import { createServer as createViteServer } from "vite";
 
+import { OUTPOST_NETWORK_TIMING } from "../gameplay/constants";
 import {
   OUTPOST_BROWSER_CONFIG_PATH,
   OUTPOST_BROWSER_ROOM_NAME
@@ -12,7 +13,7 @@ import { createOutpostSiegeRoomClass } from "./outpost-siege-room";
 const host = process.env.OUTPOST_HOST ?? "127.0.0.1";
 const webPort = readPort(process.env.OUTPOST_WEB_PORT, 5173);
 const roomClass = createOutpostSiegeRoomClass({
-  fixedStepMs: 50,
+  fixedStepMs: OUTPOST_NETWORK_TIMING.tickMs,
   countdownMs: 1_500,
   minPlayers: 2,
   maxPlayers: 4

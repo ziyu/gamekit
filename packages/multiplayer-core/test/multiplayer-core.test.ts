@@ -16,6 +16,13 @@ import {
   createSnapshotPresentationProjector,
   createSnapshotPlayback,
   createUniqueMultiplayerDisplayName,
+  definePredictionAngleStateField,
+  definePredictionQuaternionStateField,
+  definePredictionScalarStateField,
+  definePredictionStatePresentation,
+  definePredictionStepStateField,
+  definePredictionVector2StateField,
+  definePredictionVector3StateField,
   defineSnapshotVector2Track,
   interpolateAngleRadians,
   interpolateNumber,
@@ -1159,6 +1166,202 @@ describe("multiplayer prediction helpers", () => {
     });
   });
 
+  it("presents declared prediction fields and correction offsets without game interpolation", () => {
+    type State = { x: number; y: number; facing: number; velocity: number };
+    type Input = { dx: number; facing: number };
+    const position = definePredictionVector2StateField<State>({
+      readX: (state) => state.x,
+      readY: (state) => state.y,
+      write(state, x, y) {
+        state.x = x;
+        state.y = y;
+      }
+    });
+    const facing = definePredictionAngleStateField<State>({
+      read: (state) => state.facing,
+      write(state, value) {
+        state.facing = value;
+      }
+    });
+    const degrees = (value: number) => (value * Math.PI) / 180;
+    const prediction = createMultiplayerPredictionBuffer<State, Input>({
+      initialState: { x: 0, y: 0, facing: degrees(170), velocity: 0 },
+      predictionStepMs: 50,
+      cloneState: (state) => ({ ...state }),
+      applyInput(state, input, context) {
+        expect(context.stepMs).toBe(50);
+        state.x += input.dx;
+        state.velocity = input.dx / (context.stepMs / 1000);
+        state.facing = input.facing;
+        return state;
+      },
+      presentation: definePredictionStatePresentation({
+        fields: [position, facing],
+        correction: {
+          measure: position,
+          smooth: [position],
+          durationMs: 100,
+          maxMagnitude: 10
+        }
+      })
+    });
+
+    prediction.predict({ sequence: 1, input: { dx: 10, facing: degrees(-170) }, timestamp: 50 });
+    expect(prediction.present({ deltaMs: 25, timestamp: 75 })).toMatchObject({
+      x: 5,
+      y: 0,
+      velocity: 200
+    });
+    expect(prediction.present({ deltaMs: 0, timestamp: 75 }).facing).toBeCloseTo(Math.PI);
+
+    prediction.reconcile({
+      authoritativeState: { x: 8, y: 0, facing: degrees(-170), velocity: 200 },
+      acknowledgedSequence: 1,
+      timestamp: 75
+    });
+
+    expect(prediction.state().x).toBe(8);
+    expect(prediction.present({ deltaMs: 25, timestamp: 100 }).x).toBeCloseTo(5.75);
+    expect(prediction.diagnostics()).toMatchObject({
+      corrections: 1,
+      smoothedCorrections: 1,
+      correctionSmoothingActive: true
+    });
+  });
+
+  it("supports scalar, vector3, quaternion, and step prediction fields", () => {
+    type State = {
+      scalar: number;
+      position: { x: number; y: number; z: number };
+      rotation: { x: number; y: number; z: number; w: number };
+      mode: "idle" | "moving";
+    };
+    const scalar = definePredictionScalarStateField<State>({
+      read: (state) => state.scalar,
+      write(state, value) {
+        state.scalar = value;
+      }
+    });
+    const position = definePredictionVector3StateField<State>({
+      readX: (state) => state.position.x,
+      readY: (state) => state.position.y,
+      readZ: (state) => state.position.z,
+      write(state, x, y, z) {
+        state.position = { x, y, z };
+      },
+      snapDistance: 5
+    });
+    const rotation = definePredictionQuaternionStateField<State>({
+      readX: (state) => state.rotation.x,
+      readY: (state) => state.rotation.y,
+      readZ: (state) => state.rotation.z,
+      readW: (state) => state.rotation.w,
+      write(state, value) {
+        state.rotation = value;
+      }
+    });
+    const mode = definePredictionStepStateField<State, State["mode"]>({
+      read: (state) => state.mode,
+      write(state, value) {
+        state.mode = value;
+      }
+    });
+    const prediction = createMultiplayerPredictionBuffer<State, State>({
+      initialState: {
+        scalar: 0,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        mode: "idle"
+      },
+      predictionStepMs: 50,
+      cloneState(state) {
+        return {
+          ...state,
+          position: { ...state.position },
+          rotation: { ...state.rotation }
+        };
+      },
+      applyInput(_state, input) {
+        return {
+          ...input,
+          position: { ...input.position },
+          rotation: { ...input.rotation }
+        };
+      },
+      presentation: definePredictionStatePresentation({
+        fields: [scalar, position, rotation, mode]
+      })
+    });
+
+    prediction.predict({
+      sequence: 1,
+      timestamp: 50,
+      input: {
+        scalar: 10,
+        position: { x: 10, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 1, w: 0 },
+        mode: "moving"
+      }
+    });
+    const presented = prediction.present({ deltaMs: 25, timestamp: 75 });
+
+    expect(presented.scalar).toBe(5);
+    expect(presented.position).toEqual({ x: 10, y: 0, z: 0 });
+    expect(presented.rotation.z).toBeCloseTo(Math.SQRT1_2);
+    expect(presented.rotation.w).toBeCloseTo(Math.SQRT1_2);
+    expect(presented.mode).toBe("idle");
+  });
+
+  it("rejects ambiguous declarative and custom prediction presentation", () => {
+    expect(() =>
+      createMultiplayerPredictionBuffer<number, number>({
+        initialState: 0,
+        cloneState: (state) => state,
+        applyInput: (state, input) => state + input,
+        presentation: definePredictionStatePresentation({ fields: [] }),
+        presentState: (_from, to) => to
+      })
+    ).toThrow(/cannot be combined/);
+  });
+
+  it("owns reusable prediction transition lifecycle", () => {
+    let created = 0;
+    let disposed = 0;
+    const prediction = createMultiplayerPredictionBuffer<number, number>({
+      initialState: 0,
+      cloneState: (state) => state,
+      transition() {
+        created += 1;
+        return {
+          apply: (state, input) => state + input,
+          dispose() {
+            disposed += 1;
+          }
+        };
+      }
+    });
+
+    expect(prediction.predict({ sequence: 1, input: 2 }).state).toBe(2);
+    expect(created).toBe(1);
+    prediction.dispose();
+    expect(disposed).toBe(1);
+
+    expect(() =>
+      createMultiplayerPredictionBuffer<number, number>({
+        initialState: 0,
+        cloneState: (state) => state,
+        applyInput: (state) => state,
+        transition: () => ({ apply: (state) => state })
+      })
+    ).toThrow(/exactly one/);
+    expect(() =>
+      createMultiplayerPredictionBuffer<number, number>({
+        initialState: 0,
+        cloneState: (state) => state
+      })
+    ).toThrow(/exactly one/);
+  });
+
   it("rejects stale input and bounds the pending input queue", () => {
     const prediction = createMultiplayerPredictionBuffer<number, number>({
       initialState: 0,
@@ -2082,6 +2285,7 @@ describe("createMultiplayerModule", () => {
     let readReplicationDiagnostics:
       | (() => {
           failedInputs: number;
+          throttledInputs: number;
           prediction?: { pendingInputs: number; resets: number };
         })
       | undefined;
@@ -2122,6 +2326,7 @@ describe("createMultiplayerModule", () => {
         },
         prediction: {
           inputRateHz: 20,
+          maxPredictionLeadInputs: 2,
           buffer: {
             cloneState: (state) => ({ ...state }),
             applyInput(state, input) {
@@ -2239,6 +2444,9 @@ describe("createMultiplayerModule", () => {
     await waitFor(() => readReplicationDiagnostics?.().failedInputs === 1);
     expect(fake.sent).toHaveLength(2);
     expect(readReplicationDiagnostics?.().prediction?.pendingInputs).toBe(2);
+    systems[0]?.update({ delta: 50, elapsed: 150, tick: 5 });
+    expect(fake.sent).toHaveLength(2);
+    expect(readReplicationDiagnostics?.().throttledInputs).toBe(1);
 
     fake.emit(
       messageFrom(
@@ -2252,7 +2460,7 @@ describe("createMultiplayerModule", () => {
         { tick: 2 }
       )
     );
-    systems[0]?.update({ delta: 25, elapsed: 125, tick: 5 });
+    systems[0]?.update({ delta: 0, elapsed: 150, tick: 6 });
     expect(readReplicationDiagnostics?.().prediction).toMatchObject({
       pendingInputs: 0,
       resets: 1
@@ -2260,6 +2468,109 @@ describe("createMultiplayerModule", () => {
 
     dispose?.();
     expect(exposed).toBe(false);
+  });
+
+  it("keeps managed prediction cadence smooth across irregular render frames", async () => {
+    type ClientSnapshot = { tick: number; x: number; acknowledgedSequence: number };
+    type ClientInput = { dx: number };
+    type PredictedState = { x: number };
+
+    const position = definePredictionVector2StateField<PredictedState>({
+      readX: (state) => state.x,
+      readY: () => 0,
+      write(state, x) {
+        state.x = x;
+      }
+    });
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "managed-irregular-cadence",
+      backend: fake.backend,
+      clock: () => 100
+    });
+    const systems: Array<{
+      update(ctx?: { delta?: number; elapsed?: number; tick?: number }): void;
+    }> = [];
+    const presented: number[] = [];
+    const module = createMultiplayerModule<
+      MultiplayerBridgeInstallContext,
+      ClientSnapshot,
+      ClientInput,
+      PredictedState
+    >({
+      runtime,
+      clientReplication: {
+        authority: { resolveAuthorityPeerId: () => "server" },
+        readSnapshot(payload) {
+          return payload as ClientSnapshot;
+        },
+        prediction: {
+          inputRateHz: 20,
+          buffer: {
+            cloneState: (state) => ({ ...state }),
+            applyInput(state, input) {
+              state.x += input.dx;
+              return state;
+            },
+            presentation: definePredictionStatePresentation({ fields: [position] })
+          },
+          readInput() {
+            return { dx: 1 };
+          },
+          encodeInput({ input, predictionFrame }) {
+            return { sequence: predictionFrame.sequence, dx: input.dx };
+          },
+          readAuthoritativeState({ snapshot }) {
+            return { x: snapshot.x };
+          },
+          readAcknowledgedSequence({ snapshot }) {
+            return snapshot.acknowledgedSequence;
+          }
+        },
+        applyFrame({ predictedState }) {
+          if (predictedState !== undefined) {
+            presented.push(predictedState.x);
+          }
+        }
+      }
+    });
+
+    const dispose = module.install({
+      eventBus: createEventBus(),
+      systems: { register: (system) => systems.push(system) }
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "client", role: "client", playerId: "player.client" }
+    });
+    fake.emit(
+      messageFrom(
+        "server",
+        MULTIPLAYER_SNAPSHOT_KIND,
+        { tick: 0, x: 0, acknowledgedSequence: 0 },
+        { tick: 0 }
+      )
+    );
+
+    systems[0]?.update({ delta: 0, elapsed: 0, tick: 0 });
+    for (const elapsed of [12, 24, 36, 48, 60]) {
+      systems[0]?.update({ delta: 12, elapsed, tick: elapsed });
+    }
+    await waitFor(() => fake.sent.length === 2);
+
+    expect(presented).toHaveLength(6);
+    expect(presented).toEqual([
+      expect.closeTo(0),
+      expect.closeTo(0.24),
+      expect.closeTo(0.48),
+      expect.closeTo(0.72),
+      expect.closeTo(0.96),
+      expect.closeTo(1.2)
+    ]);
+
+    dispose?.();
+    await runtime.dispose();
   });
 });
 

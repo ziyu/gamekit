@@ -77,6 +77,7 @@ type PhysicsEntityIndex = {
 export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<GameInstallContext> {
   const moduleId = options.id ?? "physics";
   const fixedDeltaMs = options.fixedDeltaMs ?? options.scene?.fixedDeltaMs ?? 1000 / 60;
+  const stepEpsilonMs = fixedDeltaMs * 1e-9;
   const maxSubSteps = options.maxSubSteps ?? 5;
   const bindings = resolveBindings(options.bindings);
   const emitContacts = options.eventPolicy?.emitContacts ?? true;
@@ -150,7 +151,7 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
           );
           accumulator += systemCtx.delta;
           let subSteps = 0;
-          while (accumulator >= fixedDeltaMs && subSteps < maxSubSteps) {
+          while (accumulator + stepEpsilonMs >= fixedDeltaMs && subSteps < maxSubSteps) {
             const result = scene.step(fixedDeltaMs, {
               tick: systemCtx.tick,
               elapsed: systemCtx.elapsed
@@ -191,11 +192,11 @@ export function createPhysicsModule(options: PhysicsModuleOptions): GameModule<G
                 diagnostics: result.diagnostics.length
               }
             });
-            accumulator -= fixedDeltaMs;
+            accumulator = Math.max(0, accumulator - fixedDeltaMs);
             subSteps += 1;
           }
 
-          if (subSteps === maxSubSteps && accumulator >= fixedDeltaMs) {
+          if (subSteps === maxSubSteps && accumulator + stepEpsilonMs >= fixedDeltaMs) {
             accumulator = 0;
             options.traceStore?.push({
               kind: "diagnostic",

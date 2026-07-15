@@ -46,6 +46,33 @@ export type PhysicsLayoutMaterialization = {
   dispose(): void;
 };
 
+export type PhysicsLayoutBodyDefinition = {
+  instanceId: string;
+  position: PhysicsTransformComponentState["position"];
+  rotation?: PhysicsTransformComponentState["rotation"];
+  enabled: boolean;
+  definition: PhysicsBodyDefinition;
+};
+
+export type PhysicsLayoutColliderDefinition = {
+  instanceId: string;
+  bodyInstanceId: string;
+  enabled: boolean;
+  definition: PhysicsColliderDefinition;
+};
+
+export type PhysicsLayoutDefinitions = {
+  layoutId: string;
+  bodies: PhysicsLayoutBodyDefinition[];
+  colliders: PhysicsLayoutColliderDefinition[];
+};
+
+export type CreatePhysicsLayoutDefinitionsOptions = {
+  dataRegistry: DataRegistry;
+  layoutId: string;
+  idPrefix?: string;
+};
+
 export type MaterializePhysicsLayoutOptions = {
   dataRegistry: DataRegistry;
   layoutId: string;
@@ -78,62 +105,42 @@ export function createPhysicsLayoutModule(
 export function materializePhysicsLayout(
   options: MaterializePhysicsLayoutOptions
 ): PhysicsLayoutMaterialization {
-  const layout = options.dataRegistry.getValue<PhysicsLayoutData>(
-    "physics.layout",
-    options.layoutId
-  );
+  const layout = createPhysicsLayoutDefinitions(options);
   const bindings = resolveBindings(options.bindings);
-  const idPrefix = options.idPrefix ?? layout.id;
   const spawnedEntities: EntityId[] = [];
   const bodyEntities: PhysicsLayoutBodyMaterialization[] = [];
   const colliderEntities: PhysicsLayoutColliderMaterialization[] = [];
+  const collidersByBodyInstance = groupCollidersByBodyInstance(layout.colliders);
 
   try {
-    for (const bodyInstance of layout.bodies) {
-      const bodyData = options.dataRegistry.getValue<PhysicsBodyData>(
-        bodyInstance.body.type,
-        bodyInstance.body.id
-      );
-      const bodyId = `${idPrefix}.${bodyInstance.id}.body`;
+    for (const body of layout.bodies) {
       const bodyEntity = options.world.spawn();
       spawnedEntities.push(bodyEntity);
-      bodyEntities.push({ instanceId: bodyInstance.id, entityId: bodyEntity, bodyId });
+      bodyEntities.push({
+        instanceId: body.instanceId,
+        entityId: bodyEntity,
+        bodyId: requireDefinitionId(body.definition.id, "body")
+      });
       options.world.add(bodyEntity, bindings.transform, {
-        position: bodyInstance.position ?? bodyData.position ?? { x: 0, y: 0 },
-        ...(bodyInstance.rotation === undefined && bodyData.rotation === undefined
-          ? {}
-          : { rotation: bodyInstance.rotation ?? bodyData.rotation })
+        position: body.position,
+        ...(body.rotation === undefined ? {} : { rotation: body.rotation })
       });
       options.world.add(bodyEntity, bindings.body, {
-        definition: createBodyDefinition(layout.id, bodyInstance, bodyData, bodyId),
-        enabled: bodyInstance.enabled ?? true
+        definition: body.definition,
+        enabled: body.enabled
       });
-
-      const colliderInstances = resolveColliderInstances(bodyInstance, bodyData);
-      for (const colliderInstance of colliderInstances) {
-        const colliderData = options.dataRegistry.getValue<PhysicsColliderData>(
-          colliderInstance.collider.type,
-          colliderInstance.collider.id
-        );
-        const colliderId = `${idPrefix}.${bodyInstance.id}.${colliderInstance.id}.collider`;
+      for (const collider of collidersByBodyInstance.get(body.instanceId) ?? []) {
         const colliderEntity = options.world.spawn();
         spawnedEntities.push(colliderEntity);
         colliderEntities.push({
-          instanceId: colliderInstance.id,
-          bodyInstanceId: bodyInstance.id,
+          instanceId: collider.instanceId,
+          bodyInstanceId: collider.bodyInstanceId,
           entityId: colliderEntity,
-          colliderId
+          colliderId: requireDefinitionId(collider.definition.id, "collider")
         });
         options.world.add(colliderEntity, bindings.collider, {
-          definition: createColliderDefinition(
-            layout.id,
-            bodyInstance.id,
-            colliderInstance,
-            colliderData,
-            bodyId,
-            colliderId
-          ),
-          enabled: colliderInstance.enabled ?? true
+          definition: collider.definition,
+          enabled: collider.enabled
         });
       }
     }
@@ -144,7 +151,7 @@ export function materializePhysicsLayout(
 
   let disposed = false;
   return {
-    layoutId: layout.id,
+    layoutId: layout.layoutId,
     bodyEntities,
     colliderEntities,
     dispose() {
@@ -155,6 +162,58 @@ export function materializePhysicsLayout(
       despawnAll(options.world, spawnedEntities);
     }
   };
+}
+
+export function createPhysicsLayoutDefinitions(
+  options: CreatePhysicsLayoutDefinitionsOptions
+): PhysicsLayoutDefinitions {
+  const layout = options.dataRegistry.getValue<PhysicsLayoutData>(
+    "physics.layout",
+    options.layoutId
+  );
+  const idPrefix = options.idPrefix ?? layout.id;
+  const bodies: PhysicsLayoutBodyDefinition[] = [];
+  const colliders: PhysicsLayoutColliderDefinition[] = [];
+
+  for (const bodyInstance of layout.bodies) {
+    const bodyData = options.dataRegistry.getValue<PhysicsBodyData>(
+      bodyInstance.body.type,
+      bodyInstance.body.id
+    );
+    const bodyId = `${idPrefix}.${bodyInstance.id}.body`;
+    bodies.push({
+      instanceId: bodyInstance.id,
+      position: bodyInstance.position ?? bodyData.position ?? { x: 0, y: 0 },
+      ...(bodyInstance.rotation === undefined && bodyData.rotation === undefined
+        ? {}
+        : { rotation: bodyInstance.rotation ?? bodyData.rotation }),
+      enabled: bodyInstance.enabled ?? true,
+      definition: createBodyDefinition(layout.id, bodyInstance, bodyData, bodyId)
+    });
+
+    for (const colliderInstance of resolveColliderInstances(bodyInstance, bodyData)) {
+      const colliderData = options.dataRegistry.getValue<PhysicsColliderData>(
+        colliderInstance.collider.type,
+        colliderInstance.collider.id
+      );
+      const colliderId = `${idPrefix}.${bodyInstance.id}.${colliderInstance.id}.collider`;
+      colliders.push({
+        instanceId: colliderInstance.id,
+        bodyInstanceId: bodyInstance.id,
+        enabled: colliderInstance.enabled ?? true,
+        definition: createColliderDefinition(
+          layout.id,
+          bodyInstance.id,
+          colliderInstance,
+          colliderData,
+          bodyId,
+          colliderId
+        )
+      });
+    }
+  }
+
+  return { layoutId: layout.id, bodies, colliders };
 }
 
 function createBodyDefinition(
@@ -238,4 +297,23 @@ function despawnAll(world: GameWorld, entities: EntityId[]): void {
       world.despawn(entity);
     }
   }
+}
+
+function groupCollidersByBodyInstance(
+  colliders: readonly PhysicsLayoutColliderDefinition[]
+): Map<string, PhysicsLayoutColliderDefinition[]> {
+  const grouped = new Map<string, PhysicsLayoutColliderDefinition[]>();
+  for (const collider of colliders) {
+    const bodyColliders = grouped.get(collider.bodyInstanceId) ?? [];
+    bodyColliders.push(collider);
+    grouped.set(collider.bodyInstanceId, bodyColliders);
+  }
+  return grouped;
+}
+
+function requireDefinitionId(id: string | undefined, kind: "body" | "collider"): string {
+  if (id === undefined) {
+    throw new Error(`Physics layout ${kind} definition requires an id.`);
+  }
+  return id;
 }

@@ -189,6 +189,7 @@ export function createOutpostVisualProfile(
               dataRegistry: requireState(state.data, "data"),
               world: createKootaWorld(),
               multiplayer: requireState(state.multiplayer, "multiplayer"),
+              physicsBackend: requireState(activeContext.physicsBackend, "physics backend"),
               localPlayerId: options.client.localPlayerId,
               renderer: requireState(state.renderer, "renderer"),
               applyRenderTargetState: applyPhaserRenderTargetState,
@@ -262,8 +263,9 @@ export function createOutpostVisualProfile(
                 if (activeContext.client) {
                   return {
                     mode: "remote-authority-shadow",
-                    owner: "room-authority",
-                    localPhysics: false
+                    owner: "room-authority-with-local-prediction",
+                    localPhysics: true,
+                    backend: activeContext.physicsBackend?.kind ?? "booting"
                   };
                 }
                 return {

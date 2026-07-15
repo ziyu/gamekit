@@ -5,6 +5,9 @@ import { createEventBus, type EventBus } from "@gamekit/event-bus";
 import { createGame, type GameInstallContext, type GameRuntime } from "@gamekit/game-runtime";
 import {
   createMultiplayerModule,
+  definePredictionAngleStateField,
+  definePredictionStatePresentation,
+  definePredictionVector2StateField,
   defineSnapshotAngleTrack,
   defineSnapshotVector2Track,
   type MultiplayerClientReplicationDiagnostics,
@@ -13,11 +16,21 @@ import {
   type NetworkVector2,
   type PresentedSnapshotTracks
 } from "@gamekit/multiplayer-core";
-import { PhysicsTransformComponent, PhysicsVelocityComponent } from "@gamekit/physics-core";
+import {
+  createPhysicsBodyPredictionTransition,
+  createPhysicsLayoutDefinitions,
+  PhysicsTransformComponent,
+  PhysicsVelocityComponent,
+  type PhysicsBackendAdapter,
+  type PhysicsBodyData,
+  type PhysicsColliderData,
+  type PhysicsSceneData
+} from "@gamekit/physics-core";
 import type { RendererAdapter } from "@gamekit/renderer-core";
 import type { EntityId, GameWorld } from "@gamekit/world";
 
 import { OUTPOST_PLAYER_TYPE, type OutpostPlayerDefinition } from "../domain";
+import { OUTPOST_ARENA_PHYSICS_LAYOUT_ID, OUTPOST_ARENA_PHYSICS_SCENE_ID } from "../content";
 import {
   createOutpostIdentityRegistry,
   type OutpostIdentityRegistry
@@ -27,7 +40,7 @@ import {
   type OutpostRenderTargetWriter
 } from "../presentation";
 import { OutpostGameplayObject, OutpostPresentation } from "./components";
-import { OUTPOST_ARENA } from "./constants";
+import { OUTPOST_ARENA, OUTPOST_NETWORK_TIMING } from "./constants";
 import {
   clearOutpostTransientInput,
   createOutpostInputState,
@@ -98,6 +111,7 @@ export type CreateOutpostClientShadowRuntimeOptions = {
   dataRegistry: DataRegistry;
   world: GameWorld;
   multiplayer: MultiplayerRuntime;
+  physicsBackend: PhysicsBackendAdapter;
   localPlayerId: string;
   renderer?: RendererAdapter | undefined;
   applyRenderTargetState?: OutpostRenderTargetWriter | undefined;
@@ -118,6 +132,7 @@ type ClientShadowState = {
   dataRegistry: DataRegistry;
   world: GameWorld;
   localPlayerId: string;
+  physicsBackend: PhysicsBackendAdapter;
   input: OutpostInputState;
   identity: OutpostIdentityRegistry;
   players: Map<string, MaterializedClientPlayer>;
@@ -161,6 +176,7 @@ export function createOutpostClientShadowRuntime(
     dataRegistry: options.dataRegistry,
     world: options.world,
     localPlayerId: options.localPlayerId,
+    physicsBackend: options.physicsBackend,
     input: createOutpostInputState(),
     identity: createOutpostIdentityRegistry(),
     players: new Map(),
@@ -227,7 +243,21 @@ function createClientReplicationModule(state: ClientShadowState, multiplayer: Mu
     OUTPOST_PLAYER_TYPE,
     PLAYER_DEFINITION_ID
   );
-  const predictionStepMs = 1000 / 30;
+  const predictedPosition = definePredictionVector2StateField<OutpostPredictedPlayerState>({
+    readX: (predicted) => predicted.x,
+    readY: (predicted) => predicted.y,
+    write(predicted, x, y) {
+      predicted.x = x;
+      predicted.y = y;
+    }
+  });
+  const predictedFacing = definePredictionAngleStateField<OutpostPredictedPlayerState>({
+    read: (predicted) => predicted.facing,
+    write(predicted, facing) {
+      predicted.facing = facing;
+    }
+  });
+  const physicsTransition = createOutpostPredictionTransitionFactory(state, playerDefinition);
   const fallbackPosition = { x: 0, y: 0 };
   return createMultiplayerModule<
     GameInstallContext,
@@ -249,7 +279,7 @@ function createClientReplicationModule(state: ClientShadowState, multiplayer: Mu
         maxSnapshots: 24,
         timeSource: "tick",
         readTime(entry) {
-          return entry.tick === undefined ? undefined : entry.tick * 50;
+          return entry.tick === undefined ? undefined : entry.tick * OUTPOST_NETWORK_TIMING.tickMs;
         },
         shouldReset(previous, next) {
           return (
@@ -291,44 +321,22 @@ function createClientReplicationModule(state: ClientShadowState, multiplayer: Mu
         );
       },
       prediction: {
-        inputRateHz: 30,
+        inputRateHz: OUTPOST_NETWORK_TIMING.tickRateHz,
         maxCatchUpSteps: 2,
         maxInFlightSends: 4,
+        maxPredictionLeadInputs: 8,
         buffer: {
           cloneState: clonePredictedPlayerState,
-          applyInput(predicted, input) {
-            return applyPredictedInput(
-              predicted,
-              input,
-              playerDefinition.moveSpeed,
-              predictionStepMs
-            );
-          },
-          presentState(from, to, presentation) {
-            from.x += (to.x - from.x) * presentation.alpha;
-            from.y += (to.y - from.y) * presentation.alpha;
-            from.velocityX = to.velocityX;
-            from.velocityY = to.velocityY;
-            from.facing = to.facing;
-            return from;
-          },
-          measureCorrection(previous, next) {
-            return Math.hypot(previous.x - next.x, previous.y - next.y);
-          },
-          correctionSmoothing: {
-            durationMs: 100,
-            maxMagnitude: 48,
-            apply(target, correction) {
-              target.x +=
-                (correction.previousPresentedState.x - correction.initialTargetState.x) *
-                correction.remainingAlpha;
-              target.y +=
-                (correction.previousPresentedState.y - correction.initialTargetState.y) *
-                correction.remainingAlpha;
-              return target;
+          transition: physicsTransition,
+          presentation: definePredictionStatePresentation({
+            fields: [predictedPosition, predictedFacing],
+            correction: {
+              measure: predictedPosition,
+              smooth: [predictedPosition],
+              durationMs: 100,
+              maxMagnitude: 48
             }
-          },
-          predictionStepMs
+          })
         },
         readInput() {
           return {
@@ -462,24 +470,102 @@ function clonePredictedPlayerState(
   return { ...state };
 }
 
-function applyPredictedInput(
-  state: OutpostPredictedPlayerState,
-  input: OutpostPredictionInput,
-  moveSpeed: number,
-  stepMs: number
-): OutpostPredictedPlayerState {
-  const length = Math.hypot(input.moveX, input.moveY);
-  const scale = length > 1 ? 1 / length : 1;
-  state.velocityX = input.moveX * scale * moveSpeed;
-  state.velocityY = input.moveY * scale * moveSpeed;
-  state.x += state.velocityX * (stepMs / 1000);
-  state.y += state.velocityY * (stepMs / 1000);
-  const aimX = input.aimX - state.x;
-  const aimY = input.aimY - state.y;
-  if (aimX !== 0 || aimY !== 0) {
-    state.facing = Math.atan2(aimY, aimX);
+function createOutpostPredictionTransitionFactory(
+  state: ClientShadowState,
+  player: OutpostPlayerDefinition
+) {
+  const bodyData = state.dataRegistry.getValue<PhysicsBodyData>(
+    "physics.body",
+    player.physicsBody.id
+  );
+  const colliderRef = bodyData.colliders?.[0];
+  if (colliderRef === undefined) {
+    throw new Error(`Outpost predicted player body requires a collider: ${bodyData.id}`);
   }
-  return state;
+  const colliderData = state.dataRegistry.getValue<PhysicsColliderData>(
+    colliderRef.type,
+    colliderRef.id
+  );
+  const layout = createPhysicsLayoutDefinitions({
+    dataRegistry: state.dataRegistry,
+    layoutId: OUTPOST_ARENA_PHYSICS_LAYOUT_ID,
+    idPrefix: "outpost.client-prediction.arena"
+  });
+  const environment = {
+    bodies: layout.bodies
+      .filter((body) => body.enabled)
+      .map((body) => ({
+        ...body.definition,
+        position: body.position,
+        ...(body.rotation === undefined ? {} : { rotation: body.rotation })
+      })),
+    colliders: layout.colliders
+      .filter((collider) => collider.enabled)
+      .map((collider) => collider.definition)
+  };
+  const { materials: _materials, ...scene } = state.dataRegistry.getValue<PhysicsSceneData>(
+    "physics.scene",
+    OUTPOST_ARENA_PHYSICS_SCENE_ID
+  );
+  const subjectBodyId = "outpost.client-prediction.player.body";
+  const subjectColliderId = "outpost.client-prediction.player.collider";
+  const subjectBody = toPredictionBodyDefinition(bodyData, subjectBodyId);
+  const subjectCollider = toPredictionColliderDefinition(
+    colliderData,
+    subjectBodyId,
+    subjectColliderId
+  );
+
+  return () =>
+    createPhysicsBodyPredictionTransition<OutpostPredictedPlayerState, OutpostPredictionInput>({
+      backend: state.physicsBackend,
+      scene,
+      environment,
+      fixedDeltaMs: 1000 / 60,
+      maxSubSteps: 4,
+      subject: {
+        body: subjectBody,
+        colliders: [subjectCollider],
+        readState(predicted) {
+          return {
+            position: { x: predicted.x, y: predicted.y },
+            linearVelocity: { x: predicted.velocityX, y: predicted.velocityY }
+          };
+        },
+        applyInput(predicted, input) {
+          const length = Math.hypot(input.moveX, input.moveY);
+          const scale = length > 1 ? 1 / length : 1;
+          const aimX = input.aimX - predicted.x;
+          const aimY = input.aimY - predicted.y;
+          if (aimX !== 0 || aimY !== 0) {
+            predicted.facing = Math.atan2(aimY, aimX);
+          }
+          return {
+            linearVelocity: {
+              x: input.moveX * scale * player.moveSpeed,
+              y: input.moveY * scale * player.moveSpeed
+            }
+          };
+        },
+        writeState(predicted, body) {
+          predicted.x = body.position.x;
+          predicted.y = body.position.y;
+          predicted.velocityX = body.linearVelocity.x;
+          predicted.velocityY = body.linearVelocity.y;
+          return predicted;
+        }
+      }
+    });
+}
+
+function toPredictionBodyDefinition(data: PhysicsBodyData, id: string) {
+  const { colliders: _colliders, tags: _tags, id: _id, ...definition } = data;
+  return { ...definition, id };
+}
+
+function toPredictionColliderDefinition(data: PhysicsColliderData, bodyId: string, id: string) {
+  const { tags: _tags, id: _id, bodyId: _bodyId, ...definition } = data;
+  return { ...definition, id, bodyId };
 }
 
 function playerPositionKey(playerId: string): string {

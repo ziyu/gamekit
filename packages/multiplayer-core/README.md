@@ -194,31 +194,36 @@ Games should reset snapshot playback when the authority binding, session, snapsh
 Local player prediction is modeled separately from remote interpolation. `createMultiplayerPredictionBuffer()` keeps a bounded input log, applies local inputs immediately, drops inputs acknowledged by the authoritative snapshot, rewinds to the authoritative state and replays still-pending inputs:
 
 ```ts
+const positionField = definePredictionVector2StateField<PredictedPlayer>({
+  readX: (state) => state.position.x,
+  readY: (state) => state.position.y,
+  write(state, x, y) {
+    state.position.x = x;
+    state.position.y = y;
+  }
+});
+const facingField = definePredictionAngleStateField<PredictedPlayer>({
+  read: (state) => state.facing,
+  write(state, facing) {
+    state.facing = facing;
+  }
+});
 const prediction = createMultiplayerPredictionBuffer({
   initialState: readPlayerPredictionState(snapshot),
   cloneState: (state) => ({ ...state, position: { ...state.position } }),
-  applyInput(state, input) {
-    return movePredictedPlayer(state, input);
-  },
-  presentState(fromState, toState, { alpha }) {
-    return interpolatePredictedPlayer(fromState, toState, alpha);
+  applyInput(state, input, { stepMs }) {
+    return movePredictedPlayer(state, input, stepMs);
   },
   predictionStepMs: 50,
-  measureCorrection(previous, next) {
-    return distance(previous.position, next.position);
-  },
-  correctionSmoothing: {
-    durationMs: 100,
-    maxMagnitude: 48,
-    apply(target, { previousPresentedState, initialTargetState, remainingAlpha }) {
-      return applyPredictionCorrectionOffset(
-        target,
-        previousPresentedState,
-        initialTargetState,
-        remainingAlpha
-      );
+  presentation: definePredictionStatePresentation({
+    fields: [positionField, facingField],
+    correction: {
+      measure: positionField,
+      smooth: [positionField],
+      durationMs: 100,
+      maxMagnitude: 48
     }
-  }
+  })
 });
 
 prediction.predict({ sequence: input.sequence, input, timestamp: input.clientTime });
@@ -233,7 +238,7 @@ const renderState = prediction.present({
 });
 ```
 
-Core owns the input queue, ack handling, replay, bounded fixed-step presentation clock, correction smoothing lifecycle and diagnostics. A predicted command computes the next fixed-step simulation endpoint immediately, while `present()` samples between the previous and current endpoint over `predictionStepMs`; it must not extrapolate again from an endpoint that already represents the end of the step. Reconciliation updates prediction state immediately. Small render corrections are represented as an offset from the corrected moving target and decay over the configured duration, so later prediction steps continue moving at their normal rate. Corrections above `maxMagnitude`, hard resets and teleports still snap. `present()` always works on cloned state, so render sampling never advances authoritative or rollback state. The game still owns deterministic input replay, collision, movement rules, interpolation of its state shape and final render writes.
+`positionField` and `facingField` are created once with `definePredictionVector2StateField()` and `definePredictionAngleStateField()`. They only map typed state reads/writes; Core chooses the interpolation primitive and applies correction offsets. Core owns the input queue, ack handling, replay, bounded fixed-step presentation clock, declared-field interpolation, correction smoothing lifecycle and diagnostics. Managed replication also bounds unacknowledged prediction lead with `maxPredictionLeadInputs` (default `8`); when the window is full it pauses new prediction/send steps, reports `throttledInputs`, and resumes from the latest sampled control state after an authority ack. A predicted command computes the next fixed-step simulation endpoint immediately, while `present()` samples between the previous and current endpoint over `predictionStepMs`; it must not extrapolate again from an endpoint that already represents the end of the step. Reconciliation updates prediction state immediately. Small render corrections decay as offsets from the corrected moving target, while corrections above `maxMagnitude`, hard resets and teleports snap. A transition may expose read-only diagnostics, which are nested under prediction diagnostics. The game still owns deterministic input replay, collision, movement rules and final render writes. The callback-based presentation options remain deprecated escape hatches for custom netcode.
 
 ## Peer / Player Binding
 

@@ -1,5 +1,7 @@
 import { createMultiplayerRuntime, type MultiplayerRuntime } from "@gamekit/multiplayer-core";
 import { createMemoryMultiplayerBackend } from "@gamekit/multiplayer-memory";
+import { createMemoryPhysicsBackend } from "@gamekit/physics-core";
+import { createMemoryRenderer } from "@gamekit/test-utils";
 import { createKootaWorld } from "@gamekit/world-koota";
 import { describe, expect, it } from "vitest";
 
@@ -35,6 +37,7 @@ describe("Outpost Browser multiplayer", () => {
       dataRegistry: createOutpostDataRegistry(),
       world,
       multiplayer,
+      physicsBackend: createMemoryPhysicsBackend(),
       localPlayerId: "player.ranger-1"
     });
     await client.runtime.start();
@@ -92,6 +95,7 @@ describe("Outpost Browser multiplayer", () => {
       dataRegistry: createOutpostDataRegistry(),
       world,
       multiplayer,
+      physicsBackend: createMemoryPhysicsBackend(),
       localPlayerId: "player.ranger-1"
     });
     client.input.moveX = 1;
@@ -104,8 +108,8 @@ describe("Outpost Browser multiplayer", () => {
     });
 
     client.runtime.tick(0);
-    client.runtime.tick(17);
-    client.runtime.tick(17);
+    client.runtime.tick(25);
+    client.runtime.tick(25);
     await waitFor(() => receivedInputs.length === 2);
     expect(receivedInputs).toEqual([
       { sequence: 1, moveX: 1, moveY: 0, aimX: 900, aimY: 500 },
@@ -123,6 +127,112 @@ describe("Outpost Browser multiplayer", () => {
     });
 
     unsubscribe();
+    await client.runtime.dispose();
+    await multiplayer.dispose();
+    await server.dispose();
+  });
+
+  it("presents local predicted facing continuously across the angle wrap boundary", async () => {
+    const backend = createMemoryMultiplayerBackend({ id: "outpost.client-facing.test" });
+    const server = createMultiplayerRuntime({ id: "server", backend });
+    const multiplayer = createMultiplayerRuntime({ id: "client", backend });
+    await server.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "session.server", role: "server" }
+    });
+    await multiplayer.joinSession({
+      sessionId: "session-1",
+      localPeer: { id: "ranger-1", role: "client", playerId: "player.ranger-1" }
+    });
+    const rotations: number[] = [];
+    const client = createOutpostClientShadowRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world: createKootaWorld(),
+      multiplayer,
+      physicsBackend: createMemoryPhysicsBackend(),
+      localPlayerId: "player.ranger-1",
+      renderer: createMemoryRenderer("outpost.client-facing.renderer"),
+      applyRenderTargetState(_native, state) {
+        const rotation = state.transform?.rotation?.z;
+        if (rotation !== undefined) {
+          rotations.push(rotation);
+        }
+      }
+    });
+    const degrees = (value: number) => (value * Math.PI) / 180;
+    const snapshot = authoritySnapshot(1, 1);
+    snapshot.players[0]!.facing = degrees(170);
+    client.input.aimX = snapshot.players[0]!.x + Math.cos(degrees(-170)) * 100;
+    client.input.aimY = snapshot.players[0]!.y + Math.sin(degrees(-170)) * 100;
+    await client.runtime.start();
+    await sendSnapshot(server, snapshot);
+
+    client.runtime.tick(0);
+    expect(rotations.at(-1)).toBeCloseTo(degrees(170), 2);
+    client.runtime.tick(25);
+    expect(rotations.at(-1)).toBeCloseTo(Math.PI, 2);
+
+    await client.runtime.dispose();
+    await multiplayer.dispose();
+    await server.dispose();
+  });
+
+  it("keeps local movement continuous when 20 Hz authority snapshots acknowledge input", async () => {
+    const backend = createMemoryMultiplayerBackend({ id: "outpost.client-movement.test" });
+    const server = createMultiplayerRuntime({ id: "server", backend });
+    const multiplayer = createMultiplayerRuntime({ id: "client", backend });
+    await server.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "session.server", role: "server" }
+    });
+    await multiplayer.joinSession({
+      sessionId: "session-1",
+      localPeer: { id: "ranger-1", role: "client", playerId: "player.ranger-1" }
+    });
+    const positions: number[] = [];
+    const client = createOutpostClientShadowRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world: createKootaWorld(),
+      multiplayer,
+      physicsBackend: createMemoryPhysicsBackend(),
+      localPlayerId: "player.ranger-1",
+      renderer: createMemoryRenderer("outpost.client-movement.renderer"),
+      applyRenderTargetState(_native, state) {
+        const x = state.transform?.position?.x;
+        if (x !== undefined) {
+          positions.push(x);
+        }
+      }
+    });
+    client.input.moveX = 1;
+    client.input.aimX = 1_400;
+    client.input.aimY = 500;
+    await client.runtime.start();
+    await sendSnapshot(server, authoritySnapshot(0, 1));
+    client.runtime.tick(0);
+
+    for (let frame = 1; frame <= 18; frame += 1) {
+      if (frame % 3 === 0) {
+        const authorityTick = frame / 3;
+        const snapshot = authoritySnapshot(authorityTick, 1);
+        snapshot.players[0]!.x += authorityTick * 11;
+        snapshot.inputAcksByPeerId["ranger-1"] = authorityTick;
+        await sendSnapshot(server, snapshot);
+      }
+      client.runtime.tick(1000 / 60);
+    }
+
+    const deltas = positions.slice(1).map((position, index) => position - positions[index]!);
+    expect(positions).toHaveLength(19);
+    expect(Math.min(...deltas)).toBeGreaterThan(3.65);
+    expect(Math.max(...deltas)).toBeLessThan(3.68);
+    expect(client.snapshot().replication?.prediction).toMatchObject({
+      corrections: 0,
+      lastAcknowledgedSequence: 6
+    });
+
     await client.runtime.dispose();
     await multiplayer.dispose();
     await server.dispose();

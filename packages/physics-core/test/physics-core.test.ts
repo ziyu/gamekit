@@ -10,10 +10,12 @@ import {
   PhysicsTransformComponent,
   PhysicsVelocityComponent,
   createMemoryPhysicsBackend,
+  createPhysicsBodyPredictionTransition,
   createPhysicsHandle,
   createPhysicsInterpolationStore,
   createPhysicsDataTypes,
   createPhysicsLayoutModule,
+  createPhysicsLayoutDefinitions,
   createPhysicsModule,
   createPhysicsSaveContributor,
   createPhysicsTraceStore,
@@ -181,6 +183,36 @@ describe("Physics layout module", () => {
       ]
     });
     const world = createMemoryWorld();
+    const definitions = createPhysicsLayoutDefinitions({
+      dataRegistry: registry,
+      layoutId: "layout.arena",
+      idPrefix: "prediction.arena"
+    });
+    expect(definitions).toMatchObject({
+      layoutId: "layout.arena",
+      bodies: [
+        {
+          instanceId: "architecture",
+          definition: { id: "prediction.arena.architecture.body", kind: "static" }
+        }
+      ],
+      colliders: [
+        {
+          instanceId: "wall.left",
+          definition: {
+            id: "prediction.arena.architecture.wall.left.collider",
+            bodyId: "prediction.arena.architecture.body"
+          }
+        },
+        {
+          instanceId: "wall.right",
+          definition: {
+            id: "prediction.arena.architecture.wall.right.collider",
+            bodyId: "prediction.arena.architecture.body"
+          }
+        }
+      ]
+    });
     const physics = createPhysicsHandle({ id: "layout.physics" });
     const runtime = createGame({
       modules: [
@@ -223,6 +255,119 @@ describe("Physics layout module", () => {
 
     runtime.dispose();
     expect(world.count()).toBe(0);
+  });
+});
+
+describe("Physics body prediction transition", () => {
+  it("steps a backend-owned subject from declarative state and input bindings", () => {
+    const transition = createPhysicsBodyPredictionTransition<
+      { x: number; velocityX: number },
+      { velocityX: number }
+    >({
+      backend: createMemoryPhysicsBackend(),
+      scene: { gravity: { x: 0, y: 0 } },
+      fixedDeltaMs: 25,
+      subject: {
+        body: { id: "prediction.player", kind: "dynamic" },
+        readState(state) {
+          return {
+            position: { x: state.x, y: 0 },
+            linearVelocity: { x: state.velocityX, y: 0 }
+          };
+        },
+        applyInput(_state, input) {
+          return { linearVelocity: { x: input.velocityX, y: 0 } };
+        },
+        writeState(state, body) {
+          state.x = body.position.x;
+          state.velocityX = body.linearVelocity.x;
+          return state;
+        }
+      }
+    });
+    const state = transition.apply(
+      { x: 0, velocityX: 0 },
+      { velocityX: 4 },
+      { sequence: 1, input: { velocityX: 4 }, replay: false, stepMs: 50 }
+    );
+
+    expect(state).toEqual({ x: 0.2, velocityX: 4 });
+    expect(transition.diagnostics()).toMatchObject({
+      predictedInputs: 1,
+      replayedInputs: 0,
+      physicsSteps: 2,
+      lastSubSteps: 2,
+      droppedStepTimeMs: 0
+    });
+
+    transition.dispose();
+    expect(() =>
+      transition.apply(
+        state,
+        { velocityX: 0 },
+        { sequence: 2, input: { velocityX: 0 }, replay: true, stepMs: 50 }
+      )
+    ).toThrow("disposed");
+  });
+
+  it("reuses matching sequence checkpoints without rewinding the backend scene", () => {
+    let physicsSteps = 0;
+    const transition = createPhysicsBodyPredictionTransition<
+      { x: number; velocityX: number },
+      { velocityX: number }
+    >({
+      backend: createMemoryPhysicsBackend(),
+      scene: { gravity: { x: 0, y: 0 } },
+      fixedDeltaMs: 25,
+      onStep() {
+        physicsSteps += 1;
+      },
+      subject: {
+        body: { id: "prediction.cached-player", kind: "dynamic" },
+        readState(state) {
+          return {
+            position: { x: state.x, y: 0 },
+            linearVelocity: { x: state.velocityX, y: 0 }
+          };
+        },
+        applyInput(_state, input) {
+          return { linearVelocity: { x: input.velocityX, y: 0 } };
+        },
+        writeState(_state, body) {
+          return { x: body.position.x, velocityX: body.linearVelocity.x };
+        }
+      }
+    });
+    const firstInput = { velocityX: 2 };
+    const secondInput = { velocityX: 4 };
+    const first = transition.apply({ x: 0, velocityX: 0 }, firstInput, {
+      sequence: 1,
+      input: firstInput,
+      replay: false,
+      stepMs: 50
+    });
+    const second = transition.apply(first, secondInput, {
+      sequence: 2,
+      input: secondInput,
+      replay: false,
+      stepMs: 50
+    });
+    const replayed = transition.apply({ ...first }, secondInput, {
+      sequence: 2,
+      input: secondInput,
+      replay: true,
+      stepMs: 50
+    });
+
+    expect(replayed).toEqual(second);
+    expect(physicsSteps).toBe(4);
+    expect(transition.diagnostics()).toMatchObject({
+      cachedReplays: 1,
+      replayCacheMisses: 0,
+      cachedFrames: 2,
+      lastSubSteps: 0
+    });
+    transition.dispose();
   });
 });
 
@@ -438,6 +583,32 @@ describe("Physics trace store", () => {
 });
 
 describe("Physics module", () => {
+  it("runs integral fixed sub-steps despite floating-point division residue", () => {
+    const traceStore = createPhysicsTraceStore();
+    const runtime = createGame({
+      modules: [
+        createPhysicsModule({
+          backend: createMemoryPhysicsBackend(),
+          fixedDeltaMs: 1_000 / 60,
+          maxSubSteps: 4,
+          traceStore
+        })
+      ],
+      world: createMemoryWorld(),
+      eventBus: createEventBus({ clock: () => 1 }),
+      seed: "physics-integral-substeps"
+    });
+
+    runtime.start();
+    runtime.tick(50);
+
+    expect(traceStore.list().filter((entry) => entry.kind === "step")).toHaveLength(3);
+    expect(
+      traceStore.list().some((entry) => entry.label === "physics.max_sub_steps_exceeded")
+    ).toBe(false);
+    runtime.dispose();
+  });
+
   it("samples fixed-step transforms smoothly without changing authoritative world state", () => {
     const world = createMemoryWorld();
     const mover = world.spawn();

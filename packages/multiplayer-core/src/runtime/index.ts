@@ -10,6 +10,7 @@ export * from "./errors";
 export * from "./peer-player-binding";
 export * from "./participant-policy";
 export * from "./prediction";
+export * from "./prediction-state";
 export * from "./presentation";
 export * from "./runtime";
 export * from "./types";

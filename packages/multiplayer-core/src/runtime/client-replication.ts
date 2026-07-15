@@ -66,6 +66,7 @@ export type MultiplayerClientPredictionOptions<TSnapshot, TInput, TState, TInsta
   inputRateHz?: number;
   maxCatchUpSteps?: number;
   maxInFlightSends?: number;
+  maxPredictionLeadInputs?: number;
   readInput(
     ctx: MultiplayerClientPredictionReadContext<TSnapshot, TInstallContext>
   ): TInput | undefined;
@@ -129,6 +130,7 @@ export type MultiplayerClientReplicationDiagnostics = {
   sentInputs: number;
   failedInputs: number;
   coalescedInputs: number;
+  throttledInputs: number;
   inFlightInputs: number;
   lastAppliedTick?: number;
   lastRejectedCode?: string;
@@ -170,6 +172,7 @@ const DEFAULT_INPUT_CHANNEL = "unreliable";
 const DEFAULT_INPUT_RATE_HZ = 20;
 const DEFAULT_MAX_CATCH_UP_STEPS = 2;
 const DEFAULT_MAX_IN_FLIGHT_SENDS = 4;
+const DEFAULT_MAX_PREDICTION_LEAD_INPUTS = 8;
 
 export function createMultiplayerClientReplication<
   TSnapshot,
@@ -196,6 +199,10 @@ export function createMultiplayerClientReplication<
   const maxInFlightSends = normalizePositiveInteger(
     predictionOptions?.maxInFlightSends,
     DEFAULT_MAX_IN_FLIGHT_SENDS
+  );
+  const maxPredictionLeadInputs = normalizePositiveInteger(
+    predictionOptions?.maxPredictionLeadInputs,
+    DEFAULT_MAX_PREDICTION_LEAD_INPUTS
   );
   let activeBinding: MultiplayerAuthorityBinding | undefined;
   let activeBindingKey: string | undefined;
@@ -224,6 +231,7 @@ export function createMultiplayerClientReplication<
     sentInputs: 0,
     failedInputs: 0,
     coalescedInputs: 0,
+    throttledInputs: 0,
     inFlightInputs: 0
   };
 
@@ -341,7 +349,7 @@ export function createMultiplayerClientReplication<
       unsubscribe();
       pendingSnapshot = undefined;
       authoritativeSnapshot = undefined;
-      predictionBuffer = undefined;
+      disposePredictionBuffer();
       latestPredictedState = undefined;
       failedPredictionSequence = undefined;
       bindingGeneration += 1;
@@ -396,7 +404,7 @@ export function createMultiplayerClientReplication<
     predictionActive =
       authoritativeState !== undefined && (predictionOptions.active?.(context) ?? true);
     if (authoritativeState === undefined) {
-      predictionBuffer = undefined;
+      disposePredictionBuffer();
       latestPredictedState = undefined;
       failedPredictionSequence = undefined;
       return;
@@ -404,6 +412,7 @@ export function createMultiplayerClientReplication<
     if (predictionBuffer === undefined) {
       predictionBuffer = createMultiplayerPredictionBuffer({
         ...predictionOptions.buffer,
+        predictionStepMs: predictionOptions.buffer.predictionStepMs ?? inputIntervalMs,
         initialState: authoritativeState
       });
       latestPredictedState = authoritativeState;
@@ -453,10 +462,15 @@ export function createMultiplayerClientReplication<
       inputAccumulatorMs = Math.max(inputAccumulatorMs, inputIntervalMs);
       inputReady = false;
     }
+    const frameTimestamp = frame.elapsed ?? elapsedMs;
     let steps = 0;
     while (inputAccumulatorMs >= inputIntervalMs && steps < maxCatchUpSteps) {
       inputAccumulatorMs -= inputIntervalMs;
       steps += 1;
+      if (predictionBuffer.pendingInputCount() >= maxPredictionLeadInputs) {
+        diagnostics.throttledInputs += 1;
+        continue;
+      }
       const context = {
         installContext,
         runtime,
@@ -476,7 +490,7 @@ export function createMultiplayerClientReplication<
         sequence: ++nextInputSequence,
         input: sampledInput,
         ...(frame.tick === undefined ? {} : { tick: frame.tick }),
-        timestamp: frame.elapsed ?? elapsedMs
+        timestamp: frameTimestamp - inputAccumulatorMs
       };
       predictionBuffer.predict(predictionFrame);
       sendInput(
@@ -493,7 +507,7 @@ export function createMultiplayerClientReplication<
     }
     latestPredictedState = predictionBuffer.present({
       deltaMs,
-      timestamp: frame.elapsed ?? elapsedMs
+      timestamp: frameTimestamp
     });
   }
 
@@ -545,7 +559,7 @@ export function createMultiplayerClientReplication<
     bindingGeneration += 1;
     pendingSnapshot = undefined;
     authoritativeSnapshot = undefined;
-    predictionBuffer = undefined;
+    disposePredictionBuffer();
     predictionActive = false;
     latestPredictedState = undefined;
     failedPredictionSequence = undefined;
@@ -566,7 +580,7 @@ export function createMultiplayerClientReplication<
     bindingGeneration += 1;
     pendingSnapshot = undefined;
     authoritativeSnapshot = undefined;
-    predictionBuffer = undefined;
+    disposePredictionBuffer();
     predictionActive = false;
     latestPredictedState = undefined;
     failedPredictionSequence = undefined;
@@ -577,6 +591,11 @@ export function createMultiplayerClientReplication<
   function rejectSnapshot(code: string): void {
     diagnostics.rejectedSnapshots += 1;
     diagnostics.lastRejectedCode = code;
+  }
+
+  function disposePredictionBuffer(): void {
+    predictionBuffer?.dispose();
+    predictionBuffer = undefined;
   }
 }
 

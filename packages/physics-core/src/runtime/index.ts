@@ -1,4 +1,5 @@
 export * from "./create-memory-physics-backend";
+export * from "./create-physics-body-prediction";
 export { createPhysicsHandle, type PhysicsHandleOptions } from "./create-physics-handle";
 export {
   createPhysicsInterpolationStore,

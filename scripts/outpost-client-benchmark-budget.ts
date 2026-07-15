@@ -2,7 +2,10 @@ export type OutpostClientBenchmarkResult = {
   microsecondsPerFourPlayerSnapshot: number;
   microsecondsPerPlayerChurnSnapshot: number;
   rejectedSnapshots: number;
+  predictionPendingInputs: number;
+  predictionCachedFrames: number;
   retainedEntitiesAfterDispose: number;
+  retainedPhysicsScenesAfterDispose: number;
 };
 
 const BUDGETS: Array<{
@@ -12,7 +15,10 @@ const BUDGETS: Array<{
   { metric: "microsecondsPerFourPlayerSnapshot", maximum: 150 },
   { metric: "microsecondsPerPlayerChurnSnapshot", maximum: 200 },
   { metric: "rejectedSnapshots", maximum: 0 },
-  { metric: "retainedEntitiesAfterDispose", maximum: 0 }
+  { metric: "predictionPendingInputs", maximum: 8 },
+  { metric: "predictionCachedFrames", maximum: 256 },
+  { metric: "retainedEntitiesAfterDispose", maximum: 0 },
+  { metric: "retainedPhysicsScenesAfterDispose", maximum: 0 }
 ];
 
 export function checkOutpostClientBudgets(
