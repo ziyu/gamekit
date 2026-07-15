@@ -567,6 +567,33 @@ describe("@gamekit/multiplayer-colyseus", () => {
         sourceEndpointId: "colyseus-schema"
       }
     });
+
+    const boundedBridge = createColyseusNativeStateBridge<{ x: number }>({
+      binding,
+      sourceEndpointId: "colyseus-schema",
+      maxStateBytes: 8,
+      applyState() {}
+    });
+    expect(
+      boundedBridge.receiveState({
+        sessionId: "native-session",
+        sourceEndpointId: "colyseus-schema",
+        version: "arena.v1",
+        stateVersion: 1,
+        stateBytes: 9,
+        state: { x: 1 }
+      })
+    ).toMatchObject({ allowed: false, code: "native-state-too-large" });
+    expect(
+      boundedBridge.receiveState({
+        sessionId: "native-session",
+        sourceEndpointId: "colyseus-schema",
+        version: "arena.v1",
+        stateVersion: 2,
+        stateBytes: -1,
+        state: { x: 1 }
+      })
+    ).toMatchObject({ allowed: false, code: "invalid-native-state-size" });
   });
 });
 

@@ -12,6 +12,12 @@ import type { MultiplayerPeerInput } from "@gamekit/multiplayer-core";
 import type { PhysicsBackendAdapter } from "@gamekit/physics-core";
 
 import {
+  createOutpostColyseusState,
+  OUTPOST_COLYSEUS_SCHEMA_VERSION,
+  projectOutpostMatchToColyseusState,
+  type OutpostColyseusState
+} from "../realtime/colyseus-state";
+import {
   createOutpostRoomAuthorityRuntime,
   type OutpostRoomAuthorityRuntimeSnapshot
 } from "./outpost-room-authority-runtime";
@@ -41,7 +47,7 @@ type OutpostRoomBridge = ColyseusRoomRuntimeBridge<
   OutpostRoomAuthorityRuntimeSnapshot
 >;
 
-export class OutpostSiegeRoom extends Room {
+export class OutpostSiegeRoom extends Room<{ state: OutpostColyseusState }> {
   private authorityBridge: OutpostRoomBridge | undefined;
   private unbindMessage: (() => void) | undefined;
 
@@ -55,13 +61,23 @@ export class OutpostSiegeRoom extends Room {
       this.roomId = options.roomId;
     }
 
+    const sessionId = options.sessionId ?? this.roomId;
+    const authorityPeerId = `${sessionId}.server`;
     this.maxClients = runtimeOptions.maxClients ?? runtimeOptions.maxPlayers ?? 4;
+    this.setState(
+      createOutpostColyseusState(sessionId, authorityPeerId, runtimeOptions.clock?.() ?? Date.now())
+    );
     this.metadata = {
       gamekit: {
         kind: options.sessionKind ?? "private",
         authority: "server-authoritative",
         nativeCapabilities: createColyseusNativeCapabilitySummary({
-          authoritativePath: "gamekit-envelope"
+          authoritativePath: "colyseus-schema",
+          stateSync: {
+            available: true,
+            lane: "colyseus-schema",
+            schemaVersion: OUTPOST_COLYSEUS_SCHEMA_VERSION
+          }
         })
       }
     };
@@ -83,14 +99,14 @@ export class OutpostSiegeRoom extends Room {
       messageType: OUTPOST_MESSAGE_TYPE,
       sessionKind: options.sessionKind ?? "private",
       serverPeer: {
-        id: `${options.sessionId ?? this.roomId}.server`,
+        id: authorityPeerId,
         displayName: "Outpost Authority",
         role: "server"
       },
       resolveSessionId(room, createOptions) {
         return createOptions.sessionId ?? room.roomId;
       },
-      createRuntime({ multiplayer, sessionId, options: createOptions }) {
+      createRuntime({ multiplayer, room, sessionId, options: createOptions }) {
         return createOutpostRoomAuthorityRuntime({
           multiplayer,
           ...(runtimeOptions.physicsBackend === undefined
@@ -106,6 +122,13 @@ export class OutpostSiegeRoom extends Room {
           ...(runtimeOptions.maxPlayers === undefined
             ? {}
             : { maxPlayers: runtimeOptions.maxPlayers }),
+          publishSnapshot(snapshot) {
+            projectOutpostMatchToColyseusState(
+              room.state,
+              snapshot,
+              runtimeOptions.clock?.() ?? Date.now()
+            );
+          },
           seed: createOptions.seed ?? `outpost.room.${sessionId}`
         });
       }

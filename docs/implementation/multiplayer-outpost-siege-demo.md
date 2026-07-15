@@ -266,13 +266,13 @@ Wave 3 已关闭。正式 Colyseus Room-owned Browser/server authority lane 继�
 
 ### Wave 4: Room-owned Multiplayer Vertical Slice
 
-Status: In progress since 2026-07-13.
+Status: Completed on 2026-07-15.
 
 1. 在 Multiplayer Colyseus backend 增加通用 typed Room-side runtime bridge。
 2. Room 持有 headless App Host、authority GameRuntime、Physics、TCA/GAS runtime 和统一 dispose lifecycle。
 3. Browser 使用 configured App Host、Phaser Driver、Input、Camera、Renderer、UI、Multiplayer 和 DevTools。
 4. 实现 lobby、ready、countdown、player entity spawn、四人 movement/aim 和 room close。
-5. Continuous input 使用 latest-state；ready/start 使用 bounded action FIFO。
+5. 每个 movement/aim input sequence 对应一个 fixed prediction step，并使用 per-source bounded FIFO；ready/start 使用 bounded action FIFO。
 6. 建立 app-owned field-level player Schema、authority shadow、entity generation、initial sync 和 resync。
 
 完成标准：关闭 party leader 浏览器后 Room 仍继续 authority tick；四个客户端读取同一 player entity state；不同 room 隔离；所有 Host/GameModule/backend lifecycle 可释放。
@@ -310,7 +310,14 @@ Status: In progress since 2026-07-13.
 - 修复 Web container 改成竖屏或嵌入式尺寸后仍沿用 1280×720 logical viewport 的 camera 偏移。`@gamekit/platform-web` 现在提供通用 element viewport measure/observe helper；Outpost app composition 在 boot 和后续低频 resize 时同步更新 Phaser Renderer 与 Camera Core，zoom fallback anchor 读取当前 camera viewport，不包含游戏特有方向或偏移常量。helper 对重复尺寸去重并显式释放 observer，未增加逐帧测量或 resize。
 - Managed replication 增量验证通过 Multiplayer Core 44 tests、App Host 31 tests、Outpost 27 tests、Multiplayer 13 项性能预算和 Outpost client 4 项性能预算；双 Browser start/move/remote observe 也已完成。最终全仓库 test 73/73 tasks、build 40/40 tasks、lint 73/73 tasks 和 World benchmark 通过；root format 仍只被工作区原有 `.claude/*`、`AGENTS.md`、`CLAUDE.md` 8 个非本切片文件阻挡，本切片文件单独通过。展开 DevTools profiler 时两个页面会被既有 `ProfilerList` 的重复 React key (`runtime:undefined`) 告警刷屏；该告警不来自 managed replication，关闭 DevTools 时 gameplay diagnostics 正常，但后续 DevTools 工作流应单独修正，避免污染调试期性能数据。
 
-Wave 4 仍未完成 app-owned field-level Schema、稳定 entity generation、initial sync/resync 和后续 prediction/presentation。当前 Browser 使用单一 envelope snapshot 验证 Core authority contract；接入 provider-native Schema 时必须替换这条连续状态投影，不能双写两份正式 authority state。
+当前已完成第四个字段级 Schema 收口切片：
+
+- Outpost app 在 provider-specific boundary 定义 participant/player/input-ack 字段级 Colyseus Schema、authority snapshot projection 和 provider-neutral client view decoder；`@gamekit/multiplayer-colyseus` 只新增通用 `readRoomState` hook、initial-state 时序、provider metadata 和 state-size gate，不包含任何 Outpost entity 或玩法类型。
+- Room authority commit 现在只更新 app-owned Schema；Browser 通过 Core `snapshotSource` 消费 provider update，原 `game.snapshot` 高频 envelope 已停止发布。真实四客户端测试断言 Schema lane active 且收到的 snapshot envelope 数为 0，避免双写两份 authority state。
+- Player authority entity 使用稳定 `networkEntityId + generation + archetypeId`。Client authoritative shadow、presentation track 和 render identity 都包含 generation；despawn/re-materialize 会淘汰旧 generation，phase/generation 变化触发 managed playback reset。
+- Core source lane 以 provider `stateVersion` 排序，允许同一 gameplay tick 内的新 revision；普通 envelope 仍按 tick 去重，transport sequence 不冒充 provider version。Binding/session reset 清空 provider ordering watermark，新的 initial full state 可从 version 1 重新同步。
+- Colyseus custom decoder 可提供低分配 `stateBytes` 估算，adapter 和 native bridge 统一执行大小上限。`bench:outpost:client:check` 现在包含 9 项门禁：10,000 次四玩家 Schema projection+decode 约 9.73 µs/次，估算完整状态约 2.0 KiB；managed snapshot、3↔4 人 churn、prediction cache 和 dispose retained-state 预算同时通过。
+- 定向验证通过 Multiplayer Core 50 tests、Multiplayer Colyseus 9 tests、Outpost Schema/Browser 7 tests，以及真实回环 Colyseus Room 3 tests。Wave 4 至此关闭，下一执行阶段为 Wave 5 的 authority-only physical TCA/GAS combat。
 
 ### Wave 5: Physical TCA/GAS Combat
 

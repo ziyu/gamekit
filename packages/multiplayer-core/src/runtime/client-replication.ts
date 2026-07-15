@@ -22,6 +22,7 @@ import {
 } from "./presentation";
 import type {
   MultiplayerMessageEnvelope,
+  MultiplayerMessageListener,
   MultiplayerOutgoingMessage,
   MultiplayerRuntime
 } from "./types";
@@ -35,6 +36,11 @@ export type MultiplayerClientReplicationSystemFrame = {
 export type MultiplayerClientReplicationAuthorityOptions = {
   binding?: MultiplayerAuthorityBindingStore;
   resolveAuthorityPeerId?(runtime: MultiplayerRuntime): string | undefined;
+};
+
+export type MultiplayerClientReplicationSnapshotSource = {
+  subscribe(listener: MultiplayerMessageListener): () => void;
+  current?(): MultiplayerMessageEnvelope | undefined;
 };
 
 export type MultiplayerClientReplicationSnapshotContext<TSnapshot, TInstallContext> = {
@@ -102,6 +108,7 @@ export type MultiplayerClientReplicationOptions<
 > = {
   id?: string;
   snapshotKind?: string;
+  snapshotSource?: MultiplayerClientReplicationSnapshotSource;
   authority?: MultiplayerClientReplicationAuthorityOptions;
   playback?: SnapshotPlaybackOptions<TSnapshot>;
   tracks?: Iterable<SnapshotPresentationTrack<TSnapshot>>;
@@ -133,6 +140,7 @@ export type MultiplayerClientReplicationDiagnostics = {
   throttledInputs: number;
   inFlightInputs: number;
   lastAppliedTick?: number;
+  lastAppliedSequence?: number;
   lastRejectedCode?: string;
   playback: SnapshotPlaybackDiagnostics;
   prediction?: MultiplayerPredictionDiagnostics;
@@ -165,6 +173,8 @@ type PendingSnapshot<TSnapshot> = {
   snapshot: TSnapshot;
   entry: SnapshotBufferEntry<TSnapshot>;
 };
+
+type SnapshotReceiveStatus = "accepted" | "deferred" | "rejected";
 
 const DEFAULT_SNAPSHOT_KIND = "game.snapshot";
 const DEFAULT_INPUT_KIND = "game.input";
@@ -217,6 +227,7 @@ export function createMultiplayerClientReplication<
   let elapsedMs = 0;
   let failedPredictionSequence: number | undefined;
   let bindingGeneration = 0;
+  let lastObservedSourceMessageId: string | undefined;
   let disposed = false;
   const diagnostics: Omit<
     MultiplayerClientReplicationDiagnostics,
@@ -235,25 +246,27 @@ export function createMultiplayerClientReplication<
     inFlightInputs: 0
   };
 
-  const unsubscribe = runtime.subscribe((message) => {
+  const receiveSnapshot = (message: MultiplayerMessageEnvelope): SnapshotReceiveStatus => {
     if (disposed || message.kind !== snapshotKind) {
-      return;
+      return "rejected";
     }
     diagnostics.receivedSnapshots += 1;
     const binding = resolveAuthorityBinding(runtime, options.authority);
     if (binding === undefined) {
-      rejectSnapshot("authority-not-bound");
-      return;
+      if (options.snapshotSource === undefined) {
+        rejectSnapshot("authority-not-bound");
+      }
+      return "deferred";
     }
     const decision = acceptsAuthorityMessage(binding, message);
     if (!decision.allowed) {
       rejectSnapshot(decision.code);
-      return;
+      return "rejected";
     }
     const snapshot = options.readSnapshot(message.payload, message);
     if (snapshot === undefined) {
       rejectSnapshot("invalid-snapshot");
-      return;
+      return "rejected";
     }
     const nextBindingKey = bindingIdentity(binding);
     syncBinding(binding, nextBindingKey);
@@ -268,7 +281,17 @@ export function createMultiplayerClientReplication<
       snapshot,
       entry: options.toBufferEntry?.(context) ?? defaultBufferEntry(snapshot, message)
     };
-  });
+    return "accepted";
+  };
+  const receiveSubscribedSnapshot: MultiplayerMessageListener = (message) => {
+    const status = receiveSnapshot(message);
+    if (options.snapshotSource !== undefined && status !== "deferred") {
+      lastObservedSourceMessageId = message.id;
+    }
+  };
+  const unsubscribe = options.snapshotSource
+    ? options.snapshotSource.subscribe(receiveSubscribedSnapshot)
+    : runtime.subscribe(receiveSubscribedSnapshot);
 
   const view: MultiplayerClientReplicationRuntime<TSnapshot, TState> = {
     update(frame = {}) {
@@ -283,24 +306,36 @@ export function createMultiplayerClientReplication<
         return;
       }
       syncBinding(resolvedBinding, bindingIdentity(resolvedBinding));
+      receiveCurrentSourceSnapshot();
 
       const pending = pendingSnapshot;
       pendingSnapshot = undefined;
       const sample = pending ? playback.present(pending.entry, deltaMs) : playback.advance(deltaMs);
       if (pending && pending.bindingKey === activeBindingKey) {
-        if (sample.pushResult.accepted && sample.pushResult.reason !== "duplicate") {
+        if (sample.pushResult.accepted) {
+          const incomingSequence =
+            options.snapshotSource === undefined ? undefined : pending.message.sequence;
           const incomingTick = pending.message.tick ?? pending.entry.tick;
-          if (
+          const staleSequence =
+            incomingSequence !== undefined &&
+            diagnostics.lastAppliedSequence !== undefined &&
+            incomingSequence <= diagnostics.lastAppliedSequence;
+          const staleTick =
+            incomingSequence === undefined &&
             incomingTick !== undefined &&
             diagnostics.lastAppliedTick !== undefined &&
-            incomingTick <= diagnostics.lastAppliedTick
-          ) {
+            incomingTick <= diagnostics.lastAppliedTick;
+          const duplicateWithoutOrdering =
+            sample.pushResult.reason === "duplicate" &&
+            incomingSequence === undefined &&
+            incomingTick === undefined;
+          if (staleSequence || staleTick) {
             rejectSnapshot("stale-snapshot");
+          } else if (duplicateWithoutOrdering) {
+            rejectSnapshot("duplicate-snapshot");
           } else {
             applySnapshot(pending, frame);
           }
-        } else if (sample.pushResult.reason === "duplicate") {
-          rejectSnapshot("duplicate-snapshot");
         } else if (!sample.pushResult.accepted) {
           rejectSnapshot(sample.pushResult.reason ?? "snapshot-rejected");
         }
@@ -352,6 +387,7 @@ export function createMultiplayerClientReplication<
       disposePredictionBuffer();
       latestPredictedState = undefined;
       failedPredictionSequence = undefined;
+      lastObservedSourceMessageId = undefined;
       bindingGeneration += 1;
       playback.reset();
       projector.reset();
@@ -368,6 +404,9 @@ export function createMultiplayerClientReplication<
   ): void {
     authoritativeSnapshot = pending.snapshot;
     diagnostics.appliedSnapshots += 1;
+    if (options.snapshotSource !== undefined && pending.message.sequence !== undefined) {
+      diagnostics.lastAppliedSequence = pending.message.sequence;
+    }
     if (pending.message.tick !== undefined && activeBinding !== undefined) {
       activeBinding = { ...activeBinding, tick: pending.message.tick };
       diagnostics.lastAppliedTick = pending.message.tick;
@@ -380,6 +419,17 @@ export function createMultiplayerClientReplication<
       snapshot: pending.snapshot
     });
     reconcilePrediction(pending.snapshot, frame);
+  }
+
+  function receiveCurrentSourceSnapshot(): void {
+    const current = options.snapshotSource?.current?.();
+    if (current === undefined || current.id === lastObservedSourceMessageId) {
+      return;
+    }
+    const status = receiveSnapshot(current);
+    if (status !== "deferred") {
+      lastObservedSourceMessageId = current.id;
+    }
   }
 
   function reconcilePrediction(
@@ -566,6 +616,10 @@ export function createMultiplayerClientReplication<
     nextInputSequence = 0;
     inputAccumulatorMs = 0;
     inputReady = true;
+    lastObservedSourceMessageId = undefined;
+    delete diagnostics.lastAppliedTick;
+    delete diagnostics.lastAppliedSequence;
+    delete diagnostics.lastRejectedCode;
     playback.reset();
     projector.reset();
   }
@@ -584,6 +638,10 @@ export function createMultiplayerClientReplication<
     predictionActive = false;
     latestPredictedState = undefined;
     failedPredictionSequence = undefined;
+    lastObservedSourceMessageId = undefined;
+    delete diagnostics.lastAppliedTick;
+    delete diagnostics.lastAppliedSequence;
+    delete diagnostics.lastRejectedCode;
     playback.reset();
     projector.reset();
   }

@@ -1,6 +1,8 @@
 export type OutpostClientBenchmarkResult = {
   microsecondsPerFourPlayerSnapshot: number;
   microsecondsPerPlayerChurnSnapshot: number;
+  microsecondsPerFourPlayerSchemaProjectionAndDecode: number;
+  maximumEstimatedSchemaStateBytes: number;
   rejectedSnapshots: number;
   predictionPendingInputs: number;
   predictionCachedFrames: number;
@@ -14,6 +16,8 @@ const BUDGETS: Array<{
 }> = [
   { metric: "microsecondsPerFourPlayerSnapshot", maximum: 150 },
   { metric: "microsecondsPerPlayerChurnSnapshot", maximum: 200 },
+  { metric: "microsecondsPerFourPlayerSchemaProjectionAndDecode", maximum: 100 },
+  { metric: "maximumEstimatedSchemaStateBytes", maximum: 16 * 1024 },
   { metric: "rejectedSnapshots", maximum: 0 },
   { metric: "predictionPendingInputs", maximum: 8 },
   { metric: "predictionCachedFrames", maximum: 256 },

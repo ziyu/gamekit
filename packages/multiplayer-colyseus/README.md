@@ -328,6 +328,8 @@ The server room must enable the matching lane with `roomOptions.nativeStateSync`
 
 The bridge records provider-neutral diagnostics for provider state version, gameplay tick, schema version, source endpoint, state size, resync and rejected updates. It does not make Colyseus Schema a `multiplayer-core` type.
 
+Apps with a field-level Schema can provide `nativeStateSync.readRoomState`. The callback owns provider-specific Schema-to-app-view mapping and returns a `ColyseusNativeStateUpdate`; the adapter invokes it after its backend session/local-peer state exists, then for later provider state changes. Because the outer Core Runtime facade may complete its binding one async boundary later, the app's normalized `snapshotSource.current()` should retain that latest full update so managed replication can consume it on the first bound frame. `stateVersion` is the monotonic provider order and `tick` remains simulation metadata. A decoder may provide a conservative `stateBytes` value to avoid a second serialization; otherwise the adapter measures the mapped state. Both paths enforce `maxStateBytes` before notifying subscribers. The app must not also publish the same high-frequency state through `game.snapshot` envelopes.
+
 ## App Host Integration
 
 App profiles should create the Colyseus backend as an App Service dependency:

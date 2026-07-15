@@ -2470,6 +2470,104 @@ describe("createMultiplayerModule", () => {
     expect(exposed).toBe(false);
   });
 
+  it("uses one configured snapshot source and orders provider updates by sequence", async () => {
+    type ClientSnapshot = { tick: number; x: number };
+
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "managed-provider-source",
+      backend: fake.backend,
+      clock: () => 100
+    });
+    const systems: Array<{ update(ctx?: { delta?: number; elapsed?: number }): void }> = [];
+    const sourceListeners = new Set<(message: MultiplayerMessageEnvelope) => void>();
+    const applied: number[] = [];
+    let sourceSessionId = "session-1";
+    let currentSourceMessage: MultiplayerMessageEnvelope | undefined;
+    let diagnostics:
+      | (() => { rejectedSnapshots: number; lastAppliedSequence?: number })
+      | undefined;
+    const module = createMultiplayerModule<MultiplayerBridgeInstallContext, ClientSnapshot>({
+      runtime,
+      clientReplication: {
+        authority: { resolveAuthorityPeerId: () => "server" },
+        snapshotSource: {
+          subscribe(listener) {
+            sourceListeners.add(listener);
+            return () => sourceListeners.delete(listener);
+          },
+          current() {
+            return currentSourceMessage;
+          }
+        },
+        playback: { interpolationDelayMs: 0 },
+        readSnapshot(payload) {
+          return isRecord(payload) &&
+            typeof payload.tick === "number" &&
+            typeof payload.x === "number"
+            ? (payload as ClientSnapshot)
+            : undefined;
+        },
+        applyAuthoritative({ snapshot }) {
+          applied.push(snapshot.x);
+        },
+        applyFrame() {},
+        expose(view) {
+          diagnostics = view === undefined ? undefined : () => view.diagnostics();
+        }
+      }
+    });
+    const dispose = module.install({
+      eventBus: createEventBus(),
+      systems: { register: (system) => systems.push(system) }
+    });
+    const emitSource = (sequence: number, x: number) => {
+      const message = {
+        ...messageFrom("server", MULTIPLAYER_SNAPSHOT_KIND, { tick: 5, x }, { tick: 5 }),
+        sessionId: sourceSessionId,
+        sequence
+      };
+      currentSourceMessage = message;
+      for (const listener of sourceListeners) {
+        listener(message);
+      }
+    };
+    emitSource(0, 0);
+    await runtime.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "client", role: "client" }
+    });
+    systems[0]?.update({ delta: 0, elapsed: 0 });
+    fake.emit(messageFrom("server", MULTIPLAYER_SNAPSHOT_KIND, { tick: 1, x: 99 }, { tick: 1 }));
+    emitSource(1, 1);
+    systems[0]?.update({ delta: 0, elapsed: 0 });
+    emitSource(2, 2);
+    systems[0]?.update({ delta: 0, elapsed: 0 });
+    emitSource(1, 3);
+    systems[0]?.update({ delta: 0, elapsed: 0 });
+
+    expect(applied).toEqual([0, 1, 2]);
+    expect(diagnostics?.()).toMatchObject({
+      rejectedSnapshots: 1,
+      lastAppliedSequence: 2
+    });
+
+    await runtime.leaveSession("switch provider session");
+    sourceSessionId = "session-2";
+    await runtime.createSession({
+      id: sourceSessionId,
+      authority: "server-authoritative",
+      localPeer: { id: "client", role: "client" }
+    });
+    emitSource(1, 4);
+    systems[0]?.update({ delta: 0, elapsed: 0 });
+    expect(applied).toEqual([0, 1, 2, 4]);
+    expect(diagnostics?.()).toMatchObject({ lastAppliedSequence: 1 });
+    dispose?.();
+    expect(sourceListeners.size).toBe(0);
+  });
+
   it("keeps managed prediction cadence smooth across irregular render frames", async () => {
     type ClientSnapshot = { tick: number; x: number; acknowledgedSequence: number };
     type ClientInput = { dx: number };

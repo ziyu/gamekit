@@ -1,7 +1,17 @@
-import { createColyseusMultiplayerBackend } from "@gamekit/multiplayer-colyseus";
-import { createMultiplayerRuntime, type MultiplayerRuntime } from "@gamekit/multiplayer-core";
+import {
+  createColyseusMultiplayerBackend,
+  type ColyseusMultiplayerNative,
+  type ColyseusNativeStateUpdate
+} from "@gamekit/multiplayer-colyseus";
+import {
+  createMultiplayerRuntime,
+  type MultiplayerClientReplicationSnapshotSource,
+  type MultiplayerMessageEnvelope,
+  type MultiplayerRuntime
+} from "@gamekit/multiplayer-core";
 
 import { OUTPOST_BROWSER_CONFIG_PATH } from "./browser-protocol";
+import { OUTPOST_COLYSEUS_SCHEMA_VERSION, readOutpostColyseusStateUpdate } from "./colyseus-state";
 
 export type OutpostBrowserServerConfig = {
   endpoint: string;
@@ -12,6 +22,11 @@ export type OutpostBrowserIdentity = {
   peerId: string;
   playerId: string;
   displayName: string;
+};
+
+export type OutpostBrowserMultiplayer = {
+  runtime: MultiplayerRuntime;
+  snapshotSource: MultiplayerClientReplicationSnapshotSource;
 };
 
 export type OutpostBrowserSessionIntent =
@@ -57,24 +72,88 @@ export function createOutpostBrowserIdentity(displayName: string): OutpostBrowse
 export function createOutpostBrowserMultiplayer(
   config: OutpostBrowserServerConfig,
   identity: OutpostBrowserIdentity
-): MultiplayerRuntime {
-  return createMultiplayerRuntime({
-    id: `outpost.browser.${identity.peerId}`,
-    backend: createColyseusMultiplayerBackend({
-      id: `outpost.browser.colyseus.${identity.peerId}`,
-      endpoint: config.endpoint,
-      roomName: config.roomName,
-      joinByIdFallback: true
-    }),
-    connectContext: {
-      localPeer: {
-        id: identity.peerId,
-        playerId: identity.playerId,
-        displayName: identity.displayName,
-        role: "client"
+): OutpostBrowserMultiplayer {
+  const backend = createColyseusMultiplayerBackend({
+    id: `outpost.browser.colyseus.${identity.peerId}`,
+    endpoint: config.endpoint,
+    roomName: config.roomName,
+    joinByIdFallback: true,
+    nativeCapabilities: {
+      authoritativePath: "colyseus-schema",
+      stateSync: {
+        available: true,
+        lane: "colyseus-schema",
+        schemaVersion: OUTPOST_COLYSEUS_SCHEMA_VERSION
       }
+    },
+    nativeStateSync: {
+      enabled: true,
+      schemaVersion: OUTPOST_COLYSEUS_SCHEMA_VERSION,
+      readRoomState: readOutpostColyseusStateUpdate
     }
   });
+  return {
+    runtime: createMultiplayerRuntime({
+      id: `outpost.browser.${identity.peerId}`,
+      backend,
+      connectContext: {
+        localPeer: {
+          id: identity.peerId,
+          playerId: identity.playerId,
+          displayName: identity.displayName,
+          role: "client"
+        }
+      }
+    }),
+    snapshotSource: createOutpostColyseusSnapshotSource(backend.native())
+  };
+}
+
+function createOutpostColyseusSnapshotSource(
+  native: ColyseusMultiplayerNative
+): MultiplayerClientReplicationSnapshotSource {
+  let latest: MultiplayerMessageEnvelope | undefined;
+  return {
+    subscribe(listener) {
+      return native.subscribeState((update) => {
+        const message = toOutpostSnapshotMessage(update);
+        if (message === undefined) {
+          return;
+        }
+        latest = message;
+        listener(message);
+      });
+    },
+    current() {
+      return latest;
+    }
+  };
+}
+
+function toOutpostSnapshotMessage(
+  update: ColyseusNativeStateUpdate<unknown>
+): MultiplayerMessageEnvelope | undefined {
+  if (
+    update.sourcePeerId === undefined ||
+    update.stateVersion === undefined ||
+    update.tick === undefined ||
+    update.version !== OUTPOST_COLYSEUS_SCHEMA_VERSION ||
+    update.timestamp === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    id: `outpost.schema.${update.sessionId}.${update.stateVersion}`,
+    sessionId: update.sessionId,
+    channel: "reliable",
+    kind: "game.snapshot",
+    sourcePeerId: update.sourcePeerId,
+    sequence: update.stateVersion,
+    tick: update.tick,
+    schemaVersion: update.version,
+    timestamp: update.timestamp,
+    payload: update.state
+  };
 }
 
 export async function enterOutpostBrowserSession(

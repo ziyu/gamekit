@@ -20,6 +20,7 @@ Outpost Siege 的高频复制使用 app-owned、字段级 Colyseus Schema：
 - Server gameplay world、replication projection、Schema state、client authoritative shadow 和 presented state 是不同对象；任何层都不能把下游可变对象回写到上游事实源。
 - Schema entity 使用稳定 `entityId + generation`。Despawn、id reuse、room reset、schema version change 和 resync 必须清理旧 authoritative shadow、prediction history 和 presentation track。
 - Client 以 provider 的单调 update/version 处理增量，gameplay tick 只作为 simulation metadata。Initial sync、duplicate/stale update、schema mismatch、size limit 和 resync 都需要显式状态与 diagnostics。
+- App provider adapter 把字段 Schema 映射为 provider-neutral Core `snapshotSource`；配置 source 后它互斥替换默认 envelope snapshot subscription，但 playback、prediction、reconciliation 和 frame writer lifecycle 仍只由 Multiplayer Core 持有。
 - 每个 room 只声明一个 authoritative gameplay state path。选择字段级 Schema 时，GameKit envelope 继续承载低频 command/result/diagnostic fact，但不再双写同一份高频 snapshot。
 - 全量可见实体是性能基线。AOI、interest management 和 replication partition 先保持 app/server-specific；只有第二个稳定应用证明存在相同抽象后，才评估下沉到 backend package 或 core。
 

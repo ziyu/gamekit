@@ -36,6 +36,7 @@ export type CreateOutpostRoomAuthorityRuntimeOptions = {
   countdownMs?: number;
   minPlayers?: number;
   maxPlayers?: number;
+  publishSnapshot?(snapshot: OutpostMatchAuthoritySnapshot): void | Promise<void>;
 };
 
 export async function createOutpostRoomAuthorityRuntime(
@@ -61,7 +62,8 @@ export async function createOutpostRoomAuthorityRuntime(
     ...(options.maxPlayers === undefined ? {} : { maxPlayers: options.maxPlayers }),
     gameplaySnapshot() {
       return gameplay?.snapshot();
-    }
+    },
+    ...(options.publishSnapshot === undefined ? {} : { publishSnapshot: options.publishSnapshot })
   });
   const configured = createConfiguredAppHost({
     app: outpostAppDefinition,
@@ -81,6 +83,7 @@ export async function createOutpostRoomAuthorityRuntime(
     context,
     clock
   });
+  await options.publishSnapshot?.(match.snapshot());
 
   return {
     async boot() {

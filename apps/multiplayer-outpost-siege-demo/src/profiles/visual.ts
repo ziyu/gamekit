@@ -6,7 +6,11 @@ import type { DevToolsRuntime } from "@gamekit/devtools";
 import { createPhaserDriver } from "@gamekit/driver-phaser";
 import { createInputRouter, type InputRouter } from "@gamekit/input-core";
 import { createDomInputAdapter } from "@gamekit/input-dom";
-import { createMultiplayerRuntime, type MultiplayerRuntime } from "@gamekit/multiplayer-core";
+import {
+  createMultiplayerRuntime,
+  type MultiplayerClientReplicationSnapshotSource,
+  type MultiplayerRuntime
+} from "@gamekit/multiplayer-core";
 import { createMemoryMultiplayerBackend } from "@gamekit/multiplayer-memory";
 import type { PhysicsBackendAdapter } from "@gamekit/physics-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
@@ -58,7 +62,12 @@ export type CreateOutpostVisualProfileOptions = {
   profileId: OutpostVisualProfileId;
   platform: PlatformRuntime;
   multiplayer?: MultiplayerRuntime | undefined;
-  client?: { localPlayerId: string } | undefined;
+  client?:
+    | {
+        localPlayerId: string;
+        snapshotSource: MultiplayerClientReplicationSnapshotSource;
+      }
+    | undefined;
   savePrefix?: string | undefined;
 };
 
@@ -191,6 +200,7 @@ export function createOutpostVisualProfile(
               multiplayer: requireState(state.multiplayer, "multiplayer"),
               physicsBackend: requireState(activeContext.physicsBackend, "physics backend"),
               localPlayerId: options.client.localPlayerId,
+              snapshotSource: options.client.snapshotSource,
               renderer: requireState(state.renderer, "renderer"),
               applyRenderTargetState: applyPhaserRenderTargetState,
               camera,

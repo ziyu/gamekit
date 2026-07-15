@@ -49,6 +49,9 @@ export type OutpostAuthorityPlayerSnapshot = {
   playerId: string;
   slot: number;
   entityId: EntityId;
+  networkEntityId: string;
+  generation: number;
+  archetypeId: string;
   x: number;
   y: number;
   velocityX: number;
@@ -88,6 +91,8 @@ type MaterializedPlayer = {
   playerId: string;
   slot: number;
   entityId: EntityId;
+  networkEntityId: string;
+  generation: number;
 };
 
 type AuthorityGameplayState = {
@@ -95,6 +100,7 @@ type AuthorityGameplayState = {
   world: GameWorld;
   identity: OutpostIdentityRegistry;
   players: Map<string, MaterializedPlayer>;
+  generationsByNetworkEntityId: Map<string, number>;
   playerSource(): readonly OutpostAuthorityPlayerState[];
 };
 
@@ -108,6 +114,7 @@ export function createOutpostAuthorityGameplayRuntime(
     world: options.world,
     identity: createOutpostIdentityRegistry(),
     players: new Map(),
+    generationsByNetworkEntityId: new Map(),
     playerSource: options.players
   };
   const runtime = createGame({
@@ -199,6 +206,7 @@ function createAuthorityPlayerModule(state: AuthorityGameplayState) {
           }
         }
         state.players.clear();
+        state.generationsByNetworkEntityId.clear();
         state.identity.clear();
       };
     }
@@ -242,7 +250,15 @@ function materializePlayer(
   const entityId = state.world.spawn();
   const bodyId = `${player.playerId}.body`;
   const colliderId = `${player.playerId}.collider`;
-  const materialized = { playerId: player.playerId, slot: player.slot, entityId };
+  const networkEntityId = player.playerId;
+  const generation = (state.generationsByNetworkEntityId.get(networkEntityId) ?? -1) + 1;
+  const materialized = {
+    playerId: player.playerId,
+    slot: player.slot,
+    entityId,
+    networkEntityId,
+    generation
+  };
 
   try {
     state.world.add(entityId, OutpostGameplayObject, {
@@ -263,8 +279,9 @@ function materializePlayer(
       entityId,
       physicsBodyId: bodyId,
       physicsColliderIds: [colliderId],
-      network: { entityId: player.playerId, generation: 0 }
+      network: { entityId: networkEntityId, generation }
     });
+    state.generationsByNetworkEntityId.set(networkEntityId, generation);
     state.players.set(player.playerId, materialized);
     return materialized;
   } catch (error) {
@@ -323,6 +340,9 @@ function capturePlayerSnapshot(
     playerId: player.playerId,
     slot: player.slot,
     entityId: player.entityId,
+    networkEntityId: player.networkEntityId,
+    generation: player.generation,
+    archetypeId: PLAYER_DEFINITION_ID,
     x: transform.position.x,
     y: transform.position.y,
     velocityX: velocity.linear.x,

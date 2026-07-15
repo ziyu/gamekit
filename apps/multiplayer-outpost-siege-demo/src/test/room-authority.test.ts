@@ -3,6 +3,8 @@ import { createGameKitColyseusServer } from "@gamekit/multiplayer-colyseus/serve
 import { createMultiplayerRuntime } from "@gamekit/multiplayer-core";
 import { describe, expect, it } from "vitest";
 
+import { readOutpostClientAuthoritySnapshot } from "../gameplay";
+import { OUTPOST_COLYSEUS_SCHEMA_VERSION, readOutpostColyseusStateUpdate } from "../realtime";
 import { createOutpostSiegeRoomClass, type OutpostSiegeRoom } from "../server";
 
 describe("Outpost Room-owned authority", () => {
@@ -251,38 +253,57 @@ describe("Outpost Room-owned authority", () => {
       }
     });
     const server = await createGameKitColyseusServer({ roomName, roomClass: RoomClass });
+    const observerBackend = createColyseusMultiplayerBackend({
+      endpoint: server.endpoint,
+      roomName,
+      joinByIdFallback: true,
+      nativeCapabilities: {
+        authoritativePath: "colyseus-schema",
+        stateSync: {
+          available: true,
+          lane: "colyseus-schema",
+          schemaVersion: OUTPOST_COLYSEUS_SCHEMA_VERSION
+        }
+      },
+      nativeStateSync: {
+        enabled: true,
+        schemaVersion: OUTPOST_COLYSEUS_SCHEMA_VERSION,
+        readRoomState: readOutpostColyseusStateUpdate
+      }
+    });
     const clients = [
       createRoomClient(server.endpoint, roomName, "leader", "host"),
       createRoomClient(server.endpoint, roomName, "ranger-2", "client"),
       createRoomClient(server.endpoint, roomName, "ranger-3", "client"),
-      createRoomClient(server.endpoint, roomName, "ranger-4", "client")
+      createMultiplayerRuntime({
+        id: "outpost.room-four-client.ranger-4",
+        backend: observerBackend,
+        connectContext: {
+          localPeer: {
+            id: "ranger-4",
+            role: "client",
+            playerId: "player.ranger-4"
+          }
+        }
+      })
     ];
     let replicatedPhase: string | undefined;
     const replicatedInputAcks: number[] = [];
-    const unsubscribe = clients[3]?.subscribe((message) => {
-      if (
-        message.kind === "game.snapshot" &&
-        typeof message.payload === "object" &&
-        message.payload !== null &&
-        "phase" in message.payload &&
-        typeof message.payload.phase === "string"
-      ) {
-        replicatedPhase = message.payload.phase;
+    let envelopeSnapshots = 0;
+    const unsubscribeEnvelope = clients[3]?.subscribe((message) => {
+      if (message.kind === "game.snapshot") {
+        envelopeSnapshots += 1;
       }
-      if (
-        message.kind === "game.snapshot" &&
-        typeof message.payload === "object" &&
-        message.payload !== null &&
-        "inputAcksByPeerId" in message.payload &&
-        typeof message.payload.inputAcksByPeerId === "object" &&
-        message.payload.inputAcksByPeerId !== null
-      ) {
-        const acknowledged = (message.payload.inputAcksByPeerId as Record<string, unknown>)[
-          "ranger-4"
-        ];
-        if (typeof acknowledged === "number" && replicatedInputAcks.at(-1) !== acknowledged) {
-          replicatedInputAcks.push(acknowledged);
-        }
+    });
+    const unsubscribeState = observerBackend.native().subscribeState((update) => {
+      const snapshot = readOutpostClientAuthoritySnapshot(update.state);
+      if (snapshot === undefined) {
+        return;
+      }
+      replicatedPhase = snapshot.phase;
+      const acknowledged = snapshot.inputAcksByPeerId["ranger-4"];
+      if (acknowledged !== undefined && replicatedInputAcks.at(-1) !== acknowledged) {
+        replicatedInputAcks.push(acknowledged);
       }
     });
 
@@ -390,7 +411,29 @@ describe("Outpost Room-owned authority", () => {
         coalescedInputs: 0,
         queuedInputs: 0
       });
-      expect(replicatedInputAcks).toEqual(expect.arrayContaining([1, 2, 3]));
+      expect(replicatedInputAcks.at(-1)).toBe(3);
+      expect(
+        replicatedInputAcks.every(
+          (acknowledged, index) => index === 0 || acknowledged > replicatedInputAcks[index - 1]!
+        )
+      ).toBe(true);
+      expect(envelopeSnapshots).toBe(0);
+      expect(observerBackend.native().capabilities()).toMatchObject({
+        authoritativePath: "colyseus-schema",
+        stateSync: { active: true, schemaVersion: OUTPOST_COLYSEUS_SCHEMA_VERSION }
+      });
+      expect(
+        readOutpostColyseusStateUpdate(observerBackend.native().currentRoom()?.state)?.state.players
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            networkEntityId: "player.ranger-4",
+            generation: 0,
+            archetypeId: "player.outpost.ranger",
+            playerId: "player.ranger-4"
+          })
+        ])
+      );
 
       const beforeLeaderLeave = requireRoom(room).authoritySnapshot();
       await clients[0]?.dispose();
@@ -418,7 +461,8 @@ describe("Outpost Room-owned authority", () => {
       ).toEqual(["ranger-2", "ranger-3", "ranger-4"]);
       expect(clients[3]?.phase()).toBe("in-session");
     } finally {
-      unsubscribe?.();
+      unsubscribeState();
+      unsubscribeEnvelope?.();
       await Promise.all(clients.map((client) => client.dispose()));
       await server.dispose();
     }

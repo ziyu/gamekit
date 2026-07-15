@@ -6,6 +6,12 @@ import {
   type OutpostClientAuthoritySnapshot
 } from "../apps/multiplayer-outpost-siege-demo/src/gameplay";
 import {
+  createOutpostColyseusState,
+  projectOutpostMatchToColyseusState,
+  readOutpostColyseusStateUpdate,
+  type OutpostMatchAuthoritySnapshot
+} from "../apps/multiplayer-outpost-siege-demo/src/realtime";
+import {
   createMultiplayerRuntime,
   type MultiplayerBackendAdapter,
   type MultiplayerBackendListener,
@@ -74,6 +80,28 @@ async function main(): Promise<void> {
     applySnapshot(client, multiplayer.emit, snapshot);
   }
   const churnDurationMs = performance.now() - churnStartedAt;
+
+  const schemaState = createOutpostColyseusState("benchmark.session", "benchmark.session.server");
+  let maximumEstimatedSchemaStateBytes = 0;
+  for (let tick = 0; tick < WARMUP_SNAPSHOTS; tick += 1) {
+    advanceSnapshot(snapshot, tick + 1, 4);
+    projectOutpostMatchToColyseusState(schemaState, snapshot, tick * 50);
+    readOutpostColyseusStateUpdate(schemaState);
+  }
+  const schemaStartedAt = performance.now();
+  for (let tick = 0; tick < FOUR_PLAYER_SNAPSHOTS; tick += 1) {
+    advanceSnapshot(snapshot, tick + 1, 4);
+    projectOutpostMatchToColyseusState(schemaState, snapshot, tick * 50);
+    const update = readOutpostColyseusStateUpdate(schemaState);
+    if (update === undefined) {
+      throw new Error("Outpost client benchmark could not decode projected Schema state.");
+    }
+    maximumEstimatedSchemaStateBytes = Math.max(
+      maximumEstimatedSchemaStateBytes,
+      update.stateBytes ?? 0
+    );
+  }
+  const schemaDurationMs = performance.now() - schemaStartedAt;
   advanceSnapshot(snapshot, WARMUP_SNAPSHOTS + FOUR_PLAYER_SNAPSHOTS + CHURN_SNAPSHOTS + 1, 4);
   applySnapshot(client, multiplayer.emit, snapshot);
 
@@ -93,6 +121,10 @@ async function main(): Promise<void> {
       (fourPlayerDurationMs * 1_000) / FOUR_PLAYER_SNAPSHOTS
     ),
     microsecondsPerPlayerChurnSnapshot: round((churnDurationMs * 1_000) / CHURN_SNAPSHOTS),
+    microsecondsPerFourPlayerSchemaProjectionAndDecode: round(
+      (schemaDurationMs * 1_000) / FOUR_PLAYER_SNAPSHOTS
+    ),
+    maximumEstimatedSchemaStateBytes,
     rejectedSnapshots: diagnostics.rejectedSnapshots,
     predictionPendingInputs: predictionDiagnostics?.pendingInputs ?? 0,
     predictionCachedFrames: transitionDiagnostics?.cachedFrames ?? 0,
@@ -131,19 +163,27 @@ async function main(): Promise<void> {
   }
 }
 
-function createSnapshot(): OutpostClientAuthoritySnapshot {
+function createSnapshot(): OutpostMatchAuthoritySnapshot {
   return {
     phase: "running",
     tick: 0,
     countdownMsRemaining: 0,
     participants: [],
     players: [],
-    inputAcksByPeerId: {}
+    inputAcksByPeerId: {},
+    authorityInput: {
+      acceptedActions: 0,
+      rejectedActions: 0,
+      acceptedInputs: 0,
+      rejectedInputs: 0,
+      coalescedInputs: 0,
+      queuedInputs: 0
+    }
   };
 }
 
 function advanceSnapshot(
-  snapshot: OutpostClientAuthoritySnapshot,
+  snapshot: OutpostMatchAuthoritySnapshot,
   tick: number,
   playerCount: number
 ): void {
@@ -156,6 +196,10 @@ function advanceSnapshot(
     slot
   }));
   snapshot.players = Array.from({ length: playerCount }, (_, slot) => ({
+    entityId: `authority.benchmark.player.${slot + 1}`,
+    networkEntityId: `benchmark.player.${slot + 1}`,
+    generation: 0,
+    archetypeId: "player.outpost.ranger",
     playerId: `benchmark.player.${slot + 1}`,
     slot,
     x: 820 + slot * 48 + (tick % 120) * 0.25,

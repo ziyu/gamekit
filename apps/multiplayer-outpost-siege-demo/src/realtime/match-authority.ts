@@ -81,6 +81,7 @@ export type CreateOutpostMatchAuthorityOptions = {
   maxPlayers?: number;
   spawnPoints?: readonly { x: number; y: number }[];
   gameplaySnapshot?(): OutpostAuthorityGameplaySnapshot | undefined;
+  publishSnapshot?(snapshot: OutpostMatchAuthoritySnapshot): void | Promise<void>;
 };
 
 type ParticipantPolicyContext = {
@@ -158,7 +159,8 @@ export function createOutpostMatchAuthority(
     },
     captureSnapshot() {
       return createSnapshot();
-    }
+    },
+    ...(options.publishSnapshot === undefined ? {} : { publishSnapshot: options.publishSnapshot })
   });
 
   function handleAction(peerId: string, action: OutpostMatchAction): MultiplayerAuthorityDecision {

@@ -1,5 +1,8 @@
 import type { AppProfile } from "@gamekit/app-host";
-import type { MultiplayerRuntime } from "@gamekit/multiplayer-core";
+import type {
+  MultiplayerClientReplicationSnapshotSource,
+  MultiplayerRuntime
+} from "@gamekit/multiplayer-core";
 import { createWebPlatform } from "@gamekit/platform-web";
 import {
   createOutpostVisualProfile,
@@ -12,6 +15,7 @@ export type OutpostBrowserContext = OutpostVisualContext;
 
 export type CreateOutpostBrowserProfileOptions = {
   multiplayer: MultiplayerRuntime;
+  snapshotSource: MultiplayerClientReplicationSnapshotSource;
   localPlayerId: string;
 };
 
@@ -23,7 +27,10 @@ export function createOutpostBrowserProfile(
     profileId: "browser-web",
     platform: createWebPlatform({ appName: "Outpost Siege" }),
     multiplayer: options.multiplayer,
-    client: { localPlayerId: options.localPlayerId },
+    client: {
+      localPlayerId: options.localPlayerId,
+      snapshotSource: options.snapshotSource
+    },
     savePrefix: "outpost-siege.browser.save"
   });
 }

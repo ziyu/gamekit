@@ -47,6 +47,7 @@ export type ColyseusMultiplayerBackendOptions = {
     sourceEndpointId?: string;
     schemaVersion?: string;
     maxStateBytes?: number;
+    readRoomState?(state: unknown): ColyseusNativeStateUpdate<unknown> | undefined;
   };
   createOptions?: Record<string, unknown>;
   joinOptions?: Record<string, unknown>;

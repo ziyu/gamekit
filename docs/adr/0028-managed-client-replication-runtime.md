@@ -13,6 +13,7 @@ Status: Accepted on 2026-07-15.
 Multiplayer Core 提供 managed client replication runtime，并由标准 Multiplayer GameModule 默认持有其 lifecycle：
 
 - Runtime 自动订阅归一化 `game.snapshot`，根据显式 binding 或 core session/peer role 解析 authority endpoint，执行 session/source gate、单调 tick gate、最新完整快照 coalescing 和 binding-change reset。
+- Provider-native adapter mapping 可以配置 provider-neutral `snapshotSource`，互斥替换默认 Runtime envelope subscription。Source 可通过 `current()` 暴露最新全量状态，Core 在 authority binding 就绪后自动补取，消除 provider initial callback 早于 facade session binding 的时序差。Source 将单调 provider state version 放入 message sequence，同一 gameplay tick 内的新 provider revision 可替换播放缓冲中的最新状态；普通 envelope 仍按 gameplay tick 去重，transport sequence 不作为 provider version。Binding/session reset 清空两类排序水位。
 - Runtime 在 GameRuntime tick 内自动推进 snapshot playback 与 declared `Network*` track projector；游戏只配置 snapshot decoder、timeline、track declaration、snap/reset policy 和最终 `applyFrame` writer。
 - 启用 local prediction 后，Runtime 按配置频率读取当前 input state、分配 sequence、发送 `game.input`、推进 bounded prediction buffer，并在权威 snapshot 携带 ack 时自动 reconcile、replay 和 correction smoothing。标准字段表现通过 ADR 0029 的声明式 predicted-state fields 配置，不要求游戏回调手写插值或 correction offset。
 - Runtime 通过 `maxPredictionLeadInputs` 限制未确认 prediction input 数；达到上限时保留当前控制状态但暂停产生新的 simulation step/send，等 authority ack 释放窗口后再读取最新输入。该 backpressure 防止 client/authority timer 的微小漂移长期累积成 queue overflow、sequence gap 和周期性回拉，并通过 `throttledInputs` 暴露诊断。

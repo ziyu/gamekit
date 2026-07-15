@@ -11,6 +11,7 @@ import {
   defineSnapshotAngleTrack,
   defineSnapshotVector2Track,
   type MultiplayerClientReplicationDiagnostics,
+  type MultiplayerClientReplicationSnapshotSource,
   type MultiplayerClientReplicationView,
   type MultiplayerRuntime,
   type NetworkVector2,
@@ -63,6 +64,9 @@ export type OutpostClientParticipantSnapshot = {
 };
 
 export type OutpostClientPlayerSnapshot = {
+  networkEntityId: string;
+  generation: number;
+  archetypeId: string;
   playerId: string;
   slot: number;
   x: number;
@@ -113,6 +117,7 @@ export type CreateOutpostClientShadowRuntimeOptions = {
   multiplayer: MultiplayerRuntime;
   physicsBackend: PhysicsBackendAdapter;
   localPlayerId: string;
+  snapshotSource?: MultiplayerClientReplicationSnapshotSource | undefined;
   renderer?: RendererAdapter | undefined;
   applyRenderTargetState?: OutpostRenderTargetWriter | undefined;
   camera?: CameraController | undefined;
@@ -123,6 +128,8 @@ export type CreateOutpostClientShadowRuntimeOptions = {
 
 type MaterializedClientPlayer = {
   playerId: string;
+  networkEntityId: string;
+  generation: number;
   slot: number;
   entityId: EntityId;
   renderObjectId: string;
@@ -188,7 +195,7 @@ export function createOutpostClientShadowRuntime(
     world: options.world,
     eventBus,
     modules: [
-      createClientReplicationModule(state, options.multiplayer),
+      createClientReplicationModule(state, options.multiplayer, options.snapshotSource),
       createClientShadowCameraModule(state, options.camera, options.cameraAdapter),
       ...(options.renderer
         ? [
@@ -238,7 +245,11 @@ export function createOutpostClientShadowRuntime(
   };
 }
 
-function createClientReplicationModule(state: ClientShadowState, multiplayer: MultiplayerRuntime) {
+function createClientReplicationModule(
+  state: ClientShadowState,
+  multiplayer: MultiplayerRuntime,
+  snapshotSource: MultiplayerClientReplicationSnapshotSource | undefined
+) {
   const playerDefinition = state.dataRegistry.getValue<OutpostPlayerDefinition>(
     OUTPOST_PLAYER_TYPE,
     PLAYER_DEFINITION_ID
@@ -269,6 +280,7 @@ function createClientReplicationModule(state: ClientShadowState, multiplayer: Mu
     runtime: multiplayer,
     clientReplication: {
       id: "outpost.client.replication",
+      ...(snapshotSource === undefined ? {} : { snapshotSource }),
       playback: {
         interpolationDelayMs: 50,
         adaptiveDelay: {
@@ -283,7 +295,10 @@ function createClientReplicationModule(state: ClientShadowState, multiplayer: Mu
         },
         shouldReset(previous, next) {
           return (
-            previous !== undefined && (next.tick < previous.tick || previous.phase !== next.phase)
+            previous !== undefined &&
+            (next.tick < previous.tick ||
+              previous.phase !== next.phase ||
+              playerGenerationChanged(previous, next))
           );
         }
       },
@@ -292,14 +307,14 @@ function createClientReplicationModule(state: ClientShadowState, multiplayer: Mu
           snapDistance: 160,
           selectInto(snapshot, writer) {
             for (const player of snapshot.players) {
-              writer.add(playerPositionKey(player.playerId), { x: player.x, y: player.y });
+              writer.add(playerPositionKey(player), { x: player.x, y: player.y });
             }
           }
         }),
         defineSnapshotAngleTrack<OutpostClientAuthoritySnapshot>({
           selectInto(snapshot, writer) {
             for (const player of snapshot.players) {
-              writer.add(playerFacingKey(player.playerId), player.facing);
+              writer.add(playerFacingKey(player), player.facing);
             }
           }
         })
@@ -396,9 +411,16 @@ function applyAuthoritativeSnapshot(
     state.players.delete(playerId);
   }
   for (const player of snapshot.players) {
-    const materialized =
-      state.players.get(player.playerId) ??
-      materializeClientPlayer(state, world, player, renderKey);
+    let materialized = state.players.get(player.playerId);
+    if (
+      materialized !== undefined &&
+      (materialized.networkEntityId !== player.networkEntityId ||
+        materialized.generation !== player.generation)
+    ) {
+      removeMaterializedClientPlayer(state, world, materialized);
+      materialized = undefined;
+    }
+    materialized ??= materializeClientPlayer(state, world, player, renderKey);
     world.set(materialized.entityId, PhysicsTransformComponent, {
       position: { x: player.x, y: player.y }
     });
@@ -439,10 +461,10 @@ function applyPresentedSnapshot(
     }
     fallbackPosition.x = player.x;
     fallbackPosition.y = player.y;
-    presented.vector2Into(playerPositionKey(player.playerId), target.position, fallbackPosition);
+    presented.vector2Into(playerPositionKey(player), target.position, fallbackPosition);
     target.velocityX = player.velocityX;
     target.velocityY = player.velocityY;
-    target.facing = presented.angleRadians(playerFacingKey(player.playerId), player.facing);
+    target.facing = presented.angleRadians(playerFacingKey(player), player.facing);
   }
   for (const playerId of state.presentedPlayers.keys()) {
     if (!snapshot.players.some((player) => player.playerId === playerId)) {
@@ -568,12 +590,12 @@ function toPredictionColliderDefinition(data: PhysicsColliderData, bodyId: strin
   return { ...definition, id, bodyId };
 }
 
-function playerPositionKey(playerId: string): string {
-  return `player:${playerId}:position`;
+function playerPositionKey(player: OutpostClientPlayerSnapshot): string {
+  return `entity:${player.networkEntityId}:${player.generation}:position`;
 }
 
-function playerFacingKey(playerId: string): string {
-  return `player:${playerId}:facing`;
+function playerFacingKey(player: OutpostClientPlayerSnapshot): string {
+  return `entity:${player.networkEntityId}:${player.generation}:facing`;
 }
 
 function materializeClientPlayer(
@@ -583,8 +605,15 @@ function materializeClientPlayer(
   renderKey: string
 ): MaterializedClientPlayer {
   const entityId = world.spawn();
-  const renderObjectId = `outpost.client.player.${player.slot}`;
-  const materialized = { playerId: player.playerId, slot: player.slot, entityId, renderObjectId };
+  const renderObjectId = `outpost.client.player.${player.slot}.${player.generation}`;
+  const materialized = {
+    playerId: player.playerId,
+    networkEntityId: player.networkEntityId,
+    generation: player.generation,
+    slot: player.slot,
+    entityId,
+    renderObjectId
+  };
   try {
     world.add(entityId, OutpostGameplayObject, {
       id: player.playerId,
@@ -599,7 +628,7 @@ function materializeClientPlayer(
     state.identity.register({
       gameplayObjectId: player.playerId,
       entityId,
-      network: { entityId: player.playerId, generation: 0 },
+      network: { entityId: player.networkEntityId, generation: player.generation },
       renderObjectId
     });
     state.players.set(player.playerId, materialized);
@@ -611,6 +640,36 @@ function materializeClientPlayer(
     }
     throw error;
   }
+}
+
+function removeMaterializedClientPlayer(
+  state: ClientShadowState,
+  world: GameWorld,
+  player: MaterializedClientPlayer
+): void {
+  state.identity.remove(player.playerId);
+  state.presentedPlayers.delete(player.playerId);
+  if (world.has(player.entityId)) {
+    world.despawn(player.entityId);
+  }
+  state.players.delete(player.playerId);
+}
+
+function playerGenerationChanged(
+  previous: OutpostClientAuthoritySnapshot,
+  next: OutpostClientAuthoritySnapshot
+): boolean {
+  const previousGeneration = new Map(
+    previous.players.map((player) => [
+      player.playerId,
+      `${player.networkEntityId}:${player.generation}`
+    ])
+  );
+  return next.players.some(
+    (player) =>
+      previousGeneration.has(player.playerId) &&
+      previousGeneration.get(player.playerId) !== `${player.networkEntityId}:${player.generation}`
+  );
 }
 
 function createClientShadowCameraModule(
@@ -761,6 +820,9 @@ function readPlayer(value: unknown): OutpostClientPlayerSnapshot | undefined {
     return undefined;
   }
   return {
+    networkEntityId: nonEmptyString(value.networkEntityId) ? value.networkEntityId : value.playerId,
+    generation: nonNegativeInteger(value.generation) ? value.generation : 0,
+    archetypeId: nonEmptyString(value.archetypeId) ? value.archetypeId : PLAYER_DEFINITION_ID,
     playerId: value.playerId,
     slot: value.slot,
     x: value.x,

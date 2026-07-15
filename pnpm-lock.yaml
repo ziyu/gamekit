@@ -176,6 +176,9 @@ importers:
       '@colyseus/core':
         specifier: ^0.17.44
         version: 0.17.44(@colyseus/better-call@1.3.3)(@colyseus/schema@4.0.27(typescript@5.9.3))(@colyseus/ws-transport@0.17.13)(express@5.2.1)
+      '@colyseus/schema':
+        specifier: ^4.0.27
+        version: 4.0.27(typescript@5.9.3)
       '@gamekit/app-host':
         specifier: workspace:*
         version: link:../../packages/app-host

@@ -264,6 +264,9 @@ function authoritySnapshot(tick: number, playerCount: number): OutpostClientAuth
       slot
     })),
     players: Array.from({ length: playerCount }, (_, slot) => ({
+      networkEntityId: `player.ranger-${slot + 1}`,
+      generation: 0,
+      archetypeId: "player.outpost.ranger",
       playerId: `player.ranger-${slot + 1}`,
       slot,
       x: 800 + slot * 40,

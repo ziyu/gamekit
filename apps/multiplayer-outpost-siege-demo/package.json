@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@colyseus/core": "^0.17.44",
+    "@colyseus/schema": "^4.0.27",
     "@gamekit/app-host": "workspace:*",
     "@gamekit/asset": "workspace:*",
     "@gamekit/camera-core": "workspace:*",
