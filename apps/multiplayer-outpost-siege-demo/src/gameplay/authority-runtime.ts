@@ -3,6 +3,13 @@ import type { DataRegistry } from "@gamekit/data";
 import { createGame, type GameInstallContext, type GameRuntime } from "@gamekit/game-runtime";
 import type { EventBus } from "@gamekit/event-bus";
 import {
+  createGasHandle,
+  createGasModule,
+  createGasTraceStore,
+  type GasHandle,
+  type GasTraceStore
+} from "@gamekit/gas";
+import {
   createPhysicsHandle,
   createPhysicsLayoutModule,
   createPhysicsModule,
@@ -19,6 +26,13 @@ import {
   type PhysicsTraceStore
 } from "@gamekit/physics-core";
 import type { EntityId, GameWorld } from "@gamekit/world";
+import {
+  createTcaHandle,
+  createTcaModule,
+  createTcaTraceStore,
+  type TcaHandle,
+  type TcaTraceStore
+} from "@gamekit/tca";
 
 import { OUTPOST_ARENA_PHYSICS_LAYOUT_ID, OUTPOST_ARENA_PHYSICS_SCENE_ID } from "../content";
 import { OUTPOST_PLAYER_TYPE, type OutpostPlayerDefinition } from "../domain";
@@ -27,6 +41,13 @@ import {
   type OutpostIdentityRegistry
 } from "../domain/identity-registry";
 import { OutpostGameplayObject } from "./components";
+import {
+  createOutpostAuthorityCombat,
+  type OutpostAuthorityCombatCommand,
+  type OutpostAuthorityCombatPlayer,
+  type OutpostAuthorityCombatSnapshot,
+  type OutpostAuthorityEnemySpawn
+} from "./authority-combat";
 
 const PLAYER_DEFINITION_ID = "player.outpost.ranger";
 
@@ -62,12 +83,14 @@ export type OutpostAuthorityPlayerSnapshot = {
 export type OutpostAuthorityGameplaySnapshot = {
   running: boolean;
   tick: number;
+  elapsedMs: number;
   entityCount: number;
   players: OutpostAuthorityPlayerSnapshot[];
   physics: {
     bound: boolean;
     recentTraceCount: number;
   };
+  combat: OutpostAuthorityCombatSnapshot;
 };
 
 export type OutpostAuthorityGameplayRuntime = {
@@ -75,6 +98,10 @@ export type OutpostAuthorityGameplayRuntime = {
   identity: OutpostIdentityRegistry;
   physics: PhysicsHandle;
   physicsTrace: PhysicsTraceStore;
+  gas: GasHandle;
+  gasTrace: GasTraceStore;
+  tca: TcaHandle;
+  tcaTrace: TcaTraceStore;
   snapshot(): OutpostAuthorityGameplaySnapshot;
 };
 
@@ -84,13 +111,14 @@ export type CreateOutpostAuthorityGameplayRuntimeOptions = {
   physicsBackend: PhysicsBackendAdapter;
   eventBus: EventBus;
   players(): readonly OutpostAuthorityPlayerState[];
+  combatCommands?(): readonly OutpostAuthorityCombatCommand[];
+  initialEnemies?: readonly OutpostAuthorityEnemySpawn[] | undefined;
   seed?: string | undefined;
 };
 
-type MaterializedPlayer = {
+type MaterializedPlayer = OutpostAuthorityCombatPlayer & {
   playerId: string;
   slot: number;
-  entityId: EntityId;
   networkEntityId: string;
   generation: number;
 };
@@ -102,6 +130,7 @@ type AuthorityGameplayState = {
   players: Map<string, MaterializedPlayer>;
   generationsByNetworkEntityId: Map<string, number>;
   playerSource(): readonly OutpostAuthorityPlayerState[];
+  gas: GasHandle;
 };
 
 export function createOutpostAuthorityGameplayRuntime(
@@ -109,14 +138,31 @@ export function createOutpostAuthorityGameplayRuntime(
 ): OutpostAuthorityGameplayRuntime {
   const physics = createPhysicsHandle({ id: "outpost.authority.physics" });
   const physicsTrace = createPhysicsTraceStore({ limit: 180 });
+  const gas = createGasHandle({ id: "outpost.authority.gas" });
+  const gasTrace = createGasTraceStore({ limit: 240 });
+  const tca = createTcaHandle({ id: "outpost.authority.tca" });
+  const tcaTrace = createTcaTraceStore({ limit: 180 });
   const state: AuthorityGameplayState = {
     dataRegistry: options.dataRegistry,
     world: options.world,
     identity: createOutpostIdentityRegistry(),
     players: new Map(),
     generationsByNetworkEntityId: new Map(),
-    playerSource: options.players
+    playerSource: options.players,
+    gas
   };
+  const combat = createOutpostAuthorityCombat({
+    dataRegistry: options.dataRegistry,
+    world: options.world,
+    identity: state.identity,
+    physics,
+    physicsTrace,
+    gas,
+    eventBus: options.eventBus,
+    players: () => state.players,
+    commands: options.combatCommands ?? (() => []),
+    ...(options.initialEnemies === undefined ? {} : { initialEnemies: options.initialEnemies })
+  });
   const runtime = createGame({
     seed: options.seed ?? "outpost-siege.authority.v1",
     world: options.world,
@@ -128,6 +174,7 @@ export function createOutpostAuthorityGameplayRuntime(
         layoutId: OUTPOST_ARENA_PHYSICS_LAYOUT_ID
       }),
       createAuthorityPlayerModule(state),
+      combat.prePhysicsModule,
       createPhysicsModule({
         id: "outpost.authority.physics",
         backend: options.physicsBackend,
@@ -136,6 +183,20 @@ export function createOutpostAuthorityGameplayRuntime(
         scene: authorityPhysicsScene(options.dataRegistry),
         traceStore: physicsTrace,
         handle: physics
+      }),
+      combat.postPhysicsModule,
+      createGasModule({
+        id: "outpost.authority.gas",
+        dataRegistry: options.dataRegistry,
+        traceStore: gasTrace,
+        handle: gas
+      }),
+      createTcaModule({
+        id: "outpost.authority.tca",
+        dataRegistry: options.dataRegistry,
+        definitions: combat.tcaDefinitions,
+        traceStore: tcaTrace,
+        handle: tca
       })
     ]
   });
@@ -145,11 +206,16 @@ export function createOutpostAuthorityGameplayRuntime(
     identity: state.identity,
     physics,
     physicsTrace,
+    gas,
+    gasTrace,
+    tca,
+    tcaTrace,
     snapshot() {
       const clock = runtime.clock.snapshot();
       return {
         running: runtime.isRunning(),
         tick: clock.ticks,
+        elapsedMs: clock.elapsed,
         entityCount: state.world.count(),
         players: Array.from(state.players.values(), (player) =>
           capturePlayerSnapshot(state.world, player)
@@ -157,7 +223,8 @@ export function createOutpostAuthorityGameplayRuntime(
         physics: {
           bound: physics.isBound(),
           recentTraceCount: physicsTrace.list().length
-        }
+        },
+        combat: combat.snapshot()
       };
     }
   };
@@ -193,7 +260,7 @@ function createAuthorityPlayerModule(state: AuthorityGameplayState) {
             const player =
               state.players.get(desired.playerId) ??
               materializePlayer(state, desired, bodyData, colliderData);
-            applyPlayerInput(ctx.world, player, desired, definition.moveSpeed);
+            applyPlayerInput(state, player, desired, definition.moveSpeed);
           }
         }
       });
@@ -201,6 +268,9 @@ function createAuthorityPlayerModule(state: AuthorityGameplayState) {
       return () => {
         for (const player of state.players.values()) {
           state.identity.remove(player.playerId);
+          if (state.gas.isBound() && state.gas.hasActor(player.actorId)) {
+            state.gas.removeActor(player.actorId);
+          }
           if (ctx.world.has(player.entityId)) {
             ctx.world.despawn(player.entityId);
           }
@@ -234,6 +304,9 @@ function removeMissingPlayers(
       continue;
     }
     state.identity.remove(playerId);
+    if (state.gas.isBound() && state.gas.hasActor(player.actorId)) {
+      state.gas.removeActor(player.actorId);
+    }
     if (state.world.has(player.entityId)) {
       state.world.despawn(player.entityId);
     }
@@ -250,6 +323,7 @@ function materializePlayer(
   const entityId = state.world.spawn();
   const bodyId = `${player.playerId}.body`;
   const colliderId = `${player.playerId}.collider`;
+  const actorId = player.playerId;
   const networkEntityId = player.playerId;
   const generation = (state.generationsByNetworkEntityId.get(networkEntityId) ?? -1) + 1;
   const materialized = {
@@ -257,7 +331,10 @@ function materializePlayer(
     slot: player.slot,
     entityId,
     networkEntityId,
-    generation
+    generation,
+    actorId,
+    bodyId,
+    colliderId
   };
 
   try {
@@ -274,9 +351,15 @@ function materializePlayer(
     state.world.add(entityId, PhysicsColliderComponent, {
       definition: toColliderDefinition(colliderData, colliderId)
     });
+    state.gas.createActor({
+      actorId,
+      definitionId: definitionActorId(state.dataRegistry),
+      entityId
+    });
     state.identity.register({
       gameplayObjectId: player.playerId,
       entityId,
+      actorId,
       physicsBodyId: bodyId,
       physicsColliderIds: [colliderId],
       network: { entityId: networkEntityId, generation }
@@ -286,6 +369,9 @@ function materializePlayer(
     return materialized;
   } catch (error) {
     state.identity.remove(player.playerId);
+    if (state.gas.isBound() && state.gas.hasActor(actorId)) {
+      state.gas.removeActor(actorId);
+    }
     if (state.world.has(entityId)) {
       state.world.despawn(entityId);
     }
@@ -294,11 +380,19 @@ function materializePlayer(
 }
 
 function applyPlayerInput(
-  world: GameWorld,
+  state: AuthorityGameplayState,
   player: MaterializedPlayer,
   desired: OutpostAuthorityPlayerState,
   moveSpeed: number
 ): void {
+  const world = state.world;
+  if (
+    !state.gas.hasActor(player.actorId) ||
+    (state.gas.getActor(player.actorId).attributes.current.health ?? 0) <= 0
+  ) {
+    world.set(player.entityId, PhysicsVelocityComponent, { linear: { x: 0, y: 0 } });
+    return;
+  }
   const length = Math.hypot(desired.input.moveX, desired.input.moveY);
   const scale = length > 1 ? 1 / length : 1;
   world.set(player.entityId, PhysicsVelocityComponent, {
@@ -367,6 +461,11 @@ function authorityPhysicsScene(dataRegistry: DataRegistry) {
     OUTPOST_ARENA_PHYSICS_SCENE_ID
   );
   return scene;
+}
+
+function definitionActorId(dataRegistry: DataRegistry): string {
+  return dataRegistry.getValue<OutpostPlayerDefinition>(OUTPOST_PLAYER_TYPE, PLAYER_DEFINITION_ID)
+    .actor.id;
 }
 
 function requireComponent<T>(value: T | undefined, label: string): T {

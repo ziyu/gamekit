@@ -23,6 +23,11 @@
 - Input：`docs/modules/input.md`
 - Camera：`docs/modules/camera.md`
 - Physics：`docs/modules/physics.md`
+- Combat：`docs/modules/combat.md`
+- AI：`docs/modules/ai.md`
+- Navigation：`docs/modules/navigation.md`
+- Animator：`docs/modules/animator.md`
+- Audio：`docs/modules/audio.md`
 - TCA：`docs/modules/tca.md`
 - GAS：`docs/modules/gas.md`
 - Multiplayer：`docs/modules/multiplayer.md`
@@ -76,6 +81,7 @@
 - DataType 设计应给游戏开发者自由度。框架只要求稳定 `type + id`、可校验、可引用、可诊断，不强迫所有项目套固定 hero/monster/building 模板。
 - DataPack 是数据集合，不是内容包系统。真实 Content Package 未来可以包含 DataPack、资源 payload、脚本、localization、地图、patch 和权限声明。
 - Runtime state 不写回 DataRegistry。Data 是定义和来源追踪，World/Physics/GAS/TCA/Save 承载运行时状态。
+- 跨 GAS 与 Combat 的普通攻击链使用 `combat.ability-delivery` + Combat module bridge：GAS phase/effect Cue 表达表现语义，Combat fact/World state 提供空间上下文。不要让 app 为每个技能手写 committed 订阅，也不要在 Combat 再建一套同义 Cue registry；详细协议见 `docs/modules/gas.md`、`docs/modules/combat.md` 和 ADR 0032。
 - 引用关系通过 DataRef / AssetRef / 自定义 references 提取进入 reference graph，错误必须能定位 source pack、entry type、entry id、field path 和 target key。
 - 游戏内容文件应优先按真实业务概念组织，同一个业务文件可以混合内置 DataType 和用户自定义 DataType。
 

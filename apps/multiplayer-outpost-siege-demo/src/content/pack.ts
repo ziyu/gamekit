@@ -44,18 +44,10 @@ const attributes: GasAttributeDefinition[] = [
   { id: "health", min: 0, max: 1000, defaultValue: 100 },
   { id: "shield", min: 0, max: 1000, defaultValue: 50 },
   { id: "stamina", min: 0, max: 100, defaultValue: 100 },
-  { id: "shared-resource", min: 0, max: 9999, defaultValue: 0 }
+  { id: "shared-resource", min: 0, max: 9999, defaultValue: 100 }
 ];
 
 const effects: GasEffectDefinition[] = [
-  {
-    id: "effect.outpost.rifle_damage",
-    attributeModifiers: [{ attribute: "health", operation: "add", value: -12 }]
-  },
-  {
-    id: "effect.outpost.enemy_damage",
-    attributeModifiers: [{ attribute: "health", operation: "add", value: -8 }]
-  },
   {
     id: "effect.outpost.shocked",
     durationMs: 3000,
@@ -63,14 +55,17 @@ const effects: GasEffectDefinition[] = [
     periodicModifiers: [{ attribute: "health", operation: "add", value: -3 }],
     grantedTags: ["status.shocked"],
     stacking: { limit: 1, overflow: "refresh-oldest" }
+  },
+  {
+    id: "effect.outpost.combat_recovery",
+    attributeModifiers: [{ attribute: "health", operation: "add", value: 4 }]
   }
 ];
 
 const abilities: GasAbilityDefinition[] = [
   {
     id: "ability.outpost.rifle_fire",
-    cooldownMs: 120,
-    effects: [{ effectId: "effect.outpost.rifle_damage", target: "target" }]
+    cooldownMs: 120
   },
   {
     id: "ability.outpost.dash",
@@ -79,8 +74,7 @@ const abilities: GasAbilityDefinition[] = [
   },
   {
     id: "ability.outpost.shock_field",
-    cooldownMs: 6000,
-    effects: [{ effectId: "effect.outpost.shocked", target: "target" }]
+    cooldownMs: 6000
   },
   {
     id: "ability.outpost.deploy_turret",
@@ -89,15 +83,14 @@ const abilities: GasAbilityDefinition[] = [
   },
   {
     id: "ability.outpost.enemy_attack",
-    cooldownMs: 900,
-    effects: [{ effectId: "effect.outpost.enemy_damage", target: "target" }]
+    cooldownMs: 900
   }
 ];
 
 const actors: GasActorDefinition[] = [
   {
     id: "actor.outpost.player",
-    attributes: { health: 100, shield: 50, stamina: 100, "shared-resource": 0 },
+    attributes: { health: 100, shield: 50, stamina: 100, "shared-resource": 100 },
     abilities: [
       "ability.outpost.rifle_fire",
       "ability.outpost.dash",
@@ -133,17 +126,25 @@ const materials: PhysicsMaterialDefinition[] = [
 ];
 
 const colliders: Array<{ id: string; data: PhysicsColliderData }> = [
-  circleCollider("collider.outpost.player", 14, "material.outpost.actor"),
-  circleCollider("collider.outpost.raider", 13, "material.outpost.actor"),
-  circleCollider("collider.outpost.overseer", 32, "material.outpost.actor"),
-  circleCollider("collider.outpost.turret", 18, "material.outpost.actor"),
-  circleCollider("collider.outpost.projectile", 4, "material.outpost.projectile", true),
+  circleCollider("collider.outpost.player", 14, "material.outpost.actor", false, 0x0002, 0x0035),
+  circleCollider("collider.outpost.raider", 13, "material.outpost.actor", false, 0x0004, 0x002b),
+  circleCollider("collider.outpost.overseer", 32, "material.outpost.actor", false, 0x0004, 0x002b),
+  circleCollider("collider.outpost.turret", 18, "material.outpost.actor", false, 0x0020, 0x0015),
+  circleCollider(
+    "collider.outpost.projectile",
+    4,
+    "material.outpost.projectile",
+    true,
+    0x0008,
+    0x0005
+  ),
   {
     id: OUTPOST_ARENA_SOLID_COLLIDER_ID,
     data: {
       id: OUTPOST_ARENA_SOLID_COLLIDER_ID,
       shape: { type: "box", width: 1, height: 1 },
       material: "material.outpost.arena",
+      filter: { categoryBits: 0x0001, maskBits: 0xffff },
       tags: ["outpost", "arena", "solid"]
     }
   }
@@ -154,7 +155,7 @@ const bodies: Array<{ id: string; data: PhysicsBodyData }> = [
   dynamicBody("body.outpost.raider", "collider.outpost.raider"),
   dynamicBody("body.outpost.overseer", "collider.outpost.overseer"),
   staticBody("body.outpost.turret", "collider.outpost.turret"),
-  dynamicBody("body.outpost.projectile", "collider.outpost.projectile", 0),
+  dynamicBody("body.outpost.projectile", "collider.outpost.projectile", 0, 0),
   {
     id: OUTPOST_ARENA_STATIC_BODY_ID,
     data: {
@@ -188,7 +189,10 @@ const weapons: OutpostWeaponDefinition[] = [
     ability: ref("gas.ability", "ability.outpost.rifle_fire"),
     projectileBody: ref("physics.body", "body.outpost.projectile"),
     projectileRenderObject: ref(OUTPOST_RENDER_OBJECT_TYPE, "render.outpost.projectile"),
-    fireIntervalMs: 120
+    fireIntervalMs: 120,
+    damage: 12,
+    projectileSpeed: 760,
+    projectileLifetimeMs: 1200
   }
 ];
 
@@ -211,7 +215,9 @@ const enemies: OutpostEnemyDefinition[] = [
     attackAbility: ref("gas.ability", "ability.outpost.enemy_attack"),
     physicsBody: ref("physics.body", "body.outpost.raider"),
     renderObject: ref(OUTPOST_RENDER_OBJECT_TYPE, "render.outpost.raider"),
-    moveSpeed: 105
+    moveSpeed: 105,
+    attackRange: 38,
+    attackDamage: 8
   },
   {
     id: "enemy.outpost.overseer",
@@ -220,7 +226,9 @@ const enemies: OutpostEnemyDefinition[] = [
     attackAbility: ref("gas.ability", "ability.outpost.enemy_attack"),
     physicsBody: ref("physics.body", "body.outpost.overseer"),
     renderObject: ref(OUTPOST_RENDER_OBJECT_TYPE, "render.outpost.overseer"),
-    moveSpeed: 72
+    moveSpeed: 72,
+    attackRange: 58,
+    attackDamage: 18
   }
 ];
 
@@ -231,7 +239,8 @@ const buildables: OutpostBuildableDefinition[] = [
     deployAbility: ref("gas.ability", "ability.outpost.deploy_turret"),
     physicsBody: ref("physics.body", "body.outpost.turret"),
     renderObject: ref(OUTPOST_RENDER_OBJECT_TYPE, "render.outpost.turret"),
-    resourceCost: 25
+    resourceCost: 25,
+    placementRange: 240
   }
 ];
 
@@ -259,15 +268,60 @@ const waves: OutpostWaveDefinition[] = [
 const rules: TcaRule[] = [
   {
     id: "rule.outpost.shield_broken",
-    trigger: { type: "event.type", args: { eventType: "gas.attribute.changed" } },
-    actions: [{ type: "event.emit", args: { eventType: "outpost.shield_broken" } }],
+    trigger: { type: "event.type", args: { eventType: "gas.attribute_changed" } },
+    conditions: [
+      {
+        type: "outpost.attribute.transition",
+        args: { attribute: "shield", to: 0, previousAbove: 0 }
+      }
+    ],
+    actions: [{ type: "outpost.combat.emit_fact", args: { eventType: "outpost.shield_broken" } }],
     tags: ["outpost", "combat"]
   },
   {
-    id: "rule.outpost.wave_completed",
-    trigger: { type: "event.type", args: { eventType: "outpost.wave.cleared" } },
-    actions: [{ type: "event.emit", args: { eventType: "outpost.objective.progressed" } }],
+    id: "rule.outpost.actor_killed",
+    trigger: { type: "event.type", args: { eventType: "gas.attribute_changed" } },
+    conditions: [
+      {
+        type: "outpost.attribute.transition",
+        args: { attribute: "health", to: 0, previousAbove: 0 }
+      }
+    ],
+    actions: [{ type: "outpost.combat.emit_fact", args: { eventType: "outpost.actor_killed" } }],
+    tags: ["outpost", "combat"]
+  },
+  {
+    id: "rule.outpost.enemy_killed",
+    trigger: { type: "event.type", args: { eventType: "outpost.actor_killed" } },
+    conditions: [{ type: "outpost.actor.kind", args: { kind: "enemy" } }],
+    actions: [
+      { type: "outpost.combat.grant_kill_rewards", args: { resource: 10 } },
+      { type: "outpost.combat.emit_fact", args: { eventType: "outpost.drop.created" } },
+      {
+        type: "outpost.combat.emit_fact",
+        args: { eventType: "outpost.objective.progressed" }
+      }
+    ],
     tags: ["outpost", "objective"]
+  },
+  {
+    id: "rule.outpost.overseer_phase_two",
+    trigger: { type: "event.type", args: { eventType: "gas.attribute_changed" } },
+    conditions: [
+      {
+        type: "outpost.actor.definition",
+        args: { definitionId: "actor.outpost.overseer" }
+      },
+      {
+        type: "outpost.attribute.threshold_crossed",
+        args: { attribute: "health", belowOrEqual: 300 }
+      }
+    ],
+    actions: [
+      { type: "outpost.combat.add_tag", args: { tag: "boss.phase.two" } },
+      { type: "outpost.combat.emit_fact", args: { eventType: "outpost.boss.phase_changed" } }
+    ],
+    tags: ["outpost", "combat", "boss"]
   }
 ];
 
@@ -333,7 +387,9 @@ function circleCollider(
   id: string,
   radius: number,
   material: string,
-  sensor = false
+  sensor = false,
+  categoryBits?: number,
+  maskBits?: number
 ): { id: string; data: PhysicsColliderData } {
   return {
     id,
@@ -342,6 +398,9 @@ function circleCollider(
       shape: { type: "circle", radius },
       material,
       sensor,
+      ...(categoryBits === undefined || maskBits === undefined
+        ? {}
+        : { filter: { categoryBits, maskBits } }),
       tags: ["outpost"]
     }
   };
@@ -350,7 +409,8 @@ function circleCollider(
 function dynamicBody(
   id: string,
   colliderId: string,
-  gravityScale = 0
+  gravityScale = 0,
+  linearDamping = 8
 ): { id: string; data: PhysicsBodyData } {
   return {
     id,
@@ -358,7 +418,7 @@ function dynamicBody(
       id,
       kind: "dynamic",
       gravityScale,
-      damping: { linear: 8 },
+      damping: { linear: linearDamping },
       colliders: [ref("physics.collider", colliderId)],
       tags: ["outpost"]
     }

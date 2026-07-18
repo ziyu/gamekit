@@ -1,13 +1,14 @@
-import {
-  GAS_ABILITY_TYPE,
-  GAS_ACTOR_TYPE,
-  GAS_ATTRIBUTE_TYPE,
-  GAS_CUE_TYPE,
-  GAS_EFFECT_TYPE
-} from "./data-types";
+import { GAS_ACTOR_TYPE, GAS_ATTRIBUTE_TYPE, GAS_CUE_TYPE, GAS_EFFECT_TYPE } from "./data-types";
 import { createGasError } from "./errors";
 import { createGasTraceStore } from "./trace-store";
-import { GasAbilities, GasActor, GasAttributes, GasEffects, GasTags } from "./components";
+import {
+  GasAbilities,
+  GasAbilityExecutions,
+  GasActor,
+  GasAttributes,
+  GasEffects,
+  GasTags
+} from "./components";
 import type { ComponentDef } from "@gamekit/world";
 import {
   cloneGasActorState,
@@ -16,12 +17,12 @@ import {
   uniqueGasValues
 } from "./actor-state";
 import { createGasEffectRuntime } from "./effect-runtime";
+import { createGasAbilityExecutionRuntime } from "./ability-execution-runtime";
 import { childGasContext } from "./operation-context";
 import type {
   CreateGasRuntimeConfig,
-  GasAbilityActivation,
-  GasAbilityActivationResult,
   GasAbilityDefinition,
+  GasAbilityExecutionState,
   GasActorDefinition,
   GasActorId,
   GasActorRuntimeState,
@@ -39,6 +40,7 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
   const traceStore = config.traceStore ?? createGasTraceStore();
   const actorEntityById = new Map<GasActorId, string | number>();
   const detachedActors = new Map<GasActorId, GasActorRuntimeState>();
+  const detachedExecutions = new Map<GasActorId, { active: GasAbilityExecutionState[] }>();
   let elapsedNow = 0;
   let disposed = false;
   const effectRuntime = createGasEffectRuntime({
@@ -49,6 +51,23 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
     modifyAttribute: modifyAttributeState,
     addTag: addTagState,
     removeTag: removeTagState,
+    emitCues,
+    trace,
+    emit
+  });
+  const abilityExecutionRuntime = createGasAbilityExecutionRuntime({
+    dataRegistry: config.dataRegistry,
+    limits: config.abilityExecutions,
+    now: () => elapsedNow,
+    hasActor: (actorId) => findState(actorId) !== undefined,
+    requireActor: requireMutableActor,
+    persistActor: persistState,
+    readExecutions: readActorExecutions,
+    writeExecutions: writeActorExecutions,
+    removeExecutions: removeActorExecutions,
+    canPayCosts,
+    payCosts,
+    applyEffects: applyAbilityEffects,
     emitCues,
     trace,
     emit
@@ -166,7 +185,21 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
     },
     activateAbility(input) {
       assertActive();
-      return activateAbility(input);
+      return abilityExecutionRuntime.activate(input);
+    },
+    requestAbilityExecution(input) {
+      assertActive();
+      return abilityExecutionRuntime.request(input);
+    },
+    cancelAbilityExecution(input) {
+      assertActive();
+      return abilityExecutionRuntime.cancel(input);
+    },
+    getAbilityExecution(executionId) {
+      return abilityExecutionRuntime.get(executionId);
+    },
+    listAbilityExecutions(query) {
+      return abilityExecutionRuntime.list(query);
     },
     applyEffect(input) {
       assertActive();
@@ -197,6 +230,7 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
 
       elapsedNow = elapsed;
       cleanupMissingEntityActors();
+      abilityExecutionRuntime.update();
       for (const state of mutableStates()) {
         if (effectRuntime.updateActor(state)) {
           persistState(state);
@@ -208,12 +242,29 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
         elapsed: elapsedNow,
         actors: mutableStates()
           .sort((left, right) => left.actor.actorId.localeCompare(right.actor.actorId))
-          .map(cloneGasActorState)
+          .map(cloneGasActorState),
+        executions: abilityExecutionRuntime.capture()
       };
     },
     restoreCheckpoint(checkpoint, options) {
       assertActive();
       const states = prepareCheckpoint(checkpoint, options?.resolveEntityId);
+      const statesByActorId = new Map(states.map((state) => [state.actor.actorId, state] as const));
+      abilityExecutionRuntime.validateRestore(checkpoint.executions ?? [], {
+        now: checkpoint.elapsed,
+        hasActor: (actorId) => statesByActorId.has(actorId),
+        requireActor(actorId) {
+          const state = statesByActorId.get(actorId);
+          if (state === undefined) {
+            throw createGasError(
+              "gas.checkpoint_missing_execution_actor",
+              `Missing GAS execution actor: ${actorId}`
+            );
+          }
+          return state;
+        }
+      });
+      abilityExecutionRuntime.restore([]);
       for (const entityId of actorEntityById.values()) {
         removeActorComponents(entityId);
       }
@@ -235,11 +286,18 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
       }
       elapsedNow = checkpoint.elapsed;
       effectRuntime.synchronizeSequence(states);
+      abilityExecutionRuntime.restore(checkpoint.executions ?? []);
       traceStore.clear();
     },
     snapshot() {
       return {
         actors: mutableStates().map(cloneGasActorState),
+        activeExecutions: abilityExecutionRuntime.capture(),
+        recentExecutions: abilityExecutionRuntime
+          .list({ includeRecent: true })
+          .filter(
+            (execution) => execution.phase === "completed" || execution.phase === "cancelled"
+          ),
         traces: traceStore.list()
       };
     },
@@ -248,141 +306,17 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
         return;
       }
       disposed = true;
+      abilityExecutionRuntime.dispose();
       for (const entityId of actorEntityById.values()) {
         removeActorComponents(entityId);
       }
       actorEntityById.clear();
       detachedActors.clear();
+      detachedExecutions.clear();
     }
   };
 
   return runtime;
-
-  function activateAbility(input: GasAbilityActivation): GasAbilityActivationResult {
-    const state = requireMutableActor(input.actorId);
-    const ability = config.dataRegistry.getValue<GasAbilityDefinition>(
-      GAS_ABILITY_TYPE,
-      input.abilityId
-    );
-
-    if (!state.abilities.ids.includes(input.abilityId)) {
-      return rejectAbility(input, "actor does not know ability");
-    }
-    if (state.abilities.disabled.includes(input.abilityId)) {
-      return rejectAbility(input, "ability is disabled");
-    }
-    if ((state.abilities.cooldowns[input.abilityId] ?? 0) > elapsedNow) {
-      return rejectAbility(input, "ability is on cooldown");
-    }
-    if (!hasRequiredTags(state, ability)) {
-      return rejectAbility(input, "required tags are missing");
-    }
-    if (hasBlockedTags(state, ability)) {
-      return rejectAbility(input, "blocked tags are present");
-    }
-    if (!canPayCosts(state, ability)) {
-      return rejectAbility(input, "ability costs cannot be paid");
-    }
-
-    const abilityTrace = trace(
-      "ability.activated",
-      {
-        actorId: input.actorId,
-        abilityId: input.abilityId,
-        message: `Activated GAS ability: ${input.abilityId}`,
-        details: {
-          targetActorId: input.targetActorId
-        }
-      },
-      input
-    );
-    const operationContext = childGasContext(input, abilityTrace.id);
-    payCosts(state, ability, operationContext);
-    const resultEffects: GasEffectApplicationResult[] = [];
-    const cooldownUntil =
-      (ability.cooldownMs ?? 0) > 0 ? elapsedNow + (ability.cooldownMs ?? 0) : undefined;
-    if ((ability.cooldownMs ?? 0) > 0) {
-      state.abilities.cooldowns[input.abilityId] = cooldownUntil ?? elapsedNow;
-    }
-    persistState(state);
-
-    emit(
-      "gas.ability_activated",
-      {
-        actorId: input.actorId,
-        abilityId: input.abilityId,
-        targetActorId: input.targetActorId
-      },
-      operationContext
-    );
-
-    for (const effect of ability.effects ?? []) {
-      const targetActorId = effect.target === "self" ? input.actorId : input.targetActorId;
-      if (!targetActorId) {
-        throw createGasError(
-          "gas.missing_effect_target",
-          "GAS effect application requires target",
-          {
-            abilityId: input.abilityId,
-            effectId: effect.effectId
-          }
-        );
-      }
-      resultEffects.push(
-        effectRuntime.apply({
-          sourceActorId: input.actorId,
-          targetActorId,
-          effectId: effect.effectId,
-          ...operationContext
-        })
-      );
-    }
-
-    emitCues(ability.cues ?? [], input.actorId, input.targetActorId, operationContext);
-    return {
-      status: "activated",
-      actorId: input.actorId,
-      abilityId: input.abilityId,
-      targetActorId: input.targetActorId,
-      cooldownUntil,
-      paidCosts: [...(ability.costs ?? [])],
-      appliedEffects: resultEffects,
-      ...(input.correlationId === undefined ? {} : { correlationId: input.correlationId })
-    };
-  }
-
-  function rejectAbility(input: GasAbilityActivation, reason: string): GasAbilityActivationResult {
-    const rejectedTrace = trace(
-      "ability.rejected",
-      {
-        actorId: input.actorId,
-        abilityId: input.abilityId,
-        message: reason,
-        details: {
-          targetActorId: input.targetActorId
-        }
-      },
-      input
-    );
-    emit(
-      "gas.ability_rejected",
-      {
-        actorId: input.actorId,
-        abilityId: input.abilityId,
-        targetActorId: input.targetActorId,
-        reason
-      },
-      childGasContext(input, rejectedTrace.id)
-    );
-    return {
-      status: "rejected",
-      actorId: input.actorId,
-      abilityId: input.abilityId,
-      targetActorId: input.targetActorId,
-      reason,
-      ...(input.correlationId === undefined ? {} : { correlationId: input.correlationId })
-    };
-  }
 
   function canPayCosts(state: GasActorRuntimeState, ability: GasAbilityDefinition): boolean {
     return (ability.costs ?? []).every(
@@ -409,12 +343,32 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
     }
   }
 
-  function hasRequiredTags(state: GasActorRuntimeState, ability: GasAbilityDefinition): boolean {
-    return (ability.requiredTags ?? []).every((tag) => state.tags.values.includes(tag));
-  }
-
-  function hasBlockedTags(state: GasActorRuntimeState, ability: GasAbilityDefinition): boolean {
-    return (ability.blockedTags ?? []).some((tag) => state.tags.values.includes(tag));
+  function applyAbilityEffects(
+    execution: GasAbilityExecutionState,
+    ability: GasAbilityDefinition,
+    context: GasOperationContext
+  ): GasEffectApplicationResult[] {
+    const results: GasEffectApplicationResult[] = [];
+    for (const effect of ability.effects ?? []) {
+      const targetActorId =
+        (effect.target ?? "target") === "self" ? execution.actorId : execution.targetActorId;
+      if (targetActorId === undefined) {
+        throw createGasError(
+          "gas.missing_effect_target",
+          "GAS effect application requires target",
+          { abilityId: ability.id, effectId: effect.effectId, executionId: execution.id }
+        );
+      }
+      results.push(
+        effectRuntime.apply({
+          sourceActorId: execution.actorId,
+          targetActorId,
+          effectId: effect.effectId,
+          ...context
+        })
+      );
+    }
+    return results;
   }
 
   function modifyAttributeState(
@@ -573,11 +527,14 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
       return false;
     }
 
+    abilityExecutionRuntime.removeActor(actorId, `actor-${reason}`, context);
+
     if (entityId !== undefined) {
       removeActorComponents(entityId);
       actorEntityById.delete(actorId);
     }
     detachedActors.delete(actorId);
+    detachedExecutions.delete(actorId);
 
     const removedTrace = trace(
       "actor.removed",
@@ -613,6 +570,7 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
     removeComponentIfPresent(entityId, GasTags);
     removeComponentIfPresent(entityId, GasAbilities);
     removeComponentIfPresent(entityId, GasEffects);
+    removeComponentIfPresent(entityId, GasAbilityExecutions);
   }
 
   function removeComponentIfPresent<T extends object>(
@@ -679,6 +637,53 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
     ];
   }
 
+  function readActorExecutions(
+    actorId: string
+  ): { active: GasAbilityExecutionState[] } | undefined {
+    const actor = findState(actorId);
+    if (actor === undefined) {
+      return undefined;
+    }
+    const entityId = actor.actor.entityId;
+    if (entityId === undefined) {
+      return detachedExecutions.get(actorId);
+    }
+    return config.world.get(entityId, GasAbilityExecutions);
+  }
+
+  function writeActorExecutions(
+    actorId: string,
+    state: { active: GasAbilityExecutionState[] }
+  ): void {
+    const actor = findState(actorId);
+    if (actor === undefined) {
+      return;
+    }
+    const entityId = actor.actor.entityId;
+    if (entityId === undefined) {
+      detachedExecutions.set(actorId, GasAbilityExecutions.create(state));
+      return;
+    }
+    if (config.world.get(entityId, GasAbilityExecutions) === undefined) {
+      config.world.add(entityId, GasAbilityExecutions, state);
+      return;
+    }
+    config.world.set(entityId, GasAbilityExecutions, GasAbilityExecutions.create(state));
+  }
+
+  function removeActorExecutions(actorId: string): void {
+    const actor = findState(actorId);
+    const entityId = actor?.actor.entityId;
+    if (
+      entityId !== undefined &&
+      config.world.has(entityId) &&
+      config.world.get(entityId, GasAbilityExecutions) !== undefined
+    ) {
+      config.world.remove(entityId, GasAbilityExecutions);
+    }
+    detachedExecutions.delete(actorId);
+  }
+
   function persistState(state: GasActorRuntimeState): void {
     const entityId = state.actor.entityId;
     if (entityId === undefined) {
@@ -728,6 +733,12 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
     }
     if (!Array.isArray(checkpoint.actors)) {
       throw createGasError("gas.checkpoint_invalid_actors", "Invalid GAS checkpoint actors");
+    }
+    if (checkpoint.executions !== undefined && !Array.isArray(checkpoint.executions)) {
+      throw createGasError(
+        "gas.checkpoint_invalid_executions",
+        "Invalid GAS checkpoint executions"
+      );
     }
     const actorIds = new Set<string>();
     const entityIds = new Set<string | number>();

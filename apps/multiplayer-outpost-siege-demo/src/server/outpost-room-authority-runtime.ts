@@ -10,6 +10,7 @@ import { initRapier2dPhysicsBackend } from "@gamekit/physics-rapier2d";
 import { outpostAppDefinition } from "../app-definition";
 import {
   createOutpostAuthorityGameplayRuntime,
+  type OutpostAuthorityCombatSnapshot,
   type OutpostAuthorityGameplayRuntime
 } from "../gameplay";
 import {
@@ -25,6 +26,7 @@ export type OutpostRoomAuthorityRuntimeSnapshot = {
   entityCount: number;
   physicsBound: boolean;
   physicsBackend: string;
+  combat?: OutpostAuthorityCombatSnapshot | undefined;
   match: OutpostMatchAuthoritySnapshot;
 };
 
@@ -75,7 +77,8 @@ export async function createOutpostRoomAuthorityRuntime(
       createRuntime(runtimeContext) {
         gameplay = createOutpostAuthorityGameplayRuntime({
           ...runtimeContext,
-          players: match.simulationPlayers
+          players: match.simulationPlayers,
+          combatCommands: match.drainCombatCommands
         });
         return gameplay.runtime;
       }
@@ -120,6 +123,7 @@ export async function createOutpostRoomAuthorityRuntime(
         entityCount: context.game?.world.count() ?? 0,
         physicsBound: authorityGameplay?.physics.bound ?? false,
         physicsBackend: physicsBackend.kind,
+        ...(authorityGameplay === undefined ? {} : { combat: authorityGameplay.combat }),
         match: match.snapshot()
       };
     }

@@ -347,6 +347,17 @@ kbd {
   height: 2px;
   background: var(--hud-amber);
 }
+.outpost-ability.is-cooldown {
+  border-color: rgba(242, 189, 80, 0.45);
+}
+.outpost-ability.is-cooldown::after {
+  width: 100%;
+  opacity: 0.62;
+}
+.outpost-ability.is-blocked {
+  opacity: 0.52;
+  filter: saturate(0.45);
+}
 .outpost-ability kbd {
   position: absolute;
   top: 4px;

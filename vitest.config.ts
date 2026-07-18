@@ -28,6 +28,7 @@ export default defineConfig({
       "@gamekit/app-host": new URL("./packages/app-host/src/index.ts", import.meta.url).pathname,
       "@gamekit/tca": new URL("./packages/tca/src/index.ts", import.meta.url).pathname,
       "@gamekit/gas": new URL("./packages/gas/src/index.ts", import.meta.url).pathname,
+      "@gamekit/combat": new URL("./packages/combat/src/index.ts", import.meta.url).pathname,
       "@gamekit/multiplayer-core": new URL(
         "./packages/multiplayer-core/src/index.ts",
         import.meta.url

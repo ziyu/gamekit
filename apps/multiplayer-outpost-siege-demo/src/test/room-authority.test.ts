@@ -61,6 +61,7 @@ describe("Outpost Room-owned authority", () => {
           snapshot !== undefined &&
           snapshot.activePeers === 2 &&
           snapshot.ticks >= 2 &&
+          snapshot.runtime?.match.participants.length === 2 &&
           leader.session()?.peers.length === 3 &&
           client.session()?.peers.length === 3
         );
@@ -351,7 +352,7 @@ describe("Outpost Room-owned authority", () => {
         return (
           runtime?.match.phase === "running" &&
           runtime.match.players.length === 4 &&
-          runtime.entityCount === 37 &&
+          runtime.entityCount === 40 &&
           replicatedPhase === "running"
         );
       });
@@ -360,7 +361,7 @@ describe("Outpost Room-owned authority", () => {
       expect(running).toMatchObject({
         activePeers: 4,
         runtime: {
-          entityCount: 37,
+          entityCount: 40,
           match: {
             phase: "running",
             participants: [
@@ -435,6 +436,47 @@ describe("Outpost Room-owned authority", () => {
         ])
       );
 
+      const combatBefore = requireRoom(room).authoritySnapshot().runtime?.combat;
+      expect(combatBefore).toBeDefined();
+      await clients[3]?.send({
+        channel: "reliable",
+        kind: "game.action",
+        targetPeerIds: ["outpost-four-client-session.server"],
+        correlationId: "outpost.test.bound-player",
+        payload: {
+          type: "combat",
+          ability: "dash",
+          aimX: 1_200,
+          aimY: 500,
+          playerId: "player.leader"
+        }
+      });
+      await waitFor(
+        () =>
+          room?.authoritySnapshot().runtime?.combat?.acceptedCommands ===
+          (combatBefore?.acceptedCommands ?? 0) + 1
+      );
+      const combatAfterDash = requireRoom(room).authoritySnapshot().runtime?.combat;
+      expect(combatAfterDash?.actors.find((actor) => actor.id === "player.ranger-4")?.stamina).toBe(
+        75
+      );
+      expect(combatAfterDash?.actors.find((actor) => actor.id === "player.leader")?.stamina).toBe(
+        100
+      );
+
+      await clients[3]?.send({
+        channel: "reliable",
+        kind: "game.action",
+        targetPeerIds: ["outpost-four-client-session.server"],
+        correlationId: "outpost.test.cooldown-rejection",
+        payload: { type: "combat", ability: "dash", aimX: 1_200, aimY: 500 }
+      });
+      await waitFor(
+        () =>
+          room?.authoritySnapshot().runtime?.combat?.rejectedCommands ===
+          (combatAfterDash?.rejectedCommands ?? 0) + 1
+      );
+
       const beforeLeaderLeave = requireRoom(room).authoritySnapshot();
       await clients[0]?.dispose();
       await waitFor(() => {
@@ -450,7 +492,7 @@ describe("Outpost Room-owned authority", () => {
         activePeers: 3,
         runtime: {
           running: true,
-          entityCount: 36,
+          entityCount: 39,
           match: { phase: "running" }
         }
       });

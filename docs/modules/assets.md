@@ -144,7 +144,7 @@ boot
 
 - Phaser Driver 的 asset loader adapter 映射到 Phaser loader / texture manager。
 - Three Driver 的 asset loader adapter 映射到 texture、GLB/glTF、material 和 environment map loader。
-- 音频、字体、shader、bundle 等未来资源通过对应 adapter 接入。
+- 音频、字体、shader、bundle 等资源通过对应 adapter 接入；Phaser 这类共享 runtime 的 audio/atlas loader 仍由同一个 Driver 暴露。
 
 Asset adapter 边界：
 
@@ -167,6 +167,8 @@ DataRegistry
 → Asset adapter
 → renderer/audio/platform backend
 ```
+
+Animation clip/atlas manifest 属于可引用内容 metadata：Asset 负责源与加载状态，Animator Core 负责 clip/graph 语义，Renderer/Driver adapter 负责把 frame/clip 映射到 native runtime。AssetManager 不解析 gameplay animator state，也不保存 native frame 或 audio buffer。
 
 Data 负责：
 

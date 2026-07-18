@@ -69,7 +69,12 @@ export function createOutpostEnemyDataType(): DataTypeDefinition<OutpostEnemyDef
     },
     indexes: [index("outpost.enemy.role", (document) => document.data.role)],
     validate(document) {
-      return [...matchingId(document), ...positive(document, document.data.moveSpeed, "moveSpeed")];
+      return [
+        ...matchingId(document),
+        ...positive(document, document.data.moveSpeed, "moveSpeed"),
+        ...positive(document, document.data.attackRange, "attackRange"),
+        ...positive(document, document.data.attackDamage, "attackDamage")
+      ];
     }
   };
 }
@@ -88,7 +93,10 @@ export function createOutpostWeaponDataType(): DataTypeDefinition<OutpostWeaponD
     validate(document) {
       return [
         ...matchingId(document),
-        ...positive(document, document.data.fireIntervalMs, "fireIntervalMs")
+        ...positive(document, document.data.fireIntervalMs, "fireIntervalMs"),
+        ...positive(document, document.data.damage, "damage"),
+        ...positive(document, document.data.projectileSpeed, "projectileSpeed"),
+        ...positive(document, document.data.projectileLifetimeMs, "projectileLifetimeMs")
       ];
     }
   };
@@ -109,7 +117,8 @@ export function createOutpostBuildableDataType(): DataTypeDefinition<OutpostBuil
     validate(document) {
       return [
         ...matchingId(document),
-        ...nonNegative(document, document.data.resourceCost, "resourceCost")
+        ...nonNegative(document, document.data.resourceCost, "resourceCost"),
+        ...positive(document, document.data.placementRange, "placementRange")
       ];
     }
   };

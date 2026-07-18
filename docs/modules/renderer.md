@@ -232,15 +232,17 @@ export type ActorPresentation = {
 };
 ```
 
-## 与 Cue/Animation 的关系
+## 与 Cue/Animator/Animation Playback 的关系
 
-Animation 不作为默认独立业务模块。动画主要归入：
+`@gamekit/animator-core` 负责 semantic Animator graph、controller、layer、transition、one-shot、marker 和 playback snapshot；Renderer 仍只负责 native object 与 clip/mixer 执行：
 
-- RenderObjectDefinition animations。
-- Renderer Adapter 内部执行。
-- Cue / Presentation 把 gameplay event 转成 render command。
-- App-specific presentation layer 使用 typed native control path。
-- UI 动画在 react-ui 内部处理。
+- RenderObjectDefinition / RenderNodeDefinition 声明可绑定动画的表现结构。
+- Renderer Adapter 或 Driver runtime slice 解析 clip asset 并执行 backend playback frame。
+- Cue / Presentation 把 gameplay event 映射成 animation trigger、renderer command 或 native effect。
+- App-specific presentation layer 可以对 shader、粒子、骨骼约束等使用 typed native control path。
+- UI 动画继续在 react-ui 内部处理，不进入 Animator Core 的角色 controller。
+
+Gameplay 不直接等待 Renderer marker。Ability execution phase 决定玩法时序，animation marker 只用于脚步、枪口、弹壳等表现。
 
 ## 最佳实践
 

@@ -1,7 +1,7 @@
 import { createGasError } from "./errors";
 import type {
   CreateGasTcaDefinitionsConfig,
-  GasAbilityActivation,
+  GasAbilityExecutionRequest,
   GasAttributeModifier,
   GasEffectApplication,
   GasTcaDefinitionSet
@@ -42,6 +42,18 @@ export function createGasTcaDefinitions(
           const actual = runtime.getActor(actorId).attributes.current[attribute] ?? 0;
           return compare(actual, operator, value);
         }
+      },
+      {
+        type: "gas.execution.phase",
+        description: "Checks the current or recent phase of a GAS ability execution.",
+        evaluate(_ctx, condition) {
+          const executionId = readString(condition.args, "executionId");
+          const phase = readString(condition.args, "phase");
+          if (!executionId || !phase) {
+            return false;
+          }
+          return requireRuntime(config).getAbilityExecution(executionId)?.phase === phase;
+        }
       }
     ],
     actions: [
@@ -49,8 +61,19 @@ export function createGasTcaDefinitions(
         type: "gas.activate_ability",
         description: "Activates a GAS ability.",
         execute(ctx, action) {
-          requireRuntime(config).activateAbility({
+          requireRuntime(config).requestAbilityExecution({
             ...readAbilityActivation(action.args),
+            ...correlationFromTca(ctx)
+          });
+        }
+      },
+      {
+        type: "gas.cancel_ability_execution",
+        description: "Cancels a GAS ability execution when its definition allows cancellation.",
+        execute(ctx, action) {
+          requireRuntime(config).cancelAbilityExecution({
+            executionId: readRequiredString(action.args, "executionId"),
+            reason: readString(action.args, "reason") ?? "tca",
             ...correlationFromTca(ctx)
           });
         }
@@ -99,11 +122,14 @@ function requireRuntime(config: CreateGasTcaDefinitionsConfig) {
   return runtime;
 }
 
-function readAbilityActivation(args: Record<string, unknown> | undefined): GasAbilityActivation {
+function readAbilityActivation(
+  args: Record<string, unknown> | undefined
+): GasAbilityExecutionRequest {
   return {
     actorId: readRequiredString(args, "actorId"),
     abilityId: readRequiredString(args, "abilityId"),
-    targetActorId: readString(args, "targetActorId")
+    targetActorId: readString(args, "targetActorId"),
+    requestId: readString(args, "requestId")
   };
 }
 

@@ -3,6 +3,8 @@ import type { DataRef } from "@gamekit/data";
 import type { RenderObjectType } from "@gamekit/renderer-core";
 import type { EntityId } from "@gamekit/world";
 
+export type OutpostCombatAbility = "rifle" | "dash" | "shock-field" | "deploy-turret";
+
 export const OUTPOST_PLAYER_TYPE = "outpost.player";
 export const OUTPOST_ENEMY_TYPE = "outpost.enemy";
 export const OUTPOST_WEAPON_TYPE = "outpost.weapon";
@@ -57,6 +59,8 @@ export type OutpostEnemyDefinition = {
   physicsBody: DataRef<"physics.body">;
   renderObject: DataRef<typeof OUTPOST_RENDER_OBJECT_TYPE>;
   moveSpeed: number;
+  attackRange: number;
+  attackDamage: number;
 };
 
 export type OutpostWeaponDefinition = {
@@ -65,6 +69,9 @@ export type OutpostWeaponDefinition = {
   projectileBody: DataRef<"physics.body">;
   projectileRenderObject: DataRef<typeof OUTPOST_RENDER_OBJECT_TYPE>;
   fireIntervalMs: number;
+  damage: number;
+  projectileSpeed: number;
+  projectileLifetimeMs: number;
 };
 
 export type OutpostBuildableDefinition = {
@@ -74,6 +81,7 @@ export type OutpostBuildableDefinition = {
   physicsBody: DataRef<"physics.body">;
   renderObject: DataRef<typeof OUTPOST_RENDER_OBJECT_TYPE>;
   resourceCost: number;
+  placementRange: number;
 };
 
 export type OutpostWaveSpawn = {

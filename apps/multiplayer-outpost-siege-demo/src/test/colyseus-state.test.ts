@@ -16,6 +16,8 @@ describe("Outpost app-owned Colyseus state", () => {
     projectOutpostMatchToColyseusState(state, snapshot, 20);
     expect(state.stateVersion).toBe(2);
     expect(state.players.has("player.ranger-1:0")).toBe(true);
+    expect(state.combatActors.has("enemy.opening.1:0")).toBe(true);
+    expect(state.projectiles.has("projectile.1:0")).toBe(true);
 
     snapshot.players[0]!.generation = 1;
     snapshot.players[0]!.x = 940;
@@ -38,7 +40,11 @@ describe("Outpost app-owned Colyseus state", () => {
             generation: 1,
             x: 940
           }
-        ]
+        ],
+        combat: {
+          actors: [{ objectId: "enemy.opening.1", health: 45 }],
+          projectiles: [{ objectId: "projectile.1", velocityX: 760 }]
+        }
       }
     });
     expect(update?.stateBytes).toBeGreaterThan(0);
@@ -46,10 +52,14 @@ describe("Outpost app-owned Colyseus state", () => {
     snapshot.tick = 8;
     snapshot.participants = [];
     snapshot.players = [];
+    snapshot.combat.actors = [];
+    snapshot.combat.projectiles = [];
     snapshot.inputAcksByPeerId = {};
     projectOutpostMatchToColyseusState(state, snapshot, 22);
     expect(state.participants.size).toBe(0);
     expect(state.players.size).toBe(0);
+    expect(state.combatActors.size).toBe(0);
+    expect(state.projectiles.size).toBe(0);
     expect(state.inputAcksByPeerId.size).toBe(0);
   });
 
@@ -64,6 +74,7 @@ function createMatchSnapshot(): OutpostMatchAuthoritySnapshot {
   return {
     phase: "running",
     tick: 7,
+    elapsedMs: 350,
     countdownMsRemaining: 0,
     participants: [
       {
@@ -90,6 +101,49 @@ function createMatchSnapshot(): OutpostMatchAuthoritySnapshot {
         facing: 0
       }
     ],
+    combat: {
+      actors: [
+        {
+          objectId: "enemy.opening.1",
+          networkEntityId: "enemy.opening.1",
+          generation: 0,
+          kind: "enemy",
+          definitionId: "enemy.outpost.raider",
+          renderKey: "render.outpost.raider",
+          x: 680,
+          y: 500,
+          velocityX: 105,
+          velocityY: 0,
+          facing: 0,
+          health: 45,
+          shield: 0,
+          stamina: 0,
+          resource: 0,
+          tags: ["team.enemies"],
+          cooldowns: { "ability.outpost.enemy_attack": 900 }
+        }
+      ],
+      projectiles: [
+        {
+          objectId: "projectile.1",
+          networkEntityId: "projectile.1",
+          generation: 0,
+          renderKey: "render.outpost.projectile",
+          x: 720,
+          y: 500,
+          velocityX: 760,
+          velocityY: 0,
+          facing: 0
+        }
+      ],
+      acceptedCommands: 1,
+      rejectedCommands: 0,
+      projectileHits: 0,
+      enemyAttacks: 0,
+      kills: 0,
+      drops: 0,
+      objectiveProgress: 0
+    },
     inputAcksByPeerId: { "ranger-1": 7 },
     authorityInput: {
       acceptedActions: 1,

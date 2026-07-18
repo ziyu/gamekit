@@ -74,6 +74,54 @@ const BUDGETS: GameplayFrameworkBenchmarkBudget[] = [
     where: { actors: 4_000, removedActors: 2_000 },
     metric: "microsecondsPerActor",
     maximum: 20
+  },
+  {
+    suite: "gas-ability-execution-update",
+    where: { actors: 1_000, mode: "idle", trace: "disabled", ticks: 120 },
+    metric: "msPerTick",
+    maximum: 5
+  },
+  {
+    suite: "gas-ability-execution-update",
+    where: { actors: 1_000, mode: "active", trace: "disabled", ticks: 16 },
+    metric: "msPerTick",
+    maximum: 12
+  },
+  {
+    suite: "gas-ability-execution-update",
+    where: { actors: 1_000, mode: "active", trace: "enabled", ticks: 16 },
+    metric: "msPerTick",
+    maximum: 12
+  },
+  {
+    suite: "gas-ability-execution-update",
+    where: { actors: 1_000, mode: "active", trace: "disabled", ticks: 16 },
+    metric: "retainedExecutions",
+    maximum: 256
+  },
+  {
+    suite: "gas-ability-execution-update",
+    where: { actors: 1_000, mode: "active", trace: "enabled", ticks: 16 },
+    metric: "retainedExecutions",
+    maximum: 256
+  },
+  {
+    suite: "gas-ability-execution-update",
+    where: { actors: 1_000, mode: "idle", trace: "disabled", ticks: 120 },
+    metric: "retainedAfterDispose",
+    maximum: 0
+  },
+  {
+    suite: "gas-ability-execution-update",
+    where: { actors: 1_000, mode: "active", trace: "disabled", ticks: 16 },
+    metric: "retainedAfterDispose",
+    maximum: 0
+  },
+  {
+    suite: "gas-ability-execution-update",
+    where: { actors: 1_000, mode: "active", trace: "enabled", ticks: 16 },
+    metric: "retainedAfterDispose",
+    maximum: 0
   }
 ];
 

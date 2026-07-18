@@ -1,12 +1,12 @@
 # Outpost Siege Comprehensive Demo
 
-Status: Active. Wave 0 and Wave 1 were verified on 2026-07-11; scope was expanded and replanned on 2026-07-12.
+Status: Active. Wave 0 through Wave 5 are verified; scope was expanded and replanned on 2026-07-12.
 
 ## Goal
 
 实现独立应用 `apps/multiplayer-outpost-siege-demo`，通过一个完整、物理化、数据驱动、server-authoritative 的多人合作游戏验证 GameKit 当前所有核心能力能否在同一条真实产品链路中协同工作。
 
-长期应用体验和模块协作以 `docs/apps/multiplayer-outpost-siege-demo.md` 为准。本文件只维护实施范围、基础缺口、波次、决策门和验证证据。
+长期玩法体验以 `docs/apps/outpost-siege/README.md` 及其子文档为准，综合验证合同和模块协作以 `docs/apps/multiplayer-outpost-siege-demo.md` 为准。新的玩法基础实施工作流见 `docs/implementation/outpost-siege-gameplay-foundation.md`；本文件只维护原综合 Demo 工作流的范围、基础缺口、波次、决策门和验证证据。
 
 ## Scope Revision
 
@@ -321,7 +321,7 @@ Status: Completed on 2026-07-15.
 
 ### Wave 5: Physical TCA/GAS Combat
 
-Status: Planned.
+Status: Completed on 2026-07-15.
 
 1. 实现 player/enemy/projectile/buildable 的 entity archetype materializer。
 2. 实现 movement intent、AI steering、Rapier 2D sync、hitbox/hurtbox、projectile、overlap/raycast 和 placement validation。
@@ -333,9 +333,19 @@ Status: Planned.
 
 完成标准：战斗结果只来自 authority runtime；所有战斗对象基于 World entity 和 Physics；TCA/GAS 定义来自 DataRegistry；客户端不能通过伪造 Schema、cue 或 UI command 改变 damage/effect。
 
+完成证据：
+
+- Browser 只发送 `rifle`、`dash`、`shock-field` 和 `deploy-turret` 语义 action；Room 继续通过 Multiplayer Core authority host loop 消费有界队列，并从 peer/player binding 推导 source。payload 中伪造的 `playerId` 不参与权威身份解析。
+- Authority GameRuntime 按 player intent → combat command/AI → Rapier Physics → projectile sweep/damage/lifecycle → GAS update → TCA reaction 排序。Player、raider、overseer、projectile 和 turret 都是 World entity，持有 data-driven Physics body/collider；Rapier query 缺少 entity metadata 时通过 app identity registry 的 collider/body index 回到同一实体，不建立平行战斗对象真相。
+- DataPack 已声明 health、shield、stamina、shared resource、ability cost/cooldown、periodic shocked/recovery effect、敌人攻击参数、投射物参数、placement range 和 collision filter。步枪命中、冲刺、Shock Field overlap、炮塔物理放置/自动射击及敌人近战都由 app combat module 组合 Physics 和 GAS，Core package 未加入 weapon、damage、team 或 Outpost 语义。
+- TCA 已覆盖 shield break、actor/enemy kill、drop、objective progress 和 overseer phase transition。Network command 的 correlation/parent 会延续到 GAS activation、Physics sweep、attribute change、TCA trace 和 World despawn fact。
+- Rapier 定向测试覆盖四发物理投射物击杀、periodic status、shield break、boss phase、掉落/目标推进、非法 placement、资源不足、cooldown、Dash 状态和敌人攻击；真实四客户端 Colyseus Room 测试覆盖伪造 source 无效、实际发送者扣费和第二次 Dash 被 cooldown 拒绝。
+- `bench:outpost:authority:check` 现在有 7 项预算。代表复跑结果约为 47.7 µs/four-player physical tick、72.1 µs/player churn tick 和 91.3 µs/combat tick；持续步枪压力下最大 6 个并发投射物，Physics/GAS/TCA trace 分别固定保留 180/240/180，dispose 后 retained entity 为 0。
+- 战斗实现保持 app-owned，并拆分为公共命令/快照协议、运行态与实体身份、TCA definitions 和仿真编排；没有修改 Multiplayer、Physics、GAS、TCA 或 World Core 的玩法语义。下一阶段只扩展 app-owned Schema/presentation，不回写或复制权威规则。
+
 ### Wave 6: Replication, Prediction And Presentation
 
-Status: Planned.
+Status: In progress; first playable combat replication slice verified on 2026-07-16.
 
 1. 扩展 app-owned Schema collections，覆盖 entity lifecycle、transform、actor public state、combat facts、wave/objective 和 shared resource。
 2. 实现 stable `entityId + generation`、provider version、source/schema gate、spawn/despawn 和 resync。
@@ -345,6 +355,16 @@ Status: Planned.
 6. Renderer 批量消费 presented values；不在 Schema callback 中逐对象写 Phaser。
 
 完成标准：Demo 上层没有平行 interpolation clock 或 deep snapshot clone；damage/effect/objective 不预测；本地响应及时，远端连续，reset 后不残留旧 track/cue。
+
+当前已验证首个可玩复制切片：
+
+- 修复了“服务器战斗存在、浏览器只能移动”的实际断层：app-owned Colyseus Schema 现在复制敌人、炮塔、投射物、公开 GAS 属性/标签/冷却、计数器和 authority elapsed time；provider-neutral decoder 将其交给 Multiplayer Core snapshot source，不恢复高频 `game.snapshot` 双通道。
+- Client shadow GameRuntime 根据稳定 `networkEntityId + generation` 物化/更新/销毁 enemy、buildable 和 projectile World entity；远端动态对象声明 Core playback vector/angle track，presentation 统一读取 presented value，游戏代码没有自建插值时钟或调用底层插值函数。
+- Phaser presentation 根据 DataRegistry 中的 `renderKey` 创建数据驱动 RenderObject；Shock 状态、炮塔和投射物均来自 authority state。React HUD 只按 10 Hz view signature 更新真实 health、shield、resource、hostile/kill 和 GAS cooldown，不展示框架诊断。
+- 初始敌人仍使用能绕开当前无寻路 AI 限制的内圈物理出生点，但每个 app-owned spawn 可配置 `activationDelayMs`。Opening wave 配置 4 秒待机；测试用自定义出生点默认立即激活。该数据只影响 Outpost AI，不进入 Physics、GAS、TCA、Multiplayer 或 World Core。
+- 真实双 Browser 验证完成建房、加房、Ready/countdown、同一权威战场、3 个敌人、步枪、Dash、Shock Field、炮塔与远端同步。触发后本地显示 Dash `1.4s`、Shock `5.9s`、炮塔 `0.4s` 冷却，shared resource `100 → 75`；第二客户端同步看到炮塔和 shocked tint，同时保留自己的 100 resource。
+- `bench:outpost:client:check` 扩展到 13 项门禁。200 enemies + 256 projectiles + 4 players（460 client entities）的 500 次 combat profile 最终复跑约为 `1.44 ms/snapshot`，Schema projection+decode 约 `0.420 ms/snapshot`，估算状态约 `190.5 KiB`；对应预算为 `4 ms`、`2 ms`、`256 KiB`，dispose 后 entity/Physics scene 均为 0。
+- 定向测试当前为 Outpost 36 tests 全部通过，其中新增用例锁定 combat Schema projection/cleanup、client actor/projectile materialization/interpolation/status tint/despawn，以及配置化敌人激活延迟。Wave 6 的 bounded cue fact stream、generation/binding reset 全矩阵和更完整 presentation 仍待后续切片。
 
 ### Wave 7: Camera, UI And Complete Session
 

@@ -1,7 +1,10 @@
 export type OutpostAuthorityBenchmarkResult = {
   microsecondsPerFourPlayerPhysicalTick: number;
   microsecondsPerPlayerChurnTick: number;
+  microsecondsPerCombatTick: number;
   retainedPhysicsTraces: number;
+  retainedGasTraces: number;
+  retainedTcaTraces: number;
   retainedEntitiesAfterDispose: number;
 };
 
@@ -11,7 +14,10 @@ const BUDGETS: Array<{
 }> = [
   { metric: "microsecondsPerFourPlayerPhysicalTick", maximum: 250 },
   { metric: "microsecondsPerPlayerChurnTick", maximum: 250 },
+  { metric: "microsecondsPerCombatTick", maximum: 500 },
   { metric: "retainedPhysicsTraces", maximum: 180 },
+  { metric: "retainedGasTraces", maximum: 240 },
+  { metric: "retainedTcaTraces", maximum: 180 },
   { metric: "retainedEntitiesAfterDispose", maximum: 0 }
 ];
 

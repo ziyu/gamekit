@@ -71,6 +71,70 @@ describe("Outpost Browser multiplayer", () => {
     expect(client.identity.snapshot()).toHaveLength(0);
   });
 
+  it("materializes and presents replicated enemies, projectiles, and status feedback", async () => {
+    const backend = createMemoryMultiplayerBackend({ id: "outpost.client-combat.test" });
+    const server = createMultiplayerRuntime({ id: "server", backend });
+    const multiplayer = createMultiplayerRuntime({ id: "client", backend });
+    await server.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "session.server", role: "server" }
+    });
+    await multiplayer.joinSession({
+      sessionId: "session-1",
+      localPeer: { id: "ranger-1", role: "client", playerId: "player.ranger-1" }
+    });
+    const world = createKootaWorld();
+    const renderer = createMemoryRenderer("outpost.client-combat.renderer");
+    const targetStates = new Map<string, Record<string, unknown>>();
+    const client = createOutpostClientShadowRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world,
+      multiplayer,
+      physicsBackend: createMemoryPhysicsBackend(),
+      localPlayerId: "player.ranger-1",
+      renderer,
+      applyRenderTargetState(native, state) {
+        const object = native as { id: string };
+        targetStates.set(object.id, state.props ?? {});
+      }
+    });
+    await client.runtime.start();
+    const snapshot = authoritySnapshot(1, 1);
+    snapshot.combat.actors = [combatActor("enemy.opening.1", "enemy", "render.outpost.raider")];
+    snapshot.combat.projectiles = [combatProjectile("projectile.1")];
+    await sendSnapshot(server, snapshot);
+    client.runtime.tick(16);
+
+    expect(world.count()).toBe(3);
+    expect(client.identity.snapshot()).toHaveLength(3);
+    expect(renderer.objects().map((object) => object.id)).toEqual(
+      expect.arrayContaining([
+        "outpost.client.player.0.0",
+        "outpost.client.enemy.enemy.opening.1.0",
+        "outpost.client.projectile.projectile.1.0"
+      ])
+    );
+
+    snapshot.tick = 2;
+    snapshot.elapsedMs = 100;
+    snapshot.combat.actors[0]!.tags = ["status.shocked", "team.enemies"];
+    snapshot.combat.projectiles = [];
+    await sendSnapshot(server, snapshot);
+    client.runtime.tick(16);
+
+    expect(world.count()).toBe(2);
+    expect(client.identity.snapshot()).toHaveLength(2);
+    expect(targetStates.get("outpost.client.enemy.enemy.opening.1.0")).toMatchObject({
+      tint: 0x63fff2
+    });
+
+    await client.runtime.dispose();
+    await multiplayer.dispose();
+    await server.dispose();
+    expect(world.count()).toBe(0);
+  });
+
   it("automatically samples, predicts, sends, and reconciles local input", async () => {
     const backend = createMemoryMultiplayerBackend({ id: "outpost.client-prediction.test" });
     const server = createMultiplayerRuntime({ id: "server", backend });
@@ -254,6 +318,7 @@ function authoritySnapshot(tick: number, playerCount: number): OutpostClientAuth
   return {
     phase: "running",
     tick,
+    elapsedMs: tick * 50,
     countdownMsRemaining: 0,
     participants: Array.from({ length: playerCount }, (_, slot) => ({
       peerId: `ranger-${slot + 1}`,
@@ -275,9 +340,62 @@ function authoritySnapshot(tick: number, playerCount: number): OutpostClientAuth
       velocityY: 0,
       facing: 0
     })),
+    combat: {
+      actors: [],
+      projectiles: [],
+      acceptedCommands: 0,
+      rejectedCommands: 0,
+      projectileHits: 0,
+      enemyAttacks: 0,
+      kills: 0,
+      drops: 0,
+      objectiveProgress: 0
+    },
     inputAcksByPeerId: Object.fromEntries(
       Array.from({ length: playerCount }, (_, slot) => [`ranger-${slot + 1}`, tick])
     )
+  };
+}
+
+function combatActor(
+  objectId: string,
+  kind: "enemy" | "buildable",
+  renderKey: string
+): OutpostClientAuthoritySnapshot["combat"]["actors"][number] {
+  return {
+    objectId,
+    networkEntityId: objectId,
+    generation: 0,
+    kind,
+    definitionId: kind === "enemy" ? "enemy.outpost.raider" : "buildable.outpost.turret",
+    renderKey,
+    x: 680,
+    y: 500,
+    velocityX: 105,
+    velocityY: 0,
+    facing: 0,
+    health: 45,
+    shield: 0,
+    stamina: 0,
+    resource: 0,
+    tags: [kind === "enemy" ? "team.enemies" : "team.players"],
+    cooldowns: {}
+  };
+}
+
+function combatProjectile(
+  objectId: string
+): OutpostClientAuthoritySnapshot["combat"]["projectiles"][number] {
+  return {
+    objectId,
+    networkEntityId: objectId,
+    generation: 0,
+    renderKey: "render.outpost.projectile",
+    x: 720,
+    y: 500,
+    velocityX: 760,
+    velocityY: 0,
+    facing: 0
   };
 }
 

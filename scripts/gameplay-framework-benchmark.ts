@@ -25,6 +25,7 @@ function main(): void {
     runGasAbilityBenchmark(),
     runGasStackingBenchmark(),
     runGasEntityUpdateBenchmark(),
+    runGasExecutionUpdateBenchmark(),
     runGasEntityCleanupBenchmark()
   ];
   const budgetCheckEnabled = process.argv.includes("--check");
@@ -362,6 +363,65 @@ function runGasEntityCleanupBenchmark(): GameplayFrameworkBenchmarkSuite {
   };
 }
 
+function runGasExecutionUpdateBenchmark(): GameplayFrameworkBenchmarkSuite {
+  return {
+    suite: "gas-ability-execution-update",
+    cases: [
+      runGasExecutionUpdateCase("idle", false),
+      runGasExecutionUpdateCase("active", false),
+      runGasExecutionUpdateCase("active", true)
+    ]
+  };
+}
+
+function runGasExecutionUpdateCase(mode: "idle" | "active", traceEnabled: boolean) {
+  const actors = 1_000;
+  const ticks = mode === "idle" ? 120 : 16;
+  const tickMs = 25;
+  const { runtime, world } = createGasBenchmarkRuntime(traceEnabled);
+  for (let index = 0; index < actors; index += 1) {
+    const actorId = `execution-${index}`;
+    createEntityActor(runtime, world, actorId);
+    if (mode === "active") {
+      const result = runtime.requestAbilityExecution({
+        actorId,
+        abilityId: "ability.execution",
+        requestId: `execution-command-${index}`
+      });
+      if (result.status !== "accepted") {
+        throw new Error(`Unexpected benchmark execution rejection: ${result.reason}`);
+      }
+    }
+  }
+
+  const start = performance.now();
+  for (let tick = 1; tick <= ticks; tick += 1) {
+    runtime.update(tickMs, tick * tickMs);
+  }
+  const durationMs = performance.now() - start;
+  const snapshot = runtime.snapshot();
+  const retainedExecutions = snapshot.activeExecutions.length + snapshot.recentExecutions.length;
+  const retainedTraces = runtime.traceStore.list().length;
+  runtime.dispose();
+  const retainedAfterDispose =
+    runtime.snapshot().actors.length +
+    runtime.snapshot().activeExecutions.length +
+    runtime.snapshot().recentExecutions.length;
+
+  return {
+    actors,
+    mode,
+    trace: traceEnabled ? "enabled" : "disabled",
+    ticks,
+    retainedExecutions,
+    retainedTraces,
+    retainedAfterDispose,
+    durationMs: round(durationMs),
+    msPerTick: round(durationMs / ticks),
+    microsecondsPerActorTick: round((durationMs * 1_000) / (ticks * actors))
+  };
+}
+
 function createTcaRule(id: string, eventType: string): TcaRule {
   return {
     id,
@@ -371,7 +431,7 @@ function createTcaRule(id: string, eventType: string): TcaRule {
   };
 }
 
-function createGasBenchmarkRuntime() {
+function createGasBenchmarkRuntime(traceEnabled = true) {
   const world = createKootaWorld();
   const eventBus = createEventBus({ clock: () => 11 });
   const registry = createDataRegistry();
@@ -383,7 +443,7 @@ function createGasBenchmarkRuntime() {
     world,
     dataRegistry: registry,
     eventBus,
-    traceStore: createGasTraceStore({ limit: TRACE_LIMIT })
+    traceStore: createGasTraceStore({ enabled: traceEnabled, limit: TRACE_LIMIT })
   });
   return { runtime, world, eventBus };
 }
@@ -466,12 +526,24 @@ const GAS_BENCHMARK_PACK: DataPack = {
       }
     },
     {
+      type: "gas.ability",
+      id: "ability.execution",
+      data: {
+        id: "ability.execution",
+        execution: {
+          preparingMs: 100,
+          activeMs: 100,
+          recoveringMs: 100
+        }
+      }
+    },
+    {
       type: "gas.actor",
       id: "actor.benchmark",
       data: {
         id: "actor.benchmark",
         attributes: { health: 100_000 },
-        abilities: ["ability.hit"]
+        abilities: ["ability.hit", "ability.execution"]
       }
     }
   ]

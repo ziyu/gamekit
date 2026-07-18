@@ -1,6 +1,7 @@
 import { defineComponent } from "@gamekit/world";
 import type {
   GasAbilitiesComponentState,
+  GasAbilityExecutionsComponentState,
   GasActorComponentState,
   GasAttributesComponentState,
   GasEffectsComponentState,
@@ -40,6 +41,17 @@ export const GasAbilities = defineComponent<GasAbilitiesComponentState>({
     ids: [...(data?.ids ?? [])],
     cooldowns: { ...data?.cooldowns },
     disabled: [...(data?.disabled ?? [])]
+  })
+});
+
+export const GasAbilityExecutions = defineComponent<GasAbilityExecutionsComponentState>({
+  id: "gamekit.gas.ability-executions",
+  create: (data) => ({
+    active: (data?.active ?? []).map((execution) => ({
+      ...execution,
+      paidCosts: execution.paidCosts.map((cost) => ({ ...cost })),
+      appliedEffects: execution.appliedEffects.map((effect) => ({ ...effect }))
+    }))
   })
 });
 

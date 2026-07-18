@@ -31,6 +31,10 @@ import {
 const WARMUP_SNAPSHOTS = 500;
 const FOUR_PLAYER_SNAPSHOTS = 10_000;
 const CHURN_SNAPSHOTS = 2_000;
+const COMBAT_WARMUP_SNAPSHOTS = 40;
+const COMBAT_SNAPSHOTS = 500;
+const COMBAT_ENEMIES = 200;
+const COMBAT_PROJECTILES = 256;
 const FIXED_DELTA_MS = 1000 / 60;
 
 async function main(): Promise<void> {
@@ -81,6 +85,25 @@ async function main(): Promise<void> {
   }
   const churnDurationMs = performance.now() - churnStartedAt;
 
+  const combatTickOffset = WARMUP_SNAPSHOTS + FOUR_PLAYER_SNAPSHOTS + CHURN_SNAPSHOTS;
+  for (let tick = 0; tick < COMBAT_WARMUP_SNAPSHOTS; tick += 1) {
+    advanceCombatSnapshot(snapshot, combatTickOffset + tick + 1);
+    applySnapshot(client, multiplayer.emit, snapshot);
+  }
+  const expectedCombatEntities = 4 + COMBAT_ENEMIES + COMBAT_PROJECTILES;
+  if (world.count() !== expectedCombatEntities) {
+    throw new Error(
+      `Outpost combat benchmark expected ${expectedCombatEntities} materialized entities, received ${world.count()}.`
+    );
+  }
+  const combatStartedAt = performance.now();
+  for (let tick = 0; tick < COMBAT_SNAPSHOTS; tick += 1) {
+    advanceCombatSnapshot(snapshot, combatTickOffset + COMBAT_WARMUP_SNAPSHOTS + tick + 1);
+    applySnapshot(client, multiplayer.emit, snapshot);
+  }
+  const combatDurationMs = performance.now() - combatStartedAt;
+  const maximumCombatEntities = world.count();
+
   const schemaState = createOutpostColyseusState("benchmark.session", "benchmark.session.server");
   let maximumEstimatedSchemaStateBytes = 0;
   for (let tick = 0; tick < WARMUP_SNAPSHOTS; tick += 1) {
@@ -102,7 +125,27 @@ async function main(): Promise<void> {
     );
   }
   const schemaDurationMs = performance.now() - schemaStartedAt;
-  advanceSnapshot(snapshot, WARMUP_SNAPSHOTS + FOUR_PLAYER_SNAPSHOTS + CHURN_SNAPSHOTS + 1, 4);
+  let maximumCombatEstimatedSchemaStateBytes = 0;
+  for (let tick = 0; tick < COMBAT_WARMUP_SNAPSHOTS; tick += 1) {
+    advanceCombatSnapshot(snapshot, combatTickOffset + tick + 1);
+    projectOutpostMatchToColyseusState(schemaState, snapshot, tick * 50);
+    readOutpostColyseusStateUpdate(schemaState);
+  }
+  const combatSchemaStartedAt = performance.now();
+  for (let tick = 0; tick < COMBAT_SNAPSHOTS; tick += 1) {
+    advanceCombatSnapshot(snapshot, combatTickOffset + COMBAT_WARMUP_SNAPSHOTS + tick + 1);
+    projectOutpostMatchToColyseusState(schemaState, snapshot, tick * 50);
+    const update = readOutpostColyseusStateUpdate(schemaState);
+    if (update === undefined) {
+      throw new Error("Outpost combat benchmark could not decode projected Schema state.");
+    }
+    maximumCombatEstimatedSchemaStateBytes = Math.max(
+      maximumCombatEstimatedSchemaStateBytes,
+      update.stateBytes ?? 0
+    );
+  }
+  const combatSchemaDurationMs = performance.now() - combatSchemaStartedAt;
+  advanceSnapshot(snapshot, combatTickOffset + COMBAT_WARMUP_SNAPSHOTS + COMBAT_SNAPSHOTS + 1, 4);
   applySnapshot(client, multiplayer.emit, snapshot);
 
   if (world.count() !== 4 || client.identity.snapshot().length !== 4) {
@@ -124,7 +167,13 @@ async function main(): Promise<void> {
     microsecondsPerFourPlayerSchemaProjectionAndDecode: round(
       (schemaDurationMs * 1_000) / FOUR_PLAYER_SNAPSHOTS
     ),
+    microsecondsPerCombatSnapshot: round((combatDurationMs * 1_000) / COMBAT_SNAPSHOTS),
+    microsecondsPerCombatSchemaProjectionAndDecode: round(
+      (combatSchemaDurationMs * 1_000) / COMBAT_SNAPSHOTS
+    ),
     maximumEstimatedSchemaStateBytes,
+    maximumCombatEstimatedSchemaStateBytes,
+    maximumCombatEntities,
     rejectedSnapshots: diagnostics.rejectedSnapshots,
     predictionPendingInputs: predictionDiagnostics?.pendingInputs ?? 0,
     predictionCachedFrames: transitionDiagnostics?.cachedFrames ?? 0,
@@ -141,7 +190,10 @@ async function main(): Promise<void> {
           warmupSnapshots: WARMUP_SNAPSHOTS,
           fourPlayerSnapshots: FOUR_PLAYER_SNAPSHOTS,
           churnSnapshots: CHURN_SNAPSHOTS,
-          playersPerSnapshot: 4
+          playersPerSnapshot: 4,
+          combatSnapshots: COMBAT_SNAPSHOTS,
+          combatEnemies: COMBAT_ENEMIES,
+          combatProjectiles: COMBAT_PROJECTILES
         },
         result,
         ...(checkEnabled
@@ -167,9 +219,21 @@ function createSnapshot(): OutpostMatchAuthoritySnapshot {
   return {
     phase: "running",
     tick: 0,
+    elapsedMs: 0,
     countdownMsRemaining: 0,
     participants: [],
     players: [],
+    combat: {
+      actors: [],
+      projectiles: [],
+      acceptedCommands: 0,
+      rejectedCommands: 0,
+      projectileHits: 0,
+      enemyAttacks: 0,
+      kills: 0,
+      drops: 0,
+      objectiveProgress: 0
+    },
     inputAcksByPeerId: {},
     authorityInput: {
       acceptedActions: 0,
@@ -188,6 +252,9 @@ function advanceSnapshot(
   playerCount: number
 ): void {
   snapshot.tick = tick;
+  snapshot.elapsedMs = tick * 50;
+  snapshot.combat.actors = [];
+  snapshot.combat.projectiles = [];
   snapshot.participants = Array.from({ length: playerCount }, (_, slot) => ({
     peerId: `benchmark.peer.${slot + 1}`,
     playerId: `benchmark.player.${slot + 1}`,
@@ -211,6 +278,64 @@ function advanceSnapshot(
   snapshot.inputAcksByPeerId = Object.fromEntries(
     snapshot.participants.map((participant) => [participant.peerId, tick])
   );
+}
+
+function advanceCombatSnapshot(snapshot: OutpostMatchAuthoritySnapshot, tick: number): void {
+  advanceSnapshot(snapshot, tick, 4);
+  const playerActors = snapshot.players.map((player) => ({
+    objectId: player.playerId,
+    networkEntityId: player.networkEntityId,
+    generation: player.generation,
+    kind: "player" as const,
+    definitionId: player.archetypeId,
+    renderKey: "render.outpost.player",
+    x: player.x,
+    y: player.y,
+    velocityX: player.velocityX,
+    velocityY: player.velocityY,
+    facing: player.facing,
+    health: 100,
+    shield: 50,
+    stamina: 100,
+    resource: 100,
+    tags: ["team.players"],
+    cooldowns: {}
+  }));
+  const enemyActors = Array.from({ length: COMBAT_ENEMIES }, (_, index) => {
+    const lane = index % 4;
+    const row = Math.floor(index / 4);
+    return {
+      objectId: `benchmark.enemy.${index}`,
+      networkEntityId: `benchmark.enemy.${index}`,
+      generation: 0,
+      kind: "enemy" as const,
+      definitionId: "enemy.outpost.raider",
+      renderKey: "render.outpost.raider",
+      x: 280 + lane * 400 + ((tick + index) % 30) * 0.35,
+      y: 120 + (row % 18) * 42,
+      velocityX: lane % 2 === 0 ? 35 : -35,
+      velocityY: 12,
+      facing: lane % 2 === 0 ? 0 : Math.PI,
+      health: 45,
+      shield: 0,
+      stamina: 0,
+      resource: 0,
+      tags: index % 10 === 0 ? ["team.enemies", "status.shocked"] : ["team.enemies"],
+      cooldowns: { "ability.outpost.enemy_attack": snapshot.elapsedMs + (index % 9) * 100 }
+    };
+  });
+  snapshot.combat.actors = [...playerActors, ...enemyActors];
+  snapshot.combat.projectiles = Array.from({ length: COMBAT_PROJECTILES }, (_, index) => ({
+    objectId: `benchmark.projectile.${index}`,
+    networkEntityId: `benchmark.projectile.${index}`,
+    generation: 0,
+    renderKey: "render.outpost.projectile",
+    x: 180 + ((index * 37 + tick * 5) % 1440),
+    y: 100 + ((index * 53 + tick * 3) % 800),
+    velocityX: index % 2 === 0 ? 760 : -760,
+    velocityY: 0,
+    facing: index % 2 === 0 ? 0 : Math.PI
+  }));
 }
 
 function applySnapshot(

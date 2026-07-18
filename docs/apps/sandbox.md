@@ -6,13 +6,26 @@
 
 ## 定位
 
-Sandbox 是 GameKit 的框架验证面，用来证明 App Host、Data、Asset、Renderer、Input、Camera、Physics、TCA、GAS、EventBus、World 和 GameRuntime 能在一个可观察、可交互的场景里协同工作。
+Sandbox 是 GameKit 的多场景框架验证面。每个场景围绕一组明确能力提供最小但真实的交互闭环，用来证明 App Host、Data、Asset、Renderer、Input、Camera、Physics、TCA、GAS、Combat、EventBus、World 和 GameRuntime 能在可观察、可交互的应用中协同工作。
 
 Sandbox 不是长期玩法仓库，也不是 DevTools 的替代品。它可以像一个小 demo 游戏一样运行，但其目标是解释框架能力，而不是沉淀一套真实游戏内容生产线。
 
 Sandbox 的演示设计必须优先易懂：基础概念应该像普通小型游戏一样直觉，机制可以足够复杂，用来承载框架模块协作。不要用架构隐喻替代游戏对象；玩家不应该先理解 GameKit 才能看懂场景。
 
-## 演示游戏：Tiny Camp
+## 多场景验证台
+
+Sandbox 外壳只负责场景发现、选择、懒加载、启动状态和错误边界，不持有 gameplay world、模块 handle 或第三方 runtime。场景通过独立入口装配自己的 App Host、profile、DataRegistry、World、GameRuntime、UI 和 dispose 生命周期；切换场景等价于退出当前小型应用并启动另一个应用，不能复用上一场景的可变运行态。
+
+这一结构用于隔离验证条件，避免为了测试一个模块而被另一个大型演示的业务状态干扰。它也约束后续扩展：
+
+- 一个场景只验证一组相互依赖、能形成闭环的能力，不把所有 package 强行塞入同一运行时。
+- 场景目录可以包含自己的 DataPack、组件、game module、表现和测试，但游戏特有概念不能上推到通用 package。
+- 场景必须通过 package 公共协议和标准 GameModule/App Host 装配能力，不能复制底层 runtime 或绕开 core。
+- 原始 trace、服务状态和性能细节进入 GameKit DevTools；场景 UI 只展示玩家或测试者完成操作所需的目标、状态和结果。
+- 场景清单采用懒加载，未选择的场景不进入当前页面的启动与执行路径。
+- 场景选择可由外壳导航和稳定的 `scene` URL 参数表达，便于自动化测试、问题复现和直接分享。
+
+## 场景：Tiny Camp
 
 Sandbox 的主场景采用一个自动运行、可交互的放置式营地 demo：`Tiny Camp`。
 
@@ -376,6 +389,24 @@ Sandbox 必须有一套长期维护的长链路集成测试，用来证明 Tiny 
 7. Content Reference Chain：从选中对象能反查 Data document、asset、render rig、GAS actor、TCA/GAS 相关数据和 source pack，且不存在 missing reference diagnostic。
 
 长链路测试应尽量使用行为断言，不断言脆弱的时间点和完整数组顺序。必要时使用区间、存在性、单调增长、稳定 id、固定 seed 快照片段等方式，避免测试因为表现层微调而频繁失效。
+
+## 场景：Combat Proving Ground
+
+`Combat Proving Ground` 是 Combat package 的独立参考场景。它不是另一套战斗实现，而是只通过公开协议组合 Data、GAS、Physics、Combat、World 和 App Host，用一间可重复重置的训练场验证完整交付链。
+
+场景覆盖这些可观察行为：
+
+- melee：用短距离物理 overlap 选择敌对目标并应用 GAS effect。
+- hitscan：用即时物理 ray query 命中开放射线上的合法目标。
+- projectile：生成真实 world entity、Physics body/collider 和 Combat projectile 状态，由 tick 驱动飞行、命中和回收。
+- area：在同一区域放置多个敌方 actor 和一个友方 actor，用稳定候选选择一次命中多个合法目标，为每个目标应用 GAS Effect/Cue，同时证明 relationship policy 不误伤友军；场景表现必须同时显示范围、已锁定目标和逐目标命中反馈。
+- cover：让静态 Physics collider 阻断射线，验证命中候选与 blocker 的解释结果。
+- support：对友军 actor 定向应用恢复 effect，验证同一交付协议可承载非伤害效果。
+- reset：恢复 actor 属性并清理在途 projectile，使每种测试可从相同初始条件重新执行。
+
+训练场中的 actor、掩体和 projectile 都有可追踪的 world entity；属性和效果由 GAS 持有；delivery、projectile、physics body/collider、team policy 等引用来自场景 DataPack。玩家界面只呈现训练目标、操作入口、生命值、在途投射物和可理解的命中结果，完整 Combat/GAS/Physics trace 由 DevTools 提供。
+
+Combat 的公共职责、协议与 adapter 边界以 [`../modules/combat.md`](../modules/combat.md) 为准。训练场只拥有场景布局、测试对象、按钮文案和视觉表现等应用内容；任何可被其他游戏复用的交付、关系判定、物理查询、projectile 生命周期或 trace 能力都必须留在对应 core/package。
 
 ## 设计约束
 

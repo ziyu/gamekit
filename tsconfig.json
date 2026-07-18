@@ -14,6 +14,7 @@
     { "path": "./packages/physics-core" },
     { "path": "./packages/physics-rapier2d" },
     { "path": "./packages/physics-rapier3d" },
+    { "path": "./packages/combat" },
     { "path": "./packages/driver-core" },
     { "path": "./packages/driver-phaser" },
     { "path": "./packages/driver-three" },

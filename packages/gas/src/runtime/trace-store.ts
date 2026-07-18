@@ -1,6 +1,7 @@
 import type { GasTraceEntry, GasTraceStore } from "./types";
 
 export type CreateGasTraceStoreOptions = {
+  enabled?: boolean;
   limit?: number;
   onEntry?(entry: GasTraceEntry): void;
   onEntryError?(error: unknown, entry: GasTraceEntry): void;
@@ -18,6 +19,9 @@ export function createGasTraceStore(options: CreateGasTraceStoreOptions = {}): G
         id: `gas-trace-${sequence}`,
         ...entry
       };
+      if (options.enabled === false) {
+        return trace;
+      }
       entries.push(trace);
       if (entries.length > limit) {
         entries.shift();

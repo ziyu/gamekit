@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 
 import { outpostAppDefinition } from "./app-definition";
 import { applyOutpostInputAction, OUTPOST_ACTION, OUTPOST_VIEWPORT } from "./gameplay";
+import type { OutpostCombatAbility } from "./domain";
 import { createOutpostBrowserProfile, type OutpostBrowserContext } from "./profiles";
 import {
   createOutpostBrowserIdentity,
@@ -17,6 +18,7 @@ import {
   enterOutpostBrowserSession,
   loadOutpostBrowserServerConfig,
   normalizeOutpostSessionId,
+  sendOutpostCombatAction,
   sendOutpostReady,
   type OutpostBrowserSessionIntent
 } from "./realtime";
@@ -280,18 +282,53 @@ async function boot(root: HTMLElement): Promise<void> {
       return;
     }
     applyOutpostInputAction(client.input, event);
+    const combatAbility = combatAbilityForAction(event);
+    const authorityPeerId = client.snapshot().authorityPeerId;
+    if (combatAbility && authorityPeerId && activeContext.multiplayer) {
+      void sendOutpostCombatAction(activeContext.multiplayer, authorityPeerId, combatAbility, {
+        x: client.input.aimX,
+        y: client.input.aimY
+      });
+    }
+  }
+}
+
+function combatAbilityForAction(event: InputActionEvent): OutpostCombatAbility | undefined {
+  if (event.phase !== "pressed") {
+    return undefined;
+  }
+  switch (event.actionId) {
+    case OUTPOST_ACTION.primary:
+      return "rifle";
+    case OUTPOST_ACTION.dash:
+      return "dash";
+    case OUTPOST_ACTION.shockField:
+      return "shock-field";
+    case OUTPOST_ACTION.deployTurret:
+      return "deploy-turret";
+    default:
+      return undefined;
   }
 }
 
 function matchUiSignature(match: NonNullable<OutpostConnectionView["match"]>): string {
   const countdown = Math.ceil(match.countdownMsRemaining / 100);
+  const elapsed = Math.floor(match.elapsedMs / 100);
   const participants = match.participants
     .map(
       (participant) =>
         `${participant.peerId}:${participant.status}:${participant.ready}:${participant.slot ?? "x"}`
     )
     .join("|");
-  return `${match.phase}:${countdown}:${participants}`;
+  const actors = match.combat.actors
+    .map(
+      (actor) =>
+        `${actor.objectId}:${Math.round(actor.health)}:${Math.round(actor.shield)}:${Math.round(
+          actor.stamina
+        )}:${Math.round(actor.resource)}:${Object.values(actor.cooldowns).join(",")}`
+    )
+    .join("|");
+  return `${match.phase}:${countdown}:${elapsed}:${participants}:${actors}:${match.combat.kills}:${match.combat.rejectedCommands}`;
 }
 
 function updateSessionUrl(sessionId: string): void {

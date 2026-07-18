@@ -50,7 +50,7 @@ GameKit 不追求成为完整通用引擎。
 - 不把 TCA/GAS 用作每帧高频逻辑。
 - 不在核心包中直接绑定 Phaser、Koota、GSAP、shadcn/ui 等具体库。
 - 不把 Tauri、DOM、Phaser input、renderer camera 等平台/后端能力直接泄漏给 gameplay。
-- 不为了工具本身引入独立 Effect/Fx/Animation 业务层；它们应按需存在于基础设施或表现层内部。
+- 不为 clip/mixer、粒子或 tween 重新包装独立 Effect/Fx/Animation 引擎；跨后端的语义动画状态控制只进入可选 Animator toolkit，底层播放仍归 Renderer/Driver。
 - 不为了提前泛化而设计没有真实使用场景的复杂抽象。
 
 ## 设计信条

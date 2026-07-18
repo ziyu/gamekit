@@ -41,6 +41,7 @@ World Entity
   ├─ GasAttributesComponent
   ├─ GasTagsComponent
   ├─ GasAbilitiesComponent
+  ├─ GasAbilityExecutionsComponent
   └─ GasEffectsComponent
 ```
 
@@ -88,12 +89,23 @@ activation request
 → tag requirement / blocked tag
 → cost check
 → cooldown check
-→ apply effects
-→ emit cues/events
-→ write trace
+→ execution requested / preparing
+→ cost and cooldown commit
+→ active / apply configured effects
+→ recovering
+→ completed or cancelled
+→ emit phase/cue/events and trace
 ```
 
 Ability 可以由输入、AI、TCA rule、剧情、回合开始、区域进入、碰撞、计时器或任意低频事件触发。高频逐帧逻辑不应通过 TCA 扫描规则完成。
+
+Ability execution lifecycle 使用 `requested → preparing → committed → active → recovering → completed/cancelled`。Definition 可以声明各 phase 时长、cost/cooldown commit policy、interrupt tags 和 cancellation policy；instant ability 等价于零时长 phase，但仍经过同一 execution/trace contract。
+
+`requestAbilityExecution(...)` 是新调用路径，返回可查询的稳定 execution id。同一 `requestId` 与同一 actor/ability/target 重试时只返回已有 execution，不重复扣费；同 id 却不同请求会稳定拒绝。`getAbilityExecution(...)`、`listAbilityExecutions(...)` 和 `cancelAbilityExecution(...)` 同时由 Runtime 与 module-bound Handle 提供。原有 `activateAbility(...)` 保留为即时兼容入口：零时长 ability 仍在同一次调用内同步完成，有时长的 ability 返回已接受后的当前 phase。未声明 `execution` 的旧即时 Ability 使用新的内部 state/result contract，但不新增 phase/completed EventBus facts 或 phase trace；只有显式 execution 才输出完整 phase event/cue/trace，避免兼容内容挤占有界玩法与诊断窗口。
+
+Runtime 必须对每 Actor 的 active execution 数量和 recent terminal history 设硬上限。Ability 可用 `maxConcurrent` + `reject-newest/cancel-oldest` 定义自身并发 policy；Runtime 的 `maxActivePerActor` 是不可被内容绕过的保护上限。Active state 放在按需挂载的 `GasAbilityExecutions` component，空闲 Actor 不持有空 component；终态只保留有界诊断历史，dispose 后不得留下 execution、request dedupe 或 entity mapping。
+
+GAS 只拥有 ability phase、cost、cooldown、tag、effect 和 cue。瞄准、目标候选、melee/hitscan/projectile/area delivery、阵营关系和命中去重属于 `@gamekit/combat` 或游戏注入 policy。Gameplay timing 不能等待 renderer animation marker；Animator Core 根据 execution phase 恢复表现相位。
 
 ## Effect
 
@@ -119,7 +131,9 @@ GAS 复用 TCA，不重新实现规则系统。GAS 自己提供 TCA definitions�
 
 - `gas.actor.has_tag`
 - `gas.attribute.compare`
+- `gas.execution.phase`
 - `gas.activate_ability`
+- `gas.cancel_ability_execution`
 - `gas.apply_effect`
 - `gas.modify_attribute`
 
@@ -142,6 +156,14 @@ GAS 不直接调用 Renderer、Camera、Audio 或 UI adapter。Cue 通过 EventB
 
 `@gamekit/fx` 不作为默认独立业务包。Cue/Presentation 由 GAS、Renderer、UI、Camera 共同消费。
 
+Ability execution 与 Effect 是 Cue 的两个标准来源：
+
+- `phaseCues` 表达 `preparing/committed/active/recovering/completed/cancelled` 阶段的表现意图，例如前摇、释放、后摇和取消反馈。
+- Ability `cues` 在 active 阶段表达能力已经生效的通用表现。
+- Effect `cues` 只在 effect 成功 apply、refresh 或 replace 后发出，表达伤害、治疗、状态附加和受击等结果表现；effect 被拒绝时不能误发成功 Cue。
+
+GAS Cue 是通用 gameplay presentation intent 的唯一语义来源，Combat、Animator、Renderer、Audio、Camera 和 UI 不应再建立一套同义 Cue registry。Cue 不承载动态射线端点、命中点、法线、弹道、遮挡点或每帧 projectile transform；这些空间事实由 Combat/Physics/World 保持，并通过同一 `correlationId`、execution id、hit ticket 或 projectile id 在 presentation bridge 中与 Cue 关联。表现层可以在没有精确空间事实时退化到 source/target Actor 的 entity transform，但不能反向影响 effect 是否生效。
+
 ## Trace
 
 GAS trace 需要能关联：
@@ -162,7 +184,7 @@ Trace store 可配置轻量 entry hook，由 App Host 组合层把已物化 trac
 
 ## Save 边界
 
-`createGasSaveContributor({ handle })` 通过 module-bound `GasHandle` 捕获 elapsed、actor attributes/tags/abilities/cooldowns 和 active effects。Restore 使用 `SaveRestoreContext.entityMap` 重绑定 entity-backed actor，保留 detached actor，并同步 active effect id sequence；trace 与 EventBus 历史不进入存档。World contributor 不应重复保存 GAS-owned components。
+`createGasSaveContributor({ handle })` 通过 module-bound `GasHandle` 捕获 elapsed、actor attributes/tags/abilities/cooldowns、active effects 和 non-terminal ability executions。Restore 使用 `SaveRestoreContext.entityMap` 重绑定 entity-backed actor，保留 detached actor，并同步 active effect/execution id sequence 与 request dedupe；Actor、Ability、target、phase、timestamp、并发上限和 request id 必须在替换 runtime state 之前完成预校验，无效 checkpoint 不得留下半恢复状态。旧 checkpoint 没有 `executions` 时按空列表兼容。Trace、terminal history 与 EventBus 历史不进入存档。World contributor 不应重复保存 GAS-owned components。
 
 ## 与 DataPack 的关系
 
@@ -175,11 +197,11 @@ GAS 不要求游戏必须按 GAS 类型组织内容文件。真实项目可以�
 ### 模块集成
 
 - GAS module 集成负责从 DataRegistry 读取 definitions、创建 ECS-backed runtime、注册 effect tick system、合并 TCA definitions、写 trace，并在 GameRuntime dispose 时清理。多个业务模块需要 GAS 时共享同一个 module-bound `GasHandle`，不各自创建 runtime 或通过全局变量捕获内部实例。
-- 修改 ability/effect runner、stack policy、entity actor mapping 或 tick persistence 时运行 `corepack pnpm bench:gameplay:check`。基准分别覆盖 ability→effect→attribute→cue、bounded stacking、idle/periodic entity actor update 和 stale entity cleanup；预算用于发现数量级退化，不替代目标平台 profiler。
+- 修改 ability/execution/effect runner、stack policy、entity actor mapping 或 tick persistence 时运行 `corepack pnpm bench:gameplay:check`。基准分别覆盖 ability→effect→attribute→cue、bounded stacking、1,000 idle/active executions、trace disabled/enabled、idle/periodic entity actor update 和 stale entity cleanup；预算用于发现数量级退化，不替代目标平台 profiler。
 - Actor 与 EntityId 的绑定、save/load entity mapping、spawn/despawn 策略由 game module 或 Save contributor 明确处理；业务 despawn 优先显式 `removeActor`，runtime 的 stale mapping cleanup 只是生命周期安全网。
-- 修改 GAS checkpoint capture/restore、entity remap 或 active effect continuation 时运行 `corepack pnpm bench:checkpoint:check`。
+- 修改 GAS checkpoint capture/restore、entity remap、active effect 或 ability execution continuation 时运行 `corepack pnpm bench:checkpoint:check`；GAS case 必须同时携带 1,000 actors、500 active effects 和 500 active executions，不得只测空 execution 存档。
 - 修改 trace entry hook 或跨模块 correlation mapping 时运行 `corepack pnpm bench:diagnostics:check`；timeline、domain trace store 和 correlation summary 必须各自有界。
-- 测试应覆盖 cost/cooldown/tag requirement、effect stack/expire/periodic、attribute modifier、cue dispatch、entity binding、save/restore 边界和 TCA integration。
+- 测试应覆盖 execution phase ordering/zero-duration/request dedupe/cancel/interrupt/concurrency、cost/cooldown/tag requirement、effect stack/expire/periodic、attribute modifier、cue dispatch、entity binding、save/restore 边界和 TCA integration。
 
 ### 模块使用
 

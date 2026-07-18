@@ -56,5 +56,49 @@ function validateGasSection(section: SaveSection<GasRuntimeCheckpoint>): SaveVal
       path: "data.actors"
     });
   }
+  if (section.data.executions !== undefined && !Array.isArray(section.data.executions)) {
+    issues.push({
+      code: "gas.save_invalid_executions",
+      message: "GAS save executions must be an array when present",
+      severity: "error",
+      path: "data.executions"
+    });
+  } else {
+    for (const [index, execution] of (section.data.executions ?? []).entries()) {
+      if (
+        !execution.id ||
+        !execution.actorId ||
+        !execution.abilityId ||
+        !ACTIVE_EXECUTION_PHASES.has(execution.phase)
+      ) {
+        issues.push({
+          code: "gas.save_invalid_execution",
+          message: "GAS save execution requires ids and a non-terminal phase",
+          severity: "error",
+          path: `data.executions[${index}]`
+        });
+      }
+      if (
+        !Number.isFinite(execution.requestedAt) ||
+        !Number.isFinite(execution.phaseStartedAt) ||
+        (execution.phaseEndsAt !== undefined && !Number.isFinite(execution.phaseEndsAt))
+      ) {
+        issues.push({
+          code: "gas.save_invalid_execution_time",
+          message: "GAS save execution timestamps must be finite",
+          severity: "error",
+          path: `data.executions[${index}]`
+        });
+      }
+    }
+  }
   return issues;
 }
+
+const ACTIVE_EXECUTION_PHASES = new Set([
+  "requested",
+  "preparing",
+  "committed",
+  "active",
+  "recovering"
+]);

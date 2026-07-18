@@ -377,6 +377,9 @@ importers:
       '@gamekit/camera-core':
         specifier: workspace:*
         version: link:../../packages/camera-core
+      '@gamekit/combat':
+        specifier: workspace:*
+        version: link:../../packages/combat
       '@gamekit/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -410,6 +413,12 @@ importers:
       '@gamekit/input-dom':
         specifier: workspace:*
         version: link:../../packages/input-dom
+      '@gamekit/physics-core':
+        specifier: workspace:*
+        version: link:../../packages/physics-core
+      '@gamekit/physics-rapier2d':
+        specifier: workspace:*
+        version: link:../../packages/physics-rapier2d
       '@gamekit/platform-web':
         specifier: workspace:*
         version: link:../../packages/platform-web
@@ -565,6 +574,40 @@ importers:
       '@gamekit/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/combat:
+    dependencies:
+      '@gamekit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@gamekit/data':
+        specifier: workspace:*
+        version: link:../data
+      '@gamekit/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@gamekit/game-runtime':
+        specifier: workspace:*
+        version: link:../game-runtime
+      '@gamekit/gas':
+        specifier: workspace:*
+        version: link:../gas
+      '@gamekit/physics-core':
+        specifier: workspace:*
+        version: link:../physics-core
+      '@gamekit/save':
+        specifier: workspace:*
+        version: link:../save
+      '@gamekit/world':
+        specifier: workspace:*
+        version: link:../world
+    devDependencies:
+      '@gamekit/physics-rapier2d':
+        specifier: workspace:*
+        version: link:../physics-rapier2d
+      '@gamekit/world-koota':
+        specifier: workspace:*
+        version: link:../world-koota
 
   packages/core: {}
 

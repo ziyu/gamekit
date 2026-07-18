@@ -35,15 +35,21 @@ const BUDGETS: CheckpointBudget[] = [
   },
   {
     suite: "gas-checkpoint",
-    where: { actors: 1_000, activeEffects: 500, cycles: 20 },
+    where: { actors: 1_000, activeEffects: 500, activeExecutions: 500, cycles: 20 },
     metric: "msPerCapture",
     maximum: 10
   },
   {
     suite: "gas-checkpoint",
-    where: { actors: 1_000, activeEffects: 500, cycles: 20 },
+    where: { actors: 1_000, activeEffects: 500, activeExecutions: 500, cycles: 20 },
     metric: "msPerRestore",
     maximum: 30
+  },
+  {
+    suite: "gas-checkpoint",
+    where: { actors: 1_000, activeEffects: 500, activeExecutions: 500, cycles: 20 },
+    metric: "restoredExecutions",
+    maximum: 500
   },
   {
     suite: "physics-checkpoint",

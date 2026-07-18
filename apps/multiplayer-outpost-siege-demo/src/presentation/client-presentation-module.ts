@@ -9,16 +9,17 @@ import {
   createOutpostArenaRenderObjectDefinitions,
   type OutpostRenderTargetWriter
 } from "./preview-presentation-module";
-import { createOutpostPlayerRenderObjectDefinition } from "./player-render-object";
+import { createOutpostDynamicRenderObjectDefinition } from "./player-render-object";
 
 export type CreateOutpostClientPresentationModuleOptions = {
   dataRegistry: DataRegistry;
   renderer: RendererAdapter;
   applyRenderTargetState?: OutpostRenderTargetWriter | undefined;
-  readPlayerState?(playerId: string):
+  readObjectState?(objectId: string):
     | {
         position: { x: number; y: number };
         facing: number;
+        tags?: readonly string[] | undefined;
       }
     | undefined;
 };
@@ -31,7 +32,7 @@ export function createOutpostClientPresentationModule(
     id: "outpost.client.presentation",
     install(ctx) {
       const arenaObjectIds = new Set<string>();
-      const playerObjectIds = new Set<string>();
+      const dynamicObjectIds = new Set<string>();
       const signatures = new Map<string, string>();
       let arenaCreated = false;
 
@@ -47,7 +48,7 @@ export function createOutpostClientPresentationModule(
             arenaCreated = true;
           }
 
-          const desiredPlayerObjectIds = new Set<string>();
+          const desiredObjectIds = new Set<string>();
           for (const entity of ctx.world.query([
             OutpostPresentation,
             OutpostGameplayObject,
@@ -56,29 +57,31 @@ export function createOutpostClientPresentationModule(
             const presentation = ctx.world.get(entity, OutpostPresentation);
             const object = ctx.world.get(entity, OutpostGameplayObject);
             const transform = ctx.world.get(entity, PhysicsTransformComponent);
-            if (!presentation || !object || !transform || object.kind !== "player") {
+            if (!presentation || !object || !transform || object.kind === "arena-boundary") {
               continue;
             }
-            const presented = options.readPlayerState?.(object.id);
+            const presented = options.readObjectState?.(object.id);
             const position = presented?.position ?? transform.position;
             const facing = presented?.facing ?? object.facing;
             const objectId = presentation.renderObjectId ?? object.id;
-            desiredPlayerObjectIds.add(objectId);
-            if (!playerObjectIds.has(objectId)) {
+            desiredObjectIds.add(objectId);
+            if (!dynamicObjectIds.has(objectId)) {
               options.renderer.createObject(
-                createOutpostPlayerRenderObjectDefinition(
+                createOutpostDynamicRenderObjectDefinition(
                   options.dataRegistry,
                   presentation.renderKey,
                   objectId,
                   position.x,
                   position.y,
-                  facing
+                  facing,
+                  [`outpost.client-${object.kind}`]
                 )
               );
-              playerObjectIds.add(objectId);
+              dynamicObjectIds.add(objectId);
             }
 
-            const signature = `${position.x.toFixed(3)}:${position.y.toFixed(3)}:${facing.toFixed(3)}`;
+            const shocked = presented?.tags?.includes("status.shocked") ?? false;
+            const signature = `${position.x.toFixed(3)}:${position.y.toFixed(3)}:${facing.toFixed(3)}:${shocked ? 1 : 0}`;
             if (signatures.get(objectId) === signature) {
               continue;
             }
@@ -89,30 +92,31 @@ export function createOutpostClientPresentationModule(
                 transform: {
                   position: { x: position.x, y: position.y },
                   rotation: { z: facing }
-                }
+                },
+                props: { tint: shocked ? 0x63fff2 : 0xffffff }
               });
             }
           }
 
-          for (const objectId of playerObjectIds) {
-            if (desiredPlayerObjectIds.has(objectId)) {
+          for (const objectId of dynamicObjectIds) {
+            if (desiredObjectIds.has(objectId)) {
               continue;
             }
             options.renderer.destroyObject(objectId);
-            playerObjectIds.delete(objectId);
+            dynamicObjectIds.delete(objectId);
             signatures.delete(objectId);
           }
         }
       });
 
       return () => {
-        for (const objectId of playerObjectIds) {
+        for (const objectId of dynamicObjectIds) {
           options.renderer.destroyObject(objectId);
         }
         for (const objectId of arenaObjectIds) {
           options.renderer.destroyObject(objectId);
         }
-        playerObjectIds.clear();
+        dynamicObjectIds.clear();
         arenaObjectIds.clear();
         signatures.clear();
         arenaCreated = false;

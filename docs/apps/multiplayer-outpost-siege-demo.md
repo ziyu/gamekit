@@ -2,7 +2,7 @@
 
 ## 定位
 
-Outpost Siege 是 GameKit 的全框架综合验证应用。它通过一局可持续游玩的 2D 俯视角合作防守与撤离游戏，在同一条真实产品链路中验证 Core Runtime、App Host、Data、Asset、World、Input、Camera、Physics、TCA、GAS、Multiplayer、Renderer、UI、Save、Platform 和 DevTools。
+Outpost Siege 是 GameKit 的全框架综合验证应用。它通过一局可持续游玩的 2D 俯视角合作防守与撤离游戏，在同一条真实产品链路中验证 Core Runtime、App Host、Data、Asset、World、Input、Camera、Physics、Combat、TCA、GAS、AI、Navigation、Multiplayer、Animator、Renderer、Audio、UI、Save、Platform 和 DevTools。
 
 多人仍然是应用的运行前提之一，但不再是唯一验证目标。Outpost Siege 必须证明这些模块能够在一个 server-authoritative、数据驱动、实体化、物理化并可保存、可解释的游戏中协同工作，而不是分别存在于孤立实验台。
 
@@ -14,6 +14,12 @@ Outpost Siege 是 GameKit 的全框架综合验证应用。它通过一局可持
 - Outpost Siege 验证一套完整 GameKit 应用组合是否能支撑真实多人战斗、内容资源、UI、存档、诊断和长期负载。
 
 Outpost Siege 是应用验证面，不是核心协议来源。玩家、敌人、武器、炮塔、波次、撤离和资源等概念保持 app-local；只有经过第二个稳定场景验证的通用能力才允许下沉到 GameKit package。
+
+## 文档职责
+
+本文只定义 Outpost Siege 作为综合验证应用时的框架合同、模块边界、authority、数据资源、复制、存档、诊断和性能要求。面向玩家的完整规则由 [`outpost-siege/`](./outpost-siege/README.md) 专属目录维护，包括单局流程、角色能力、战斗、动画与反馈、敌人 AI、建造经济、关卡波次、多人协作、胜负、游戏 UI 和可玩性质量标准。
+
+当玩法设计需要新的底层能力时，先在 app-local module 中通过现有 Core 协议组合；只有形成跨应用需求后才进入对应模块设计。本文不得为某个玩法规则建立平行的框架事实，玩法文档也不得重新定义 authority、第三方 adapter 或 package 边界。
 
 ## 验证合同
 
@@ -29,10 +35,15 @@ Outpost Siege 的完成标准不是“package 被 import 过”，而是每个�
 | Input                     | movement/aim continuous input、ability/build/interact action、UI scope                   | Browser client                                        | scope/context、held state、network input/action mapping            |
 | Camera                    | follow、lookahead、zoom anchor、shake、坐标转换                                          | Browser GameModule                                    | controller state、driver sync、UI/DevTools scope isolation         |
 | Physics                   | movement、projectile、hitbox/hurtbox、obstacle、placement query                          | Server authority                                      | fixed step、contact/query、entity mapping、cleanup、benchmark      |
+| Combat                    | projectile/hitscan/area/melee delivery、relationship、hit resolution                     | Server authority                                      | stable hit、dedupe、effect delivery、trace、churn benchmark        |
 | TCA                       | 状态反应、击杀链、波次、目标、掉落和低频组合规则                                         | Server authority / local authority test               | condition/action trace、priority/once、derived event chain         |
 | GAS                       | Actor、Attribute、Tag、Ability、Effect、Cue、Cooldown、Cost                              | Server authority / local authority test               | activation/rejection、effect lifecycle、trace、replicated view     |
+| AI                        | perception、utility goal、task、attack slot、budget scheduler                            | Server authority                                      | deterministic decision、interrupt、trace、250/1,000 agent budget   |
+| Navigation                | authored route、path query、dynamic blocker/cost、route cache                            | Server authority / content fixture                    | required path、revision、cache、request budget、stuck recovery     |
 | Multiplayer               | Room-owned authority、participant lifecycle、Schema replication、prediction/presentation | Colyseus server + clients                             | real integration、source gate、reconnect、room isolation、soak     |
+| Animation                 | semantic graph、layer、ability phase、one-shot、late-join restore                        | Browser GameModule + Driver adapter                   | controller lifecycle、phase seek、marker dedupe、batch budget      |
 | Renderer / Driver         | Phaser render objects、asset cache、native presentation path                             | Browser App Host                                      | object lifecycle、render sync、driver snapshot、frame budget       |
+| Audio                     | bus、listener、voice、cue、priority/concurrency、spatial source                          | Browser Driver / headless fixture                     | adapter lifecycle、dedupe、voice budget、unlock/error diagnostics  |
 | UI                        | Lobby、HUD、ability/effect、build menu、results、DevTools shell                          | React UI service                                      | snapshot/selector、focus bridge、responsive/reduced-motion E2E     |
 | Save                      | authority checkpoint、deterministic restore、client-local preferences                    | Headless server/test + Platform store                 | contributor order、migration、save/load/tick continuation          |
 | Platform                  | Web 正式路径、headless server、Tauri desktop smoke                                       | App profile                                           | capability selection、storage/filesystem、permission/error mapping |
@@ -40,40 +51,18 @@ Outpost Siege 的完成标准不是“package 被 import 过”，而是每个�
 
 代表性正式组合固定为：
 
-- Browser：Platform Web + App Host + Phaser Driver + Koota World + Colyseus client + React UI。
-- Server：Headless App Host + Koota World + Rapier 2D + Colyseus Room-owned authority。
+- Browser：Platform Web + App Host + Phaser Driver + Koota World + Animation/Audio adapter + Colyseus client + React UI。
+- Server：Headless App Host + Koota World + Rapier 2D + Combat + AI/Navigation + Colyseus Room-owned authority。
 - Deterministic fixture：Headless Host + memory platform/save/renderer + memory Multiplayer 或 in-process authority。
 - Desktop smoke：Platform Tauri + Phaser Driver + 与 Web 相同的 client gameplay/presentation contract。
 
 Outpost Siege 不需要重复覆盖 Three Driver、Rapier 3D 等每个 backend 变体；这些继续由专属 Lab 和 conformance test 负责。综合 Demo 验证的是稳定 facade 和代表性 production adapter 的协作。
 
-## 游戏体验
+## 玩法承载原则
 
-玩家组成最多四人的小队，在前线哨站中收集共享资源、建造防御设施、抵御多波敌人，并在最终阶段启动撤离装置。
+综合验证必须发生在 [`outpost-siege/game-flow.md`](./outpost-siege/game-flow.md) 定义的真实单局中，而不是通过独立按钮、隐藏脚本或正式 HUD 上的调试操作触发。玩法内容数量可以克制，但从大厅、战斗、整备、首领、撤离到结算的生命周期必须完整。
 
-```txt
-room setup
-  -> lobby / loadout / ready
-  -> content preload
-  -> countdown
-  -> wave
-  -> intermission / build / checkpoint
-  -> elite or boss wave
-  -> extraction
-  -> results
-  -> rematch or room close
-```
-
-完整玩法至少包含：
-
-- 玩家移动、瞄准、主武器射击、冲刺和一个区域能力。
-- 炮塔和路障建造，包含资源、冷却、占位、视线和物理范围校验。
-- 近战敌人、远程敌人和一个具有阶段切换的 boss。
-- 投射物、命中、伤害、护盾、击退、持续效果、死亡、复活和传送。
-- 共享资源、唯一掉落物竞争、波次目标和撤离目标。
-- Lobby、ready、results、rematch、spectator、disconnect 和 reconnect。
-
-内容数量保持克制，但系统交互必须完整。每个玩法元素都应承担明确的框架验证职责，不能为了展示而增加绕过框架的数据或表现特例。
+玩法元素承担验证职责时仍以玩家体验为先。框架不得要求游戏代码显式驱动 interpolation、prediction、reconciliation、asset cache 或 renderer backend；应用只提供配置、内容、输入意图和 authority 投影。诊断信息进入 DevTools，不能复制成游戏 HUD。
 
 ## Entity 与身份模型
 
@@ -101,10 +90,12 @@ Colyseus Room 是在线 session 的 authority 和 server simulation 生命周期
 ```txt
 multiplayer ingress
   -> participant/input intent
-  -> player movement and AI steering
+  -> player input / AI perception, decision and task intent
+  -> navigation route and movement steering
+  -> GAS ability execution phase
   -> physics world sync and fixed step
   -> contact/query facts
-  -> combat validation and GAS activation/effects
+  -> combat delivery validation and GAS effects
   -> TCA reactions, objective and lifecycle rules
   -> entity spawn/despawn and cleanup
   -> save/checkpoint dirty state
@@ -117,15 +108,15 @@ GameRuntime 不需要获得全局 phase catalog；Outpost app 通过明确 GameM
 
 离线 deterministic fixture 与在线 server 使用同一套 app gameplay modules、DataPack 和 simulation contract。测试 transport 可以替换，但不能复制第二套 combat reducer。
 
-## 物理化战斗系统
+## 玩法系统的框架承载
 
-战斗系统建立在 World + Physics + GAS + TCA 的分层之上：
+玩法文档中的射击、冲刺、战术模块、设施、敌人攻击、倒地救援、波次和目标统一建立在 World + Physics + Combat + GAS + TCA 分层之上；AI 与 Navigation 只产生可验证 intent，不绕过这条链：
 
 ```txt
 Input / AI intent
   -> authority validation
-  -> GAS ability cost/cooldown/tag gate
-  -> app combat action or projectile entity
+  -> GAS ability execution/cost/cooldown/tag gate
+  -> Combat delivery or projectile entity
   -> Physics movement/query/contact
   -> semantic hit candidate
   -> team/owner/target validation
@@ -135,22 +126,22 @@ Input / AI intent
   -> GAS cue / replicated presentation fact
 ```
 
-职责固定如下：
+框架职责固定如下：
 
 - World 保存实体热状态、movement intent、projectile、lifetime、team、spawn identity 和 authority-owned combat bindings。
 - Physics 只决定空间、运动、碰撞、trigger 和 query；不决定伤害、阵营、暴击或技能结果。
+- Combat 决定 delivery、target relationship、hit ticket、projectile/hitscan/area/melee executor 和 effect 交付；不定义 Outpost 数值或敌我枚举。
 - GAS 决定 Actor、Attribute、Tag、Ability、Cost、Cooldown、Effect、Cue 和可解释的 activation/rejection。
-- TCA 决定低频反应和组合规则，例如护盾破裂、状态联动、击杀掉落、波次推进、boss phase 和撤离条件。
+- TCA 决定低频反应和组合规则，例如护盾破裂、状态联动、击杀奖励、波次推进、boss phase 和撤离条件。
 - 高频 steering、movement、projectile integration、contact collection 和 renderer sync 使用 system，不用 TCA/GAS 逐帧扫描。
 
-基础能力集至少验证：
+所有具体武器、模块、设施和敌人都通过相同的通用 app-local 机制实例化：
 
-- `rifle.fire`：GAS 校验弹药/热量/冷却，app combat module 生成 server-owned projectile entity，Physics 命中后施加 damage effect。
-- `dash`：GAS 校验 stamina、cooldown 和 blocked tag，movement/Physics 执行冲刺，客户端只做有限表现预测。
-- `shock.field`：Physics overlap query 产生候选，玩法层校验阵营和范围，GAS 应用 damage + shocked duration effect。
-- `turret.deploy`：Multiplayer action + Physics placement query + shared resource cost，生成同时具有 GAS actor、Physics body 和 RenderObject projection 的建筑 entity。
-- `enemy.attack`：AI 选择目标，Physics/距离校验，GAS 激活攻击并应用效果。
-- `status.reaction`：TCA 监听 GAS/physics 低频事实，在条件满足时触发额外 effect、cue 或 objective update。
+- 主动行为通过 GAS 校验 cost、cooldown、tag 和 target，由 app gameplay module 创建 projectile、query 或 action。
+- 命中先由 Physics 产生候选，再由玩法层校验阵营、owner、target 和当前 match state，最后应用 GAS effect。
+- 设施部署通过 Multiplayer action、Physics placement query、共享资源规则和 entity materialization 完成。
+- AI 只提交移动和能力意图，不能绕过与玩家相同的 authority combat、Physics 和 GAS 边界。
+- TCA 消费语义化低频 fact，在条件满足时触发额外 effect、cue、奖励或 objective update。
 
 GAS/TCA 的内部 runtime state、trace 和 handler 不复制到客户端。客户端只消费 authority 投影出的 attributes、tags、cooldowns、active effect summary、combat results 和 cue facts。客户端不得重新运行 TCA/GAS 来决定伤害或效果是否成立。
 
@@ -176,6 +167,9 @@ imagegen art sources outside public runtime root
 Outpost app 自定义 DataType 可以描述 player archetype、enemy archetype、weapon、buildable、wave、objective 和 arena scene placement，并通过 DataRef 组合：
 
 - `gas.actor`、`gas.ability`、`gas.effect`、`gas.tag`、`gas.cue`
+- `combat.delivery`、`combat.projectile`
+- `ai.agent`、`ai.goal`、`ai.task`、`navigation.layout`、`navigation.profile`
+- `animation.clip`、`animator.graph`、`animator.binding`
 - `tca.rule`
 - `physics.body`、`physics.collider`、`physics.material`、`physics.scene`、`physics.layout`
 - `render.object`
@@ -183,7 +177,7 @@ Outpost app 自定义 DataType 可以描述 player archetype、enemy archetype�
 
 资源只能通过 AssetRef / asset id 进入 render、UI 或 cue presentation。Gameplay definition 不直接保存 URL，Renderer 不自行加载资源，Phaser asset loader 不读取 gameplay DataPack。
 
-当前 2D 地面、模块化静态物体、单位和标题徽章由内置 imagegen 生成高分辨率美术源，保存在 Web `public` 之外；Browser profile 只加载经过裁切、透明边界清理、尺寸归一和压缩的 WebP，运行时 manifest 同时记录源路径、产物 URL、像素尺寸和 fit/padding。格式转换属于 app 内容构建，不在 Phaser Driver 或 gameplay 中增加 Outpost 特判。墙段、路障、掩体和立柱各自复用一张紧边界透明纹理；重复关卡实例不重复加载资源。后续大规模单位动画应继续演进为 atlas/压缩纹理 variant，而不是逐实体加载独立源图。
+2D 地面、模块化静态物体、单位和标题徽章使用内置 imagegen 生成高分辨率美术源，并保存在 Web `public` 之外；Browser profile 只加载经过裁切、透明边界清理、尺寸归一和压缩的 WebP，运行时 manifest 同时记录源路径、产物 URL、像素尺寸和 fit/padding。格式转换属于 app 内容构建，不在 Phaser Driver 或 gameplay 中增加 Outpost 特判。墙段、路障、掩体和立柱各自复用一张紧边界透明纹理；重复关卡实例不重复加载资源。大规模单位动画使用 atlas/压缩纹理 variant，而不是逐实体加载独立源图。
 
 Arena floor WebP 只包含无碰撞地面、标线和嵌入式装饰，不能从像素或画面轮廓推导权威碰撞。App-owned `outpost.arena` document 为每个外墙、L 型路障、中央/侧路掩体和支撑柱保存唯一的 render ref、collider ref、position、rotation 和 size；Presentation RenderObject 与 `physics.layout` collider 都从同一实例派生。所有静态 collider instance 批到一个 static architecture body，Physics Core 的通用 layout module 负责 World materialization。内容测试逐物体锁定 render transform/size 与 collider ref/offset/shape 一致，而不只检查共享 bounds 或 shape 数量。AssetManager、Phaser Driver 和 Physics Core 都不包含 Outpost 专用 scene authoring 逻辑。
 
@@ -216,12 +210,13 @@ Continuous movement/aim 使用 latest-per-source coalescing；ability/build/inte
 
 ## Browser 表现、Input、Camera 与 UI
 
-Browser 正式通过 configured App Host 组合 Platform、Phaser Driver、Data、Asset、Renderer、Input、Multiplayer、GameRuntime、UI、Save 和 DevTools。Camera、Physics presentation bridge、TCA/GAS client view bridge 和 Multiplayer presentation 仍通过 GameModule 安装。
+Browser 正式通过 configured App Host 组合 Platform、Phaser Driver、Data、Asset、Renderer、Audio、Input、Multiplayer、GameRuntime、UI、Save 和 DevTools。Camera、Animator、Physics presentation bridge、TCA/GAS client view bridge 和 Multiplayer presentation 仍通过 GameModule 安装。
 
 - Input Router 统一键鼠、手柄、触控和 UI action；game、ui、modal、text-input、devtools scope 必须互斥正确。
 - Camera 使用 follow、lookahead、zoom anchor、bounds 和 cue-driven shake；所有 screen/world/client/viewport 转换复用 Camera Core。
 - Renderer 根据 entity lifecycle 创建/销毁 RenderObject，高频 transform 通过 presentation frame 批量写入，不经 EventBus 或 React。
-- React UI 展示 lobby、HUD、ability/cooldown/effect、build menu、objective、results、reconnect 和 save/checkpoint 状态，只消费节流 snapshot/selector。
+- Animator 根据同一 presentation frame 与 authority ability phase 批量推进 controller；Audio/particle/camera 通过有界 cue correlation 播放，不能决定 gameplay。
+- React UI 实现玩法文档定义的 lobby、HUD、build、objective、results 和 reconnect 界面，只消费节流 snapshot/selector；Save/checkpoint 和技术状态只在玩家确实需要恢复或处理错误时进入正式 UI。
 - GAS Cue 映射到 renderer command、camera shake、audio/particle presentation 或 UI toast；Cue 失败不能改变 gameplay 结果。
 
 Phaser runtime 只能由 Driver 创建和持有。UI、gameplay domain 和 provider-neutral presentation 不读取 Phaser Scene、Colyseus Room、raw Schema 或 socket handle。
@@ -244,8 +239,9 @@ DevTools 必须能关联一条完整战斗因果链：
 ```txt
 input action
   -> multiplayer envelope / authority ingress
-  -> GAS activation or rejection
-  -> projectile/physics query/contact
+  -> AI/navigation intent or player intent
+  -> GAS execution phase / rejection
+  -> Combat projectile / physics query/contact
   -> GAS effect / attribute / tag
   -> TCA condition/action
   -> World lifecycle
@@ -257,6 +253,8 @@ input action
 关联使用显式 correlation id、entity id、actor id、ability/effect/rule id 和 network sequence。默认 trace、profiler、queue、snapshot 和 cue history 都必须有界。Server DevTools source 可以直接观察 authority runtime；客户端只读取允许公开的 provider/network 与 presentation summary，不通过网络传输完整 server trace。
 
 ## 参与者与 Session 生命周期
+
+玩家可见的加入、观察、断线、重连、撤离和结算规则由玩法文档维护；本节只定义底层 session 语义和清理边界。
 
 - Lobby explicit leave 立即释放 player 和 seat。
 - Running explicit leave 清空输入并按玩法规则安全移除或冻结 actor。
@@ -274,8 +272,8 @@ Explicit leave、disconnect、reconnect、page refresh、new join、checkpoint r
 
 必须分别测量：
 
-- Server authority tick 中 ingress、AI、Physics、combat、TCA/GAS、lifecycle、replication 和 Schema commit。
-- Browser input/prediction/presentation、render sync、UI refresh 和 DevTools overhead。
+- Server authority tick 中 ingress、AI perception/decision/task、Navigation、Physics、Combat、TCA/GAS、lifecycle、replication 和 Schema commit。
+- Browser input/prediction/presentation、Animator、render sync、Audio/cue、UI refresh 和 DevTools overhead。
 - Data registration、Asset preload、Save capture/restore 和 App Host lifecycle waterfall。
 - Stable identity registry 的注册、反向查询、entity churn 和 retained size；查询必须使用索引而不是扫描全部 entity mapping。
 - 单房、多房、reconnect churn、entity churn 和 60-minute soak 的 heap、GC、event-loop lag 与资源释放。

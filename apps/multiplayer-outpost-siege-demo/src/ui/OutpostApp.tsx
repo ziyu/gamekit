@@ -21,10 +21,10 @@ export type OutpostAppProps = {
 };
 
 const abilities = [
-  { key: "LMB", label: "Rifle", glyph: "◆" },
-  { key: "SPACE", label: "Dash", glyph: "»" },
-  { key: "Q", label: "Shock Field", glyph: "◎" },
-  { key: "E", label: "Turret", glyph: "⌂" }
+  { key: "LMB", label: "Rifle", glyph: "◆", abilityId: "ability.outpost.rifle_fire" },
+  { key: "SPACE", label: "Dash", glyph: "»", abilityId: "ability.outpost.dash" },
+  { key: "Q", label: "Shock Field", glyph: "◎", abilityId: "ability.outpost.shock_field" },
+  { key: "E", label: "Turret", glyph: "⌂", abilityId: "ability.outpost.deploy_turret" }
 ] as const;
 
 export function OutpostApp({
@@ -50,6 +50,10 @@ export function OutpostApp({
   );
   const match = connection.match;
   const isRunning = connection.phase === "connected" && match?.phase === "running";
+  const localActor = match?.combat.actors.find(
+    (actor) => actor.kind === "player" && actor.objectId === connection.localPlayerId
+  );
+  const hostileCount = match?.combat.actors.filter((actor) => actor.kind === "enemy").length ?? 0;
   const participants =
     match?.participants.filter((participant) => participant.status === "active") ?? [];
 
@@ -82,7 +86,7 @@ export function OutpostApp({
           <strong>{isRunning ? "SECURE THE PERIMETER" : "ASSEMBLE YOUR FIRETEAM"}</strong>
           <small>
             {isRunning
-              ? "Hold the outpost and prepare the defenses"
+              ? `${hostileCount} HOSTILES · ${match?.combat.kills ?? 0} KILLS · ${Math.round(localActor?.resource ?? 0)} SUPPLY`
               : "Create a squad channel or deploy with an existing team"}
           </small>
         </section>
@@ -111,19 +115,26 @@ export function OutpostApp({
               <strong>RANGER 01</strong>
               <span>LV. 01</span>
             </div>
-            <Meter label="HP" value={100} tone="health" />
-            <Meter label="SH" value={50} tone="shield" />
+            <Meter label="HP" max={100} value={localActor?.health ?? 100} tone="health" />
+            <Meter label="SH" max={50} value={localActor?.shield ?? 50} tone="shield" />
           </div>
         </section>
 
         <section className="outpost-abilities" aria-label="Ability bar">
           {abilities.map((ability) => (
-            <article className="outpost-ability" key={ability.label}>
+            <article
+              className={`outpost-ability ${abilityStateClass(
+                ability.abilityId,
+                localActor,
+                match?.elapsedMs ?? 0
+              )}`}
+              key={ability.label}
+            >
               <kbd>{ability.key}</kbd>
               <i>{ability.glyph}</i>
               <div>
                 <strong>{ability.label}</strong>
-                <span>READY</span>
+                <span>{abilityStatus(ability.abilityId, localActor, match?.elapsedMs ?? 0)}</span>
               </div>
             </article>
           ))}
@@ -162,14 +173,56 @@ export function OutpostApp({
   );
 }
 
-function Meter({ label, tone, value }: { label: string; tone: string; value: number }) {
+function Meter({
+  label,
+  max,
+  tone,
+  value
+}: {
+  label: string;
+  max: number;
+  tone: string;
+  value: number;
+}) {
+  const rounded = Math.max(0, Math.round(value));
+  const percentage = Math.max(0, Math.min(100, (value / max) * 100));
   return (
     <div className={`outpost-meter outpost-meter--${tone}`}>
       <span>{label}</span>
       <div>
-        <i style={{ width: `${value}%` }} />
+        <i style={{ width: `${percentage}%` }} />
       </div>
-      <strong>{value}</strong>
+      <strong>{rounded}</strong>
     </div>
   );
+}
+
+function abilityStatus(
+  abilityId: (typeof abilities)[number]["abilityId"],
+  actor: NonNullable<OutpostConnectionView["match"]>["combat"]["actors"][number] | undefined,
+  elapsedMs: number
+): string {
+  if (!actor) {
+    return "SYNCING";
+  }
+  const remainingMs = Math.max(0, (actor.cooldowns[abilityId] ?? 0) - elapsedMs);
+  if (remainingMs > 0) {
+    return `${(remainingMs / 1000).toFixed(1)}S`;
+  }
+  if (abilityId === "ability.outpost.dash" && actor.stamina < 25) {
+    return "NO STAMINA";
+  }
+  if (abilityId === "ability.outpost.deploy_turret" && actor.resource < 25) {
+    return "NEED 25";
+  }
+  return "READY";
+}
+
+function abilityStateClass(
+  abilityId: (typeof abilities)[number]["abilityId"],
+  actor: NonNullable<OutpostConnectionView["match"]>["combat"]["actors"][number] | undefined,
+  elapsedMs: number
+): string {
+  const status = abilityStatus(abilityId, actor, elapsedMs);
+  return status === "READY" ? "is-ready" : status.endsWith("S") ? "is-cooldown" : "is-blocked";
 }

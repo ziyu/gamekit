@@ -4,7 +4,7 @@ import type { ColyseusNativeStateUpdate } from "@gamekit/multiplayer-colyseus";
 import type { OutpostClientAuthoritySnapshot } from "../gameplay/client-shadow-runtime";
 import type { OutpostMatchAuthoritySnapshot } from "./match-authority";
 
-export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v1";
+export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v2";
 export const OUTPOST_COLYSEUS_SOURCE_ENDPOINT_ID = "outpost.colyseus-schema";
 
 export const OutpostColyseusParticipantState = schema(
@@ -39,6 +39,48 @@ export const OutpostColyseusPlayerState = schema(
 
 export type OutpostColyseusPlayerState = SchemaType<typeof OutpostColyseusPlayerState>;
 
+export const OutpostColyseusCombatActorState = schema(
+  {
+    objectId: "string",
+    networkEntityId: "string",
+    generation: "uint32",
+    kind: "string",
+    definitionId: "string",
+    renderKey: "string",
+    x: "float64",
+    y: "float64",
+    velocityX: "float64",
+    velocityY: "float64",
+    facing: "float64",
+    health: "float64",
+    shield: "float64",
+    stamina: "float64",
+    resource: "float64",
+    tags: "string",
+    cooldowns: { map: "float64" }
+  },
+  "OutpostColyseusCombatActorState"
+);
+
+export type OutpostColyseusCombatActorState = SchemaType<typeof OutpostColyseusCombatActorState>;
+
+export const OutpostColyseusProjectileState = schema(
+  {
+    objectId: "string",
+    networkEntityId: "string",
+    generation: "uint32",
+    renderKey: "string",
+    x: "float64",
+    y: "float64",
+    velocityX: "float64",
+    velocityY: "float64",
+    facing: "float64"
+  },
+  "OutpostColyseusProjectileState"
+);
+
+export type OutpostColyseusProjectileState = SchemaType<typeof OutpostColyseusProjectileState>;
+
 export const OutpostColyseusState = schema(
   {
     sessionId: "string",
@@ -46,11 +88,21 @@ export const OutpostColyseusState = schema(
     schemaVersion: "string",
     stateVersion: "uint32",
     tick: "uint32",
+    elapsedMs: "float64",
     timestamp: "float64",
     phase: "string",
     countdownMsRemaining: "float64",
     participants: { map: OutpostColyseusParticipantState },
     players: { map: OutpostColyseusPlayerState },
+    combatActors: { map: OutpostColyseusCombatActorState },
+    projectiles: { map: OutpostColyseusProjectileState },
+    acceptedCommands: "uint32",
+    rejectedCommands: "uint32",
+    projectileHits: "uint32",
+    enemyAttacks: "uint32",
+    kills: "uint32",
+    drops: "uint32",
+    objectiveProgress: "uint32",
     inputAcksByPeerId: { map: "uint32" }
   },
   "OutpostColyseusState"
@@ -69,6 +121,7 @@ export function createOutpostColyseusState(
     schemaVersion: OUTPOST_COLYSEUS_SCHEMA_VERSION,
     stateVersion: 1,
     tick: 0,
+    elapsedMs: 0,
     timestamp,
     phase: "lobby",
     countdownMsRemaining: 0
@@ -82,9 +135,17 @@ export function projectOutpostMatchToColyseusState(
 ): void {
   state.stateVersion += 1;
   state.tick = snapshot.tick;
+  state.elapsedMs = snapshot.elapsedMs;
   state.timestamp = timestamp;
   state.phase = snapshot.phase;
   state.countdownMsRemaining = snapshot.countdownMsRemaining;
+  state.acceptedCommands = snapshot.combat.acceptedCommands;
+  state.rejectedCommands = snapshot.combat.rejectedCommands;
+  state.projectileHits = snapshot.combat.projectileHits;
+  state.enemyAttacks = snapshot.combat.enemyAttacks;
+  state.kills = snapshot.combat.kills;
+  state.drops = snapshot.combat.drops;
+  state.objectiveProgress = snapshot.combat.objectiveProgress;
 
   const participantKeys = new Set<string>();
   for (const participant of snapshot.participants) {
@@ -143,6 +204,83 @@ export function projectOutpostMatchToColyseusState(
   }
   removeMissingKeys(state.players, playerKeys);
 
+  const combatActorKeys = new Set<string>();
+  for (const actor of snapshot.combat.actors) {
+    const key = networkIdentityKey(actor.networkEntityId, actor.generation);
+    combatActorKeys.add(key);
+    const current = state.combatActors.get(key);
+    const next =
+      current ??
+      new OutpostColyseusCombatActorState({
+        objectId: actor.objectId,
+        networkEntityId: actor.networkEntityId,
+        generation: actor.generation,
+        kind: actor.kind,
+        definitionId: actor.definitionId,
+        renderKey: actor.renderKey,
+        x: actor.x,
+        y: actor.y,
+        velocityX: actor.velocityX,
+        velocityY: actor.velocityY,
+        facing: actor.facing,
+        health: actor.health,
+        shield: actor.shield,
+        stamina: actor.stamina,
+        resource: actor.resource,
+        tags: encodeTags(actor.tags)
+      });
+    next.objectId = actor.objectId;
+    next.kind = actor.kind;
+    next.definitionId = actor.definitionId;
+    next.renderKey = actor.renderKey;
+    next.x = actor.x;
+    next.y = actor.y;
+    next.velocityX = actor.velocityX;
+    next.velocityY = actor.velocityY;
+    next.facing = actor.facing;
+    next.health = actor.health;
+    next.shield = actor.shield;
+    next.stamina = actor.stamina;
+    next.resource = actor.resource;
+    next.tags = encodeTags(actor.tags);
+    syncNumberMap(next.cooldowns, actor.cooldowns);
+    if (current === undefined) {
+      state.combatActors.set(key, next);
+    }
+  }
+  removeMissingKeys(state.combatActors, combatActorKeys);
+
+  const projectileKeys = new Set<string>();
+  for (const projectile of snapshot.combat.projectiles) {
+    const key = networkIdentityKey(projectile.networkEntityId, projectile.generation);
+    projectileKeys.add(key);
+    const current = state.projectiles.get(key);
+    const next =
+      current ??
+      new OutpostColyseusProjectileState({
+        objectId: projectile.objectId,
+        networkEntityId: projectile.networkEntityId,
+        generation: projectile.generation,
+        renderKey: projectile.renderKey,
+        x: projectile.x,
+        y: projectile.y,
+        velocityX: projectile.velocityX,
+        velocityY: projectile.velocityY,
+        facing: projectile.facing
+      });
+    next.objectId = projectile.objectId;
+    next.renderKey = projectile.renderKey;
+    next.x = projectile.x;
+    next.y = projectile.y;
+    next.velocityX = projectile.velocityX;
+    next.velocityY = projectile.velocityY;
+    next.facing = projectile.facing;
+    if (current === undefined) {
+      state.projectiles.set(key, next);
+    }
+  }
+  removeMissingKeys(state.projectiles, projectileKeys);
+
   const ackKeys = new Set<string>();
   for (const [peerId, sequence] of Object.entries(snapshot.inputAcksByPeerId)) {
     ackKeys.add(peerId);
@@ -159,6 +297,8 @@ export function readOutpostColyseusStateUpdate(
   }
   const participants = readCollection(value.participants, readParticipant);
   const players = readCollection(value.players, readPlayer);
+  const actors = readCollection(value.combatActors, readCombatActor);
+  const projectiles = readCollection(value.projectiles, readProjectile);
   const inputAcksByPeerId = readNumberMap(value.inputAcksByPeerId);
   if (
     !nonEmptyString(value.sessionId) ||
@@ -166,11 +306,21 @@ export function readOutpostColyseusStateUpdate(
     value.schemaVersion !== OUTPOST_COLYSEUS_SCHEMA_VERSION ||
     !positiveInteger(value.stateVersion) ||
     !nonNegativeInteger(value.tick) ||
+    !nonNegativeFinite(value.elapsedMs) ||
     !nonNegativeFinite(value.timestamp) ||
     !isMatchPhase(value.phase) ||
     !nonNegativeFinite(value.countdownMsRemaining) ||
     participants === undefined ||
     players === undefined ||
+    actors === undefined ||
+    projectiles === undefined ||
+    !nonNegativeInteger(value.acceptedCommands) ||
+    !nonNegativeInteger(value.rejectedCommands) ||
+    !nonNegativeInteger(value.projectileHits) ||
+    !nonNegativeInteger(value.enemyAttacks) ||
+    !nonNegativeInteger(value.kills) ||
+    !nonNegativeInteger(value.drops) ||
+    !nonNegativeInteger(value.objectiveProgress) ||
     inputAcksByPeerId === undefined
   ) {
     return undefined;
@@ -184,13 +334,31 @@ export function readOutpostColyseusStateUpdate(
     stateVersion: value.stateVersion,
     version: value.schemaVersion,
     timestamp: value.timestamp,
-    stateBytes: estimateSnapshotBytes(participants, players, inputAcksByPeerId),
+    stateBytes: estimateSnapshotBytes(
+      participants,
+      players,
+      actors,
+      projectiles,
+      inputAcksByPeerId
+    ),
     state: {
       phase: value.phase,
       tick: value.tick,
+      elapsedMs: value.elapsedMs,
       countdownMsRemaining: value.countdownMsRemaining,
       participants,
       players,
+      combat: {
+        actors,
+        projectiles,
+        acceptedCommands: value.acceptedCommands,
+        rejectedCommands: value.rejectedCommands,
+        projectileHits: value.projectileHits,
+        enemyAttacks: value.enemyAttacks,
+        kills: value.kills,
+        drops: value.drops,
+        objectiveProgress: value.objectiveProgress
+      },
       inputAcksByPeerId
     }
   };
@@ -254,6 +422,85 @@ function readPlayer(value: unknown): OutpostClientAuthoritySnapshot["players"][n
   };
 }
 
+function readCombatActor(
+  value: unknown
+): OutpostClientAuthoritySnapshot["combat"]["actors"][number] | undefined {
+  if (
+    !isRecord(value) ||
+    !nonEmptyString(value.objectId) ||
+    !nonEmptyString(value.networkEntityId) ||
+    !nonNegativeInteger(value.generation) ||
+    !isCombatActorKind(value.kind) ||
+    !nonEmptyString(value.definitionId) ||
+    !nonEmptyString(value.renderKey) ||
+    !finiteNumber(value.x) ||
+    !finiteNumber(value.y) ||
+    !finiteNumber(value.velocityX) ||
+    !finiteNumber(value.velocityY) ||
+    !finiteNumber(value.facing) ||
+    !finiteNumber(value.health) ||
+    !finiteNumber(value.shield) ||
+    !finiteNumber(value.stamina) ||
+    !finiteNumber(value.resource) ||
+    typeof value.tags !== "string"
+  ) {
+    return undefined;
+  }
+  const cooldowns = readNumberMap(value.cooldowns);
+  if (cooldowns === undefined) {
+    return undefined;
+  }
+  return {
+    objectId: value.objectId,
+    networkEntityId: value.networkEntityId,
+    generation: value.generation,
+    kind: value.kind,
+    definitionId: value.definitionId,
+    renderKey: value.renderKey,
+    x: value.x,
+    y: value.y,
+    velocityX: value.velocityX,
+    velocityY: value.velocityY,
+    facing: value.facing,
+    health: value.health,
+    shield: value.shield,
+    stamina: value.stamina,
+    resource: value.resource,
+    tags: decodeTags(value.tags),
+    cooldowns
+  };
+}
+
+function readProjectile(
+  value: unknown
+): OutpostClientAuthoritySnapshot["combat"]["projectiles"][number] | undefined {
+  if (
+    !isRecord(value) ||
+    !nonEmptyString(value.objectId) ||
+    !nonEmptyString(value.networkEntityId) ||
+    !nonNegativeInteger(value.generation) ||
+    !nonEmptyString(value.renderKey) ||
+    !finiteNumber(value.x) ||
+    !finiteNumber(value.y) ||
+    !finiteNumber(value.velocityX) ||
+    !finiteNumber(value.velocityY) ||
+    !finiteNumber(value.facing)
+  ) {
+    return undefined;
+  }
+  return {
+    objectId: value.objectId,
+    networkEntityId: value.networkEntityId,
+    generation: value.generation,
+    renderKey: value.renderKey,
+    x: value.x,
+    y: value.y,
+    velocityX: value.velocityX,
+    velocityY: value.velocityY,
+    facing: value.facing
+  };
+}
+
 function readCollection<T>(
   value: unknown,
   read: (entry: unknown) => T | undefined
@@ -309,6 +556,25 @@ function removeMissingKeys<T>(collection: Map<string, T>, desired: ReadonlySet<s
   }
 }
 
+function syncNumberMap(collection: Map<string, number>, desired: Record<string, number>): void {
+  const keys = new Set<string>();
+  for (const [key, value] of Object.entries(desired)) {
+    keys.add(key);
+    collection.set(key, value);
+  }
+  removeMissingKeys(collection, keys);
+}
+
+const TAG_SEPARATOR = "\u001f";
+
+function encodeTags(tags: readonly string[]): string {
+  return tags.join(TAG_SEPARATOR);
+}
+
+function decodeTags(value: string): string[] {
+  return value.length === 0 ? [] : value.split(TAG_SEPARATOR).filter(nonEmptyString);
+}
+
 function networkIdentityKey(entityId: string, generation: number): string {
   return `${entityId}:${generation}`;
 }
@@ -316,6 +582,8 @@ function networkIdentityKey(entityId: string, generation: number): string {
 function estimateSnapshotBytes(
   participants: OutpostClientAuthoritySnapshot["participants"],
   players: OutpostClientAuthoritySnapshot["players"],
+  actors: OutpostClientAuthoritySnapshot["combat"]["actors"],
+  projectiles: OutpostClientAuthoritySnapshot["combat"]["projectiles"],
   inputAcksByPeerId: OutpostClientAuthoritySnapshot["inputAcksByPeerId"]
 ): number {
   let bytes = 96;
@@ -333,6 +601,26 @@ function estimateSnapshotBytes(
       estimateStringBytes(player.networkEntityId) +
       estimateStringBytes(player.archetypeId) +
       estimateStringBytes(player.playerId);
+  }
+  for (const actor of actors) {
+    bytes +=
+      160 +
+      estimateStringBytes(actor.objectId) +
+      estimateStringBytes(actor.networkEntityId) +
+      estimateStringBytes(actor.definitionId) +
+      estimateStringBytes(actor.renderKey) +
+      actor.tags.reduce((total, tag) => total + estimateStringBytes(tag), 0) +
+      Object.keys(actor.cooldowns).reduce(
+        (total, abilityId) => total + 16 + estimateStringBytes(abilityId),
+        0
+      );
+  }
+  for (const projectile of projectiles) {
+    bytes +=
+      96 +
+      estimateStringBytes(projectile.objectId) +
+      estimateStringBytes(projectile.networkEntityId) +
+      estimateStringBytes(projectile.renderKey);
   }
   for (const peerId of Object.keys(inputAcksByPeerId)) {
     bytes += 16 + estimateStringBytes(peerId);
@@ -376,4 +664,10 @@ function isParticipantStatus(
   value: unknown
 ): value is OutpostClientAuthoritySnapshot["participants"][number]["status"] {
   return value === "active" || value === "next-round" || value === "spectator";
+}
+
+function isCombatActorKind(
+  value: unknown
+): value is OutpostClientAuthoritySnapshot["combat"]["actors"][number]["kind"] {
+  return value === "player" || value === "enemy" || value === "buildable";
 }

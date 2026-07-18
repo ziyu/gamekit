@@ -12,6 +12,20 @@ export function createOutpostPlayerRenderObjectDefinition(
   y: number,
   rotation: number
 ): RenderObjectDefinition {
+  return createOutpostDynamicRenderObjectDefinition(registry, renderKey, id, x, y, rotation, [
+    "outpost.client-player"
+  ]);
+}
+
+export function createOutpostDynamicRenderObjectDefinition(
+  registry: DataRegistry,
+  renderKey: string,
+  id: string,
+  x: number,
+  y: number,
+  rotation: number,
+  tags: readonly string[] = []
+): RenderObjectDefinition {
   const source = registry.getValue<OutpostRenderObjectDefinition>(
     OUTPOST_RENDER_OBJECT_TYPE,
     renderKey
@@ -28,7 +42,7 @@ export function createOutpostPlayerRenderObjectDefinition(
     id,
     type: source.type,
     ...(source.layer === undefined ? {} : { layer: source.layer }),
-    tags: [...(source.tags ?? []), "outpost.client-player"],
+    tags: [...(source.tags ?? []), ...tags],
     transform: { position: { x, y }, rotation: { z: rotation } },
     props: { textureId: texture.assetId, ...size }
   };

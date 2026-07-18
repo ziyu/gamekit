@@ -5,6 +5,7 @@ export type OutpostGameplayContext = {
   data: DataRegistry;
   identities: OutpostIdentityRegistry;
 };
+export * from "./authority-combat";
 export * from "./authority-runtime";
 export * from "./client-shadow-runtime";
 export * from "./components";

@@ -9,6 +9,7 @@ export type GasDefinitionId = string;
 export type GasAttributeId = string;
 export type GasTagId = string;
 export type GasAbilityId = string;
+export type GasAbilityExecutionId = string;
 export type GasEffectId = string;
 export type GasCueId = string;
 
@@ -42,9 +43,39 @@ export type GasAbilityDefinition = {
   blockedTags?: GasTagId[] | undefined;
   costs?: GasAttributeCost[] | undefined;
   cooldownMs?: number | undefined;
+  execution?: GasAbilityExecutionDefinition | undefined;
   effects?: GasEffectApplicationDefinition[] | undefined;
   cues?: GasCueId[] | undefined;
   tags?: string[] | undefined;
+};
+
+export type GasAbilityExecutionPhase =
+  | "requested"
+  | "preparing"
+  | "committed"
+  | "active"
+  | "recovering"
+  | "completed"
+  | "cancelled";
+
+export type GasAbilityExecutionCommitPolicy = "requested" | "committed";
+
+export type GasAbilityExecutionDefinition = {
+  preparingMs?: number | undefined;
+  activeMs?: number | undefined;
+  recoveringMs?: number | undefined;
+  costCommit?: GasAbilityExecutionCommitPolicy | undefined;
+  cooldownCommit?: GasAbilityExecutionCommitPolicy | undefined;
+  cancellation?:
+    | {
+        beforeCommit?: "allow" | "deny" | undefined;
+        afterCommit?: "allow" | "deny" | undefined;
+      }
+    | undefined;
+  interruptTags?: GasTagId[] | undefined;
+  maxConcurrent?: number | undefined;
+  overflow?: "reject-newest" | "cancel-oldest" | undefined;
+  phaseCues?: Partial<Record<GasAbilityExecutionPhase, GasCueId[]>> | undefined;
 };
 
 export type GasAttributeCost = {
@@ -118,6 +149,10 @@ export type GasAbilitiesComponentState = {
   disabled: GasAbilityId[];
 };
 
+export type GasAbilityExecutionsComponentState = {
+  active: GasAbilityExecutionState[];
+};
+
 export type GasActiveEffectState = {
   id: string;
   effectId: GasEffectId;
@@ -161,6 +196,8 @@ export type GasAbilityActivation = GasOperationContext & {
 export type GasAbilityActivationResult =
   | {
       status: "activated";
+      executionId: GasAbilityExecutionId;
+      phase: GasAbilityExecutionPhase;
       actorId: GasActorId;
       abilityId: GasAbilityId;
       targetActorId?: GasActorId | undefined;
@@ -191,6 +228,86 @@ export type GasEffectApplicationResult = GasEffectApplication & {
   reason?: string | undefined;
 };
 
+export type GasAbilityExecutionState = {
+  id: GasAbilityExecutionId;
+  requestId?: string | undefined;
+  actorId: GasActorId;
+  abilityId: GasAbilityId;
+  targetActorId?: GasActorId | undefined;
+  phase: GasAbilityExecutionPhase;
+  requestedAt: number;
+  phaseStartedAt: number;
+  phaseEndsAt?: number | undefined;
+  committedAt?: number | undefined;
+  completedAt?: number | undefined;
+  cancelledAt?: number | undefined;
+  cancellationReason?: string | undefined;
+  costCommitted: boolean;
+  cooldownCommitted: boolean;
+  cooldownUntil?: number | undefined;
+  paidCosts: GasAttributeCost[];
+  appliedEffects: GasEffectApplicationResult[];
+  correlationId?: string | undefined;
+  parentTraceId?: string | undefined;
+};
+
+export type GasAbilityExecutionRequest = GasAbilityActivation & {
+  requestId?: string | undefined;
+};
+
+export type GasAbilityExecutionRejectionReason =
+  | "actor-does-not-know-ability"
+  | "ability-disabled"
+  | "ability-on-cooldown"
+  | "required-tags-missing"
+  | "blocked-tags-present"
+  | "costs-unavailable"
+  | "target-required"
+  | "target-missing"
+  | "ability-concurrency-limit"
+  | "actor-execution-limit"
+  | "duplicate-request-conflict";
+
+export type GasAbilityExecutionRequestResult =
+  | {
+      status: "accepted";
+      duplicate: boolean;
+      execution: GasAbilityExecutionState;
+    }
+  | {
+      status: "rejected";
+      actorId: GasActorId;
+      abilityId: GasAbilityId;
+      targetActorId?: GasActorId | undefined;
+      requestId?: string | undefined;
+      reason: GasAbilityExecutionRejectionReason;
+      message: string;
+      correlationId?: string | undefined;
+    };
+
+export type GasAbilityExecutionCancellation = GasOperationContext & {
+  executionId: GasAbilityExecutionId;
+  reason?: string | undefined;
+};
+
+export type GasAbilityExecutionCancellationResult =
+  | {
+      status: "cancelled";
+      execution: GasAbilityExecutionState;
+    }
+  | {
+      status: "rejected";
+      executionId: GasAbilityExecutionId;
+      reason: "missing-execution" | "already-terminal" | "cancellation-blocked";
+    };
+
+export type GasAbilityExecutionQuery = {
+  actorId?: GasActorId | undefined;
+  abilityId?: GasAbilityId | undefined;
+  phases?: GasAbilityExecutionPhase[] | undefined;
+  includeRecent?: boolean | undefined;
+};
+
 export type GasAttributeChange = {
   actorId: GasActorId;
   attribute: GasAttributeId;
@@ -218,6 +335,9 @@ export type GasTraceEntry = {
     | "actor.removed"
     | "ability.activated"
     | "ability.rejected"
+    | "ability.phase_changed"
+    | "ability.completed"
+    | "ability.cancelled"
     | "effect.applied"
     | "effect.refreshed"
     | "effect.replaced"
@@ -250,12 +370,15 @@ export type GasTraceStore = {
 
 export type GasRuntimeSnapshot = {
   actors: GasActorRuntimeState[];
+  activeExecutions: GasAbilityExecutionState[];
+  recentExecutions: GasAbilityExecutionState[];
   traces: GasTraceEntry[];
 };
 
 export type GasRuntimeCheckpoint = {
   elapsed: number;
   actors: GasActorRuntimeState[];
+  executions?: GasAbilityExecutionState[] | undefined;
 };
 
 export type GasCheckpointRestoreOptions = {
@@ -270,6 +393,12 @@ export type GasRuntime = {
   getActor(actorId: GasActorId): GasActorRuntimeState;
   actorForEntity(entityId: EntityId): GasActorRuntimeState | undefined;
   activateAbility(input: GasAbilityActivation): GasAbilityActivationResult;
+  requestAbilityExecution(input: GasAbilityExecutionRequest): GasAbilityExecutionRequestResult;
+  cancelAbilityExecution(
+    input: GasAbilityExecutionCancellation
+  ): GasAbilityExecutionCancellationResult;
+  getAbilityExecution(executionId: GasAbilityExecutionId): GasAbilityExecutionState | undefined;
+  listAbilityExecutions(query?: GasAbilityExecutionQuery): GasAbilityExecutionState[];
   applyEffect(input: GasEffectApplication): GasEffectApplicationResult;
   modifyAttribute(
     actorId: GasActorId,
@@ -299,6 +428,10 @@ export type GasHandle = Pick<
   | "getActor"
   | "actorForEntity"
   | "activateAbility"
+  | "requestAbilityExecution"
+  | "cancelAbilityExecution"
+  | "getAbilityExecution"
+  | "listAbilityExecutions"
   | "applyEffect"
   | "modifyAttribute"
   | "addTag"
@@ -315,6 +448,12 @@ export type CreateGasRuntimeConfig = {
   dataRegistry: DataRegistry;
   eventBus?: EventBus | undefined;
   traceStore?: GasTraceStore | undefined;
+  abilityExecutions?: GasAbilityExecutionRuntimeOptions | undefined;
+};
+
+export type GasAbilityExecutionRuntimeOptions = {
+  maxActivePerActor?: number | undefined;
+  recentHistoryLimit?: number | undefined;
 };
 
 export type CreateGasModuleConfig = {
@@ -322,6 +461,7 @@ export type CreateGasModuleConfig = {
   dataRegistry: DataRegistry;
   eventBus?: EventBus | undefined;
   traceStore?: GasTraceStore | undefined;
+  abilityExecutions?: GasAbilityExecutionRuntimeOptions | undefined;
   handle?: GasHandle | undefined;
   onRuntime?: ((runtime: GasRuntime) => void) | undefined;
 };

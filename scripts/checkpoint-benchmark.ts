@@ -106,6 +106,7 @@ function runTcaCheckpointBenchmark(): CheckpointBenchmarkSuite {
 function runGasCheckpointBenchmark(): CheckpointBenchmarkSuite {
   const actors = 1_000;
   const activeEffects = 500;
+  const activeExecutions = 500;
   const cycles = 20;
   const world = createKootaWorld();
   const runtime = createGasRuntime({
@@ -120,6 +121,13 @@ function runGasCheckpointBenchmark(): CheckpointBenchmarkSuite {
     if (index < activeEffects) {
       runtime.applyEffect({ effectId: "effect.duration", targetActorId: actorId });
     }
+    if (index < activeExecutions) {
+      runtime.requestAbilityExecution({
+        actorId,
+        abilityId: "ability.duration",
+        requestId: `checkpoint-${index}`
+      });
+    }
   }
   runtime.update(50, 50);
 
@@ -128,7 +136,7 @@ function runGasCheckpointBenchmark(): CheckpointBenchmarkSuite {
   const captureStart = performance.now();
   for (let cycle = 0; cycle < cycles; cycle += 1) {
     checkpoint = runtime.captureCheckpoint();
-    checksum += checkpoint.actors.length;
+    checksum += checkpoint.actors.length + (checkpoint.executions?.length ?? 0);
   }
   const captureMs = performance.now() - captureStart;
   const restoreStart = performance.now();
@@ -136,6 +144,7 @@ function runGasCheckpointBenchmark(): CheckpointBenchmarkSuite {
     runtime.restoreCheckpoint(checkpoint);
   }
   const restoreMs = performance.now() - restoreStart;
+  const restoredExecutions = runtime.snapshot().activeExecutions.length;
   runtime.dispose();
 
   return {
@@ -144,6 +153,8 @@ function runGasCheckpointBenchmark(): CheckpointBenchmarkSuite {
       {
         actors,
         activeEffects,
+        activeExecutions,
+        restoredExecutions,
         cycles,
         checksum,
         captureMs: round(captureMs),
@@ -240,9 +251,21 @@ const GAS_PACK: DataPack = {
       data: { id: "effect.duration", durationMs: 60_000 }
     },
     {
+      type: "gas.ability",
+      id: "ability.duration",
+      data: {
+        id: "ability.duration",
+        execution: { activeMs: 60_000, cancellation: { afterCommit: "allow" } }
+      }
+    },
+    {
       type: "gas.actor",
       id: "actor.benchmark",
-      data: { id: "actor.benchmark", attributes: { health: 100 } }
+      data: {
+        id: "actor.benchmark",
+        attributes: { health: 100 },
+        abilities: ["ability.duration"]
+      }
     }
   ]
 };

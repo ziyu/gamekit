@@ -13,7 +13,8 @@ export function createGasModule(config: CreateGasModuleConfig) {
         world: ctx.world,
         dataRegistry: config.dataRegistry,
         eventBus: config.eventBus ?? ctx.eventBus,
-        traceStore: config.traceStore
+        traceStore: config.traceStore,
+        abilityExecutions: config.abilityExecutions
       });
 
       let handleBound = false;

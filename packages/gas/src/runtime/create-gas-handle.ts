@@ -1,6 +1,10 @@
 import { createGasError } from "./errors";
 import type {
   GasAbilityActivation,
+  GasAbilityExecutionCancellation,
+  GasAbilityExecutionId,
+  GasAbilityExecutionQuery,
+  GasAbilityExecutionRequest,
   GasActorCreation,
   GasActorId,
   GasAttributeModifier,
@@ -48,6 +52,18 @@ export function createGasHandle(options: GasHandleOptions = {}): GasHandle {
     },
     activateAbility(input: GasAbilityActivation) {
       return requireBoundRuntime(state, "activateAbility").activateAbility(input);
+    },
+    requestAbilityExecution(input: GasAbilityExecutionRequest) {
+      return requireBoundRuntime(state, "requestAbilityExecution").requestAbilityExecution(input);
+    },
+    cancelAbilityExecution(input: GasAbilityExecutionCancellation) {
+      return requireBoundRuntime(state, "cancelAbilityExecution").cancelAbilityExecution(input);
+    },
+    getAbilityExecution(executionId: GasAbilityExecutionId) {
+      return requireBoundRuntime(state, "getAbilityExecution").getAbilityExecution(executionId);
+    },
+    listAbilityExecutions(query?: GasAbilityExecutionQuery) {
+      return requireBoundRuntime(state, "listAbilityExecutions").listAbilityExecutions(query);
     },
     applyEffect(input: GasEffectApplication) {
       return requireBoundRuntime(state, "applyEffect").applyEffect(input);

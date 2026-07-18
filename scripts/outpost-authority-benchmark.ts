@@ -6,6 +6,7 @@ import { createKootaWorld } from "../packages/world-koota/src";
 import { createOutpostDataRegistry } from "../apps/multiplayer-outpost-siege-demo/src/content";
 import {
   createOutpostAuthorityGameplayRuntime,
+  type OutpostAuthorityCombatCommand,
   type OutpostAuthorityPlayerState
 } from "../apps/multiplayer-outpost-siege-demo/src/gameplay";
 import {
@@ -18,6 +19,7 @@ const FIXED_DELTA_MS = 1000 / 60;
 const WARMUP_TICKS = 500;
 const PHYSICAL_TICKS = 6_000;
 const CHURN_TICKS = 1_000;
+const COMBAT_TICKS = 4_000;
 
 async function main(): Promise<void> {
   const backend = await initRapier2dPhysicsBackend({
@@ -28,6 +30,7 @@ async function main(): Promise<void> {
   const registry = createOutpostDataRegistry();
   const players = createBenchmarkPlayers();
   let activePlayers: readonly OutpostAuthorityPlayerState[] = players;
+  const pendingCombatCommands: OutpostAuthorityCombatCommand[] = [];
   const authority = createOutpostAuthorityGameplayRuntime({
     dataRegistry: registry,
     world,
@@ -35,7 +38,11 @@ async function main(): Promise<void> {
     eventBus: createEventBus(),
     players() {
       return activePlayers;
-    }
+    },
+    combatCommands() {
+      return pendingCombatCommands.splice(0, pendingCombatCommands.length);
+    },
+    initialEnemies: []
   });
   authority.runtime.start();
 
@@ -60,6 +67,46 @@ async function main(): Promise<void> {
   activePlayers = players;
   authority.runtime.tick(FIXED_DELTA_MS);
 
+  let maxConcurrentProjectiles = 0;
+  const combatStartedAt = performance.now();
+  for (let tick = 0; tick < COMBAT_TICKS; tick += 1) {
+    updateCombatInputs(players, tick);
+    if (tick % 8 === 0) {
+      pendingCombatCommands.push({
+        id: `benchmark.rifle.${tick}`,
+        playerId: players[0]!.playerId,
+        ability: "rifle",
+        aimX: 1_600,
+        aimY: 500,
+        correlationId: `benchmark.combat.${tick}`
+      });
+    }
+    if (tick % 16 === 0) {
+      authority.gas.modifyAttribute(
+        players[1]!.playerId,
+        { attribute: "shield", operation: "set", value: 0 },
+        "benchmark",
+        { correlationId: `benchmark.tca.${tick}` }
+      );
+    } else if (tick % 16 === 8) {
+      authority.gas.modifyAttribute(
+        players[1]!.playerId,
+        { attribute: "shield", operation: "set", value: 50 },
+        "benchmark",
+        { correlationId: `benchmark.tca.${tick}` }
+      );
+    }
+    authority.runtime.tick(FIXED_DELTA_MS);
+    maxConcurrentProjectiles = Math.max(
+      maxConcurrentProjectiles,
+      authority.snapshot().combat.projectileCount
+    );
+  }
+  const combatDurationMs = performance.now() - combatStartedAt;
+  for (let tick = 0; tick < 100; tick += 1) {
+    authority.runtime.tick(FIXED_DELTA_MS);
+  }
+
   const snapshot = authority.snapshot();
   const physicsSnapshot = authority.physics.snapshot();
   if (snapshot.players.length !== 4 || snapshot.entityCount !== 37) {
@@ -68,12 +115,17 @@ async function main(): Promise<void> {
     );
   }
   const retainedPhysicsTraces = authority.physicsTrace.list().length;
+  const retainedGasTraces = authority.gasTrace.list().length;
+  const retainedTcaTraces = authority.tcaTrace.list().length;
   authority.runtime.dispose();
 
   const result: OutpostAuthorityBenchmarkResult = {
     microsecondsPerFourPlayerPhysicalTick: round((physicalDurationMs * 1_000) / PHYSICAL_TICKS),
     microsecondsPerPlayerChurnTick: round((churnDurationMs * 1_000) / CHURN_TICKS),
+    microsecondsPerCombatTick: round((combatDurationMs * 1_000) / COMBAT_TICKS),
     retainedPhysicsTraces,
+    retainedGasTraces,
+    retainedTcaTraces,
     retainedEntitiesAfterDispose: world.count()
   };
   const checkEnabled = process.argv.includes("--check");
@@ -86,11 +138,14 @@ async function main(): Promise<void> {
           warmupTicks: WARMUP_TICKS,
           physicalTicks: PHYSICAL_TICKS,
           churnTicks: CHURN_TICKS,
+          combatTicks: COMBAT_TICKS,
           fixedDeltaMs: FIXED_DELTA_MS,
           entitiesPerRuntime: snapshot.entityCount,
           playersPerRuntime: snapshot.players.length,
           physicsBodiesPerRuntime: physicsSnapshot.bodyCount,
-          physicsCollidersPerRuntime: physicsSnapshot.colliderCount
+          physicsCollidersPerRuntime: physicsSnapshot.colliderCount,
+          acceptedCombatCommands: snapshot.combat.acceptedCommands,
+          maxConcurrentProjectiles
         },
         result,
         ...(checkEnabled
@@ -136,6 +191,16 @@ function updateInputs(players: OutpostAuthorityPlayerState[], tick: number): voi
     player.input.sequence = tick + 1;
     player.input.moveX = index % 2 === 0 ? direction : 0;
     player.input.moveY = index % 2 === 0 ? 0 : direction;
+  }
+}
+
+function updateCombatInputs(players: OutpostAuthorityPlayerState[], tick: number): void {
+  for (const player of players) {
+    player.input.sequence = PHYSICAL_TICKS + CHURN_TICKS + tick + 1;
+    player.input.moveX = 0;
+    player.input.moveY = 0;
+    player.input.aimX = 1_600;
+    player.input.aimY = 500;
   }
 }
 

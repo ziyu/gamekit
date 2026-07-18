@@ -68,6 +68,15 @@ describe("GAS data types", () => {
 });
 
 describe("GAS trace store", () => {
+  it("supports disabled trace retention without losing correlation ids", () => {
+    const traceStore = createGasTraceStore({ enabled: false });
+
+    expect(
+      traceStore.add({ type: "actor.created", timestamp: 1, actorId: "actor.untraced" }).id
+    ).toBe("gas-trace-1");
+    expect(traceStore.list()).toEqual([]);
+  });
+
   it("isolates observer failures from gameplay writes", () => {
     const observerError = new Error("observer failed");
     const errors: unknown[] = [];

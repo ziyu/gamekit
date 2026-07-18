@@ -30,7 +30,13 @@ import {
 import type { RendererAdapter } from "@gamekit/renderer-core";
 import type { EntityId, GameWorld } from "@gamekit/world";
 
-import { OUTPOST_PLAYER_TYPE, type OutpostPlayerDefinition } from "../domain";
+import {
+  OUTPOST_PLAYER_TYPE,
+  type OutpostPlayerDefinition,
+  type OutpostReplicatedCombatState,
+  type OutpostReplicatedActor,
+  type OutpostReplicatedProjectile
+} from "../domain";
 import { OUTPOST_ARENA_PHYSICS_LAYOUT_ID, OUTPOST_ARENA_PHYSICS_SCENE_ID } from "../content";
 import {
   createOutpostIdentityRegistry,
@@ -51,6 +57,8 @@ import {
 const PLAYER_DEFINITION_ID = "player.outpost.ranger";
 const MAX_PARTICIPANTS = 8;
 const MAX_PLAYERS = 4;
+const MAX_COMBAT_ACTORS = 1_024;
+const MAX_PROJECTILES = 2_048;
 
 export type OutpostClientMatchPhase = "lobby" | "countdown" | "running";
 
@@ -79,9 +87,11 @@ export type OutpostClientPlayerSnapshot = {
 export type OutpostClientAuthoritySnapshot = {
   phase: OutpostClientMatchPhase;
   tick: number;
+  elapsedMs: number;
   countdownMsRemaining: number;
   participants: OutpostClientParticipantSnapshot[];
   players: OutpostClientPlayerSnapshot[];
+  combat: OutpostReplicatedCombatState;
   inputAcksByPeerId: Record<string, number>;
 };
 
@@ -135,6 +145,15 @@ type MaterializedClientPlayer = {
   renderObjectId: string;
 };
 
+type MaterializedClientCombatObject = {
+  objectId: string;
+  networkEntityId: string;
+  generation: number;
+  kind: "enemy" | "buildable" | "projectile";
+  entityId: EntityId;
+  renderObjectId: string;
+};
+
 type ClientShadowState = {
   dataRegistry: DataRegistry;
   world: GameWorld;
@@ -143,7 +162,9 @@ type ClientShadowState = {
   input: OutpostInputState;
   identity: OutpostIdentityRegistry;
   players: Map<string, MaterializedClientPlayer>;
+  combatObjects: Map<string, MaterializedClientCombatObject>;
   presentedPlayers: Map<string, OutpostPresentedPlayerState>;
+  presentedCombatObjects: Map<string, OutpostPresentedCombatObjectState>;
   replication?: MultiplayerClientReplicationView<
     OutpostClientAuthoritySnapshot,
     OutpostPredictedPlayerState
@@ -175,6 +196,10 @@ type OutpostPresentedPlayerState = {
   facing: number;
 };
 
+type OutpostPresentedCombatObjectState = OutpostPresentedPlayerState & {
+  tags: readonly string[];
+};
+
 export function createOutpostClientShadowRuntime(
   options: CreateOutpostClientShadowRuntimeOptions
 ): OutpostClientShadowRuntime {
@@ -187,7 +212,9 @@ export function createOutpostClientShadowRuntime(
     input: createOutpostInputState(),
     identity: createOutpostIdentityRegistry(),
     players: new Map(),
+    combatObjects: new Map(),
     presentedPlayers: new Map(),
+    presentedCombatObjects: new Map(),
     lastAppliedTick: -1
   };
   const runtime = createGame({
@@ -203,8 +230,10 @@ export function createOutpostClientShadowRuntime(
               dataRegistry: options.dataRegistry,
               renderer: options.renderer,
               applyRenderTargetState: options.applyRenderTargetState,
-              readPlayerState(playerId) {
-                return state.presentedPlayers.get(playerId);
+              readObjectState(objectId) {
+                return (
+                  state.presentedPlayers.get(objectId) ?? state.presentedCombatObjects.get(objectId)
+                );
               }
             })
           ]
@@ -309,12 +338,31 @@ function createClientReplicationModule(
             for (const player of snapshot.players) {
               writer.add(playerPositionKey(player), { x: player.x, y: player.y });
             }
+            for (const actor of snapshot.combat.actors) {
+              if (actor.kind !== "player") {
+                writer.add(combatObjectPositionKey(actor), { x: actor.x, y: actor.y });
+              }
+            }
+            for (const projectile of snapshot.combat.projectiles) {
+              writer.add(combatObjectPositionKey(projectile), {
+                x: projectile.x,
+                y: projectile.y
+              });
+            }
           }
         }),
         defineSnapshotAngleTrack<OutpostClientAuthoritySnapshot>({
           selectInto(snapshot, writer) {
             for (const player of snapshot.players) {
               writer.add(playerFacingKey(player), player.facing);
+            }
+            for (const actor of snapshot.combat.actors) {
+              if (actor.kind !== "player") {
+                writer.add(combatObjectFacingKey(actor), actor.facing);
+              }
+            }
+            for (const projectile of snapshot.combat.projectiles) {
+              writer.add(combatObjectFacingKey(projectile), projectile.facing);
             }
           }
         })
@@ -429,8 +477,124 @@ function applyAuthoritativeSnapshot(
     });
     world.set(materialized.entityId, OutpostGameplayObject, { facing: player.facing });
   }
+  applyAuthoritativeCombatObjects(state, world, snapshot);
   state.received = snapshot;
   state.lastAppliedTick = snapshot.tick;
+}
+
+function applyAuthoritativeCombatObjects(
+  state: ClientShadowState,
+  world: GameWorld,
+  snapshot: OutpostClientAuthoritySnapshot
+): void {
+  const desired = new Set<string>();
+  for (const actor of snapshot.combat.actors) {
+    if (actor.kind === "player") {
+      continue;
+    }
+    desired.add(actor.objectId);
+    upsertClientCombatObject(state, world, actor, actor.kind);
+  }
+  for (const projectile of snapshot.combat.projectiles) {
+    desired.add(projectile.objectId);
+    upsertClientCombatObject(state, world, projectile, "projectile");
+  }
+  for (const materialized of state.combatObjects.values()) {
+    if (!desired.has(materialized.objectId)) {
+      removeMaterializedClientCombatObject(state, world, materialized);
+    }
+  }
+}
+
+function upsertClientCombatObject(
+  state: ClientShadowState,
+  world: GameWorld,
+  snapshot: OutpostReplicatedActor | OutpostReplicatedProjectile,
+  kind: MaterializedClientCombatObject["kind"]
+): void {
+  let materialized = state.combatObjects.get(snapshot.objectId);
+  if (
+    materialized !== undefined &&
+    (materialized.networkEntityId !== snapshot.networkEntityId ||
+      materialized.generation !== snapshot.generation)
+  ) {
+    removeMaterializedClientCombatObject(state, world, materialized);
+    materialized = undefined;
+  }
+  materialized ??= materializeClientCombatObject(state, world, snapshot, kind);
+  world.set(materialized.entityId, PhysicsTransformComponent, {
+    position: { x: snapshot.x, y: snapshot.y }
+  });
+  world.set(materialized.entityId, PhysicsVelocityComponent, {
+    linear: { x: snapshot.velocityX, y: snapshot.velocityY }
+  });
+  world.set(materialized.entityId, OutpostGameplayObject, {
+    id: snapshot.objectId,
+    kind,
+    facing: snapshot.facing
+  });
+}
+
+function materializeClientCombatObject(
+  state: ClientShadowState,
+  world: GameWorld,
+  snapshot: OutpostReplicatedActor | OutpostReplicatedProjectile,
+  kind: MaterializedClientCombatObject["kind"]
+): MaterializedClientCombatObject {
+  const entityId = world.spawn();
+  const renderObjectId = `outpost.client.${kind}.${snapshot.networkEntityId}.${snapshot.generation}`;
+  const materialized: MaterializedClientCombatObject = {
+    objectId: snapshot.objectId,
+    networkEntityId: snapshot.networkEntityId,
+    generation: snapshot.generation,
+    kind,
+    entityId,
+    renderObjectId
+  };
+  try {
+    world.add(entityId, OutpostGameplayObject, {
+      id: snapshot.objectId,
+      kind,
+      facing: snapshot.facing
+    });
+    world.add(entityId, PhysicsTransformComponent, {
+      position: { x: snapshot.x, y: snapshot.y }
+    });
+    world.add(entityId, PhysicsVelocityComponent, {
+      linear: { x: snapshot.velocityX, y: snapshot.velocityY }
+    });
+    world.add(entityId, OutpostPresentation, {
+      renderKey: snapshot.renderKey,
+      renderObjectId
+    });
+    state.identity.register({
+      gameplayObjectId: snapshot.objectId,
+      entityId,
+      network: { entityId: snapshot.networkEntityId, generation: snapshot.generation },
+      renderObjectId
+    });
+    state.combatObjects.set(snapshot.objectId, materialized);
+    return materialized;
+  } catch (error) {
+    state.identity.remove(snapshot.objectId);
+    if (world.has(entityId)) {
+      world.despawn(entityId);
+    }
+    throw error;
+  }
+}
+
+function removeMaterializedClientCombatObject(
+  state: ClientShadowState,
+  world: GameWorld,
+  object: MaterializedClientCombatObject
+): void {
+  state.identity.remove(object.objectId);
+  state.presentedCombatObjects.delete(object.objectId);
+  if (world.has(object.entityId)) {
+    world.despawn(object.entityId);
+  }
+  state.combatObjects.delete(object.objectId);
 }
 
 function applyPresentedSnapshot(
@@ -471,6 +635,50 @@ function applyPresentedSnapshot(
       state.presentedPlayers.delete(playerId);
     }
   }
+  const presentedCombatIds = new Set<string>();
+  for (const actor of snapshot.combat.actors) {
+    if (actor.kind === "player") {
+      continue;
+    }
+    presentedCombatIds.add(actor.objectId);
+    applyPresentedCombatObject(state, actor, actor.tags, presented, fallbackPosition);
+  }
+  for (const projectile of snapshot.combat.projectiles) {
+    presentedCombatIds.add(projectile.objectId);
+    applyPresentedCombatObject(state, projectile, [], presented, fallbackPosition);
+  }
+  for (const objectId of state.presentedCombatObjects.keys()) {
+    if (!presentedCombatIds.has(objectId)) {
+      state.presentedCombatObjects.delete(objectId);
+    }
+  }
+}
+
+function applyPresentedCombatObject(
+  state: ClientShadowState,
+  object: OutpostReplicatedActor | OutpostReplicatedProjectile,
+  tags: readonly string[],
+  presented: PresentedSnapshotTracks,
+  fallbackPosition: NetworkVector2
+): void {
+  let target = state.presentedCombatObjects.get(object.objectId);
+  if (target === undefined) {
+    target = {
+      position: { x: object.x, y: object.y },
+      velocityX: object.velocityX,
+      velocityY: object.velocityY,
+      facing: object.facing,
+      tags
+    };
+    state.presentedCombatObjects.set(object.objectId, target);
+  }
+  fallbackPosition.x = object.x;
+  fallbackPosition.y = object.y;
+  presented.vector2Into(combatObjectPositionKey(object), target.position, fallbackPosition);
+  target.velocityX = object.velocityX;
+  target.velocityY = object.velocityY;
+  target.facing = presented.angleRadians(combatObjectFacingKey(object), object.facing);
+  target.tags = tags;
 }
 
 function predictedStateFromSnapshot(
@@ -596,6 +804,18 @@ function playerPositionKey(player: OutpostClientPlayerSnapshot): string {
 
 function playerFacingKey(player: OutpostClientPlayerSnapshot): string {
   return `entity:${player.networkEntityId}:${player.generation}:facing`;
+}
+
+function combatObjectPositionKey(
+  object: OutpostReplicatedActor | OutpostReplicatedProjectile
+): string {
+  return `entity:${object.networkEntityId}:${object.generation}:position`;
+}
+
+function combatObjectFacingKey(
+  object: OutpostReplicatedActor | OutpostReplicatedProjectile
+): string {
+  return `entity:${object.networkEntityId}:${object.generation}:facing`;
 }
 
 function materializeClientPlayer(
@@ -736,8 +956,15 @@ function createClientShadowLifecycleModule(state: ClientShadowState) {
             ctx.world.despawn(player.entityId);
           }
         }
+        for (const object of state.combatObjects.values()) {
+          if (ctx.world.has(object.entityId)) {
+            ctx.world.despawn(object.entityId);
+          }
+        }
         state.players.clear();
+        state.combatObjects.clear();
         state.presentedPlayers.clear();
+        state.presentedCombatObjects.clear();
         state.identity.clear();
         delete state.replication;
         delete state.received;
@@ -753,18 +980,25 @@ export function readOutpostClientAuthoritySnapshot(
     !isRecord(value) ||
     !isMatchPhase(value.phase) ||
     !nonNegativeInteger(value.tick) ||
+    !nonNegativeFinite(value.elapsedMs) ||
     !nonNegativeFinite(value.countdownMsRemaining) ||
     !Array.isArray(value.participants) ||
     value.participants.length > MAX_PARTICIPANTS ||
     !Array.isArray(value.players) ||
     value.players.length > MAX_PLAYERS ||
+    !isRecord(value.combat) ||
     !isRecord(value.inputAcksByPeerId)
   ) {
     return undefined;
   }
   const participants = value.participants.map(readParticipant);
   const players = value.players.map(readPlayer);
-  if (participants.some((participant) => !participant) || players.some((player) => !player)) {
+  const combat = readCombatState(value.combat);
+  if (
+    participants.some((participant) => !participant) ||
+    players.some((player) => !player) ||
+    combat === undefined
+  ) {
     return undefined;
   }
   const inputAcksByPeerId: Record<string, number> = {};
@@ -777,9 +1011,11 @@ export function readOutpostClientAuthoritySnapshot(
   return {
     phase: value.phase,
     tick: value.tick,
+    elapsedMs: value.elapsedMs,
     countdownMsRemaining: value.countdownMsRemaining,
     participants: participants as OutpostClientParticipantSnapshot[],
     players: players as OutpostClientPlayerSnapshot[],
+    combat,
     inputAcksByPeerId
   };
 }
@@ -833,6 +1069,122 @@ function readPlayer(value: unknown): OutpostClientPlayerSnapshot | undefined {
   };
 }
 
+function readCombatState(value: unknown): OutpostReplicatedCombatState | undefined {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.actors) ||
+    value.actors.length > MAX_COMBAT_ACTORS ||
+    !Array.isArray(value.projectiles) ||
+    value.projectiles.length > MAX_PROJECTILES ||
+    !nonNegativeInteger(value.acceptedCommands) ||
+    !nonNegativeInteger(value.rejectedCommands) ||
+    !nonNegativeInteger(value.projectileHits) ||
+    !nonNegativeInteger(value.enemyAttacks) ||
+    !nonNegativeInteger(value.kills) ||
+    !nonNegativeInteger(value.drops) ||
+    !nonNegativeInteger(value.objectiveProgress)
+  ) {
+    return undefined;
+  }
+  const actors = value.actors.map(readCombatActor);
+  const projectiles = value.projectiles.map(readCombatProjectile);
+  if (actors.some((actor) => !actor) || projectiles.some((projectile) => !projectile)) {
+    return undefined;
+  }
+  return {
+    actors: actors as OutpostReplicatedActor[],
+    projectiles: projectiles as OutpostReplicatedProjectile[],
+    acceptedCommands: value.acceptedCommands,
+    rejectedCommands: value.rejectedCommands,
+    projectileHits: value.projectileHits,
+    enemyAttacks: value.enemyAttacks,
+    kills: value.kills,
+    drops: value.drops,
+    objectiveProgress: value.objectiveProgress
+  };
+}
+
+function readCombatActor(value: unknown): OutpostReplicatedActor | undefined {
+  if (
+    !isRecord(value) ||
+    !nonEmptyString(value.objectId) ||
+    !nonEmptyString(value.networkEntityId) ||
+    !nonNegativeInteger(value.generation) ||
+    (value.kind !== "player" && value.kind !== "enemy" && value.kind !== "buildable") ||
+    !nonEmptyString(value.definitionId) ||
+    !nonEmptyString(value.renderKey) ||
+    !finite(value.x) ||
+    !finite(value.y) ||
+    !finite(value.velocityX) ||
+    !finite(value.velocityY) ||
+    !finite(value.facing) ||
+    !finite(value.health) ||
+    !finite(value.shield) ||
+    !finite(value.stamina) ||
+    !finite(value.resource) ||
+    !Array.isArray(value.tags) ||
+    value.tags.length > 64 ||
+    !value.tags.every(nonEmptyString) ||
+    !isRecord(value.cooldowns)
+  ) {
+    return undefined;
+  }
+  const cooldowns: Record<string, number> = {};
+  for (const [abilityId, until] of Object.entries(value.cooldowns)) {
+    if (!nonEmptyString(abilityId) || !nonNegativeFinite(until)) {
+      return undefined;
+    }
+    cooldowns[abilityId] = until;
+  }
+  return {
+    objectId: value.objectId,
+    networkEntityId: value.networkEntityId,
+    generation: value.generation,
+    kind: value.kind,
+    definitionId: value.definitionId,
+    renderKey: value.renderKey,
+    x: value.x,
+    y: value.y,
+    velocityX: value.velocityX,
+    velocityY: value.velocityY,
+    facing: value.facing,
+    health: value.health,
+    shield: value.shield,
+    stamina: value.stamina,
+    resource: value.resource,
+    tags: [...value.tags],
+    cooldowns
+  };
+}
+
+function readCombatProjectile(value: unknown): OutpostReplicatedProjectile | undefined {
+  if (
+    !isRecord(value) ||
+    !nonEmptyString(value.objectId) ||
+    !nonEmptyString(value.networkEntityId) ||
+    !nonNegativeInteger(value.generation) ||
+    !nonEmptyString(value.renderKey) ||
+    !finite(value.x) ||
+    !finite(value.y) ||
+    !finite(value.velocityX) ||
+    !finite(value.velocityY) ||
+    !finite(value.facing)
+  ) {
+    return undefined;
+  }
+  return {
+    objectId: value.objectId,
+    networkEntityId: value.networkEntityId,
+    generation: value.generation,
+    renderKey: value.renderKey,
+    x: value.x,
+    y: value.y,
+    velocityX: value.velocityX,
+    velocityY: value.velocityY,
+    facing: value.facing
+  };
+}
+
 function cloneAuthoritySnapshot(
   snapshot: OutpostClientAuthoritySnapshot
 ): OutpostClientAuthoritySnapshot {
@@ -840,6 +1192,15 @@ function cloneAuthoritySnapshot(
     ...snapshot,
     participants: snapshot.participants.map((participant) => ({ ...participant })),
     players: snapshot.players.map((player) => ({ ...player })),
+    combat: {
+      ...snapshot.combat,
+      actors: snapshot.combat.actors.map((actor) => ({
+        ...actor,
+        tags: [...actor.tags],
+        cooldowns: { ...actor.cooldowns }
+      })),
+      projectiles: snapshot.combat.projectiles.map((projectile) => ({ ...projectile }))
+    },
     inputAcksByPeerId: { ...snapshot.inputAcksByPeerId }
   };
 }
