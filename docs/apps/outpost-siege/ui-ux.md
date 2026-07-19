@@ -182,7 +182,7 @@ Ability 无法使用时展示最具体原因：downed、reloading conflict、coo
 
 多人打开菜单不暂停 authority；单人 local authority 可以明确暂停。设置包含：
 
-- Master/Music/SFX/Voice/UI 音量与 mute。
+- Master/Music/SFX/Dialogue 以及 SFX/UI 音量与 mute。
 - 屏幕震动强度、闪光、粒子量、reduced motion。
 - UI/字幕/伤害方向提示缩放。
 - 高对比准星、色觉方案、危险区样式。

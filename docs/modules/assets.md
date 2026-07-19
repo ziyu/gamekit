@@ -69,10 +69,17 @@ export type AssetDefinition = {
   metadata?: Record<string, unknown>;
   preload?: boolean;
   lazy?: boolean;
+  frame?: SpritesheetFrameConfig;
+  atlas?: AtlasAssetMetadata;
+  audio?: AudioAssetMetadata;
+  variants?: Record<string, AssetVariantDefinition>;
+  animations?: AssetAnimationManifest[];
 };
 ```
 
 `asset.definition` 是 GameKit 内置 DataType。DataRegistry 负责校验定义、追踪来源和引用关系；AssetManager 负责加载状态。
+
+Atlas metadata 只描述 atlas data source，Audio metadata 只描述可选格式 source 与实例策略，Animation manifest 只描述 clip/frame range；这些字段都保持 backend-neutral。`variants` 可以按 profile 替换 source 和附加 metadata，`resolveAssetVariant(...)` 只解析声明，不加载资源。DataType 必须校验 source、frame、variant key、audio source 和 animation id/range 的有效性，native texture、frame、sound 或 animation object 不进入 AssetDefinition。
 
 ## AssetSource
 
@@ -103,6 +110,8 @@ AssetSource 只描述来源，不直接暴露平台私有 API。具体解析由 
 - expose asset snapshot for UI/DevTools。
 
 AssetManager 只保存运行时加载状态，例如 registered、loading、loaded、failed。它不替代 DataRegistry，也不保存 Actor、Ability、Rule 等 gameplay definition。
+
+注册时 AssetManager 持有 AssetDefinition 的隔离副本，lookup/snapshot 和 adapter 调用也不暴露内部可变定义。同一 asset 的并发 load 合并为一个 in-flight adapter 请求；diagnostic observer/error reporter 的异常不改变 register/load 结果。
 
 AssetManager 也不是 Content Package manager。它读取资源定义、解析资源来源、委托 adapter 加载资源；实际资源文件可能来自 URL、platform resource、编辑器 workspace、远程 CDN 或未来 Content Package mount。Asset 模块只关心最终可解析的 AssetDefinition / AssetSource，不关心内容包如何被发现、启用或卸载。
 

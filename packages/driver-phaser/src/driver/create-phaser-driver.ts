@@ -4,6 +4,8 @@ import type { InputSourceAdapter } from "@gamekit/input-core";
 import type { RendererBootContext } from "@gamekit/renderer-core";
 import { createPhaserRenderer } from "@gamekit/renderer-phaser";
 import { createPhaserDriverAssetLoader, type PhaserDriverAssetRuntime } from "./assets";
+import { createPhaserAnimationPlaybackAdapter } from "./animation";
+import { createPhaserAudioBackend, type PhaserDriverAudioRuntime } from "./audio";
 import { createPhaserDriverCameraAdapter, type PhaserDriverCameraAdapter } from "./camera";
 import { createPhaserDriverInputSource } from "./input-source";
 import { resolvePhaserDriverRenderOptions } from "./render-options";
@@ -32,6 +34,14 @@ export function createPhaserDriver(options: PhaserDriverOptions = {}): PhaserGam
       runtime: () => requireAssetRuntime(driverId, runtime)
     }),
     camera,
+    animation: createPhaserAnimationPlaybackAdapter({
+      id: `${driverId}.animation`,
+      runtime: () => renderer.native()
+    }),
+    audio: createPhaserAudioBackend({
+      id: `${driverId}.audio`,
+      runtime: () => requireAudioRuntime(driverId, runtime)
+    }),
     createInputSource(inputOptions): InputSourceAdapter {
       return createPhaserDriverInputSource({
         ...inputOptions,
@@ -67,6 +77,7 @@ export function createPhaserDriver(options: PhaserDriverOptions = {}): PhaserGam
       renderer.resize(size.width, size.height);
     },
     dispose() {
+      adapters.audio.dispose?.();
       renderer.destroy();
       runtime?.destroy();
       runtime = undefined;
@@ -78,6 +89,8 @@ export function createPhaserDriver(options: PhaserDriverOptions = {}): PhaserGam
         assets: true,
         input: true,
         camera: true,
+        animation: true,
+        audio: true,
         scenes: true,
         particles: true,
         custom: {
@@ -98,7 +111,7 @@ export function createPhaserDriver(options: PhaserDriverOptions = {}): PhaserGam
         kind: "phaser",
         phase,
         capabilities: this.capabilities(),
-        adapters: ["renderer", "assetLoader", "camera", "inputSource"],
+        adapters: ["renderer", "assetLoader", "camera", "animation", "audio", "inputSource"],
         details: {
           rendererId: renderer.id,
           runtimeReady: runtime !== undefined,
@@ -168,6 +181,18 @@ function requireAssetRuntime(
   }
 
   return runtime.assets;
+}
+
+function requireAudioRuntime(
+  driverId: string,
+  runtime: PhaserDriverRuntime | undefined
+): PhaserDriverAudioRuntime {
+  if (!runtime?.audio) {
+    throw new GameError("driver.phaser.audio_unavailable", "Phaser audio runtime is unavailable", {
+      driverId
+    });
+  }
+  return runtime.audio;
 }
 
 function requireCameraAdapter(

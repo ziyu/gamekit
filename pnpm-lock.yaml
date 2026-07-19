@@ -374,6 +374,9 @@ importers:
       '@gamekit/asset':
         specifier: workspace:*
         version: link:../../packages/asset
+      '@gamekit/audio-core':
+        specifier: workspace:*
+        version: link:../../packages/audio-core
       '@gamekit/camera-core':
         specifier: workspace:*
         version: link:../../packages/camera-core
@@ -509,14 +512,71 @@ importers:
         specifier: ^3.1.3
         version: 3.2.4(@types/node@22.19.18)(tsx@4.21.0)
 
-  packages/app-host:
+  packages/ai-core:
+    dependencies:
+      '@gamekit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@gamekit/data':
+        specifier: workspace:*
+        version: link:../data
+      '@gamekit/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@gamekit/game-runtime':
+        specifier: workspace:*
+        version: link:../game-runtime
+      '@gamekit/navigation-core':
+        specifier: workspace:*
+        version: link:../navigation-core
+      '@gamekit/save':
+        specifier: workspace:*
+        version: link:../save
+      '@gamekit/world':
+        specifier: workspace:*
+        version: link:../world
+
+  packages/animator-core:
     dependencies:
       '@gamekit/asset':
         specifier: workspace:*
         version: link:../asset
+      '@gamekit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@gamekit/data':
+        specifier: workspace:*
+        version: link:../data
+      '@gamekit/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@gamekit/game-runtime':
+        specifier: workspace:*
+        version: link:../game-runtime
+      '@gamekit/renderer-core':
+        specifier: workspace:*
+        version: link:../renderer-core
+
+  packages/app-host:
+    dependencies:
+      '@gamekit/ai-core':
+        specifier: workspace:*
+        version: link:../ai-core
+      '@gamekit/animator-core':
+        specifier: workspace:*
+        version: link:../animator-core
+      '@gamekit/asset':
+        specifier: workspace:*
+        version: link:../asset
+      '@gamekit/audio-core':
+        specifier: workspace:*
+        version: link:../audio-core
       '@gamekit/camera-core':
         specifier: workspace:*
         version: link:../camera-core
+      '@gamekit/combat':
+        specifier: workspace:*
+        version: link:../combat
       '@gamekit/core':
         specifier: workspace:*
         version: link:../core
@@ -541,6 +601,9 @@ importers:
       '@gamekit/multiplayer-core':
         specifier: workspace:*
         version: link:../multiplayer-core
+      '@gamekit/navigation-core':
+        specifier: workspace:*
+        version: link:../navigation-core
       '@gamekit/physics-core':
         specifier: workspace:*
         version: link:../physics-core
@@ -568,6 +631,15 @@ importers:
       '@gamekit/data':
         specifier: workspace:*
         version: link:../data
+
+  packages/audio-core:
+    dependencies:
+      '@gamekit/asset':
+        specifier: workspace:*
+        version: link:../asset
+      '@gamekit/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/camera-core:
     dependencies:
@@ -656,9 +728,15 @@ importers:
 
   packages/driver-phaser:
     dependencies:
+      '@gamekit/animator-core':
+        specifier: workspace:*
+        version: link:../animator-core
       '@gamekit/asset':
         specifier: workspace:*
         version: link:../asset
+      '@gamekit/audio-core':
+        specifier: workspace:*
+        version: link:../audio-core
       '@gamekit/camera-core':
         specifier: workspace:*
         version: link:../camera-core
@@ -801,6 +879,27 @@ importers:
       '@gamekit/multiplayer-core':
         specifier: workspace:*
         version: link:../multiplayer-core
+
+  packages/navigation-core:
+    dependencies:
+      '@gamekit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@gamekit/data':
+        specifier: workspace:*
+        version: link:../data
+      '@gamekit/game-runtime':
+        specifier: workspace:*
+        version: link:../game-runtime
+
+  packages/navigation-graph:
+    dependencies:
+      '@gamekit/data':
+        specifier: workspace:*
+        version: link:../data
+      '@gamekit/navigation-core':
+        specifier: workspace:*
+        version: link:../navigation-core
 
   packages/physics-core:
     dependencies:
@@ -962,9 +1061,21 @@ importers:
 
   packages/test-utils:
     dependencies:
+      '@gamekit/ai-core':
+        specifier: workspace:*
+        version: link:../ai-core
+      '@gamekit/animator-core':
+        specifier: workspace:*
+        version: link:../animator-core
+      '@gamekit/audio-core':
+        specifier: workspace:*
+        version: link:../audio-core
       '@gamekit/event-bus':
         specifier: workspace:*
         version: link:../event-bus
+      '@gamekit/navigation-core':
+        specifier: workspace:*
+        version: link:../navigation-core
       '@gamekit/platform-core':
         specifier: workspace:*
         version: link:../platform-core

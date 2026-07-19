@@ -50,7 +50,7 @@ App Host 管理应用级 lifecycle：
 - DataRegistry 创建、DataType 注册和已物化 DataPack 注册
 - AssetManager 创建和 preload pipeline
 - Renderer boot / resize / destroy
-- Audio adapter boot / unlock / dispose
+- GameAudio 的 update/unlock/suspend/resume/dispose；Driver 提供的共享 AudioBackend slice 仍由 Driver 独占 native runtime 销毁权
 - Input adapter start / stop
 - Multiplayer facade / backend lifecycle / diagnostics
 - UI / DevTools mount
@@ -106,6 +106,7 @@ export type AppServiceRegistry = {
   drivers?: DriverRegistry;
   data?: DataRegistry;
   assets?: AssetManager;
+  audio?: GameAudio;
   renderer?: RendererAdapter;
   input?: InputRouter;
   multiplayer?: MultiplayerFacade;
@@ -214,8 +215,10 @@ App Host profile 负责选择标准服务使用哪个 driver adapter：
 driver.phaser
 → renderer service uses driver.phaser.adapters.renderer
 → assets service uses driver.phaser.adapters.assetLoader
+→ audio service binds GameAudio to driver.phaser.adapters.audio (AudioBackend)
 → input service uses driver.phaser.adapters.inputSource
 → camera module uses driver.phaser.adapters.camera
+→ animator module uses driver.phaser.adapters.animation
 → physics module uses driver.phaser.adapters.physics
 ```
 
@@ -533,11 +536,11 @@ Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务�
 - `gas` 标准游戏模块负责从 DataRegistry 读取 GAS 定义、创建 ECS-backed GAS runtime、注册 effect tick system、写入 trace，并在 GameRuntime dispose 时释放。Profile 可以提供 `GasHandle`，让同一 GameRuntime 内的业务模块通过稳定 facade 使用该 runtime；handle 仍跟随 GameModule 绑定/解绑，不进入 `services.xxx`。
 - `combat` 标准游戏模块负责把 DataRegistry、World、PhysicsHandle、GasHandle 和 app-injected target/relationship policy 传给 Combat runtime；它不理解具体武器、敌人或伤害公式。
 - `navigation` 标准游戏模块负责加载 backend/layout、绑定 NavigationHandle、推进 request budget 和 cleanup；`ai` 标准模块再消费该 handle、app definitions 与 intent sink，不在 Host 内实现 agent 行为。
-- `animator` 标准游戏模块负责把 DataRegistry、Driver/Renderer 提供的 AnimationPlaybackAdapter 与 app presentation parameter reader 组合成 Animator controller runtime；Audio 仍作为 App Service facade，由 presentation module 提交 command。
+- `animator` 标准游戏模块负责把 DataRegistry、Driver/Renderer 提供的 AnimationPlaybackAdapter 与 app presentation parameter reader 组合成 Animator controller runtime；GameAudio 仍作为 App Service facade，由 presentation module 分别调用 music、sfx 或 dialogue 控制面。
 - `multiplayer` 标准游戏模块负责从 `services.multiplayer` 或显式 facade 订阅归一化消息，把 command 入站队列放到 tick 边界处理；如果 profile 声明 presentation binding，则在 GameRuntime tick 中自动推进 core snapshot playback，没收到新 authoritative snapshot 的帧也继续 advance 既有 buffer，并通过 reusable presentation projector 根据声明的 `Network*` tracks 产出 typed presented values，再交给游戏提供的 apply hook。GameRuntime dispose 时释放订阅并重置 playback/projector。
 - 标准游戏模块只能依赖稳定 facade、App Host services 和 profile 注入的定义，不能直接依赖 Phaser、DOM、Tauri 或具体 app 入口。
 
-`createGameplayDevToolsCorrelation(...)` 是 App Host 的可选跨模块诊断组合 helper。它创建有界 TCA/GAS/Physics trace store、注册一个 domain-neutral DevTools correlation source，并通过单一 `dispose()` 注销和释放组合资源；它不拥有 gameplay runtime，也不把 DevTools 依赖下推到 domain package。默认映射只保留稳定白名单摘要，不透传 GAS details 或 Physics payload。游戏需要补充字段时显式提供小型 summary mapper，并可用统一 redaction hook 清理敏感内容；mapper 或 DevTools bridge 失败只报告 warning diagnostic，不能中断玩法 trace 写入。
+`createGameplayDevToolsCorrelation(...)` 是 App Host 的可选跨模块诊断组合 helper。它创建有界 TCA/GAS/Physics/Combat trace store，并为 Navigation、AI、Animator trace 与 Audio diagnostic 提供旁路 observer，统一写入一个 domain-neutral DevTools correlation source，再通过单一 `dispose()` 注销和释放组合资源；它不拥有 gameplay runtime，也不把 DevTools 依赖下推到 domain package。Audio 摘要使用 category、sourceId、eventId/trackId/lineId、instanceId 和 emitterId，而不是把 native channel identity 当作公共事实。默认映射只保留稳定白名单摘要，不透传任意 details/payload。游戏需要补充字段时显式提供小型 summary mapper，并可用统一 redaction hook 清理敏感内容；mapper、redactor、diagnostic reporter 或 DevTools bridge 失败只报告 warning diagnostic，不能中断玩法 trace 写入。
 
 ## Test Host
 

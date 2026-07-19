@@ -145,7 +145,7 @@ asset → data / core
 tca → core / data / event-bus / game-runtime / save
 gas → core / data / event-bus / game-runtime / tca / world / save
 combat → core / data / event-bus / game-runtime / world / physics-core / gas
-ai-core → core / data / event-bus / game-runtime / world / navigation-core
+ai-core → core / data / event-bus / game-runtime / world / navigation-core / save
 navigation-core → core / data / game-runtime
 navigation backend packages → navigation-core / backend-owned algorithm/runtime
 animator-core → core / data / event-bus / game-runtime / asset / renderer-core
@@ -239,7 +239,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 | `@gamekit/navigation-core`                                                            | Game Module toolkit / facade                  | Path/route query、agent profile、dynamic blocker/cost、request budget 和 adapter contract。                                                                                               |
 | `@gamekit/navigation-*`                                                               | Game Module backend adapter                   | Graph、grid、navmesh 或其他成熟算法实现；native node/poly/runtime 不进入 Core。                                                                                                           |
 | `@gamekit/animator-core`                                                              | Game Module toolkit                           | 语义 Animator graph、controller、layer、transition、marker 和 playback snapshot；具体 clip/mixer 由 Renderer/Driver adapter 执行。                                                        |
-| `@gamekit/audio-core`                                                                 | App Service facade + presentation bridge      | Audio bus、listener、voice、command、并发策略与 diagnostics；具体音频 runtime 由 Adapter/Driver 持有。                                                                                    |
+| `@gamekit/audio-core`                                                                 | App Service facade + presentation bridge      | GameAudio 领域 facade；分别提供 Music、SFX、可选 Dialogue、Mix、Spatial 和共享 Playback 语义，具体 native channel/DSP/runtime 由 Adapter/Driver 持有。                                    |
 | `@gamekit/tca`                                                                        | Game Module                                   | 数据驱动规则 runtime，通过标准 GameModule 无痛安装。                                                                                                                                      |
 | `@gamekit/gas`                                                                        | Game Module                                   | 通用 Actor/Ability/Effect runtime；热状态落在 World component，复用 TCA。                                                                                                                 |
 | `@gamekit/multiplayer-core`                                                           | 混合：App Service facade + Game Module bridge | GameKit 侧连接 facade、语义 command、local/remote authority binding、标准复制 helper、diagnostics 和 bridge；不拥有 provider room/matchmaker/reconnect/state-sync engine 或具体玩法逻辑。 |
@@ -353,7 +353,7 @@ AI Core 负责 perception memory、Utility goal selection、Task state machine�
 
 Animator Core 管理 semantic parameter、graph、layer、transition、one-shot、marker 与 playback state；Renderer/Driver 负责 native clip、mixer、sprite frame 和资源对象。Gameplay ability phase 是权威时间源，animation marker 只触发表现。
 
-Audio Core 管理 bus、listener、voice、command、并发与 diagnostics；AssetManager 负责音频资源状态，Driver/Adapter 负责 Web Audio、Phaser 或平台 SDK。音频失败不能改变玩法结果。
+Audio Core 的首层 API 按游戏音频领域拆分：MusicPlayer 管理音乐状态和过渡，SoundEffects 管理离散音效、variation、空间 emitter 与并发，DialoguePlayer 管理可选的对白队列和打断，AudioMixer/SpatialAudio 提供共享混音与空间状态。Bus 只负责路由，不能用一个通用 Audio Event + `bus` 代替这些领域控制器。共享 PlaybackInstance 与 Backend native channel 必须分离；公共 API 使用 Dialogue 表示配音，不用含义歧义的 `voice` 表示逻辑实例或标准 Bus。AssetManager 负责音频资源状态，Driver/Adapter 负责 Web Audio、Phaser、成熟中间件或平台 SDK；第三方 handle 不进入 Core。音频失败、marker 和播放位置不能改变玩法结果。公共 API 决策见 `docs/adr/0034-game-audio-domain-facades.md`。
 
 详细设计见 `docs/modules/animator.md` 和 `docs/modules/audio.md`。
 
@@ -427,20 +427,20 @@ Room-side backend bridge 可以把已经由 provider Room 拥有的 session 映�
 
 详细设计见 `docs/modules/multiplayer.md`，决策背景见 `docs/adr/0010-multiplayer-core-and-backend-adapters.md`、`docs/adr/0012-mature-multiplayer-backend-adapter.md`、`docs/adr/0013-standard-authoritative-replication-boundary.md`、`docs/adr/0016-room-owned-server-authority-lifecycle.md`、`docs/adr/0017-app-owned-colyseus-field-schema-boundary.md` 和 `docs/adr/0028-managed-client-replication-runtime.md`。
 
-## 包内拆分约定
+## 包内架构约定
 
-每个包的 `src/index.ts` 只作为公共出口，不承载主要实现。
+包内目录不是统一脚手架。`runtime/`、`adapter/`、`components/`、`modules/` 和 `types.ts` 只是可能出现的技术类别，不能被复制成每个 package 的默认结构。每个长期包必须先识别自己的领域职责、变化轴和内部依赖方向，再决定目录。
 
-推荐结构：
+共同约束：
 
-```txt
-src/
-  index.ts
-  runtime/
-  adapter/
-  components/
-  modules/
-  types.ts
-```
+- `src/index.ts` 只作为 root public export map，不承载主要实现，也不自动导出全部内部文件。
+- 优先按领域或 feature 拆分行为，例如 Audio 的 `music/`、`sfx/`、`dialogue/`、`mix/`、`spatial/`；不要把互不相同的领域状态机都塞进一个 `runtime/`。
+- 稳定公共 contract、第三方执行 port、领域实现、composition root、observability 和 testing fixture 必须有可识别的边界；一个目录只在该边界真实存在时创建。
+- Composition root 可以依赖并装配多个领域 slice，领域 slice 不能反向依赖 composition。Adapter/Backend port 不依赖 App Host、具体 driver 或高层领域 controller。
+- 类型与拥有其语义的领域放在一起。禁止用包级 `types.ts`、`definitions.ts`、`helpers.ts` 或 `utils.ts` 聚合所有不相关概念。
+- 公共 root、backend/adapter contract 和 testing helper 面向不同消费者时，使用明确 subpath export；不要为了 Driver 或测试方便扩大 root API。
+- 测试目录按领域边界镜像实现，conformance 与具体 Backend/Adapter 行为分开验证。
+- 内部 barrel 不能隐藏循环依赖。跨领域实现优先直接导入窄文件，由 lint/build 维护单向依赖。
+- 小型单职责包可以保持扁平；是否拆目录由职责和依赖决定，不由文件数量或其他 package 的外观决定。
 
-只有小型纯类型包可以保持更扁平，但仍应让实现文件有明确职责。
+具体包必须在对应 `docs/modules/<module>.md` 维护长期包内架构。Audio Core 的 feature-first 目录、subpath export 和依赖图见 `docs/modules/audio.md` 与 ADR 0035。

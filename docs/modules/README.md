@@ -62,7 +62,7 @@
 - `ai.md`：Perception、Utility goal、Task lifecycle、budget scheduler。
 - `navigation.md`：Path/route query、agent profile、dynamic blocker、backend adapter。
 - `animator.md`：Semantic Animator graph、controller、layer、marker、playback adapter。
-- `audio.md`：Audio bus、listener、voice、command、concurrency、adapter。
+- `audio.md`：GameAudio 的 Music/SFX/Dialogue 领域 API、Playback、Mix、Spatial 和 Backend 边界。
 - `platform.md`：Platform Core、Web/Tauri adapter、权限与文件系统。
 - `data.md`：DataType、DataPack、DataRef、自由游戏数据模型、数据校验。
 - `assets.md`：AssetRef、AssetDefinition、AssetManager、资源来源和加载状态。

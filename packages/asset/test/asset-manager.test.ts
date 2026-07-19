@@ -4,6 +4,7 @@ import {
   createAssetDataType,
   createAssetManager,
   loadAssetGroupWithRetry,
+  resolveAssetVariant,
   type AssetDefinition
 } from "../src";
 
@@ -71,6 +72,64 @@ describe("createAssetManager", () => {
     await manager.loadGroup("preload");
 
     expect(loaded).toEqual(["asset.hero", "asset.enemy"]);
+  });
+
+  it("coalesces concurrent loads and protects registered definitions from mutation", async () => {
+    let resolveLoad: (() => void) | undefined;
+    let loads = 0;
+    const manager = createAssetManager({
+      adapter: {
+        id: "test",
+        supports: () => true,
+        async load(nextAsset) {
+          loads += 1;
+          nextAsset.metadata = { mutatedByAdapter: true };
+          await new Promise<void>((resolve) => {
+            resolveLoad = resolve;
+          });
+        }
+      }
+    });
+    const definition = asset("asset.concurrent", {
+      tags: ["registered"],
+      metadata: { nested: { quality: "base" } }
+    });
+    manager.register(definition);
+    definition.tags?.push("external-mutation");
+    const first = manager.load(definition.id);
+    const second = manager.load(definition.id);
+    await Promise.resolve();
+    expect(loads).toBe(1);
+    resolveLoad?.();
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({ status: "loaded" }),
+      expect.objectContaining({ status: "loaded" })
+    ]);
+
+    const read = manager.get(definition.id);
+    read.tags?.push("read-mutation");
+    expect(manager.get(definition.id)).toMatchObject({
+      tags: ["registered"],
+      metadata: { nested: { quality: "base" } }
+    });
+  });
+
+  it("isolates diagnostic observer failures from registration and loading", async () => {
+    let diagnosticErrors = 0;
+    const manager = createAssetManager({
+      adapter: { id: "test", supports: () => true, async load() {} },
+      onDiagnostic(event) {
+        event.payload.assetId = "mutated";
+        throw new Error("observer failed");
+      },
+      onDiagnosticError() {
+        diagnosticErrors += 1;
+        throw new Error("error observer failed");
+      }
+    });
+    manager.register(asset("asset.diagnostic"));
+    await expect(manager.load("asset.diagnostic")).resolves.toMatchObject({ status: "loaded" });
+    expect(diagnosticErrors).toBe(3);
   });
 
   it("throws for duplicate, missing, and unsupported assets", async () => {
@@ -194,6 +253,83 @@ describe("createAssetManager", () => {
 
     expect(result.succeeded).toBe(true);
     expect(manager.state("asset.safe").status).toBe("loaded");
+  });
+});
+
+describe("asset metadata", () => {
+  it("validates atlas, audio variants, and animation manifests", () => {
+    const registry = createDataRegistry();
+    registry.registerType(createAssetDataType());
+    const validation = registry.validatePack({
+      id: "asset.metadata.invalid",
+      version: "1.0.0",
+      entries: [
+        {
+          type: "asset.definition",
+          id: "atlas.invalid",
+          data: {
+            id: "atlas.invalid",
+            type: "atlas",
+            source: { type: "url", url: "" }
+          }
+        },
+        {
+          type: "asset.definition",
+          id: "missing-source",
+          data: {
+            id: "missing-source",
+            type: "image"
+          } as never
+        },
+        {
+          type: "asset.definition",
+          id: "audio.invalid",
+          data: {
+            id: "audio.invalid",
+            type: "audio",
+            source: { type: "url", url: "/audio.ogg" },
+            audio: {
+              sources: [
+                { type: "url", url: "/audio.ogg" },
+                { type: "url", url: "/audio.ogg" }
+              ],
+              instances: 0
+            },
+            animations: [{ id: "broken", frames: [] }]
+          }
+        }
+      ]
+    });
+
+    expect(validation.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "asset.invalid_source" }),
+        expect.objectContaining({ code: "asset.unsupported_source" }),
+        expect.objectContaining({ code: "asset.missing_atlas_metadata" }),
+        expect.objectContaining({ code: "asset.duplicate_audio_source" }),
+        expect.objectContaining({ code: "asset.invalid_audio_instances" }),
+        expect.objectContaining({ code: "asset.invalid_animation_manifest" })
+      ])
+    );
+  });
+
+  it("resolves an explicit variant without mutating the base definition", () => {
+    const base = asset("asset.variant", {
+      metadata: { quality: "base" },
+      variants: {
+        retina: {
+          source: { type: "url", url: "/assets/retina.png" },
+          metadata: { quality: "retina" }
+        }
+      }
+    });
+
+    expect(resolveAssetVariant(base, "retina")).toMatchObject({
+      source: { type: "url", url: "/assets/retina.png" },
+      metadata: { quality: "retina" }
+    });
+    expect(base.source).toEqual({ type: "url", url: "/assets/asset.variant.png" });
+    expect(resolveAssetVariant(base, "missing")).toBe(base);
   });
 });
 

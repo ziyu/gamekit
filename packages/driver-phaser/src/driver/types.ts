@@ -1,4 +1,6 @@
 import type { AssetLoaderAdapter } from "@gamekit/asset";
+import type { AnimationPlaybackAdapter } from "@gamekit/animator-core";
+import type { AudioBackend } from "@gamekit/audio-core/backend";
 import type { DriverAdapterMap, GameDriver } from "@gamekit/driver-core";
 import type { InputSourceAdapter, NormalizedInputEvent } from "@gamekit/input-core";
 import type { RendererAdapter, RendererBootContext } from "@gamekit/renderer-core";
@@ -39,6 +41,8 @@ export type PhaserDriverAdapters = DriverAdapterMap & {
   renderer: RendererAdapter;
   assetLoader: AssetLoaderAdapter;
   camera: PhaserDriverCameraAdapter;
+  animation: AnimationPlaybackAdapter;
+  audio: AudioBackend;
   createInputSource(options: PhaserInputSourceOptions): InputSourceAdapter;
 };
 

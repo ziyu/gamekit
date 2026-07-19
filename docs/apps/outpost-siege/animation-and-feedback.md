@@ -107,15 +107,16 @@ Telegraph 与装饰 effect 分开。性能降级可以减少火花数量、trail
 
 ### Bus
 
-| Bus      | 内容                           | 优先规则                   |
-| -------- | ------------------------------ | -------------------------- |
-| Voice/UI | 目标、队友倒地、倒计时、错误   | 最高；必要时 duck 普通 SFX |
-| Combat   | 玩家武器、技能、受伤、首领攻击 | 玩家/首领高于普通敌人      |
-| Enemy    | 普通敌人攻击、移动、死亡       | 按距离与并发组裁剪         |
-| Ambience | 风、设施、核心 hum、远端警报   | 可循环、低优先             |
-| Music    | 部署、波次、首领、撤离层       | 按 Match phase crossfade   |
+| Bus          | 内容                           | 优先规则                   |
+| ------------ | ------------------------------ | -------------------------- |
+| dialogue     | 目标、队友倒地、倒计时对白     | 最高；必要时 duck 普通 SFX |
+| sfx/ui       | 本地确认、错误和非空间提示     | 不受 gameplay emitter 裁剪 |
+| sfx/combat   | 玩家武器、技能、受伤、首领攻击 | 玩家/首领高于普通敌人      |
+| sfx/enemy    | 普通敌人攻击、移动、死亡       | 按距离与并发组裁剪         |
+| sfx/ambience | 风、设施、核心 hum、远端警报   | 可循环、低优先             |
+| music        | 部署、波次、首领、撤离层       | 按 Match phase crossfade   |
 
-Rifle fire 使用 concurrency group 与轻微受控 pitch variation；四名玩家和炮塔持续射击时不能为每一发保持独立长 voice。关键 reload empty、ability ready、shield break、downed 和 boss telegraph 不被普通枪声完全遮蔽。
+Rifle fire 使用 SFX concurrency group 与轻微受控 pitch variation；四名玩家和炮塔持续射击时不能为每一发保持长期 PlaybackInstance。关键 reload empty、ability ready、shield break、downed 和 boss telegraph 不被普通枪声完全遮蔽。
 
 Spatial source 位置来自 presentation frame。屏外致命警告同时播放 UI/non-spatial 提示与视觉方向箭头，不能只依赖 stereo pan。
 
@@ -177,8 +178,8 @@ Runtime `public` 只保存压缩产物，原始生成图与工作文件位于 so
 
 - 500 active dynamic objects 下 Animator controller 更新和 backend write 有独立 budget。
 - 远处/屏外对象可以降低 animation frame rate 或暂停非关键 particle，但 gameplay telegraph state 仍可恢复。
-- Particle、voice、one-shot、marker 和 cue history 均有 max concurrent / ring limit。
-- Texture atlas 尺寸、memory、upload time、draw call、fill rate 和 voice 数量进入 profile。
+- Particle、PlaybackInstance、native playback、one-shot、marker 和 cue history 均有 max concurrent / ring limit。
+- Texture atlas 尺寸、memory、upload time、draw call、fill rate 和 native playback 数量进入 profile。
 - 静态场景与 sprite 使用稳定采样/rounding policy，摄像头移动时不能闪烁或抖动。
 
 真实浏览器验证覆盖 local/remote locomotion、转向边界、fire/reload/dash、受击/死亡、late join active action、reconnect、竖屏 viewport、reduced motion、mute/unlock 和高密度战斗效果降级。

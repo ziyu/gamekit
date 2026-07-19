@@ -22,7 +22,8 @@ function main(): void {
     rootLimitPerCorrelation: 4,
     tcaTraceLimit: DOMAIN_TRACE_LIMIT,
     gasTraceLimit: DOMAIN_TRACE_LIMIT,
-    physicsTraceLimit: DOMAIN_TRACE_LIMIT
+    physicsTraceLimit: DOMAIN_TRACE_LIMIT,
+    combatTraceLimit: DOMAIN_TRACE_LIMIT
   });
 
   for (let index = 0; index < 1_000; index += 1) {
@@ -56,7 +57,8 @@ function main(): void {
     retainedDomainTraces:
       correlation.tcaTraceStore.list().length +
       correlation.gasTraceStore.list().length +
-      correlation.physicsTraceStore.list().length
+      correlation.physicsTraceStore.list().length +
+      correlation.combatTraceStore.list().length
   };
   const checkEnabled = process.argv.includes("--check");
   const failures = checkEnabled ? checkDiagnosticsBudgets(result) : [];
@@ -70,7 +72,12 @@ function main(): void {
           "@gamekit/devtools",
           "@gamekit/tca",
           "@gamekit/gas",
-          "@gamekit/physics-core"
+          "@gamekit/physics-core",
+          "@gamekit/combat",
+          "@gamekit/navigation-core",
+          "@gamekit/ai-core",
+          "@gamekit/animator-core",
+          "@gamekit/audio-core"
         ],
         profile: {
           traceLimit: TRACE_LIMIT,
@@ -105,7 +112,7 @@ function pushTrace(
 ): void {
   const chainIndex = index % 256;
   const correlationId = `combat-${chainIndex}`;
-  const step = index % 3;
+  const step = index % 8;
   if (step === 0) {
     correlation.physicsTraceStore.push({
       kind: "step",
@@ -123,6 +130,59 @@ function pushTrace(
       abilityId: "benchmark.ability",
       correlationId,
       parentId: `physics-trace-${index}`
+    });
+    return;
+  }
+  if (step === 2) {
+    correlation.combatTraceStore.add({
+      type: "delivery.accepted",
+      timestamp: index,
+      requestId: correlationId,
+      correlationId,
+      parentId: `gas-trace-${index}`
+    });
+    return;
+  }
+  if (step === 3) {
+    correlation.observeNavigationTrace({
+      sequence: index,
+      kind: "result",
+      label: "navigation.path_completed",
+      timestamp: index,
+      revision: index,
+      requestId: correlationId,
+      payload: { cache: "miss" }
+    });
+    return;
+  }
+  if (step === 4) {
+    correlation.observeAiTrace({
+      sequence: index,
+      kind: "goal",
+      label: "ai.goal_selected",
+      timestamp: index,
+      agentId: `agent-${chainIndex}`,
+      payload: { goalId: "goal.attack" }
+    });
+    return;
+  }
+  if (step === 5) {
+    correlation.observeAnimatorTrace({
+      sequence: index,
+      kind: "phase",
+      label: "animator.phase_synced",
+      timestamp: index,
+      controllerId: `controller-${chainIndex}`,
+      payload: { executionId: correlationId, phase: "active" }
+    });
+    return;
+  }
+  if (step === 6) {
+    correlation.observeAudioDiagnostic({
+      sequence: index,
+      type: "audio.voice_started",
+      timestamp: index,
+      payload: { instanceId: correlationId, eventId: "event.attack" }
     });
     return;
   }

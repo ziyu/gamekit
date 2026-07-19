@@ -1,4 +1,4 @@
-import type { AssetDefinition, AssetLoaderAdapter } from "@gamekit/asset";
+import type { AssetAnimationManifest, AssetDefinition, AssetLoaderAdapter } from "@gamekit/asset";
 import { GameError } from "@gamekit/core";
 
 export type PhaserDriverAssetRuntime = {
@@ -9,6 +9,15 @@ export type PhaserDriverAssetRuntime = {
     url: string,
     frame: { width: number; height: number; margin?: number; spacing?: number }
   ): Promise<void>;
+  loadAtlas(
+    assetId: string,
+    textureUrl: string,
+    dataUrl: string,
+    format: "json-array" | "json-hash"
+  ): Promise<void>;
+  hasAudio(id: string): boolean;
+  loadAudio(assetId: string, urls: string[]): Promise<void>;
+  createAnimations(textureId: string, animations: AssetAnimationManifest[]): void;
 };
 
 export function createPhaserDriverAssetLoader(options: {
@@ -18,21 +27,29 @@ export function createPhaserDriverAssetLoader(options: {
   return {
     id: options.id,
     supports(asset) {
-      return (
-        asset.source.type === "url" && (asset.type === "image" || asset.type === "spritesheet")
-      );
+      if (asset.source.type !== "url") {
+        return false;
+      }
+      if (asset.type === "image" || asset.type === "spritesheet") {
+        return true;
+      }
+      if (asset.type === "atlas") {
+        return asset.atlas?.dataSource.type === "url";
+      }
+      if (asset.type === "audio") {
+        return (asset.audio?.sources ?? [asset.source]).every((source) => source.type === "url");
+      }
+      return false;
     },
     async load(asset) {
       const runtime = options.runtime();
       if (asset.source.type !== "url") {
         throw unsupported(asset);
       }
-      if (runtime.hasTexture(asset.id)) {
-        return;
-      }
-
       if (asset.type === "image") {
-        await runtime.loadImage(asset.id, asset.source.url);
+        if (!runtime.hasTexture(asset.id)) {
+          await runtime.loadImage(asset.id, asset.source.url);
+        }
         return;
       }
 
@@ -44,7 +61,43 @@ export function createPhaserDriverAssetLoader(options: {
             { assetId: asset.id }
           );
         }
-        await runtime.loadSpritesheet(asset.id, asset.source.url, asset.frame);
+        if (!runtime.hasTexture(asset.id)) {
+          await runtime.loadSpritesheet(asset.id, asset.source.url, asset.frame);
+        }
+        if (asset.animations && asset.animations.length > 0) {
+          runtime.createAnimations(asset.id, asset.animations);
+        }
+        return;
+      }
+
+      if (asset.type === "atlas") {
+        const dataSource = asset.atlas?.dataSource;
+        if (dataSource?.type !== "url") {
+          throw unsupported(asset);
+        }
+        if (!runtime.hasTexture(asset.id)) {
+          await runtime.loadAtlas(
+            asset.id,
+            asset.source.url,
+            dataSource.url,
+            asset.atlas?.format ?? "json-hash"
+          );
+        }
+        if (asset.animations && asset.animations.length > 0) {
+          runtime.createAnimations(asset.id, asset.animations);
+        }
+        return;
+      }
+
+      if (asset.type === "audio") {
+        const sources = asset.audio?.sources ?? [asset.source];
+        const urls = sources.flatMap((source) => (source.type === "url" ? [source.url] : []));
+        if (urls.length !== sources.length) {
+          throw unsupported(asset);
+        }
+        if (!runtime.hasAudio(asset.id)) {
+          await runtime.loadAudio(asset.id, urls);
+        }
         return;
       }
 

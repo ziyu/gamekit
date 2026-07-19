@@ -408,6 +408,25 @@ Sandbox 必须有一套长期维护的长链路集成测试，用来证明 Tiny 
 
 Combat 的公共职责、协议与 adapter 边界以 [`../modules/combat.md`](../modules/combat.md) 为准。训练场只拥有场景布局、测试对象、按钮文案和视觉表现等应用内容；任何可被其他游戏复用的交付、关系判定、物理查询、projectile 生命周期或 trace 能力都必须留在对应 core/package。
 
+## 场景：Audio Lab
+
+`Audio Lab` 是 Game Audio 的独立听觉验证场景。它通过独立 App Host 组合 Phaser Driver、AssetManager 和 GameAudio，直接使用 `audio.music`、`audio.sfx`、`audio.dialogue`、`audio.mix` 与 `audio.spatial` 公共领域 API，不允许直接调用 Phaser Sound 或创建平行的 Web Audio 播放器。
+
+场景必须让测试者能实际听见并观察以下差异：
+
+- Music：至少四首节奏与编排差异明确的循环曲目、长期音乐状态、pause/resume/stop、adaptive stem intensity，以及短/标准/长三档 crossfade 任意切曲。
+- SFX：sequence variation、layered event、UI Bus、scheduled start、并发抢占和有界 dedupe。
+- Dialogue：speaker、priority queue、replace/skip、subtitle key、marker 和自动 music ducking。
+- Mix：`master`、`music`、`sfx`、`dialogue` Bus 的 volume/mute，以及可切换的 Mix Snapshot。
+- Spatial：保留恒定增益左右声像与正前方距离衰减两个独立校准，再提供可拖动 Listener/Emitter 的二维组合场；二维场必须同时显示坐标、欧氏距离、方位角、pan、线性 gain 和 dB，明确标出 min/max distance，并使用独立连续测试音验证稳定 identity、持续 loop handle 和实时 transform 更新。
+- Lifecycle：浏览器用户手势 unlock、App Host tick、output suspend/resume、逻辑 playback instance、native playback count、事件与 diagnostics。
+
+测试台使用场景本地、确定性生成的短 WAV fixture，经 AssetManager 和 Phaser asset loader 进入同一个 Driver runtime。fixture 只用于离线验证资源加载、分类控制器和 Backend 执行链，不进入通用 package，也不替代真实游戏的音频内容生产。页面必须明确标注合成的 radio line，避免把测试音误认为正式对白资产。
+
+Audio Lab 的 UI 是低频测试控制台：每个按钮必须对应一个明确的公共 API 行为；当前 Music/Dialogue 状态、SFX 统计、Bus effective volume、Spatial pan/距离/衰减读数、逻辑/原生实例数和最近 lifecycle/diagnostic 必须同时可见。完整原始对象仍不得泄漏到 UI。
+
+Audio 的公共职责、领域 API 与 Backend 边界以 [`../modules/audio.md`](../modules/audio.md)、ADR 0034 和 ADR 0035 为准。Audio Lab 只拥有测试内容、合成 fixture、控制台交互和场景级装配。
+
 ## 设计约束
 
 - Sandbox 可以使用复杂本地数据和本地组件，但不能把演示专用概念上推到核心包。
@@ -425,6 +444,7 @@ Combat 的公共职责、协议与 adapter 边界以 [`../modules/combat.md`](..
 - Sandbox app shell 负责把 App Host、Driver、Renderer、Input、UI、Save 和标准 GameModule helper 组装起来；Sandbox game module 不直接 import Phaser、Koota、DOM 或 React internal。
 - Sandbox 长链路测试应优先覆盖“模块是否协作”：内容引用、资源加载、自动循环、TCA/GAS 链路、选择/镜头、save/load、diagnostics/timeline。
 - 浏览器手动验收关注第一屏信息层级、game viewport scope、camera 坐标转换、可点击对象、Save/Load 本地恢复和 console error；不要以视觉花活替代协议验证。
+- Audio Lab 手动验收必须使用真实浏览器输出设备，依次检查 unlock、Music crossfade/intensity、SFX variation/layer/concurrency、Dialogue ducking/queue、Bus mute/volume、恒定增益 pan sweep、带数值读数的距离衰减，以及二维场中 Listener/Emitter 的拖动、四向 preset、左右声像和远近衰减联动；Memory Backend 测试不能替代该听觉验收。
 
 ### 模块使用
 

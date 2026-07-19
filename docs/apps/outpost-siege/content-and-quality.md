@@ -104,7 +104,7 @@ Authority checkpoint 发生在安全整备边界，也支持 deterministic test 
 - prediction/playback/interpolation/correction buffer。
 - Physics query/contact cache、Navigation open set/cache。
 - Animator controller/native animation clip/frame/marker history。
-- Audio voice、particle、RenderObject、React focus/hover。
+- Audio PlaybackInstance/native handle、particle、RenderObject、React focus/hover。
 - DevTools timeline 或完整 trace。
 
 Restore 顺序：Data/Asset compatibility → World/identity → Physics → GAS/Combat/TCA → AI/Navigation → app match state → participant binding → replication → presentation rebuild。
@@ -148,17 +148,17 @@ Restore 顺序：Data/Asset compatibility → World/identity → Physics → GAS
 
 具体阈值由可复现基线生成；每个 benchmark 必须明确规模、时间单位、trace/profile 和 retained-state 条件。
 
-| Benchmark          | Normal profile                                   | Stress profile                              | 主要指标                                         |
-| ------------------ | ------------------------------------------------ | ------------------------------------------- | ------------------------------------------------ |
-| Authority combat   | 4 player、250 enemy、300 projectile、64 facility | 1,000 enemy、1,500 projectile、256 facility | tick p50/p95、allocation、query、effect、cleanup |
-| AI scheduler       | 250 active agent                                 | 1,000 mixed-LOD agent                       | perception/decision/task/path delay、spike       |
-| Navigation         | 250 route sample、有限 blocker change            | 1,000 sample、path burst、revision churn    | queue、cache hit、path latency、retained         |
-| Client replication | 4 player + 250 enemy + projectile/facility       | stress entity projection                    | decode/apply/frame write、state size、GC         |
-| Animator/render    | 300 visible/500 controller                       | 1,000 mostly-idle controller + effect burst | graph update、backend writes、draw/fill/texture  |
-| Audio/cue          | normal rifle/enemy/ability mix                   | cue burst                                   | active voices、steal/reject、dedupe、retained    |
-| UI                 | 4 roster、HUD、notification                      | reconnect + results + rapid status          | React commits、selector rate、layout/paint       |
-| Checkpoint         | normal profile capture/restore/first tick        | large entity/effect/AI state                | duration、payload size、equivalence、retained    |
-| Soak               | 4 player、60 minutes、reconnect/entity churn     | multiple room                               | heap slope、GC、event-loop lag、dispose          |
+| Benchmark          | Normal profile                                   | Stress profile                              | 主要指标                                                |
+| ------------------ | ------------------------------------------------ | ------------------------------------------- | ------------------------------------------------------- |
+| Authority combat   | 4 player、250 enemy、300 projectile、64 facility | 1,000 enemy、1,500 projectile、256 facility | tick p50/p95、allocation、query、effect、cleanup        |
+| AI scheduler       | 250 active agent                                 | 1,000 mixed-LOD agent                       | perception/decision/task/path delay、spike              |
+| Navigation         | 250 route sample、有限 blocker change            | 1,000 sample、path burst、revision churn    | queue、cache hit、path latency、retained                |
+| Client replication | 4 player + 250 enemy + projectile/facility       | stress entity projection                    | decode/apply/frame write、state size、GC                |
+| Animator/render    | 300 visible/500 controller                       | 1,000 mostly-idle controller + effect burst | graph update、backend writes、draw/fill/texture         |
+| Audio/SFX          | normal rifle/enemy/ability mix                   | SFX burst                                   | logical/native playback、steal/reject、dedupe、retained |
+| UI                 | 4 roster、HUD、notification                      | reconnect + results + rapid status          | React commits、selector rate、layout/paint              |
+| Checkpoint         | normal profile capture/restore/first tick        | large entity/effect/AI state                | duration、payload size、equivalence、retained           |
+| Soak               | 4 player、60 minutes、reconnect/entity churn     | multiple room                               | heap slope、GC、event-loop lag、dispose                 |
 
 Benchmark 不只测平均 tick。AI bucket、wave spawn、boss transition、mass death、snapshot、asset preload 和 UI transition 的尖峰需要单独 span。
 

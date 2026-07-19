@@ -27,10 +27,15 @@ const STANDARD_DEVTOOLS_SOURCES: StandardDevToolsSourceId[] = [
   "drivers",
   "data",
   "assets",
+  "audio",
   "renderer",
   "input",
   "multiplayer",
   "game",
+  "combat",
+  "navigation",
+  "ai",
+  "animator",
   "ui",
   "save"
 ];
@@ -133,6 +138,18 @@ export function createStandardDevToolsDataSources<TContext>(
     });
   }
 
+  if (sourceIds.has("audio") && ctx.state.audio) {
+    const audio = ctx.state.audio;
+    sources.push({
+      id: "audio",
+      label: "Audio",
+      kind: "audio",
+      snapshot() {
+        return audio.snapshot();
+      }
+    });
+  }
+
   if (sourceIds.has("renderer") && ctx.state.renderer) {
     const renderer = ctx.state.renderer;
     sources.push({
@@ -178,6 +195,28 @@ export function createStandardDevToolsDataSources<TContext>(
         };
       }
     });
+  }
+
+  if (sourceIds.has("combat") && ctx.state.combat) {
+    const combat = ctx.state.combat;
+    sources.push(createGameModuleHandleSource("combat", "Combat", "combat", combat));
+  }
+
+  if (sourceIds.has("navigation") && ctx.state.navigation) {
+    const navigation = ctx.state.navigation;
+    sources.push(
+      createGameModuleHandleSource("navigation", "Navigation", "navigation", navigation)
+    );
+  }
+
+  if (sourceIds.has("ai") && ctx.state.ai) {
+    const ai = ctx.state.ai;
+    sources.push(createGameModuleHandleSource("ai", "AI", "ai", ai));
+  }
+
+  if (sourceIds.has("animator") && ctx.state.animator) {
+    const animator = ctx.state.animator;
+    sources.push(createGameModuleHandleSource("animator", "Animator", "animator", animator));
   }
 
   if (sourceIds.has("multiplayer") && ctx.state.multiplayer) {
@@ -239,7 +278,7 @@ export function createStandardDevToolsPanels<TContext>(
       label: "Runtime Flow",
       area: "dock",
       order: 2,
-      sourceKinds: ["runtime", "event-bus", "tca", "gas"]
+      sourceKinds: ["runtime", "event-bus", "tca", "gas", "combat", "navigation", "ai"]
     },
     {
       id: "devtools.multiplayer",
@@ -260,14 +299,25 @@ export function createStandardDevToolsPanels<TContext>(
       label: "Presentation",
       area: "dock",
       order: 5,
-      sourceKinds: ["renderer", "input", "camera", "ui"]
+      sourceKinds: ["renderer", "input", "camera", "animator", "audio", "ui"]
     },
     {
       id: "devtools.performance",
       label: "Performance",
       area: "dock",
       order: 6,
-      sourceKinds: ["host", "runtime", "renderer", "asset", "ui"],
+      sourceKinds: [
+        "host",
+        "runtime",
+        "combat",
+        "navigation",
+        "ai",
+        "animator",
+        "audio",
+        "renderer",
+        "asset",
+        "ui"
+      ],
       pin: {
         enabled: true,
         defaultPinned: true,
@@ -287,6 +337,22 @@ export function createStandardDevToolsPanels<TContext>(
       sourceKinds: ["save"]
     }
   ];
+}
+
+function createGameModuleHandleSource(
+  id: string,
+  label: string,
+  kind: "combat" | "navigation" | "ai" | "animator",
+  handle: { isBound(): boolean; snapshot(): unknown }
+): DevToolsDataSource {
+  return {
+    id,
+    label,
+    kind,
+    snapshot() {
+      return handle.isBound() ? handle.snapshot() : { bound: false };
+    }
+  };
 }
 
 export function createStandardGameRuntimeProfiler(

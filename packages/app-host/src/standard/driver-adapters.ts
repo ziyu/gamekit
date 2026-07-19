@@ -1,4 +1,5 @@
 import type { AssetLoaderAdapter } from "@gamekit/asset";
+import type { AudioBackend } from "@gamekit/audio-core/backend";
 import { GameError } from "@gamekit/core";
 import type { CameraState2D } from "@gamekit/camera-core";
 import type { DriverRegistry, GameDriver } from "@gamekit/driver-core";
@@ -71,6 +72,13 @@ export function resolveDriverAssetLoader(
     resolveDriver(ctx, driverId, "assetLoader"),
     "assetLoader"
   );
+}
+
+export function resolveDriverAudioBackend(
+  ctx: StandardDriverAdapterContext,
+  driverId?: string | undefined
+): AudioBackend {
+  return requireAdapter<AudioBackend>(resolveDriver(ctx, driverId, "audio"), "audio");
 }
 
 export function resolveDriverInputSourceFactory(

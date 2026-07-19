@@ -25,6 +25,11 @@ DevTools 负责可解释性、可观察性和调试工作台。GameKit 越依赖
 - `@gamekit/physics-core`
 - `@gamekit/tca`
 - `@gamekit/gas`
+- `@gamekit/combat`
+- `@gamekit/navigation-core`
+- `@gamekit/ai-core`
+- `@gamekit/animator-core`
+- `@gamekit/audio-core`
 - `@gamekit/multiplayer-core`
 - `@gamekit/save`
 
@@ -33,7 +38,7 @@ DevTools 是 App Service / tooling，不是 GameModule，不进入 gameplay loop
 ## 设计目标
 
 - 提供统一 DevToolsRuntime，用于注册数据源、面板、trace buffer、profiler 和 debug commands。
-- 汇总 EventBus、TCA、GAS、Physics、Renderer、Asset、Save、App Host、World snapshot 和 GameRuntime system profiler。
+- 汇总 EventBus、TCA、GAS、Combat、Navigation、AI、Animator、Audio、Physics、Renderer、Asset、Save、App Host、World snapshot 和 GameRuntime system profiler。
 - 通过 trace correlation 展示“输入 → 事件 → 规则 → 能力 → 状态 → 表现 → 存档/诊断”的链路。
 - 支持 headless 测试和 DevTools UI package 两种使用方式。
 - 支持低开销默认模式和显式开启的深度采样模式。
@@ -131,7 +136,7 @@ const profile = createStandardAppProfile({
 });
 ```
 
-`devtools: true` 等价于启用标准 preset。标准 preset 由 App Host 自动注册已经存在的标准服务数据源，例如 Host、Platform、Drivers、Data、Assets、Renderer、Input、Multiplayer、GameRuntime、UI 和 Save。缺失的服务不会生成空数据源。
+`devtools: true` 等价于启用标准 preset。标准 preset 由 App Host 自动注册已经存在的标准服务数据源，例如 Host、Platform、Drivers、Data、Assets、Audio、Renderer、Input、Multiplayer、GameRuntime、UI 和 Save；标准 Combat、Navigation、AI、Animator GameModule 使用 core handle 装配时，也暴露同一 handle 的有界 snapshot。缺失的服务或未装配的模块不会生成空数据源，未绑定 handle 只报告 `bound: false`，不能触发 gameplay 行为。
 
 在标准 Web bootstrap 中，`devtools: true` 还表示“开发环境启用 DevTools 可视入口”：当应用安装并挂载 `@gamekit/devtools-ui` 且存在 `ui` service 时，页面应自动出现 DevTools launcher，并可以显示标准 pinned widgets。点击 launcher 打开完整 DevTools shell；DevTools shell 读取 `services.devtools` snapshot 和 UI Runtime panel metadata，不要求普通游戏手写入口。
 
@@ -529,7 +534,7 @@ input.action
 
 Correlation 优先使用显式 `correlationId`。没有显式 id 时，可以按时间窗口、actorId、entityId、event id、rule id、ability id 做弱关联，但 UI 必须标记为 inferred，不能把推断当成确定因果。
 
-TCA、GAS、Physics 等 domain trace store 可以通过可选 entry hook 接入 correlation source；通用映射位于 App Host 组合层，domain package 不直接依赖 DevTools。通用映射默认只暴露白名单摘要，任意 details/payload 必须由应用显式 summarize 并按需 redact；映射失败只能产生 diagnostic，不能反向中断 domain runtime。Multiplayer message 派生的低频 EventBus fact 应继承 message correlation，并以 message id 作为 parent。Physics 只携带 app 明确提供的 correlation，不自行推断 ability/damage 关系。
+TCA、GAS、Physics、Combat 等 domain trace store，以及 Navigation、AI、Animator trace 和 Audio diagnostic，可以通过可选 entry observer 接入 correlation source；通用映射位于 App Host 组合层，domain package 不直接依赖 DevTools。通用映射默认只暴露白名单摘要，任意 details/payload 必须由应用显式 summarize 并按需 redact；observer、映射或 redaction 失败只能产生 diagnostic，不能反向中断 domain runtime。Multiplayer message 派生的低频 EventBus fact 应继承 message correlation，并以 message id 作为 parent。Physics 只携带 app 明确提供的 correlation，不自行推断 ability/damage 关系。
 
 ## Performance Profiler
 

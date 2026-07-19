@@ -278,10 +278,73 @@ describe("headless authority module pipeline", () => {
       label: "query.safe",
       payload: { secret: "must-not-leak" }
     });
+    defaults.combatTraceStore.add({
+      type: "delivery.accepted",
+      timestamp: 2,
+      requestId: "delivery.safe",
+      details: { secret: "must-not-leak" }
+    });
+    defaults.observeNavigationTrace({
+      sequence: 0,
+      kind: "result",
+      label: "navigation.path_completed",
+      timestamp: 3,
+      revision: 4,
+      requestId: "path.safe",
+      payload: { cache: "miss", secret: "must-not-leak" }
+    });
+    defaults.observeAiTrace({
+      sequence: 0,
+      kind: "goal",
+      label: "ai.goal_selected",
+      timestamp: 4,
+      agentId: "agent.safe",
+      payload: { goalId: "goal.safe", secret: "must-not-leak" }
+    });
+    defaults.observeAnimatorTrace({
+      sequence: 0,
+      kind: "phase",
+      label: "animator.phase_synced",
+      timestamp: 5,
+      controllerId: "controller.safe",
+      payload: { executionId: "execution.safe", phase: "active", secret: "must-not-leak" }
+    });
+    defaults.observeAudioDiagnostic({
+      sequence: 0,
+      type: "audio.event_started",
+      timestamp: 6,
+      payload: {
+        instanceId: "instance.safe",
+        eventId: "event.safe",
+        secret: "must-not-leak"
+      }
+    });
 
     expect(devtools.snapshot().traces.map((trace) => trace.payload)).toEqual([
       { type: "ability.activated", timestamp: 1 },
-      { kind: "query" }
+      { kind: "query" },
+      { type: "delivery.accepted", timestamp: 2, requestId: "delivery.safe" },
+      {
+        kind: "result",
+        timestamp: 3,
+        revision: 4,
+        requestId: "path.safe",
+        cache: "miss"
+      },
+      { kind: "goal", timestamp: 4, agentId: "agent.safe", goalId: "goal.safe" },
+      {
+        kind: "phase",
+        timestamp: 5,
+        controllerId: "controller.safe",
+        executionId: "execution.safe",
+        phase: "active"
+      },
+      {
+        type: "audio.event_started",
+        timestamp: 6,
+        instanceId: "instance.safe",
+        eventId: "event.safe"
+      }
     ]);
     defaults.dispose();
 
@@ -294,6 +357,9 @@ describe("headless authority module pipeline", () => {
         },
         physics() {
           throw new Error("custom summary failed");
+        },
+        ai() {
+          throw new Error("custom AI summary failed");
         },
         redact(payload, context) {
           if (context.kind !== "gas") {
@@ -313,16 +379,35 @@ describe("headless authority module pipeline", () => {
     expect(() =>
       customized.physicsTraceStore.push({ kind: "step", label: "physics.step" })
     ).not.toThrow();
+    expect(() =>
+      customized.observeAiTrace({
+        sequence: 7,
+        kind: "decision",
+        label: "ai.goals_scored",
+        timestamp: 7
+      })
+    ).not.toThrow();
 
     const snapshot = devtools.snapshot();
     expect(snapshot.traces.at(-1)?.payload).toEqual({ actorId: "actor.two" });
-    expect(snapshot.diagnostics.at(-1)).toMatchObject({
-      code: "devtools.gameplay_trace_bridge_failed",
-      severity: "warning",
-      relatedTraceId: "physics-trace-1",
-      dataSourceId: "customized",
-      payload: { kind: "physics" }
-    });
+    expect(snapshot.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "devtools.gameplay_trace_bridge_failed",
+          severity: "warning",
+          relatedTraceId: "physics-trace-1",
+          dataSourceId: "customized",
+          payload: { kind: "physics" }
+        }),
+        expect.objectContaining({
+          code: "devtools.gameplay_trace_bridge_failed",
+          severity: "warning",
+          relatedTraceId: "ai-trace-7",
+          dataSourceId: "customized",
+          payload: { kind: "ai" }
+        })
+      ])
+    );
     customized.dispose();
     devtools.dispose();
   });

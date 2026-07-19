@@ -29,6 +29,27 @@ export default defineConfig({
       "@gamekit/tca": new URL("./packages/tca/src/index.ts", import.meta.url).pathname,
       "@gamekit/gas": new URL("./packages/gas/src/index.ts", import.meta.url).pathname,
       "@gamekit/combat": new URL("./packages/combat/src/index.ts", import.meta.url).pathname,
+      "@gamekit/ai-core": new URL("./packages/ai-core/src/index.ts", import.meta.url).pathname,
+      "@gamekit/animator-core": new URL("./packages/animator-core/src/index.ts", import.meta.url)
+        .pathname,
+      "@gamekit/audio-core/backend": new URL(
+        "./packages/audio-core/src/backend/index.ts",
+        import.meta.url
+      ).pathname,
+      "@gamekit/audio-core/testing": new URL(
+        "./packages/audio-core/src/testing/index.ts",
+        import.meta.url
+      ).pathname,
+      "@gamekit/audio-core": new URL("./packages/audio-core/src/index.ts", import.meta.url)
+        .pathname,
+      "@gamekit/navigation-core": new URL(
+        "./packages/navigation-core/src/index.ts",
+        import.meta.url
+      ).pathname,
+      "@gamekit/navigation-graph": new URL(
+        "./packages/navigation-graph/src/index.ts",
+        import.meta.url
+      ).pathname,
       "@gamekit/multiplayer-core": new URL(
         "./packages/multiplayer-core/src/index.ts",
         import.meta.url

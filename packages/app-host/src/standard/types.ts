@@ -1,5 +1,8 @@
 import type { AssetDiagnosticEvent, AssetLoaderAdapter, AssetManager } from "@gamekit/asset";
+import type { CreateGameAudioOptions, GameAudio } from "@gamekit/audio-core";
+import type { AudioBackend } from "@gamekit/audio-core/backend";
 import type { CameraController, CameraState2D, PointLike } from "@gamekit/camera-core";
+import type { CreateCombatModuleConfig, CombatHandle } from "@gamekit/combat";
 import type { GameModule } from "@gamekit/core";
 import type { DataPack, DataRegistry, DataTypeDefinition } from "@gamekit/data";
 import type {
@@ -14,6 +17,8 @@ import type { DriverBootContext, DriverRegistry, GameDriver } from "@gamekit/dri
 import type { GasHandle, GasRuntime, GasTraceStore } from "@gamekit/gas";
 import type { GameInstallContext, GameRuntime } from "@gamekit/game-runtime";
 import type { InputDevice, InputRouter, InputSourceAdapter } from "@gamekit/input-core";
+import type { CreateAiModuleOptions, AiHandle } from "@gamekit/ai-core";
+import type { CreateAnimatorModuleOptions, AnimatorHandle } from "@gamekit/animator-core";
 import type {
   MultiplayerClientReplicationOptions,
   MultiplayerModuleOptions,
@@ -30,6 +35,7 @@ import type {
   PhysicsWorldBindings
 } from "@gamekit/physics-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
+import type { CreateNavigationModuleOptions, NavigationHandle } from "@gamekit/navigation-core";
 import type { RendererAdapter, RendererBootContext } from "@gamekit/renderer-core";
 import type {
   SaveCodec,
@@ -55,6 +61,7 @@ export type StandardAppServiceState = {
   drivers?: DriverRegistry;
   data?: DataRegistry;
   assets?: AssetManager;
+  audio?: GameAudio;
   renderer?: RendererAdapter;
   input?: InputRouter;
   multiplayer?: MultiplayerRuntime;
@@ -62,6 +69,10 @@ export type StandardAppServiceState = {
   ui?: UiRuntime;
   save?: SaveManager;
   devtools?: DevToolsRuntime;
+  combat?: CombatHandle;
+  navigation?: NavigationHandle;
+  ai?: AiHandle;
+  animator?: AnimatorHandle;
 };
 
 export type StandardServiceBuildContext<TContext> = Omit<
@@ -88,6 +99,7 @@ export type StandardAppProfileOptions<TContext> = {
   data?: StandardDataOptions<TContext> | undefined;
   renderer?: StandardRendererOptions<TContext> | undefined;
   assets?: StandardAssetOptions<TContext> | undefined;
+  audio?: StandardAudioOptions<TContext> | undefined;
   input?: StandardInputOptions<TContext> | undefined;
   multiplayer?: StandardMultiplayerOptions<TContext> | undefined;
   game?: StandardGameOptions<TContext> | undefined;
@@ -131,6 +143,17 @@ export type StandardAssetOptions<TContext> = {
   onDiagnostic?(event: AssetDiagnosticEvent): void;
   dataRegistry?(ctx: StandardServiceBuildContext<TContext>): DataRegistry | undefined;
   preloadGroups?(ctx: StandardServiceBuildContext<TContext>): string[] | undefined;
+};
+
+export type StandardAudioOptions<TContext> = {
+  gameAudio?: StandardValue<GameAudio, TContext> | undefined;
+  backend?: StandardValue<AudioBackend, TContext> | undefined;
+  driver?: string | undefined;
+  config?:
+    | StandardValue<Omit<CreateGameAudioOptions, "backend" | "disposeBackend">, TContext>
+    | undefined;
+  disposeBackend?: boolean | undefined;
+  dispose?: boolean | undefined;
 };
 
 export type StandardInputOptions<TContext> = {
@@ -216,10 +239,15 @@ export type StandardDevToolsSourceId =
   | "drivers"
   | "data"
   | "assets"
+  | "audio"
   | "renderer"
   | "input"
   | "multiplayer"
   | "game"
+  | "combat"
+  | "navigation"
+  | "ai"
+  | "animator"
   | "ui"
   | "save";
 
@@ -239,6 +267,10 @@ export type StandardGameModuleOptions<TContext> = {
   gas?: StandardGasGameModuleOptions<TContext> | undefined;
   multiplayer?: StandardMultiplayerGameModuleOptions<TContext> | undefined;
   physics?: StandardPhysicsGameModuleOptions<TContext> | undefined;
+  combat?: StandardValue<CreateCombatModuleConfig, TContext> | undefined;
+  navigation?: StandardValue<CreateNavigationModuleOptions, TContext> | undefined;
+  ai?: StandardValue<CreateAiModuleOptions, TContext> | undefined;
+  animator?: StandardValue<CreateAnimatorModuleOptions, TContext> | undefined;
 };
 
 export type StandardMultiplayerGameModuleOptions<TContext> = {

@@ -88,11 +88,15 @@ Runtime、EventBus、Physics、TCA、GAS、Asset、Save 和 DevTools 都必须�
 
 ## 模块拆分
 
-不要把一个模块所有代码写在 `index.ts`。
+不要把一个模块所有代码写在 `index.ts`，也不要把其他 package 的目录外观复制成当前模块的架构。
 
-拆分优先级：
+拆分顺序：
 
-1. 公共类型单独放置。
-2. 创建函数和运行时实现单独放置。
-3. adapter 私有类型单独放置。
-4. 示例 app 的数据、模块、UI 渲染分开。
+1. 先列出模块自己的领域职责、变化轴和内部依赖方向。
+2. 按领域行为拆分状态机、策略和只读模型；类型与拥有其语义的行为放在一起。
+3. 把公共 contract、第三方 port、composition root、observability 和 testing boundary 分开。
+4. 只有确有共享语义时才提取跨领域 primitive；不能用 `types.ts`、`helpers.ts`、`utils.ts` 或大型 `runtime` 掩盖未完成的边界设计。
+5. Root、backend/adapter 和 testing 面向不同消费者时使用 subpath export，避免扩大默认公共 API。
+6. 测试按领域边界组织，契约测试、策略测试和具体 adapter/backend 测试分开。
+
+包内架构的共同约束见 `docs/architecture.md`；具体长期结构写入对应模块文档。

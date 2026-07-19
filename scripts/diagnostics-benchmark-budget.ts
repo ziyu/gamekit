@@ -22,7 +22,7 @@ const BUDGETS: Array<{
   { metric: "millisecondsPerRuntimeSnapshot", maximum: 2 },
   { metric: "retainedTraces", maximum: 512 },
   { metric: "retainedCorrelations", maximum: 64 },
-  { metric: "retainedDomainTraces", maximum: 192 }
+  { metric: "retainedDomainTraces", maximum: 256 }
 ];
 
 export function checkDiagnosticsBudgets(

@@ -2,6 +2,8 @@
 
 Status: Accepted on 2026-07-17.
 
+Audio 的初始 package 边界保留；event/instance、mix、parameter、emitter 和 adapter-authored event 公共模型由 ADR 0033 细化并取代本 ADR 中较早的 voice-command 描述。
+
 ## Context
 
 Outpost Siege 已经证明 World、Physics、GAS、TCA、Multiplayer 和 Renderer 可以组成一条 server-authoritative 战斗链，但“存在一条链”还不足以支撑完整游戏。可靠的武器、投射物、技能阶段、动画、AI、导航和音频需要稳定生命周期、数据协议、trace、测试与性能预算。

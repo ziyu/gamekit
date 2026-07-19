@@ -67,7 +67,7 @@ Player Input / AI Decision
 - AI Core 拥有 perception、utility、task 与调度；Navigation Core 拥有 path/route。
 - Physics 拥有空间、运动、碰撞和 query，不拥有伤害或导航。
 - Animator Core 拥有语义 Animator controller；Renderer/Driver 执行 native animation clip/particle。
-- Audio Core 拥有 bus/voice/command；Driver 执行 native sound。
+- Audio Core 拥有 Music/SFX/Dialogue、Playback、Mix 和 Spatial 语义；Driver 的 AudioBackend 执行 native sound。
 - Multiplayer Core 拥有 session/authority/复制/预测与表现调度，游戏不手写同类 runtime。
 
 ## 全局不变量
@@ -78,7 +78,7 @@ Player Input / AI Decision
 - 静态物体的视觉、Physics collider 和 Navigation blocker 从同一 arena instance 派生。
 - Gameplay timing 不等待动画 marker；表现失败不改变玩法结果。
 - 高频移动、AI steering、projectile 和 render sync 走 system/batch，不通过 EventBus、React 或 TCA 逐实体逐帧广播。
-- 所有队列、历史、trace、projectile lifetime、AI memory、path request、animation one-shot 和 audio voice 都有硬上限。
+- 所有队列、历史、trace、projectile lifetime、AI memory、path request、animation one-shot、逻辑 PlaybackInstance 和 native playback 都有硬上限。
 - 所有新底层能力先定位对应 Core owner；Core 缺口在底层补齐，不在 Outpost 长期复制 substitute。
 
 ## 内容规模

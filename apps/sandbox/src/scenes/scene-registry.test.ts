@@ -8,10 +8,16 @@ import {
 
 describe("Sandbox scene registry", () => {
   it("resolves each scene independently and falls back without coupling the scene modules", () => {
-    expect(sandboxSceneCatalog.map((scene) => scene.id)).toEqual(["tiny-camp", "combat"]);
+    expect(sandboxSceneCatalog.map((scene) => scene.id)).toEqual([
+      "tiny-camp",
+      "combat",
+      "audio-lab"
+    ]);
     expect(resolveSandboxScene("?scene=combat").id).toBe("combat");
     expect(resolveSandboxScene("?scene=tiny-camp").id).toBe("tiny-camp");
+    expect(resolveSandboxScene("?scene=audio-lab").id).toBe("audio-lab");
     expect(resolveSandboxScene("?scene=unknown").id).toBe(DEFAULT_SANDBOX_SCENE_ID);
     expect(requireSandboxScene("combat").capabilities).toContain("Combat");
+    expect(requireSandboxScene("audio-lab").capabilities).toContain("Dialogue");
   });
 });

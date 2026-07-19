@@ -149,8 +149,9 @@ Budget 超限时延后低优先级决策，并产生 summary diagnostic；不能
 ### 模块集成
 
 - AI module 通过 DI 获得 World read model、PhysicsQueries、NavigationHandle、clock 和 intent sink，不创建对应 runtime。
-- Sensor、consideration 和 task executor registry 在启动时检查重复 type，并从 DataRegistry 预编译 definition。
+- Sensor、consideration 和 task executor registry 在启动时检查重复 type；每个 agent definition 首次 bind 时从 DataRegistry 编译并缓存 sensor/goal/task/scheduler 索引，update 热路径不重复查询 definition。
 - 使用 memory fixture 验证 deterministic selection、interrupt、timeout、cleanup 和 trace；第三方 planner/steering adapter 再运行专属 conformance。
+- `onTrace/onTraceError` 只用于 DevTools/diagnostics 旁路，observer 失败不能改变 goal、task 或 intent 结果。
 
 ### 模块使用
 

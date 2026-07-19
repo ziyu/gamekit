@@ -122,7 +122,7 @@ Renderer Core 继续只提供 object lifecycle、node target 和 command envelop
 
 ## 性能
 
-- Graph 在 Data load 时编译，运行时使用数字 state/transition index，不逐帧解析字符串表达式。
+- Graph 在 controller bind 时编译 state/transition/one-shot/clip 索引并预排序 transition，运行时不逐帧解析字符串表达式或重建排序数组。
 - Controller 按 dirty parameter 或 active transition 更新；静止且无 one-shot 的 controller 不写 backend。
 - 同一帧对 renderer 的更新批量提交，支持 caller-owned frame buffer。
 - Marker、trace 和 queued one-shot 均有界。
@@ -135,6 +135,7 @@ Renderer Core 继续只提供 object lifecycle、node target 和 command envelop
 - App composition 创建一个 AnimationPlaybackAdapter runtime slice，并把它与 DataRegistry、presentation state reader 注入 `createAnimatorModule(...)`。
 - Driver 先 boot 并加载 clip asset，再绑定 Animator controller；GameRuntime dispose 先解绑 controller，再销毁 Driver。
 - 每个 adapter 运行 graph/playback conformance，再补 Phaser/Three clip、marker 和 resource lifecycle 测试。
+- Graph、state、transition、one-shot 和 clip alias 在 controller bind 时建立索引；DataType 与 runtime 同时拒绝非法 speed/weight/priority/gameplay clock。`onTrace/onTraceError` 和 `onMarker/onMarkerError` 都是隔离的旁路 observer，不能修改内部 marker 或中断 playback decision。
 
 ### 模块使用
 

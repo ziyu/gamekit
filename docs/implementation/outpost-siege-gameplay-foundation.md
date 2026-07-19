@@ -34,7 +34,7 @@ Status: Active.
 - `authority-combat.ts` 仍持有 Dash、Shock、Turret 常量与 ability switch，敌人使用 `nearestPlayer` 直线 steering。
 - `renderer-phaser/object-factory.ts` 只声明 `debug.square`、`sprite`、`container`；command handler 只处理最小 `animation.play`。
 - Phaser Driver asset loader 只支持 image/spritesheet，虽然 Asset Core 已声明 atlas/audio 类型。
-- Combat package 已在本工作流中实现；仓库仍没有 AI、Navigation、Animator 或 Audio package。
+- 本工作流启动时 Combat package 已完成，而 AI、Navigation、Animator 与 Audio package 尚未创建；对应缺口现已在后续 review checkpoint 中关闭。
 
 ## Required Package Work
 
@@ -116,6 +116,13 @@ Tests/bench:
 - Required path、projection、unreachable、cancel、revision、partial invalidation、cache limit、burst fairness。
 - 250/1,000 agent route sample、buildable blocker churn、dispose retained state。
 
+Review checkpoint (2026-07-18):
+
+- 已实现 `@gamekit/navigation-core` 与 `@gamekit/navigation-graph`。Core 提供 backend-neutral request、projection/path/route、revision、scheduler budget、cache、trace/snapshot、Handle/GameModule 与 conformance；Graph backend 提供 authored graph、goal-keyed reverse route field、stable tie-break、动态 blocker/cost 和按 revision 失效。
+- Navigation 定向测试 14/14 通过，覆盖 required path、projection、unreachable、cancel、scheduler fairness、negative/cache limit、revision、局部 invalidation、动态 blocker/cost、稳定结果和 dispose retained state。
+- `bench:navigation:check` 7/7 budgets 通过：250/1,000 agent route sample 分别为 2.94/1.97 µs/sample，1,000 request burst 为 61.51 ms，blocker churn 为 2.19 ms/cycle，dispose retained state 为 0。
+- Yuka gate 使用 npm stable `0.7.8` 做窄 slice 对照。tree-shaken/minified 的 Graph + Dijkstra slice 为 57,215 bytes，本仓 graph backend 为 6,283 bytes；32×32 graph、1,000 shared-goal route 的 Yuka 重算约 212 ms，本仓 reverse route field 首次/重复约 41/35 ms。两者结果均 deterministic，但 Yuka 无 revision/partial invalidation protocol，移除 edge 后既有 path 会保持陈旧；其临时分配并未形成足以抵消体积、失效语义和性能差距的优势。因此不新增 `navigation-yuka`，也不让第三方 runtime 拥有 agent。
+
 ### `@gamekit/ai-core`
 
 Deliverables:
@@ -135,6 +142,13 @@ Gate:
 
 - Raider/Gunner/Saboteur/Brute 只注册 data/consideration/task，不各自复制 update loop。
 - 不引入 per-agent GOAP、XState actor 或 Yuka GameEntity；未来 planner 只通过 `AiPlanner` adapter。
+
+Review checkpoint (2026-07-18):
+
+- 已实现 `@gamekit/ai-core`：agent binding、bounded perception/blackboard、Utility consideration/curve、goal hysteresis/commit/cooldown、Task lifecycle、deterministic budget + LOD scheduler、intent sink、trace/snapshot/save、DataTypes、Handle/GameModule 与 memory conformance 均保持 World/Physics/Navigation backend-neutral。
+- AI 定向测试 12/12 通过，覆盖 score breakdown、stable tie-break、switch threshold、invalid target、task cancel/failure/timeout/backoff、ability/path rejection、agent removal、save/restore 和 bounded trace/state。
+- `bench:ai:check` 8/8 budgets 通过：250 normal agents 的 p95 为 0.72 ms/tick，1,000 mixed-LOD agents 的 p95 为 2.22 ms/tick；dispose retained state 为 0。
+- Core 未引入 GOAP、XState actor、Yuka GameEntity 或游戏专属 archetype；Raider/Gunner/Saboteur/Brute 仍属于后续 Outpost data/policy integration。
 
 ### `@gamekit/animator-core`
 
@@ -156,6 +170,12 @@ Tests/bench:
 - State/transition/layer/interrupt、marker dedupe、phase seek、generation reset、missing clip fallback。
 - 500 active / 1,000 idle controller、backend batch write、dispose retained state。
 
+Review checkpoint (2026-07-18):
+
+- 已实现 `@gamekit/animator-core`：clip/graph/binding DataTypes、parameter/state/layer/transition、one-shot、marker dedupe、phase mapping、late join/seek、generation reset、dirty batch、trace/snapshot、Handle/GameModule，以及 backend-neutral playback adapter/conformance。
+- Animator 定向测试 10/10 通过；`bench:animator:check` 8/8 budgets 通过：500 active phase controllers 的 p95 为 1.85 ms/tick，1,000 idle controllers 的 p95 为 0.80 ms/tick 且写出 0 frame，generation churn 的 p95 为 2.00 ms，1,000 late joins 为 2.49 ms，dispose retained state 为 0。
+- Asset/Phaser 扩展已支持 atlas/audio/variant/animation metadata、animated-sprite、particle 与 animation command、native batch、clip registration/binding；animation adapter 只绑定 Driver 持有的共享 Phaser runtime/cache，没有创建第二个 Game/Scene。
+
 ### `@gamekit/audio-core`
 
 Deliverables:
@@ -174,6 +194,12 @@ Gate:
 
 - Headless profile 可验证 semantic AudioCommand 而不需要浏览器；gameplay 不读取 playback success。
 
+Review checkpoint (2026-07-18):
+
+- 已实现 `@gamekit/audio-core`：bus、cue、listener、voice/source、priority/concurrency/stealing、dedupe、spatial source、ownership cleanup、unlock、diagnostics、memory/null adapter、Handle/App Service runtime 与 conformance。Core 只发布 semantic command/status，不把 playback success 变成 gameplay authority。
+- Audio 定向测试 12/12 通过；`bench:audio:check` 8/8 budgets 通过：1,000 cue burst p95 为 16.34 ms，500 spatial voices p95 为 0.32 ms/tick，停止 1,000 voices 为 0.70 ms，dispose retained state 为 0。
+- Phaser Driver 使用同一 Phaser runtime/cache 提供 audio asset、sound manager 与 unlock slice；App Host 标准 Audio service 负责 adapter resolve、tick、diagnostics 和 dispose，headless profile 可直接使用 memory/null adapter。
+
 ## Existing Package Extensions
 
 | Package               | Required extension                                                                    | 禁止做法                                 |
@@ -185,6 +211,26 @@ Gate:
 | `multiplayer-core`    | 仅在现有 managed replication 无法表达 phase/cue generation reset 时补通用协议         | 添加 Outpost Schema/ability/enemy 字段   |
 | `@gamekit/devtools`   | 新 domain source/correlation summary 与 profiler span registration                    | 让 trace observer 参与 gameplay decision |
 | `@gamekit/test-utils` | 新 facade conformance helper所需 memory fixtures                                      | 测试工具依赖 Outpost app                 |
+
+Library-first closure checkpoint (2026-07-18):
+
+- App Host 已提供 Combat/Navigation/AI/Animator 的薄 standard GameModule resolver，以及 Audio standard service；Host 只组合 handle/service、lifecycle 与 driver slice，不拥有 domain runtime。标准模块顺序保持 TCA/GAS/Multiplayer/Physics → Combat/Navigation/AI/Animator/Camera。
+- DevTools 已增加 Combat/Navigation/AI/Animator/Audio source kind、panel registration、standard source snapshot 和 bounded correlation summary；observer/redactor failure 不参与 gameplay decision。`@gamekit/test-utils` 已导出 AI/Animator/Audio/Navigation 的 framework-neutral conformance 与 memory helper，未引入 app dependency，也避免了 Combat → Physics fixture 的 workspace dependency cycle。
+- Multiplayer Core 的 managed replication、prediction/playback、generation reset 与 cue/track 协议足以承载后续 Outpost Schema；本轮没有为了尚未出现的 app 字段扩张 Core。
+- 相关库定向测试共 121/121 通过（Navigation 14、AI 12、Animator 10、Audio 12、Asset 10、DevTools 8、App Host 33、Renderer Phaser 10、Driver Phaser 12）；全仓 `test` 84/84 tasks、`build` 46/46 tasks、`lint` 84/84 tasks 通过，`bench:world` 通过。全仓 format 仍被本工作流开始前已存在的 `.claude/*`、`AGENTS.md`、`CLAUDE.md` 8 个范围外文件阻塞；本次改动 scoped format 通过。
+- 用户要求“底层库全部完成后再统一集成”，因此本 checkpoint 没有修改 `apps/`，Outpost integration gate 继续保持关闭。下一阶段只能在底层库整体评审通过后进入统一集成。
+
+Final foundation closure audit (2026-07-19):
+
+- Navigation cache 现在记录真实 revision 和 path dependency：障碍物更新只淘汰相交 path/route，未受影响的结果安全提升到新 revision；依赖未知、边权改善或解除阻挡仍保守全量失效，外部 backend revision 漂移不能命中旧 cache。Graph backend 返回实际 edge dependency，Core/Graph 定向测试增至 16/16。
+- AI definition 在 agent bind 时编译为复用的 sensor/goal/task/scheduler 索引，hot update 不再反复读取 Data Registry；scheduler 对同一 class 使用 oldest-due stable ordering，observer failure 与 gameplay decision 隔离。AI 定向测试增至 14/14。
+- Animator 预编译 state/transition/phase 索引并按 gameplay phase 时钟恢复；DataType 与 runtime 对 priority、weight、speed、phase duration 做有限值和范围校验，marker payload 与 observer failure 均隔离。Audio 对 bus 祖先、voice ownership、stealing、source cleanup 和并发 unlock 做原子生命周期处理，不宣称未实现的 runtime ducking。Animator/Audio 定向测试分别增至 12/12、15/15。
+- AssetManager 对公开 definition、adapter 输入和 diagnostics 做深拷贝隔离，同 asset 并发 load 合并为一个请求，批量注册的 duplicate 校验保持原子；缺失 source 返回稳定 validation diagnostic，而不是 validator exception。Asset 定向测试增至 12/12。Phaser Driver 明确发布 animation capability，Animator、Audio、Asset adapter 继续只绑定共享 Driver runtime slice。
+- App Host 的 Navigation/AI/Animator/Audio observer 现在把运行时 trace 实时送入统一 correlation store，observer/redactor failure 不影响模块；50,000 条均匀覆盖 TCA/GAS/Physics/Combat/Navigation/AI/Animator/Audio 的 diagnostics benchmark 为 0.906 µs/trace、0.0108 ms/runtime snapshot，retained traces/correlations/domain traces 分别受限于 512/64/256，5/5 budgets 通过。
+- 最终底层库定向测试共 132/132 通过（Navigation 16、AI 14、Animator 12、Audio 15、Asset 12、DevTools 8、App Host 33、Renderer Phaser 10、Driver Phaser 12）。Navigation/AI/Animator/Audio benchmark 合计 31/31 budgets 通过；`bench:world`、`bench:checkpoint:check` 与扩展 diagnostics benchmark 同时通过，所有新增 runtime 的 dispose retained state 为 0。
+- 全仓 `test` 84/84 tasks、`build` 46/46 tasks、`lint` 84/84 tasks 通过。全仓 format 仍只被本工作流开始前已有的 `.claude/skills/gitnexus/*`、`AGENTS.md`、`CLAUDE.md` 8 个范围外文件阻塞；本次改动 scoped format 通过。
+- GitNexus 本地 analyzer 因当前 Node 26 缺少兼容 native binding 无法刷新/查询，因此按降级流程使用 import/caller 搜索、TypeScript package references、定向与全仓回归和最终 diff scope 做影响审计；未发现 app dependency 泄漏或意外执行流变化。
+- 本审计没有修改 `apps/`，也没有提前迁移 Outpost 内容。底层库整体 gate 至此关闭；后续工作可以单独开启统一 app integration gate，不再用 app-local substitute 补底层能力。
 
 ## Outpost App Refactor
 

@@ -71,6 +71,7 @@ Path result 包含 stable points/corridor、cost、revision 和 status，不暴�
 动态障碍改变 navigation revision：
 
 - blocker 只影响关联 area/edge/tile，不能每次都清空全部 cache。
+- Backend path result 可以返回稳定 dependency token；obstacle update 返回相交 token 或显式全量失效。Core 只淘汰相交 cache/route，并把无关条目安全晋升到新 revision；未知 dependency 的 backend 保守退化为全量失效。
 - active route 在 revision 不兼容或即将进入 blocked segment 时重新请求。
 - placement validation 可以预查询“是否仍保留入口到核心的合法路线”。
 - 失败结果使用短 TTL negative cache，避免大量 agent 同 tick 重试同一不可达目标。
@@ -106,7 +107,7 @@ Navigation layout 必须支持内容检查：
 ## 性能与生命周期
 
 - Path request queue 有总量、每 requester 和每 tick budget。
-- Cache 以 layout revision、profile、start region、goal key 为索引，并有容量/TTL。
+- Cache 以 profile、量化 start/goal 与 goal key 为索引，条目独立保存 backend revision、dependency、容量与 TTL；外部 revision 漂移不能命中旧条目。
 - Adapter 复用 open set、node record 和输出 buffer；热路径避免深拷贝完整 graph。
 - Snapshot 只给区域、revision、queue/cache 数量和采样 path，不展开全部 backend 数据。
 - benchmark 覆盖 250/1,000 agent route sampling、动态 blocker invalidation、path burst、cancel 和 dispose retained state。
@@ -118,6 +119,7 @@ Navigation layout 必须支持内容检查：
 - 组合层选择 adapter、加载 navigation layout、创建一个具名 NavigationHandle，并把它注入 AI/placement/Editor module。
 - Backend adapter 先通过 projection/path/cancel/revision/cache conformance，再补 navmesh/grid/graph 专属测试。
 - 外部 navigation runtime 的 native object 只存在于 adapter；Core snapshot 和 Save 使用稳定 id/point/revision。
+- DevTools 组合通过可选 `onTrace/onTraceError` 旁路 observer 消费白名单摘要；observer 失败不能改变 request/result。
 
 ### 模块使用
 

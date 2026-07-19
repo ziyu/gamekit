@@ -1,11 +1,13 @@
 import type { AppProfile, AppServiceFactory } from "../definition/types";
 import { createAssetManager } from "@gamekit/asset";
+import { createGameAudio } from "@gamekit/audio-core";
 import { createDevToolsRuntime, type DevToolsRuntime } from "@gamekit/devtools";
 import { createDriverRegistry } from "@gamekit/driver-core";
 import { createSaveManager } from "@gamekit/save";
 import type { AppServiceBinding } from "../runtime/types";
 import {
   ASSET_SERVICE,
+  AUDIO_SERVICE,
   DATA_SERVICE,
   DEVTOOLS_SERVICE,
   DRIVER_SERVICE,
@@ -27,6 +29,7 @@ import {
 } from "./devtools";
 import {
   resolveDriverAssetLoader,
+  resolveDriverAudioBackend,
   resolveDriverInputSourceFactory,
   resolveDriverRenderer
 } from "./driver-adapters";
@@ -276,6 +279,52 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
                 assets: manager.assets(),
                 states: manager.states()
               };
+            }
+          }
+        };
+      }
+    );
+  },
+  audio<TContext>(
+    profile: AppProfile<TContext>,
+    stateByContext: Map<TContext, StandardAppServiceState>
+  ) {
+    return createManagedStandardServiceFactory(
+      profile,
+      stateByContext,
+      profile.standard?.audio,
+      (ctx, options) => {
+        const audio =
+          options.gameAudio === undefined
+            ? createGameAudio({
+                ...(options.config === undefined ? {} : resolveStandardValue(ctx, options.config)),
+                backend:
+                  options.backend === undefined
+                    ? resolveDriverAudioBackend(ctx, options.driver)
+                    : resolveStandardValue(ctx, options.backend),
+                disposeBackend: options.disposeBackend ?? options.backend !== undefined
+              })
+            : resolveStandardValue(ctx, options.gameAudio);
+        let elapsed = 0;
+        ctx.state.audio = audio;
+        return {
+          key: AUDIO_SERVICE,
+          service: audio,
+          standard: "audio",
+          lifecycle: {
+            id: AUDIO_SERVICE.id,
+            dependencies: ctx.service.dependencies,
+            tick(_hostCtx, frame) {
+              elapsed += Math.max(0, frame.delta);
+              audio.update(frame.delta, elapsed);
+            },
+            dispose() {
+              if (options.dispose !== false) {
+                audio.dispose();
+              }
+            },
+            snapshot() {
+              return audio.snapshot();
             }
           }
         };
@@ -620,6 +669,7 @@ const saveServiceContextResolvers: Record<
   drivers: (state) => state.drivers,
   data: (state) => state.data,
   assets: (state) => state.assets,
+  audio: (state) => state.audio,
   renderer: (state) => state.renderer,
   input: (state) => state.input,
   multiplayer: (state) => state.multiplayer,

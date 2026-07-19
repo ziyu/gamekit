@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../data" },
+    { "path": "../event-bus" },
+    { "path": "../game-runtime" },
+    { "path": "../navigation-core" },
+    { "path": "../save" },
+    { "path": "../world" }
+  ]
+}

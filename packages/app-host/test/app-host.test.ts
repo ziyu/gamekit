@@ -8,6 +8,8 @@ import {
   type AppProfile,
   type AppServiceBinding
 } from "@gamekit/app-host";
+import { createMemoryAnimationPlaybackAdapter } from "@gamekit/animator-core";
+import { createMemoryAudioBackend } from "@gamekit/audio-core/testing";
 import { createCameraController, screenToWorld } from "@gamekit/camera-core";
 import { createDataRegistry } from "@gamekit/data";
 import type { GameDriver } from "@gamekit/driver-core";
@@ -26,6 +28,7 @@ import {
   type NetworkVector2
 } from "@gamekit/multiplayer-core";
 import { createMemoryMultiplayerBackend } from "@gamekit/multiplayer-memory";
+import { createMemoryNavigationBackend } from "@gamekit/navigation-core";
 import {
   createMemoryPhysicsBackend,
   createPhysicsHandle,
@@ -1076,6 +1079,7 @@ describe("configured app host", () => {
     });
     const configured = createConfiguredAppHost({ app, profile, context: {} });
 
+    await configured.host.boot();
     await configured.host.start();
     await server.send<Snapshot>({
       channel: "reliable",
@@ -1282,6 +1286,139 @@ describe("configured app host", () => {
 
     eventBus.emit("camera.stop_follow", {}, "test");
     expect(camera.getState().mode).toBe("free");
+  });
+});
+
+describe("gameplay foundation standard composition", () => {
+  it("owns Audio Core as a standard service and exposes its DevTools source", async () => {
+    const backend = createMemoryAudioBackend();
+    const app = defineGameApp({
+      id: "standard-audio",
+      services: [{ id: "audio" }, { id: "devtools", dependencies: ["audio"] }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        audio: {
+          backend,
+          config: {
+            sfx: [
+              {
+                id: "sfx.test",
+                layers: [
+                  {
+                    id: "main",
+                    clips: [
+                      {
+                        id: "clip.test",
+                        asset: { assetId: "audio.test", type: "audio" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        devtools: true
+      }
+    });
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+
+    await configured.host.boot();
+    await configured.host.start();
+    await configured.host.services.audio?.unlock();
+    expect(configured.host.services.audio?.sfx.play("sfx.test")).toMatchObject({
+      status: "playing"
+    });
+    configured.host.tick(16, 16);
+
+    expect(configured.host.services.audio?.snapshot()).toMatchObject({
+      elapsed: 16,
+      activePlaybackInstances: 1,
+      unlock: "unlocked"
+    });
+    const devtoolsSnapshot = configured.host.services.devtools?.snapshot({
+      includeSourceSnapshots: true
+    });
+    expect(devtoolsSnapshot?.dataSources.map((source) => source.id)).toContain("audio");
+    expect(
+      devtoolsSnapshot?.sourceSnapshots?.find((source) => source.id === "audio")
+    ).toMatchObject({ kind: "audio", snapshot: { activePlaybackInstances: 1 } });
+
+    await configured.host.dispose();
+    expect(backend.snapshot().disposed).toBe(true);
+  });
+
+  it("resolves Combat, Navigation, AI and Animator through core-owned module factories", () => {
+    const dataRegistry = createDataRegistry();
+    let moduleIds: string[] = [];
+    let exposed:
+      | {
+          combatBound: boolean;
+          navigationBound: boolean;
+          aiBound: boolean;
+          animatorBound: boolean;
+        }
+      | undefined;
+    const app = defineGameApp({ id: "standard-gameplay-modules", services: [{ id: "game" }] });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        game: {
+          standardModules: {
+            combat: {
+              physics: createPhysicsHandle(),
+              gas: createGasHandle(),
+              dataRegistry,
+              relationshipResolver: {
+                resolve: () => "neutral",
+                allows: () => true
+              }
+            },
+            navigation: { backend: createMemoryNavigationBackend() },
+            ai: {
+              dataRegistry,
+              intentSink: { emit() {} }
+            },
+            animator: {
+              dataRegistry,
+              adapter: createMemoryAnimationPlaybackAdapter()
+            }
+          },
+          createRuntime(_ctx, modules) {
+            moduleIds = modules.map((module) => module.id);
+            return createGame({
+              modules: [],
+              world: createMemoryWorld(),
+              eventBus: createEventBus(),
+              seed: "standard-gameplay-modules"
+            });
+          }
+        }
+      },
+      expose(ctx) {
+        if (!ctx.state.combat || !ctx.state.navigation || !ctx.state.ai || !ctx.state.animator) {
+          return;
+        }
+        exposed = {
+          combatBound: ctx.state.combat.isBound(),
+          navigationBound: ctx.state.navigation.isBound(),
+          aiBound: ctx.state.ai.isBound(),
+          animatorBound: ctx.state.animator.isBound()
+        };
+      }
+    });
+
+    createConfiguredAppHost({ app, profile, context: {} });
+
+    expect(moduleIds).toEqual(["combat", "navigation", "ai", "animator"]);
+    expect(exposed).toEqual({
+      combatBound: false,
+      navigationBound: false,
+      aiBound: false,
+      animatorBound: false
+    });
   });
 });
 

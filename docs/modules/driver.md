@@ -86,7 +86,7 @@ export type DriverAdapterMap = {
   assetLoader?: AssetLoaderAdapter;
   camera?: RendererCameraAdapter;
   animation?: AnimationPlaybackAdapter;
-  audio?: AudioAdapter;
+  audio?: AudioBackend;
   physics?: unknown;
   uiOverlay?: unknown;
   custom?: Record<string, unknown>;
@@ -127,7 +127,7 @@ Phaser Driver 统一持有：
 - camera manager
 - physics systems / Matter plugin / Arcade physics world
 - tween / animation / particle runtime objects
-- sound manager / decoded audio cache / playback voices
+- sound manager / decoded audio cache / native playback channels
 
 Phaser Driver 可以暴露：
 
@@ -136,14 +136,14 @@ Phaser Driver 可以暴露：
 - InputSource：把 Phaser input 归一化为 NormalizedInputEvent。
 - RendererCameraAdapter：把 CameraState 同步到 Phaser camera。
 - AnimationPlaybackAdapter：把 Animator Core playback frame 映射到 Phaser AnimationManager / Sprite。
-- AudioAdapter：把 Audio Core command 映射到 Phaser sound manager、bus/group 和 voice。
+- AudioBackend：把 Audio Core 已编译的 PlaybackInstance、实例控制、bus、listener/emitter 和 parameter 映射到 Phaser sound manager 或其他 driver-owned audio runtime；一个逻辑实例可以持有多个 native playback channels。Backend 不解释 Music、SFX 或 Dialogue 的领域策略。
 - PhysicsBackendAdapter：把 Phaser Arcade / Matter Physics 绑定为 Physics module 可用的 backend adapter。
 - Typed native bridge：供 app presentation、Editor 后端专属面板或 DevTools renderer plugin 直接访问 Phaser Scene、GameObject、texture/cache 等对象。
 
 边界：
 
 - `@gamekit/driver-phaser` 是默认直接依赖 `phaser` 的包。
-- Phaser asset、input、camera、animation、audio、physics adapter 是 `@gamekit/driver-phaser` 的内部 adapter / module，不作为长期独立 package 暴露。
+- Phaser asset、input、camera、animation、audio backend、physics adapter 是 `@gamekit/driver-phaser` 的内部 adapter / module，不作为长期独立 package 暴露。
 - `@gamekit/renderer-phaser` 只把 RenderObject 协议映射到 Driver 提供的 Phaser Scene runtime，不创建 `Phaser.Game`，也不从 renderer 内部派生 input、camera、physics 或 asset 能力。
 - `@gamekit/renderer-core`、`@gamekit/input-core`、`@gamekit/camera-core`、`@gamekit/physics-core`、`@gamekit/animator-core`、`@gamekit/audio-core`、`@gamekit/asset` 不依赖 Phaser。
 - CameraController 和 CameraRig 仍属于 GameModule toolkit；Phaser Driver 只提供 camera sync adapter。

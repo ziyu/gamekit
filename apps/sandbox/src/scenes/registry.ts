@@ -18,6 +18,14 @@ export const sandboxSceneCatalog: readonly SandboxSceneDefinition[] = [
     description: "Physical delivery proving ground",
     capabilities: ["Combat", "Physics", "GAS", "World", "Data"],
     load: () => import("./combat")
+  },
+  {
+    id: "audio-lab",
+    shortLabel: "AU",
+    title: "Audio Lab",
+    description: "Game audio domain verification console",
+    capabilities: ["Music", "SFX", "Dialogue", "Mix", "Spatial"],
+    load: () => import("./audio-lab")
   }
 ] as const;
 

@@ -12,6 +12,7 @@
   "dependencies": {
     "@gamekit/app-host": "workspace:*",
     "@gamekit/asset": "workspace:*",
+    "@gamekit/audio-core": "workspace:*",
     "@gamekit/camera-core": "workspace:*",
     "@gamekit/combat": "workspace:*",
     "@gamekit/core": "workspace:*",

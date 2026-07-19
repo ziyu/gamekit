@@ -1,4 +1,5 @@
 import type { AssetManager } from "@gamekit/asset";
+import type { GameAudio } from "@gamekit/audio-core";
 import type { DataRegistry } from "@gamekit/data";
 import type { DevToolsRuntime } from "@gamekit/devtools";
 import type { DriverRegistry } from "@gamekit/driver-core";
@@ -29,6 +30,11 @@ export const DATA_SERVICE: AppServiceKey<DataRegistry> = {
 export const ASSET_SERVICE: AppServiceKey<AssetManager> = {
   id: "assets",
   description: "Asset manager"
+};
+
+export const AUDIO_SERVICE: AppServiceKey<GameAudio> = {
+  id: "audio",
+  description: "Game audio"
 };
 
 export const RENDERER_SERVICE: AppServiceKey<RendererAdapter> = {

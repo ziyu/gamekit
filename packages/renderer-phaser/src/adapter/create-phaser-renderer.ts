@@ -157,6 +157,15 @@ export function createPhaserRenderer(
         },
         applyTargetState(target, state) {
           applyPhaserRenderTargetState(target, state);
+        },
+        applyBatch(writes) {
+          for (const write of writes) {
+            const target =
+              write.nodePath === undefined
+                ? requireRenderRecord(objects, write.objectId).native
+                : requireNode(objects, write.objectId, write.nodePath);
+            applyPhaserRenderTargetState(target, write.state);
+          }
         }
       };
     },

@@ -72,7 +72,7 @@ Leader 不拥有 gameplay authority、资源修改、伤害、spawn、checkpoint
 - facility damaged/destroyed、boss phase、objective、extraction。
 - animation/audio/camera/UI cue 的 semantic id、sequence、source/target 与 correlation。
 
-不复制 Physics handle、GAS/TCA internal maps、AI memory/path native object、Animator controller、Audio voice、React state、Save payload 或完整 trace。
+不复制 Physics handle、GAS/TCA internal maps、AI memory/path native object、Animator controller、Audio PlaybackInstance/native handle、React state、Save payload 或完整 trace。
 
 ## 本地表现与预测
 
