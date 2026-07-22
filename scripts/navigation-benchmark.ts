@@ -80,7 +80,8 @@ function runRouteSampling(agents: number): NavigationBenchmarkCase {
       profileId: profile.id,
       start: { x: start % 32, y: Math.floor(start / 32) },
       goal: { x: 31, y: 31 },
-      goalKey: "shared-goal"
+      goalKey: "shared-goal",
+      routeKind: "field"
     });
   });
   runtime.update(16, 16);
@@ -89,9 +90,12 @@ function runRouteSampling(agents: number): NavigationBenchmarkCase {
     if (result.status !== "complete") {
       throw new Error("Navigation benchmark route did not complete");
     }
-    return result.path.routeId;
+    return result.route.routeId;
   });
   let checksum = 0;
+  for (const routeId of routes) {
+    runtime.sampleRoute(routeId, { x: 0.25, y: 0.25 });
+  }
   const started = performance.now();
   for (let sample = 0; sample < samplesPerAgent; sample += 1) {
     for (const routeId of routes) {
@@ -134,7 +138,8 @@ function runRequestBurst(): NavigationBenchmarkCase {
       profileId: profile.id,
       start: { x: index % 32, y: Math.floor((index % 1024) / 32) },
       goal: { x: 31, y: 31 },
-      goalKey: "shared-goal"
+      goalKey: "shared-goal",
+      routeKind: "field"
     });
   }
   const started = performance.now();
@@ -150,13 +155,20 @@ function runBlockerChurn(): NavigationBenchmarkCase {
   const backend = createGraphNavigationBackend({ graph: gridGraph(32, 32) });
   const started = performance.now();
   for (let cycle = 0; cycle < cycles; cycle += 1) {
-    backend.findPath({
-      requestId: `churn.${cycle}`,
+    const requestId = `churn.${cycle}`;
+    backend.submitPath({
+      requestId,
       profile,
       start: { x: 0, y: 0 },
       goal: { x: 31, y: 31 },
-      goalKey: "churn-goal"
+      goalKey: "churn-goal",
+      routeKind: "field"
     });
+    const result = backend.pollPath(requestId);
+    if (result.status === "pending" || result.status === "missing") {
+      throw new Error(`Navigation blocker benchmark received ${result.status}`);
+    }
+    backend.releasePath(requestId);
     backend.updateObstacle?.({
       id: `block.${cycle}`,
       target: { kind: "edge", id: `edge.horizontal.${cycle % 31}.0` },
@@ -176,7 +188,7 @@ function runBlockerChurn(): NavigationBenchmarkCase {
     microsecondsPerCycle: round((duration * 1000) / cycles),
     retainedAfterDispose:
       Number(snapshot.details?.nodes ?? 0) +
-      Number(snapshot.details?.edges ?? 0) +
+      Number(snapshot.details?.connections ?? 0) +
       Number(snapshot.details?.routeFields ?? 0)
   };
 }

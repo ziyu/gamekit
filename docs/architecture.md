@@ -73,6 +73,9 @@ packages/
   ai-core/
   navigation-core/
   navigation-graph/
+  navigation-grid/
+  navigation-navmesh/
+  navigation-recast/
   animator-core/
   audio-core/
 
@@ -147,7 +150,8 @@ gas → core / data / event-bus / game-runtime / tca / world / save
 combat → core / data / event-bus / game-runtime / world / physics-core / gas
 ai-core → core / data / event-bus / game-runtime / world / navigation-core / save
 navigation-core → core / data / game-runtime
-navigation backend packages → navigation-core / backend-owned algorithm/runtime
+navigation-graph/navigation-grid/navigation-navmesh → navigation-core/backend / data / backend-owned contracts
+navigation-recast → navigation-core/backend / navigation-navmesh / recast-navigation
 animator-core → core / data / event-bus / game-runtime / asset / renderer-core
 audio-core → core / asset
 multiplayer-core → core / event-bus / game-runtime
@@ -167,6 +171,8 @@ save → core / platform-core
 - `@gamekit/combat` 依赖具体游戏、renderer、AI backend 或 native physics 类型。
 - `@gamekit/ai-core` 依赖 XState、Yuka、具体 navigation backend、Physics backend、renderer 或具体游戏。
 - `@gamekit/navigation-core` 依赖 Yuka、Recast、具体 graph/grid/navmesh 库、Physics backend 或 renderer。
+- `@gamekit/navigation-navmesh` 依赖 Recast、navcat 或其他具体生成/查询 runtime；GameKit-owned source contract 不能由某个 adapter 决定。
+- `@gamekit/navigation-recast` 的 Recast/WASM/native poly 类型进入 Navigation Core、Data/Save payload 或 gameplay 公共 API。
 - `@gamekit/animator-core` 依赖 Phaser、Three.js、native clip/mixer 或具体游戏。
 - `@gamekit/audio-core` 依赖 Phaser、Web Audio、Howler 或平台音频 SDK。
 - `@gamekit/driver-core` 依赖 Phaser、Three.js、DOM-heavy implementation 或具体 renderer/input/camera/asset adapter 实现。
@@ -236,8 +242,12 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 | `@gamekit/physics-rapier2d` / `@gamekit/physics-rapier3d` / `@gamekit/physics-matter` | Game Module backend adapter                   | 独立物理库 adapter；Rapier 按 2D / 3D 分包，第三方类型不进入 physics-core 或 gameplay 公共 API。                                                                                          |
 | `@gamekit/combat`                                                                     | Game Module toolkit                           | 通用 effect delivery、target relationship、hit resolution、projectile/hitscan/area executor；不定义具体游戏数值。                                                                         |
 | `@gamekit/ai-core`                                                                    | Game Module toolkit                           | 感知记忆、Utility goal、Task lifecycle、预算调度和 trace；不拥有 World、Physics、Navigation backend 或游戏行为。                                                                          |
-| `@gamekit/navigation-core`                                                            | Game Module toolkit / facade                  | Path/route query、agent profile、dynamic blocker/cost、request budget 和 adapter contract。                                                                                               |
-| `@gamekit/navigation-*`                                                               | Game Module backend adapter                   | Graph、grid、navmesh 或其他成熟算法实现；native node/poly/runtime 不进入 Core。                                                                                                           |
+| `@gamekit/navigation-core`                                                            | Game Module toolkit / facade                  | Path/shared route-field query、layout factory、agent profile、dynamic blocker/cost、异步 request budget 和稳定 Handle。                                                                   |
+| `@gamekit/navigation-core/backend`                                                    | Backend port                                  | submit/poll/cancel/release、revision、route-field sample 和 layout factory；只供 adapter/driver 实现者使用。                                                                              |
+| `@gamekit/navigation-core/testing`                                                    | Test support                                  | Memory/Deferred Backend、conformance 和 framework-neutral fixture；不进入业务默认入口。                                                                                                   |
+| `@gamekit/navigation-graph` / `@gamekit/navigation-grid`                              | Game Module backend adapter                   | 稀疏 authored route 与规则 raster；native node/cell/request token 不进入 Core root API。                                                                                                  |
+| `@gamekit/navigation-navmesh`                                                         | Backend authoring contract                    | GameKit-owned triangle source、build profile、area metadata 和 DataType；不实现具体 baker/query runtime。                                                                                 |
+| `@gamekit/navigation-recast`                                                          | Game Module backend adapter                   | 通过 `recast-navigation` 生成/查询 NavMesh，持有 WASM/native lifecycle；第三方类型不进入 Core 或 gameplay。                                                                               |
 | `@gamekit/animator-core`                                                              | Game Module toolkit                           | 语义 Animator graph、controller、layer、transition、marker 和 playback snapshot；具体 clip/mixer 由 Renderer/Driver adapter 执行。                                                        |
 | `@gamekit/audio-core`                                                                 | App Service facade + presentation bridge      | GameAudio 领域 facade；分别提供 Music、SFX、可选 Dialogue、Mix、Spatial 和共享 Playback 语义，具体 native channel/DSP/runtime 由 Adapter/Driver 持有。                                    |
 | `@gamekit/tca`                                                                        | Game Module                                   | 数据驱动规则 runtime，通过标准 GameModule 无痛安装。                                                                                                                                      |
@@ -343,7 +353,9 @@ GAS 是 ability/effect/cue 的语义事实源；Combat 不建立平行 Cue regis
 
 ### AI 与 Navigation
 
-AI Core 负责 perception memory、Utility goal selection、Task state machine、intent 与预算调度；Navigation Core 独立负责 path/route query、动态 blocker/cost、cache 与 backend adapter。AI 不直接推进 Physics、GAS 或 Combat，Navigation 也不决定目标与攻击。
+AI Core 负责 perception memory、Utility goal selection、Task state machine、intent 与预算调度；Navigation Core 独立负责 path/shared route-field query、layout/backend lifecycle、动态 blocker/cost、cache 与 progress read model。AI 不直接推进 Physics、GAS 或 Combat，Navigation 也不决定目标与攻击。
+
+Navigation 的游戏侧 root、Backend port 和 testing fixture 使用独立入口。Backend 使用 submit/poll/cancel/release 生命周期，使同步 Graph 与异步 Worker/Navmesh 共用同一 Handle；大群体通过共享 route field 采样方向，不为每个 agent 复制完整路径。Core 只拥有 field 协议、公共 route identity、调度、revision/stale、retain/release 委托、trace 和 Backend-neutral portal traversal sample；Graph node、Grid cell、NavMesh polygon、反向搜索、endpoint 投影和 field native state 由具体 Backend 持有。Portal sample 只报告稳定 id 与方向正确的 entry/exit，实际传送、跳跃、攀爬、Physics/authority 更新和动画属于调用方。可复用搜索算法只能进入不依赖 gameplay 的 Backend toolkit，不能要求所有 Backend 向 Core 暴露统一拓扑。具体公共协议、包内依赖、field 所有权和 portal traversal 分别见 ADR 0036、ADR 0037、ADR 0040、ADR 0041。
 
 普通实时 agent 默认使用 Utility + interruptible task model，不强制 GOAP。GOAP、HTN、行为树、Yuka graph/search 或其他第三方实现只能通过 AI/Navigation adapter extension 接入，不能接管 World、Physics 或 GameRuntime lifecycle。
 

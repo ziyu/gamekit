@@ -42,12 +42,32 @@ export default defineConfig({
       ).pathname,
       "@gamekit/audio-core": new URL("./packages/audio-core/src/index.ts", import.meta.url)
         .pathname,
+      "@gamekit/navigation-core/backend": new URL(
+        "./packages/navigation-core/src/backend/index.ts",
+        import.meta.url
+      ).pathname,
+      "@gamekit/navigation-core/testing": new URL(
+        "./packages/navigation-core/src/testing/index.ts",
+        import.meta.url
+      ).pathname,
       "@gamekit/navigation-core": new URL(
         "./packages/navigation-core/src/index.ts",
         import.meta.url
       ).pathname,
       "@gamekit/navigation-graph": new URL(
         "./packages/navigation-graph/src/index.ts",
+        import.meta.url
+      ).pathname,
+      "@gamekit/navigation-grid": new URL(
+        "./packages/navigation-grid/src/index.ts",
+        import.meta.url
+      ).pathname,
+      "@gamekit/navigation-navmesh": new URL(
+        "./packages/navigation-navmesh/src/index.ts",
+        import.meta.url
+      ).pathname,
+      "@gamekit/navigation-recast": new URL(
+        "./packages/navigation-recast/src/index.ts",
         import.meta.url
       ).pathname,
       "@gamekit/multiplayer-core": new URL(

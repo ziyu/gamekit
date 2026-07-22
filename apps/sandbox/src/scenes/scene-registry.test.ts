@@ -11,13 +11,16 @@ describe("Sandbox scene registry", () => {
     expect(sandboxSceneCatalog.map((scene) => scene.id)).toEqual([
       "tiny-camp",
       "combat",
-      "audio-lab"
+      "audio-lab",
+      "navigation-lab"
     ]);
     expect(resolveSandboxScene("?scene=combat").id).toBe("combat");
     expect(resolveSandboxScene("?scene=tiny-camp").id).toBe("tiny-camp");
     expect(resolveSandboxScene("?scene=audio-lab").id).toBe("audio-lab");
+    expect(resolveSandboxScene("?scene=navigation-lab").id).toBe("navigation-lab");
     expect(resolveSandboxScene("?scene=unknown").id).toBe(DEFAULT_SANDBOX_SCENE_ID);
     expect(requireSandboxScene("combat").capabilities).toContain("Combat");
     expect(requireSandboxScene("audio-lab").capabilities).toContain("Dialogue");
+    expect(requireSandboxScene("navigation-lab").capabilities).toContain("Route Field");
   });
 });

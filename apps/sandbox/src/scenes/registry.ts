@@ -26,6 +26,14 @@ export const sandboxSceneCatalog: readonly SandboxSceneDefinition[] = [
     description: "Game audio domain verification console",
     capabilities: ["Music", "SFX", "Dialogue", "Mix", "Spatial"],
     load: () => import("./audio-lab")
+  },
+  {
+    id: "navigation-lab",
+    shortLabel: "NV",
+    title: "Navigation Lab",
+    description: "Ashen Ford terrain, route choices, and replaceable backends",
+    capabilities: ["Game Terrain", "Path", "Route Field", "Backend Provider", "Obstacles"],
+    load: () => import("./navigation-lab")
   }
 ] as const;
 

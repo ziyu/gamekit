@@ -427,6 +427,29 @@ Audio Lab 的 UI 是低频测试控制台：每个按钮必须对应一个明确
 
 Audio 的公共职责、领域 API 与 Backend 边界以 [`../modules/audio.md`](../modules/audio.md)、ADR 0034 和 ADR 0035 为准。Audio Lab 只拥有测试内容、合成 fixture、控制台交互和场景级装配。
 
+## 场景：Navigation Lab
+
+`Navigation Lab` 使用多张真实俯视游戏地形验证 Navigation Core 与不同 Backend。`Ashen Ford` 是紧凑的三通路基础场景，包含出发营地、守望城门、河流、石桥、狭窄山道、芦苇沼泽和可开关的传送石；`Blackglass Basin` 是 30 × 20 米的反应堆街区深入场景，由建筑占地、围墙、院落、狭窄室内通道、死路、中央防爆门、只适合轻型单位的高架通路、高成本冷却液区域和应急传送中继构成，起终点横跨街区对角线，路径必须围绕真实阻挡连续转向。玩家在两个场景中都选择斥候、补给车或重甲卫队，下达单体移动或队伍集结命令。技术 trace 和压力测试保留在次级 QA 区域，主画面首先表达“单位为什么选这条路、世界变化后路线发生了什么”。
+
+应急传送中继是离散 portal traversal，不是跨越建筑的连续直线。Graph、Grid 和 Recast 在同一个 sample API 中提供各自投影后的 entry/exit；共享移动 system 让单位先抵达 entry，再执行 Sandbox 的原子 relay 表现并从 exit 继续采样。场景行为矩阵必须验证 Rally Party 能实际越过中继，不能只验证 route request 返回 complete。
+
+每张地形的任务、出生点、目标点、交互地标、操作文案和表现布局只在自己的 scenario definition 中定义一次。该场景下的 Backend provider 负责提供 typed layout/source、`NavigationBackendFactory[]` 和场景语义障碍到 backend target 的映射，例如同一个“封锁主要通路”操作在 Graph 中可以映射到 edge，在 Grid/Navmesh 中可以映射到 area、tile set 或 custom target。共享 controller、移动 system、UI 和测试只消费 scenario definition 与公开 Navigation Handle，不 import Graph node、navmesh polygon、grid tile 或 native runtime。
+
+场景和 Backend 是两个独立选择维度。切换任意一项都先释放当前 GameRuntime/Navigation runtime，再用同一 GameAppDefinition、同一场景 controller API 和同一 UI 重建 App Host 会话；两个维度都进入共同的 scenario × backend 行为测试矩阵。Graph、0.5 m Traversal Grid 和 Recast NavMesh 通过对应 provider/definition 接入，不复制 controller、UI 或会话 lifecycle；需要异步初始化的 Backend 在 provider preparation 边界完成 boot，不能侵入共享 gameplay API。
+
+场景地图必须直接表达 Navigation 结果，而不是只展示表格：
+
+- Path：显示出发地、目的地、完整移动路线、cost、cache hit/miss 和沿路线移动的单个游戏单位。
+- Party Rally / Shared Route Field：队伍集结是 Backend-neutral 的玩法命令。Graph、Grid 和 Recast 都让多个队员共享一个 goal-keyed field，其中 Recast 使用保持 portal 方向和 area cost 的 polygon field；只支持 point path 的其他 Backend 为每个队员提交并保留独立路线，不能把多次 path query 伪装成共享 field。主画面显示队伍和实际路线，只有真实 field 才在 Route Overlay 中显示共享采样方向。
+- Agent Profile：Pathfinder、Supply Wagon、Iron Guard 分别对应不同半径、高度、坡度、area 与 cost 约束；狭窄/高架通路、主要道路和高成本危险区域必须产生可见的选路差异。
+- Dynamic topology：测试者通过封锁主要通路、改变危险区域 cost/blocked 状态、启用场景 shortcut 和触发全域 lockdown 改变游戏世界，同时观察 revision、dependency invalidation、旧 route stale 与重新规划结果。深入场景必须覆盖“主要通路关闭后改道、第二通路失效后 unreachable、shortcut 恢复可达、全域封锁再次 unreachable”的组合链路。
+- Request lifecycle：提供 queue burst、cancel-before-submit、max-cost failure、unreachable lockdown、repeat/cache 和显式 route release 操作。
+- Projection / Sampling / Progress：地图点击可以设置 start、goal 或 projection probe；agent 移动只消费 `sampleRoute()`，暂停移动后由 progress tracker 显示 stuck，不能由场景复制另一套寻路算法。
+- Backend Debug Draw：提供独立的 Topology、Area Cost 和 Constraints 图层选项。Graph provider 将最终语义节点、边和 portal 投影为通用点/折线，Grid provider 将实际可走 cell 和 portal 投影为通用多边形/折线，NavMesh provider 将最终 polygon boundary/portal 投影为通用多边形/折线；共享 canvas 只消费场景级调试几何，不 import graph node、grid cell、native poly ref 或 WASM 类型。候选 visibility、voxel、contour 等生成中间数据只能进入独立高级诊断层。Constraints 图层必须结合当前 Agent Profile、桥梁/山道/沼泽状态和 portal enabled 状态表现可用、受限与阻断数据。
+- Observability：场景低频显示 pending/queued/submitted、retained result/route、cache、backend route field、revision 和最近 Navigation trace；完整诊断仍进入 DevTools。
+
+Navigation Lab 的地形和玩法语义属于 Sandbox。对于需要比较相同自由空间的场景，Sandbox 维护唯一的 app-owned terrain/placement source：canvas 从它绘制墙体、建筑和可走地面；Graph provider 消费落在真实地形上的少量语义 waypoint/route 标注；Grid provider 把同一份 1 米可走 tile 细分为 0.5 米 cell；NavMesh provider 从同一 source 生成 Recast triangle input。Graph authored node/edge、Grid cell/region 和 NavMesh bake/native data 分别只存在于对应 provider/adapter；调试几何和行为测试必须能反向验证到同一 terrain source，禁止分别维护互不相关的展示背景和寻路 topology。任何 Backend-specific authoring 或 Recast native 数据都不能进入共享 controller、Navigation Core 或 UI 协议。Navigation 的长期职责和使用约束以 [`../modules/navigation.md`](../modules/navigation.md)、ADR 0036、ADR 0037、ADR 0038 和 ADR 0039 为准。
+
 ## 设计约束
 
 - Sandbox 可以使用复杂本地数据和本地组件，但不能把演示专用概念上推到核心包。

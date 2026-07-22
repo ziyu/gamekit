@@ -416,6 +416,21 @@ importers:
       '@gamekit/input-dom':
         specifier: workspace:*
         version: link:../../packages/input-dom
+      '@gamekit/navigation-core':
+        specifier: workspace:*
+        version: link:../../packages/navigation-core
+      '@gamekit/navigation-graph':
+        specifier: workspace:*
+        version: link:../../packages/navigation-graph
+      '@gamekit/navigation-grid':
+        specifier: workspace:*
+        version: link:../../packages/navigation-grid
+      '@gamekit/navigation-navmesh':
+        specifier: workspace:*
+        version: link:../../packages/navigation-navmesh
+      '@gamekit/navigation-recast':
+        specifier: workspace:*
+        version: link:../../packages/navigation-recast
       '@gamekit/physics-core':
         specifier: workspace:*
         version: link:../../packages/physics-core
@@ -900,6 +915,36 @@ importers:
       '@gamekit/navigation-core':
         specifier: workspace:*
         version: link:../navigation-core
+
+  packages/navigation-grid:
+    dependencies:
+      '@gamekit/data':
+        specifier: workspace:*
+        version: link:../data
+      '@gamekit/navigation-core':
+        specifier: workspace:*
+        version: link:../navigation-core
+
+  packages/navigation-navmesh:
+    dependencies:
+      '@gamekit/data':
+        specifier: workspace:*
+        version: link:../data
+      '@gamekit/navigation-core':
+        specifier: workspace:*
+        version: link:../navigation-core
+
+  packages/navigation-recast:
+    dependencies:
+      '@gamekit/navigation-core':
+        specifier: workspace:*
+        version: link:../navigation-core
+      '@gamekit/navigation-navmesh':
+        specifier: workspace:*
+        version: link:../navigation-navmesh
+      recast-navigation:
+        specifier: ^0.43.1
+        version: 0.43.1
 
   packages/physics-core:
     dependencies:
@@ -1925,6 +1970,15 @@ packages:
   '@quansync/fs@1.0.0':
     resolution: {integrity: sha512-4TJ3DFtlf1L5LDMaM6CanJ/0lckGNtJcMjQ1NAV6zDmA0tEHKZtxNKin8EgPaVX1YzljbxckyT2tJrpQKAtngQ==}
 
+  '@recast-navigation/core@0.43.1':
+    resolution: {integrity: sha512-4igfPgnoV90O92sDSIA0xHa6tanh3z/udlgGmD0SqGQ6PKV4JS2l9jWO8YnxfZuXP/NV52H4c5FU6pSdZc9WDA==}
+
+  '@recast-navigation/generators@0.43.1':
+    resolution: {integrity: sha512-w7r6k/A93wWxuSN+Lg+PmlsUVXq06r5bqXmBglolxqDt2O/Y776BIhYtb6P2P6pbYqDWORu9NCZZJzfY4FNpaA==}
+
+  '@recast-navigation/wasm@0.43.1':
+    resolution: {integrity: sha512-XFL6PhO8JodwXUHBSAkfaLUdUEweIkJsdP3HTmtJvMs5fkqEWxWJmBskZlACHJepv55NAriqWxOtuLlG3t7+Hg==}
+
   '@rolldown/binding-android-arm64@1.1.0':
     resolution: {integrity: sha512-gCYzGOSkYY6Z034suzd20euvds7lPzMEEla62DJGE/ZAlR4OMBnNbvnBSsIGUCAr52gaWMsloGxP4tVGtN5aCA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -2913,6 +2967,9 @@ packages:
     resolution: {integrity: sha512-VIMnQi/Z4HT2Fxuwg5KrY174U1VdUIASQVWXXyqtNRtxSr9IYkn1rsI6Tb6HsrHCmB7gVpNwX6JxPTHcH6IoTA==}
     engines: {node: '>=6'}
 
+  recast-navigation@0.43.1:
+    resolution: {integrity: sha512-BVBQEHE6uqD36opJomVkI5TxMVZ8bBLdDn90mYtBUYJnNlqEuNFOL8DH8lLOksfVVaC+kjykYuS57P6MrxVB7A==}
+
   resolve-from@5.0.0:
     resolution: {integrity: sha512-qYg9KP24dD5qka9J47d0aVky0N+b4fTU89LN9iDnjB5waksiC49rvMB0PrUJQGoTmH50XPiqOvAjDfaijGxYZw==}
     engines: {node: '>=8'}
@@ -3897,6 +3954,17 @@ snapshots:
     dependencies:
       quansync: 1.0.0
 
+  '@recast-navigation/core@0.43.1':
+    dependencies:
+      '@recast-navigation/wasm': 0.43.1
+
+  '@recast-navigation/generators@0.43.1':
+    dependencies:
+      '@recast-navigation/core': 0.43.1
+      '@recast-navigation/wasm': 0.43.1
+
+  '@recast-navigation/wasm@0.43.1': {}
+
   '@rolldown/binding-android-arm64@1.1.0':
     optional: true
 
@@ -4802,6 +4870,11 @@ snapshots:
       js-yaml: 3.14.2
       pify: 4.0.1
       strip-bom: 3.0.0
+
+  recast-navigation@0.43.1:
+    dependencies:
+      '@recast-navigation/core': 0.43.1
+      '@recast-navigation/generators': 0.43.1
 
   resolve-from@5.0.0: {}
 

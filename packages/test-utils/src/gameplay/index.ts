@@ -20,4 +20,4 @@ export {
   runNavigationRuntimeConformance,
   type NavigationConformanceHarness,
   type NavigationConformanceReport
-} from "@gamekit/navigation-core";
+} from "@gamekit/navigation-core/testing";

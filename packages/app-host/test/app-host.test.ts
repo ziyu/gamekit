@@ -28,7 +28,7 @@ import {
   type NetworkVector2
 } from "@gamekit/multiplayer-core";
 import { createMemoryMultiplayerBackend } from "@gamekit/multiplayer-memory";
-import { createMemoryNavigationBackend } from "@gamekit/navigation-core";
+import { createMemoryNavigationBackend } from "@gamekit/navigation-core/testing";
 import {
   createMemoryPhysicsBackend,
   createPhysicsHandle,

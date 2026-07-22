@@ -1,10 +1,18 @@
 import {
+  createNavigationDataTypes,
   createNavigationRuntime,
   type NavigationAgentProfileDefinition
 } from "@gamekit/navigation-core";
+import type {
+  NavigationBackendAdapter,
+  NavigationBackendPathRequest,
+  NavigationBackendPathResult
+} from "@gamekit/navigation-core/backend";
+import { createDataRegistry } from "@gamekit/data";
 import { describe, expect, it } from "vitest";
 import {
   createGraphNavigationBackend,
+  createGraphNavigationBackendFactory,
   createNavigationGraphDataType,
   type NavigationGraphDefinition
 } from "../src";
@@ -51,12 +59,16 @@ describe("Navigation graph data", () => {
 describe("Graph navigation backend", () => {
   it("uses deterministic shortest paths and reacts to blockers", () => {
     const backend = createGraphNavigationBackend({ graph: diamondGraph() });
-    const first = backend.findPath(pathRequest("first", standardProfile));
+    const first = findPath(backend, pathRequest("first", standardProfile));
     expect(first.status).toBe("complete");
     if (first.status !== "complete") {
       throw new Error("Expected complete graph path");
     }
-    expect(first.points).toEqual([
+    expect(first.route.kind).toBe("path");
+    if (first.route.kind !== "path") {
+      throw new Error("Expected point path");
+    }
+    expect(first.route.points).toEqual([
       { x: 0, y: 0 },
       { x: 1, y: 1 },
       { x: 2, y: 0 }
@@ -72,10 +84,13 @@ describe("Graph navigation backend", () => {
     expect(changed).toMatchObject({
       invalidatedPathDependencies: [{ kind: "edge", id: "edge.a-b" }]
     });
-    const alternate = backend.findPath(pathRequest("alternate", standardProfile));
+    const alternate = findPath(backend, pathRequest("alternate", standardProfile));
     expect(alternate.status).toBe("complete");
     if (alternate.status === "complete") {
-      expect(alternate.points[1]).toEqual({ x: 1, y: -1 });
+      expect(alternate.route.kind).toBe("path");
+      if (alternate.route.kind === "path") {
+        expect(alternate.route.points[1]).toEqual({ x: 1, y: -1 });
+      }
     }
     backend.dispose();
     expect(backend.snapshot()).toMatchObject({ disposed: true, details: { routeFields: 0 } });
@@ -87,10 +102,13 @@ describe("Graph navigation backend", () => {
       ...standardProfile,
       costOverrides: { mud: 10 }
     };
-    const result = backend.findPath(pathRequest("cost", costlyMud));
+    const result = findPath(backend, pathRequest("cost", costlyMud));
     expect(result.status).toBe("complete");
     if (result.status === "complete") {
-      expect(result.points[1]).toEqual({ x: 1, y: -1 });
+      expect(result.route.kind).toBe("path");
+      if (result.route.kind === "path") {
+        expect(result.route.points[1]).toEqual({ x: 1, y: -1 });
+      }
     }
 
     const roadOnly: NavigationAgentProfileDefinition = {
@@ -107,34 +125,84 @@ describe("Graph navigation backend", () => {
     const backend = createGraphNavigationBackend({ graph, maxRouteFields: 4 });
     for (let index = 0; index < 1000; index += 1) {
       const start = index % 127;
-      const result = backend.findPath({
+      const result = findPath(backend, {
         requestId: `path.${index}`,
         profile: standardProfile,
         start: { x: start, y: 0 },
         goal: { x: 127, y: 0 },
-        goalKey: "shared-goal"
+        goalKey: "shared-goal",
+        routeKind: "field"
       });
       expect(result.status).toBe("complete");
     }
-    expect(backend.snapshot().details).toMatchObject({ routeFields: 1, nodes: 128, edges: 127 });
+    expect(backend.snapshot().details).toMatchObject({
+      routeFields: 1,
+      nodes: 128,
+      connections: 127
+    });
     backend.dispose();
+  });
+
+  it("does not evict active fields when the inactive field budget is full", () => {
+    const runtime = createNavigationRuntime({
+      backend: createGraphNavigationBackend({ graph: lineGraph(4), maxRouteFields: 1 }),
+      profiles: [standardProfile]
+    });
+    const firstId = runtime.requestPath({
+      id: "field.first",
+      requesterId: "first",
+      profileId: standardProfile.id,
+      start: { x: 0, y: 0 },
+      goal: { x: 2, y: 0 },
+      goalKey: "first",
+      routeKind: "field"
+    });
+    const secondId = runtime.requestPath({
+      id: "field.second",
+      requesterId: "second",
+      profileId: standardProfile.id,
+      start: { x: 0, y: 0 },
+      goal: { x: 3, y: 0 },
+      goalKey: "second",
+      routeKind: "field"
+    });
+    runtime.update(16, 16);
+    const first = runtime.poll(firstId);
+    const second = runtime.poll(secondId);
+    if (first.status !== "complete" || second.status !== "complete") {
+      throw new Error("Expected active graph fields");
+    }
+    expect(runtime.snapshot().backend.details).toMatchObject({
+      routeFields: 2,
+      retainedRouteFields: 2
+    });
+    expect(runtime.sampleRoute(first.route.routeId, { x: 0, y: 0 }).status).toBe("valid");
+    runtime.releaseRoute(first.route.routeId);
+    expect(runtime.snapshot().backend.details).toMatchObject({
+      routeFields: 1,
+      retainedRouteFields: 1
+    });
+    expect(runtime.sampleRoute(second.route.routeId, { x: 0, y: 0 }).status).toBe("valid");
+    runtime.dispose();
   });
 
   it("returns unreachable explicitly and invalidates only dependent route fields", () => {
     const backend = createGraphNavigationBackend({ graph: splitGraph() });
-    const left = backend.findPath({
+    const left = findPath(backend, {
       requestId: "left",
       profile: standardProfile,
       start: { x: 0, y: 0 },
       goal: { x: 1, y: 0 },
-      goalKey: "left"
+      goalKey: "left",
+      routeKind: "path"
     });
-    const right = backend.findPath({
+    const right = findPath(backend, {
       requestId: "right",
       profile: standardProfile,
       start: { x: 10, y: 0 },
       goal: { x: 11, y: 0 },
-      goalKey: "right"
+      goalKey: "right",
+      routeKind: "path"
     });
     expect(left.status).toBe("complete");
     expect(right.status).toBe("complete");
@@ -148,12 +216,13 @@ describe("Graph navigation backend", () => {
     ).toMatchObject({ status: "changed", invalidatedRouteFields: 1 });
     expect(backend.snapshot().details?.routeFields).toBe(1);
     expect(
-      backend.findPath({
+      findPath(backend, {
         requestId: "left.blocked",
         profile: standardProfile,
         start: { x: 0, y: 0 },
         goal: { x: 1, y: 0 },
-        goalKey: "left"
+        goalKey: "left",
+        routeKind: "path"
       })
     ).toMatchObject({ status: "failed", reason: "unreachable" });
     backend.dispose();
@@ -179,7 +248,7 @@ describe("Graph navigation backend", () => {
     if (result.status !== "complete") {
       throw new Error("Expected complete Core graph route");
     }
-    expect(runtime.sampleRoute(result.path.routeId, { x: 0.5, y: 0.5 })).toMatchObject({
+    expect(runtime.sampleRoute(result.route.routeId, { x: 0.5, y: 0.5 })).toMatchObject({
       status: "valid",
       nextPoint: { x: 1, y: 1 }
     });
@@ -188,7 +257,7 @@ describe("Graph navigation backend", () => {
       target: { kind: "edge", id: "edge.a-b" },
       blocked: true
     });
-    expect(runtime.sampleRoute(result.path.routeId, { x: 0, y: 0 }).status).toBe("stale");
+    expect(runtime.sampleRoute(result.route.routeId, { x: 0, y: 0 }).status).toBe("stale");
     runtime.dispose();
   });
 
@@ -214,8 +283,8 @@ describe("Graph navigation backend", () => {
       target: { kind: "edge", id: "edge.left" },
       blocked: true
     });
-    expect(runtime.sampleRoute(left.path.routeId, { x: 0, y: 0 }).status).toBe("stale");
-    expect(runtime.sampleRoute(right.path.routeId, { x: 10, y: 0 })).toMatchObject({
+    expect(runtime.sampleRoute(left.route.routeId, { x: 0, y: 0 }).status).toBe("stale");
+    expect(runtime.sampleRoute(right.route.routeId, { x: 10, y: 0 })).toMatchObject({
       status: "valid",
       revision: 1
     });
@@ -225,6 +294,191 @@ describe("Graph navigation backend", () => {
     runtime.update(16, 32);
     expect(runtime.poll(rightCachedId)).toMatchObject({ status: "complete", cache: "hit" });
     runtime.dispose();
+  });
+
+  it("enforces agent geometry and supports layout area/portal updates", () => {
+    const graph: NavigationGraphDefinition = {
+      id: "graph.profile",
+      nodes: [
+        {
+          id: "a",
+          point: { x: 0, y: 0 },
+          area: "ground",
+          clearance: 1,
+          heightClearance: 2
+        },
+        {
+          id: "b",
+          point: { x: 1, y: 0 },
+          area: "ground",
+          clearance: 1,
+          heightClearance: 2
+        },
+        {
+          id: "c",
+          point: { x: 3, y: 0 },
+          area: "upper",
+          clearance: 1,
+          heightClearance: 2
+        }
+      ],
+      edges: [
+        {
+          id: "narrow",
+          from: "a",
+          to: "b",
+          area: "ground",
+          width: 1,
+          heightClearance: 1.5,
+          slope: 10
+        }
+      ]
+    };
+    const backend = createGraphNavigationBackend({
+      graph,
+      layout: {
+        id: "layout.profile",
+        backend: "graph",
+        source: { type: "navigation.graph", id: graph.id },
+        areas: [{ id: "ground" }, { id: "upper", cost: 2 }],
+        portals: [
+          {
+            id: "lift",
+            from: { point: { x: 1, y: 0 }, area: "ground" },
+            to: { point: { x: 3, y: 0 }, area: "upper" }
+          }
+        ]
+      }
+    });
+    const large: NavigationAgentProfileDefinition = {
+      id: "large",
+      radius: 0.6,
+      height: 1,
+      maxSlope: 20,
+      allowedAreas: ["ground", "upper"]
+    };
+    expect(findPath(backend, pathRequest("large", large))).toMatchObject({
+      status: "failed",
+      reason: "unreachable"
+    });
+    const small = { ...large, id: "small", radius: 0.4 };
+    const portalPath = findPath(backend, {
+      ...pathRequest("portal", small),
+      goal: { x: 3, y: 0 },
+      goalKey: "upper"
+    });
+    expect(portalPath).toMatchObject({
+      status: "complete",
+      route: {
+        kind: "path",
+        traversals: [
+          {
+            kind: "portal",
+            portalId: "lift",
+            entryPoint: { x: 1, y: 0 },
+            exitPoint: { x: 3, y: 0 }
+          }
+        ]
+      }
+    });
+    const portalField = findPath(backend, {
+      ...pathRequest("portal.field", small),
+      goal: { x: 3, y: 0 },
+      goalKey: "upper",
+      routeKind: "field"
+    });
+    if (portalField.status !== "complete" || portalField.route.kind !== "field") {
+      throw new Error("Expected a portal field route");
+    }
+    expect(backend.sampleRoute?.(portalField.route.routeKey, { x: 1, y: 0 }, small)).toMatchObject({
+      status: "valid",
+      nextPoint: { x: 1, y: 0 },
+      traversal: {
+        kind: "portal",
+        portalId: "lift",
+        entryPoint: { x: 1, y: 0 },
+        exitPoint: { x: 3, y: 0 }
+      }
+    });
+    expect(
+      backend.updateObstacle?.({
+        id: "close.lift",
+        target: { kind: "portal", id: "lift" },
+        blocked: true
+      })
+    ).toMatchObject({ status: "changed", revision: 1 });
+    expect(
+      findPath(backend, {
+        ...pathRequest("portal.blocked", small),
+        goal: { x: 3, y: 0 },
+        goalKey: "upper"
+      })
+    ).toMatchObject({ status: "failed", reason: "unreachable" });
+    expect(
+      backend.updateObstacle?.({
+        id: "close.area",
+        target: { kind: "area", id: "ground" },
+        blocked: true
+      })
+    ).toMatchObject({ status: "changed", revision: 2 });
+    backend.dispose();
+  });
+
+  it("creates the backend from a typed navigation layout", () => {
+    const registry = createDataRegistry();
+    for (const type of [...createNavigationDataTypes(), createNavigationGraphDataType()]) {
+      registry.registerType(type);
+    }
+    registry.registerPack({
+      id: "navigation.test",
+      version: "1.0.0",
+      entries: [
+        {
+          type: "navigation.graph",
+          id: "graph.layout",
+          data: { ...lineGraph(3), id: "graph.layout" }
+        },
+        {
+          type: "navigation.layout",
+          id: "layout.main",
+          data: {
+            id: "layout.main",
+            backend: "graph",
+            source: { type: "navigation.graph", id: "graph.layout" },
+            areas: [{ id: "ground" }]
+          }
+        }
+      ]
+    });
+    const runtime = createNavigationRuntime({
+      layout: { type: "navigation.layout", id: "layout.main" },
+      backendFactories: [createGraphNavigationBackendFactory()],
+      dataRegistry: registry,
+      profiles: [standardProfile]
+    });
+    const requestId = runtime.requestPath({
+      id: "layout.path",
+      requesterId: "agent",
+      profileId: standardProfile.id,
+      start: { x: 0, y: 0 },
+      goal: { x: 2, y: 0 }
+    });
+    runtime.update(16, 16);
+    expect(runtime.poll(requestId).status).toBe("complete");
+    expect(runtime.snapshot().backend.id).toBe("navigation.graph.layout.main");
+    runtime.dispose();
+
+    const factory = createGraphNavigationBackendFactory();
+    expect(() =>
+      factory.create({
+        layout: {
+          id: "layout.missing",
+          backend: "graph",
+          source: { type: "navigation.graph", id: "missing" }
+        },
+        dataRegistry: registry
+      })
+    ).toThrowError(expect.objectContaining({ code: "navigation.graph_source_missing" }));
   });
 });
 
@@ -285,8 +539,22 @@ function pathRequest(id: string, profile: NavigationAgentProfileDefinition) {
     profile,
     start: { x: 0, y: 0 },
     goal: { x: 2, y: 0 },
-    goalKey: "goal"
+    goalKey: "goal",
+    routeKind: "path" as const
   };
+}
+
+function findPath(
+  backend: NavigationBackendAdapter,
+  request: NavigationBackendPathRequest
+): NavigationBackendPathResult {
+  backend.submitPath(request);
+  const result = backend.pollPath(request.requestId);
+  backend.releasePath(request.requestId);
+  if (result.status === "pending" || result.status === "missing") {
+    throw new Error(`Expected terminal backend result, received ${result.status}`);
+  }
+  return result;
 }
 
 function splitRequest(id: string, side: "left" | "right") {
