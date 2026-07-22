@@ -36,6 +36,21 @@ export type NavigationLabBurstSnapshot = {
   cancelled: number;
 };
 
+export type NavigationLabStressSnapshot = {
+  status: "planning" | "running" | "stopped" | "failed";
+  targetAgents: number;
+  activeAgents: number;
+  planningMs: number;
+  spawnMs: number;
+  sampledTicks: number;
+  samplesPerTick: number;
+  averageStepMs: number;
+  p95StepMs: number;
+  peakStepMs: number;
+  budgetMs: number;
+  withinBudget?: boolean | undefined;
+};
+
 export type NavigationLabSnapshot = {
   running: boolean;
   tick: number;
@@ -63,6 +78,7 @@ export type NavigationLabSnapshot = {
   lockdown: boolean;
   lastObstacleResult?: NavigationObstacleUpdateResult | undefined;
   burst?: NavigationLabBurstSnapshot | undefined;
+  stress?: NavigationLabStressSnapshot | undefined;
   navigation: NavigationSnapshot;
   traces: NavigationTraceEntry[];
   notice: string;
@@ -78,6 +94,8 @@ export type NavigationLabController = {
   requestCostCappedPath(): string;
   cancelProbe(): string;
   runBurst(count?: number): void;
+  runStress(count?: number): string | undefined;
+  stopStress(): void;
   releaseRoute(): void;
   toggleAgentsFrozen(): void;
   toggleGate(): void;

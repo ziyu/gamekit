@@ -246,6 +246,7 @@ Root、`/backend`、`/testing` 是有意图的公共入口。禁止重新建立�
 - Graph/Grid/Recast 的 portal sampler 都必须返回 Backend 投影后的 entry/exit traversal；调用方只能在抵达 entry 后执行 traversal，不能把 exit 当作普通连续 steering target，也不能用两点距离猜测 portal。
 - NavMesh 生成参数属于内容 profile。至少保存输入 source revision、agent build profile 和 baker version，避免运行时加载与内容验证使用不同拓扑。
 - Backend route-field 上限只淘汰未被 request/Core route 持有的 field；活动 field 可以暂时超过 inactive cache 预算，最终由 Core route retention 上限约束。
+- 容量测试必须分开测量独立 point-path burst 的排队/计算吞吐，以及共享 route field 的每单位每 tick 采样成本；Canvas、React、Renderer、Physics 和 crowd separation 需要单独归因，不能用展示层帧率反推 Navigation Backend 容量。
 
 ### 模块使用
 

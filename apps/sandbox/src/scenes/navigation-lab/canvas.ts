@@ -916,7 +916,13 @@ function drawAgents(
   height: number,
   snapshot: NavigationLabSnapshot
 ): void {
-  for (const agent of snapshot.agents) {
+  const markerLimit = 600;
+  const stride = Math.max(1, Math.ceil(snapshot.agents.length / markerLimit));
+  for (let index = 0; index < snapshot.agents.length; index += stride) {
+    const agent = snapshot.agents[index];
+    if (agent === undefined) {
+      continue;
+    }
     const point = toScreen(width, height, agent.position);
     const color =
       agent.progress === "route-stale" || agent.progress === "route-missing"

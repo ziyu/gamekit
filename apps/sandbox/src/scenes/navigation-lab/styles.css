@@ -791,6 +791,89 @@
   border-bottom: 1px solid var(--nav-line);
 }
 
+.navigation-lab__stress-test {
+  display: grid;
+  gap: 7px;
+  margin: 9px 10px 0;
+  padding: 9px;
+  border: 1px solid rgba(121, 181, 179, 0.28);
+  border-radius: 6px;
+  background: rgba(39, 83, 82, 0.09);
+}
+
+.navigation-lab__stress-test > div:first-child span,
+.navigation-lab__stress-test > div:first-child small,
+.navigation-lab__stress-test label span,
+.navigation-lab__stress-test > small {
+  display: block;
+}
+
+.navigation-lab__stress-test > div:first-child span {
+  color: #d9d0b8;
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.navigation-lab__stress-test small,
+.navigation-lab__stress-test label span {
+  color: var(--nav-muted);
+  font-size: 0.53rem;
+  line-height: 1.35;
+}
+
+.navigation-lab__stress-test label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.navigation-lab__stress-test select {
+  min-width: 108px;
+  padding: 5px 8px;
+  border: 1px solid var(--nav-line);
+  border-radius: 4px;
+  background: #18201b;
+  color: #e5d9bd;
+  font-family: "SFMono-Regular", monospace;
+  font-size: 0.61rem;
+}
+
+.navigation-lab__stress-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px;
+}
+
+.navigation-lab__stress-actions button {
+  padding: 7px 8px;
+  border: 1px solid var(--nav-line);
+  border-radius: 5px;
+  background: rgba(19, 25, 20, 0.52);
+  color: #d9d0b8;
+  cursor: pointer;
+  text-align: left;
+}
+
+.navigation-lab__stress-actions button[data-active="true"] {
+  border-color: rgba(121, 181, 179, 0.72);
+  background: rgba(121, 181, 179, 0.14);
+}
+
+.navigation-lab__stress-actions strong,
+.navigation-lab__stress-actions small {
+  display: block;
+}
+
+.navigation-lab__stress-test p {
+  margin: 0;
+  color: #c9e0d8;
+  font-family: "SFMono-Regular", monospace;
+  font-size: 0.56rem;
+  line-height: 1.4;
+}
+
 .navigation-lab__qa-actions {
   padding: 8px 10px 11px;
 }

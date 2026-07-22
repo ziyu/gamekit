@@ -444,6 +444,7 @@ Audio 的公共职责、领域 API 与 Backend 边界以 [`../modules/audio.md`]
 - Agent Profile：Pathfinder、Supply Wagon、Iron Guard 分别对应不同半径、高度、坡度、area 与 cost 约束；狭窄/高架通路、主要道路和高成本危险区域必须产生可见的选路差异。
 - Dynamic topology：测试者通过封锁主要通路、改变危险区域 cost/blocked 状态、启用场景 shortcut 和触发全域 lockdown 改变游戏世界，同时观察 revision、dependency invalidation、旧 route stale 与重新规划结果。深入场景必须覆盖“主要通路关闭后改道、第二通路失效后 unreachable、shortcut 恢复可达、全域封锁再次 unreachable”的组合链路。
 - Request lifecycle：提供 queue burst、cancel-before-submit、max-cost failure、unreachable lockdown、repeat/cache 和显式 route release 操作。
+- Capacity：次级 QA 区域可以启动 100 到 20,000 个循环移动单位共享同一个 route field，并显示 field planning、agent spawn、每 tick sampling/steering 的 average、p95、peak 和 4 ms navigation slice 判定。Canvas 只抽样绘制固定数量的单位 marker，避免把渲染成本错误计入 Navigation 结果；可复现的 Graph/Grid/Recast headless sweep 由仓库 benchmark 负责。
 - Projection / Sampling / Progress：地图点击可以设置 start、goal 或 projection probe；agent 移动只消费 `sampleRoute()`，暂停移动后由 progress tracker 显示 stuck，不能由场景复制另一套寻路算法。
 - Backend Debug Draw：提供独立的 Topology、Area Cost 和 Constraints 图层选项。Graph provider 将最终语义节点、边和 portal 投影为通用点/折线，Grid provider 将实际可走 cell 和 portal 投影为通用多边形/折线，NavMesh provider 将最终 polygon boundary/portal 投影为通用多边形/折线；共享 canvas 只消费场景级调试几何，不 import graph node、grid cell、native poly ref 或 WASM 类型。候选 visibility、voxel、contour 等生成中间数据只能进入独立高级诊断层。Constraints 图层必须结合当前 Agent Profile、桥梁/山道/沼泽状态和 portal enabled 状态表现可用、受限与阻断数据。
 - Observability：场景低频显示 pending/queued/submitted、retained result/route、cache、backend route field、revision 和最近 Navigation trace；完整诊断仍进入 DevTools。

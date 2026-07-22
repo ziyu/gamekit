@@ -30,6 +30,8 @@ type NavigationLabAction =
   | "cost-cap"
   | "cancel"
   | "burst"
+  | "stress"
+  | "stress-stop"
   | "release"
   | "freeze"
   | "gate"
@@ -58,6 +60,7 @@ export type NavigationLabUi = {
   backendDebugViews: ReadonlyMap<string, NavigationLabBackendDebugView>;
   backendPresentations: ReadonlyMap<string, NavigationLabScenarioPresentation["backends"][number]>;
   overlayButton: HTMLButtonElement;
+  stressCount: HTMLSelectElement;
   devtoolsRoot: HTMLElement;
   devtoolsReactRoot?: ReactRoot | undefined;
   showNavigationOverlay: boolean;
@@ -347,6 +350,33 @@ export function renderNavigationLabUi(
                   <span>Navigation QA tools</span>
                   <small>cache · budget · lifecycle</small>
                 </summary>
+                <div className="navigation-lab__stress-test">
+                  <div>
+                    <span>Live unit limit</span>
+                    <small>one shared field · sampling + steering · 4 ms budget</small>
+                  </div>
+                  <label>
+                    <span>Units</span>
+                    <select data-nav-stress-count defaultValue="1000" disabled>
+                      {[100, 500, 1000, 1500, 2000, 2500, 5000, 10_000, 20_000].map((count) => (
+                        <option value={count} key={count}>
+                          {count.toLocaleString()}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="navigation-lab__stress-actions">
+                    <button type="button" data-nav-action="stress" disabled>
+                      <strong>Start live load</strong>
+                      <small>Continuously loop every unit to the goal</small>
+                    </button>
+                    <button type="button" data-nav-action="stress-stop" disabled>
+                      Stop
+                    </button>
+                  </div>
+                  <p data-ui="navigation-stress">idle</p>
+                  <small>Canvas markers are sampled so rendering does not define the result.</small>
+                </div>
                 <div className="navigation-lab__qa-actions">
                   {QA_ACTIONS.map(([action, label, detail]) => (
                     <button type="button" data-nav-action={action} key={action} disabled>
@@ -442,6 +472,7 @@ export function renderNavigationLabUi(
       )
     ),
     overlayButton: rootElement.querySelector<HTMLButtonElement>("[data-nav-ui-action='overlay']")!,
+    stressCount: rootElement.querySelector<HTMLSelectElement>("[data-nav-stress-count]")!,
     devtoolsRoot: readElement(rootElement, "navigation-devtools", HTMLElement),
     showNavigationOverlay: false,
     backendDebugLayers: new Set()
@@ -467,12 +498,13 @@ export function bindNavigationLabUi(ui: NavigationLabUi, bindings: NavigationLab
       updateNavigationLabUi(ui, bindings.scene().snapshot());
     });
   }
+  ui.stressCount.disabled = false;
   for (const button of ui.actionButtons) {
     button.disabled = false;
     button.addEventListener("click", () => {
       const action = button.dataset.navAction as NavigationLabAction;
       focusUi(ui, `navigation.action.${action}`);
-      runAction(bindings.scene(), action);
+      runAction(bindings.scene(), action, Number(ui.stressCount.value));
       updateNavigationLabUi(ui, bindings.scene().snapshot());
     });
   }
@@ -560,6 +592,7 @@ export function setNavigationLabBackendBusy(
 ): void {
   ui.root.dataset.navigationBackendBusy = busy ? "true" : "false";
   ui.backendState.textContent = message;
+  ui.stressCount.disabled = busy;
   for (const button of ui.scenarioButtons) {
     button.disabled = busy;
   }
@@ -629,6 +662,11 @@ export function updateNavigationLabUi(ui: NavigationLabUi, snapshot: NavigationL
   setActionState(ui, "portal", snapshot.portalEnabled);
   setActionState(ui, "freeze", snapshot.agentsFrozen);
   setActionState(ui, "lockdown", snapshot.lockdown);
+  setActionState(
+    ui,
+    "stress",
+    snapshot.stress?.status === "planning" || snapshot.stress?.status === "running"
+  );
 
   const backendDetails = snapshot.navigation.backend.details ?? {};
   setMetric(ui, "revision", String(snapshot.navigation.revision));
@@ -647,6 +685,7 @@ export function updateNavigationLabUi(ui: NavigationLabUi, snapshot: NavigationL
   setText(ui, "navigation-result", describeResult(snapshot));
   setText(ui, "navigation-projection", describeProjection(snapshot));
   setText(ui, "navigation-burst", describeBurst(snapshot));
+  setText(ui, "navigation-stress", describeStress(snapshot));
   setText(
     ui,
     "navigation-bridge-state",
@@ -710,7 +749,11 @@ function Metric({ label, name }: { label: string; name: string }) {
   );
 }
 
-function runAction(scene: NavigationLabController, action: NavigationLabAction): void {
+function runAction(
+  scene: NavigationLabController,
+  action: NavigationLabAction,
+  stressCount: number
+): void {
   switch (action) {
     case "path":
       scene.requestPath();
@@ -729,6 +772,12 @@ function runAction(scene: NavigationLabController, action: NavigationLabAction):
       return;
     case "burst":
       scene.runBurst();
+      return;
+    case "stress":
+      scene.runStress(stressCount);
+      return;
+    case "stress-stop":
+      scene.stopStress();
       return;
     case "release":
       scene.releaseRoute();
@@ -796,6 +845,26 @@ function describeBurst(snapshot: NavigationLabSnapshot): string {
     return "idle";
   }
   return `${snapshot.burst.pending}/${snapshot.burst.total} pending · ${snapshot.burst.completed} complete · ${snapshot.burst.failed} failed`;
+}
+
+function describeStress(snapshot: NavigationLabSnapshot): string {
+  const stress = snapshot.stress;
+  if (stress === undefined) {
+    return "idle";
+  }
+  if (stress.status === "planning") {
+    return `planning one shared field for ${stress.targetAgents.toLocaleString()} units`;
+  }
+  if (stress.status === "failed") {
+    return `failed after ${stress.planningMs.toFixed(2)} ms`;
+  }
+  const verdict =
+    stress.withinBudget === undefined
+      ? "warming up"
+      : stress.withinBudget
+        ? "within budget"
+        : "over budget";
+  return `${stress.status} · ${stress.activeAgents.toLocaleString()} units · p95 ${stress.p95StepMs.toFixed(2)} ms / ${stress.budgetMs.toFixed(0)} ms · avg ${stress.averageStepMs.toFixed(2)} ms · ${stress.sampledTicks} ticks · ${verdict}`;
 }
 
 function focusUi(ui: NavigationLabUi, target: string): void {

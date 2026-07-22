@@ -2,8 +2,11 @@ import { createConfiguredAppHost } from "@gamekit/app-host";
 import { createEventBus } from "@gamekit/event-bus";
 import { createGame } from "@gamekit/game-runtime";
 import {
+  bindNavigationHandle,
   createNavigationHandle,
   createNavigationModule,
+  createNavigationRuntime,
+  unbindNavigationHandle,
   type NavigationAgentProfileDefinition,
   type NavigationPoint,
   type NavigationRequestResult
@@ -27,6 +30,7 @@ import { compileBlackglassTerrainGraph } from "./backends/blackglass-terrain-gra
 import { compileBlackglassTerrainGrid } from "./backends/blackglass-terrain-grid";
 import { BLACKGLASS_TRANSIT_RELAY_PORTAL_ID } from "./backends/blackglass-layout";
 import {
+  advanceNavigationLabState,
   createNavigationLabController,
   createNavigationLabSimulationModule,
   createNavigationLabState
@@ -683,6 +687,43 @@ describe("Navigation Lab backend-neutral game scene", () => {
     });
     expect(snapshot.navigation).toMatchObject({ pendingRequests: 0, retainedRoutes: 0 });
   });
+
+  it("runs a backend-neutral live unit stress test on one shared route field", () => {
+    for (const backend of [
+      BLACKGLASS_GRAPH_NAVIGATION_LAB_BACKEND,
+      BLACKGLASS_GRID_NAVIGATION_LAB_BACKEND,
+      BLACKGLASS_RECAST_NAVIGATION_LAB_BACKEND
+    ]) {
+      const harness = createDirectNavigationHarness(backend, BLACKGLASS_BASIN_SCENARIO);
+      try {
+        expect(harness.scene.runStress(250)).toBeDefined();
+        harness.tick(16, 40);
+
+        const running = harness.scene.snapshot();
+        expect(running.stress).toMatchObject({
+          status: "running",
+          targetAgents: 250,
+          activeAgents: 250,
+          samplesPerTick: 250,
+          budgetMs: 4
+        });
+        expect(running.stress?.sampledTicks).toBeGreaterThanOrEqual(30);
+        expect(typeof running.stress?.withinBudget).toBe("boolean");
+        expect(running.agents).toHaveLength(250);
+        expect(running.activeRoute?.kind).toBe("field");
+        expect(running.navigation.retainedRoutes).toBe(1);
+
+        harness.scene.stopStress();
+        expect(harness.scene.snapshot()).toMatchObject({
+          stress: { status: "stopped", activeAgents: 0, samplesPerTick: 0 },
+          agents: [],
+          navigation: { retainedRoutes: 0 }
+        });
+      } finally {
+        harness.dispose();
+      }
+    }
+  });
 });
 
 function createHarness(
@@ -720,12 +761,68 @@ function createHarness(
   });
   const scene = createNavigationLabController({ navigation, state });
   runtime.start();
-  disposers.push(() => runtime.dispose());
+  let disposed = false;
+  const dispose = () => {
+    if (disposed) {
+      return;
+    }
+    disposed = true;
+    runtime.dispose();
+  };
+  disposers.push(dispose);
   return {
     scene,
+    dispose,
     tick(delta = 16, count = 1) {
       for (let index = 0; index < count; index += 1) {
         runtime.tick(delta);
+      }
+    }
+  };
+}
+
+function createDirectNavigationHarness(
+  backend: NavigationLabBackendProvider,
+  scenario: NavigationLabScenarioDefinition
+) {
+  const ownerId = `navigation-lab.stress-test.${scenario.id}.${backend.id}`;
+  const navigation = createNavigationRuntime({
+    id: ownerId,
+    layout: backend.layoutRef,
+    backendFactories: backend.createBackendFactories(),
+    dataRegistry: backend.createDataRegistry(),
+    profiles: cloneProfiles(),
+    maxRequestsPerTick: 2,
+    maxBackendPollsPerTick: 4,
+    maxPendingRequests: 48,
+    maxPendingPerRequester: 8,
+    maxRetainedRoutes: 32,
+    maxCacheEntries: 48
+  });
+  const handle = createNavigationHandle({ id: `${ownerId}.handle` });
+  bindNavigationHandle(handle, navigation, ownerId);
+  const state = createNavigationLabState(handle, backend, scenario);
+  const scene = createNavigationLabController({ navigation: handle, state });
+  state.running = true;
+  let elapsed = 0;
+  let disposed = false;
+  const dispose = () => {
+    if (disposed) {
+      return;
+    }
+    disposed = true;
+    unbindNavigationHandle(handle, ownerId);
+    navigation.dispose();
+  };
+  disposers.push(dispose);
+  return {
+    scene,
+    dispose,
+    tick(delta = 16, count = 1) {
+      for (let index = 0; index < count; index += 1) {
+        elapsed += delta;
+        navigation.update(delta, elapsed);
+        advanceNavigationLabState(state, handle, delta, elapsed);
       }
     }
   };

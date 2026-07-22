@@ -23,10 +23,22 @@ import type {
   NavigationLabBurstSnapshot,
   NavigationLabController,
   NavigationLabPointMode,
+  NavigationLabStressSnapshot,
   NavigationLabSwampMode
 } from "./types";
 
-type NavigationLabAgentState = NavigationLabAgentSnapshot;
+type NavigationLabAgentState = NavigationLabAgentSnapshot & {
+  loopOrigin?: NavigationPoint | undefined;
+};
+
+type NavigationLabStressState = Omit<
+  NavigationLabStressSnapshot,
+  "averageStepMs" | "p95StepMs" | "withinBudget"
+> & {
+  planningStartedAt: number;
+  totalStepMs: number;
+  recentStepMs: number[];
+};
 
 type NavigationLabPartyMemberRequest = {
   id: string;
@@ -71,11 +83,16 @@ export type NavigationLabState = {
   lastObstacleResult?: ReturnType<NavigationHandle["updateObstacle"]> | undefined;
   burst?: NavigationLabBurstSnapshot | undefined;
   burstRequestIds: Set<string>;
+  stress?: NavigationLabStressState | undefined;
   lastRequest?: NavigationLabRequestTemplate | undefined;
   sequence: number;
   notice: string;
   progress: NavigationProgressTracker;
 };
+
+const NAVIGATION_LAB_STRESS_BUDGET_MS = 4;
+const NAVIGATION_LAB_STRESS_MAX_AGENTS = 20_000;
+const NAVIGATION_LAB_STRESS_SAMPLE_WINDOW = 180;
 
 export function createNavigationLabState(
   navigation: NavigationHandle,
@@ -142,6 +159,7 @@ export function advanceNavigationLabState(
   settlePartyRequest(state, navigation);
   settleCurrentRequest(state, navigation);
   settleBurstRequests(state, navigation);
+  const stressStepStartedAt = state.stress?.status === "running" ? monotonicNow() : undefined;
 
   for (const agent of state.agents) {
     const route = state.activeRoutes.find((candidate) => candidate.routeId === agent.routeId);
@@ -151,8 +169,8 @@ export function advanceNavigationLabState(
       position: agent.position,
       elapsedMs,
       arrivalDistance: 0.12,
-      progressEpsilon: 0.08,
-      stuckAfterMs: 1200
+      progressEpsilon: agent.loopOrigin === undefined ? 0.08 : 0.01,
+      stuckAfterMs: agent.loopOrigin === undefined ? 1200 : 60_000
     });
     agent.progress = progress.status;
     if (progress.sample.status !== "valid") {
@@ -186,6 +204,12 @@ export function advanceNavigationLabState(
         : { x: nextOffset.x / distanceToNext, y: nextOffset.y / distanceToNext };
     agent.direction = { ...movementDirection };
     agent.remainingDistance = progress.sample.remainingDistance;
+    if (progress.status === "arrived" && agent.loopOrigin !== undefined) {
+      agent.position = { ...agent.loopOrigin };
+      agent.direction = { x: 0, y: 0 };
+      state.progress.remove(agent.id);
+      continue;
+    }
     if (state.agentsFrozen || progress.status === "arrived") {
       continue;
     }
@@ -195,6 +219,10 @@ export function advanceNavigationLabState(
       x: agent.position.x + movementDirection.x * step,
       y: agent.position.y + movementDirection.y * step
     };
+  }
+
+  if (stressStepStartedAt !== undefined && state.stress?.status === "running") {
+    recordStressStep(state.stress, monotonicNow() - stressStepStartedAt, state.agents.length);
   }
 }
 
@@ -341,6 +369,50 @@ export function createNavigationLabController(options: {
       }
       state.notice = `${resolvedCount} scouting orders entered the budgeted request queue.`;
     },
+    runStress(count = 1000) {
+      if (!navigation.snapshot().backend.capabilities.routeFields) {
+        state.notice = `${state.backend.label} does not expose shared route fields, so the live unit stress test is unavailable.`;
+        return undefined;
+      }
+      const targetAgents = Math.max(
+        1,
+        Math.min(NAVIGATION_LAB_STRESS_MAX_AGENTS, Math.floor(count))
+      );
+      const planningStartedAt = monotonicNow();
+      const requestId = submit(state, navigation, {
+        label: `${targetAgents}-unit shared field stress`,
+        profileId: state.profileId,
+        start: state.start,
+        goal: state.goal,
+        goalKey: state.scenario.goalKey,
+        routeKind: "field"
+      });
+      state.stress = {
+        status: "planning",
+        targetAgents,
+        activeAgents: 0,
+        planningMs: 0,
+        spawnMs: 0,
+        sampledTicks: 0,
+        samplesPerTick: 0,
+        peakStepMs: 0,
+        budgetMs: NAVIGATION_LAB_STRESS_BUDGET_MS,
+        planningStartedAt,
+        totalStepMs: 0,
+        recentStepMs: []
+      };
+      state.notice = `Preparing one shared field for ${targetAgents.toLocaleString()} continuously moving units.`;
+      return requestId;
+    },
+    stopStress() {
+      if (state.stress === undefined) {
+        state.notice = "No live unit stress test is active.";
+        return;
+      }
+      cancelCurrentRequest(state, navigation);
+      releaseActiveRoute(state, navigation);
+      state.notice = `Stopped the ${state.stress.targetAgents.toLocaleString()}-unit stress test; its timing summary remains visible.`;
+    },
     releaseRoute() {
       if (state.activeRoutes.length === 0) {
         state.notice = "No retained route is currently active.";
@@ -450,6 +522,7 @@ export function createNavigationLabController(options: {
       }
       state.burstRequestIds.clear();
       state.burst = undefined;
+      state.stress = undefined;
       resetObstacleState(state, navigation);
       state.profileId = "profile.scout";
       state.start = { ...state.scenario.start };
@@ -503,6 +576,7 @@ export function createNavigationLabController(options: {
           ? {}
           : { lastObstacleResult: state.lastObstacleResult }),
         ...(state.burst === undefined ? {} : { burst: { ...state.burst } }),
+        ...(state.stress === undefined ? {} : { stress: stressSnapshot(state.stress) }),
         navigation: navigation.snapshot(),
         traces: navigation.traces().slice(-10),
         notice: state.notice
@@ -543,6 +617,26 @@ function settleCurrentRequest(state: NavigationLabState, navigation: NavigationH
   }
   state.currentRequestId = undefined;
   if (result.status === "complete") {
+    if (state.stress?.status === "planning") {
+      const spawnStartedAt = monotonicNow();
+      state.activeRoute = result.route;
+      state.activeRoutes = [result.route];
+      state.agents = createStressAgents(
+        result.route,
+        state.stress.targetAgents,
+        state.scenario,
+        state.profileId,
+        navigation
+      );
+      state.progress.clear();
+      state.stress.status = "running";
+      state.stress.planningMs = spawnStartedAt - state.stress.planningStartedAt;
+      state.stress.spawnMs = monotonicNow() - spawnStartedAt;
+      state.stress.activeAgents = state.agents.length;
+      state.stress.samplesPerTick = state.agents.length;
+      state.notice = `${state.agents.length.toLocaleString()} units are sharing one ${state.backend.label} route field; timing excludes the capped canvas marker projection.`;
+      return;
+    }
     state.activeRoute = result.route;
     state.activeRoutes = [result.route];
     state.agents = createAgents(result.route, state.start, state.scenario);
@@ -551,6 +645,11 @@ function settleCurrentRequest(state: NavigationLabState, navigation: NavigationH
     return;
   }
   state.agents = [];
+  if (state.stress?.status === "planning") {
+    state.stress.status = "failed";
+    state.stress.planningMs = monotonicNow() - state.stress.planningStartedAt;
+    state.stress.activeAgents = 0;
+  }
   state.notice = terminalResultNotice(result);
 }
 
@@ -691,6 +790,39 @@ function createAgents(
   }));
 }
 
+function createStressAgents(
+  route: NavigationRoute,
+  count: number,
+  scenario: NavigationLabScenarioDefinition,
+  profileId: NavigationLabProfileId,
+  navigation: NavigationHandle
+): NavigationLabAgentState[] {
+  const starts =
+    scenario.fieldAgentStarts.length > 0 ? scenario.fieldAgentStarts : [scenario.start];
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  return Array.from({ length: count }, (_, index) => {
+    const seed = starts[index % starts.length] ?? scenario.start;
+    const layer = Math.floor(index / starts.length);
+    const radius = Math.min(0.6, 0.025 * Math.sqrt(layer + 1));
+    const angle = layer * goldenAngle + (index % starts.length);
+    const candidate = {
+      x: seed.x + Math.cos(angle) * radius,
+      y: seed.y + Math.sin(angle) * radius,
+      ...(seed.z === undefined ? {} : { z: seed.z })
+    };
+    const origin = navigation.projectPoint(candidate, profileId)?.point ?? seed;
+    return {
+      id: `stress-agent-${index + 1}`,
+      routeId: route.routeId,
+      position: { ...origin },
+      direction: { x: 0, y: 0 },
+      remainingDistance: route.cost,
+      progress: "moving",
+      loopOrigin: { ...origin }
+    };
+  });
+}
+
 function createFieldVectors(state: NavigationLabState, navigation: NavigationHandle) {
   if (state.activeRoute?.kind !== "field") {
     return [];
@@ -709,6 +841,11 @@ function releaseActiveRoute(state: NavigationLabState, navigation: NavigationHan
   state.activeRoutes = [];
   state.agents = [];
   state.progress.clear();
+  if (state.stress?.status === "planning" || state.stress?.status === "running") {
+    state.stress.status = "stopped";
+    state.stress.activeAgents = 0;
+    state.stress.samplesPerTick = 0;
+  }
 }
 
 function cancelCurrentRequest(state: NavigationLabState, navigation: NavigationHandle): void {
@@ -795,8 +932,59 @@ function swampLabel(mode: NavigationLabSwampMode): string {
 
 function cloneAgent(agent: NavigationLabAgentState): NavigationLabAgentSnapshot {
   return {
-    ...agent,
+    id: agent.id,
+    routeId: agent.routeId,
     position: { ...agent.position },
-    direction: { ...agent.direction }
+    direction: { ...agent.direction },
+    remainingDistance: agent.remainingDistance,
+    progress: agent.progress
   };
+}
+
+function recordStressStep(
+  stress: NavigationLabStressState,
+  durationMs: number,
+  samples: number
+): void {
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    return;
+  }
+  stress.sampledTicks += 1;
+  stress.samplesPerTick = samples;
+  stress.totalStepMs += durationMs;
+  stress.peakStepMs = Math.max(stress.peakStepMs, durationMs);
+  stress.recentStepMs.push(durationMs);
+  if (stress.recentStepMs.length > NAVIGATION_LAB_STRESS_SAMPLE_WINDOW) {
+    stress.recentStepMs.shift();
+  }
+}
+
+function stressSnapshot(stress: NavigationLabStressState): NavigationLabStressSnapshot {
+  const averageStepMs = stress.sampledTicks === 0 ? 0 : stress.totalStepMs / stress.sampledTicks;
+  const sorted = [...stress.recentStepMs].sort((left, right) => left - right);
+  const p95Index = Math.max(0, Math.ceil(sorted.length * 0.95) - 1);
+  const p95StepMs = sorted[p95Index] ?? 0;
+  const measured = stress.sampledTicks >= 30;
+  return {
+    status: stress.status,
+    targetAgents: stress.targetAgents,
+    activeAgents: stress.activeAgents,
+    planningMs: roundMilliseconds(stress.planningMs),
+    spawnMs: roundMilliseconds(stress.spawnMs),
+    sampledTicks: stress.sampledTicks,
+    samplesPerTick: stress.samplesPerTick,
+    averageStepMs: roundMilliseconds(averageStepMs),
+    p95StepMs: roundMilliseconds(p95StepMs),
+    peakStepMs: roundMilliseconds(stress.peakStepMs),
+    budgetMs: stress.budgetMs,
+    ...(measured ? { withinBudget: p95StepMs <= stress.budgetMs } : {})
+  };
+}
+
+function roundMilliseconds(value: number): number {
+  return Number(value.toFixed(3));
+}
+
+function monotonicNow(): number {
+  return globalThis.performance?.now() ?? Date.now();
 }

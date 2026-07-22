@@ -46,6 +46,7 @@
     "bench:navigation": "tsx scripts/navigation-benchmark.ts",
     "bench:navigation:check": "tsx scripts/navigation-benchmark.ts --check",
     "bench:navigation:grid": "tsx scripts/navigation-grid-benchmark.ts",
+    "bench:navigation:capacity": "tsx scripts/navigation-capacity-benchmark.ts",
     "bench:ai": "tsx scripts/ai-benchmark.ts",
     "bench:ai:check": "tsx scripts/ai-benchmark.ts --check",
     "bench:animator": "tsx scripts/animator-benchmark.ts",
