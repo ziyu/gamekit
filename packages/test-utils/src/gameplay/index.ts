@@ -8,7 +8,7 @@ export {
   runAnimatorRuntimeConformance,
   type AnimatorConformanceHarness,
   type AnimatorConformanceReport
-} from "@gamekit/animator-core";
+} from "@gamekit/animator-core/testing";
 export {
   createMemoryAudioBackend,
   createNullAudioBackend,

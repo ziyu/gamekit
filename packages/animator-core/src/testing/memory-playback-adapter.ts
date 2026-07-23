@@ -1,8 +1,7 @@
-import type {
-  AnimationPlaybackAdapter,
-  AnimationPlaybackFrame,
-  AnimatorBindingDefinition
-} from "./types";
+import type { AnimatorBindingDefinition } from "../graph/binding-definition";
+import { cloneAnimatorBindingDefinition } from "../graph/clone-definitions";
+import type { AnimationPlaybackAdapter } from "../playback/animation-playback-adapter";
+import type { AnimationPlaybackFrame } from "../playback/playback-frame";
 
 export type MemoryAnimationPlaybackAdapter = AnimationPlaybackAdapter & {
   frame(controllerId: string): AnimationPlaybackFrame | undefined;
@@ -30,7 +29,7 @@ export function createMemoryAnimationPlaybackAdapter(
   const adapter: MemoryAnimationPlaybackAdapter = {
     id,
     bind(controllerId, binding) {
-      bindings.set(controllerId, cloneBinding(binding));
+      bindings.set(controllerId, cloneAnimatorBindingDefinition(binding));
     },
     apply(controllerId, frame) {
       retain(controllerId, frame);
@@ -107,21 +106,6 @@ function cloneFrame(frame: AnimationPlaybackFrame): AnimationPlaybackFrame {
       ...(marker.tags === undefined ? {} : { tags: [...marker.tags] })
     })),
     reasons: [...frame.reasons]
-  };
-}
-
-function cloneBinding(binding: AnimatorBindingDefinition): AnimatorBindingDefinition {
-  return {
-    ...binding,
-    graph: { ...binding.graph },
-    clips: Object.fromEntries(
-      Object.entries(binding.clips).map(([alias, reference]) => [alias, { ...reference }])
-    ),
-    ...(Array.isArray(binding.target) ? { target: [...binding.target] } : {}),
-    ...(binding.phaseMappings === undefined
-      ? {}
-      : { phaseMappings: binding.phaseMappings.map((mapping) => ({ ...mapping })) }),
-    ...(binding.tags === undefined ? {} : { tags: [...binding.tags] })
   };
 }
 

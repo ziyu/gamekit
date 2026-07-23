@@ -1,8 +1,9 @@
 import { defineGameModule, type GameModule } from "@gamekit/core";
 import type { GameInstallContext } from "@gamekit/game-runtime";
-import { bindAnimatorHandle, unbindAnimatorHandle } from "./create-animator-handle";
+import type { AnimatorRuntime } from "../controller/animator-controller";
+import { bindAnimatorHandle, unbindAnimatorHandle } from "../controller/create-animator-handle";
 import { createAnimatorRuntime } from "./create-animator-runtime";
-import type { AnimatorRuntime, CreateAnimatorModuleOptions } from "./types";
+import type { CreateAnimatorModuleOptions } from "./options";
 
 export function createAnimatorModule(
   options: CreateAnimatorModuleOptions

@@ -1,11 +1,10 @@
-import { createAnimatorError } from "./errors";
+import { createAnimatorError } from "../contracts/errors";
+import type { AnimatorGameplayPhase } from "../phase/gameplay-phase";
+import type { AnimatorHandle, AnimatorRuntime } from "./animator-controller";
 import type {
   AnimatorControllerBinding,
-  AnimatorGameplayPhase,
-  AnimatorHandle,
-  AnimatorParameterValue,
-  AnimatorRuntime
-} from "./types";
+  AnimatorParameterValue
+} from "../contracts/controller-binding";
 
 export type AnimatorHandleOptions = {
   id?: string | undefined;

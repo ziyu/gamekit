@@ -1,4 +1,6 @@
-import type { AnimationPlaybackAdapter, AnimatorControllerBinding, AnimatorRuntime } from "./types";
+import type { AnimatorRuntime } from "../controller/animator-controller";
+import type { AnimatorControllerBinding } from "../contracts/controller-binding";
+import type { AnimationPlaybackAdapter } from "../playback/animation-playback-adapter";
 
 export type AnimatorConformanceHarness = {
   runtime: AnimatorRuntime;

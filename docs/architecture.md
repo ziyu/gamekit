@@ -249,6 +249,8 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 | `@gamekit/navigation-navmesh`                                                         | Backend authoring contract                    | GameKit-owned triangle source、build profile、area metadata 和 DataType；不实现具体 baker/query runtime。                                                                                 |
 | `@gamekit/navigation-recast`                                                          | Game Module backend adapter                   | 通过 `recast-navigation` 生成/查询 NavMesh，持有 WASM/native lifecycle；第三方类型不进入 Core 或 gameplay。                                                                               |
 | `@gamekit/animator-core`                                                              | Game Module toolkit                           | 语义 Animator graph、controller、layer、transition、marker 和 playback snapshot；具体 clip/mixer 由 Renderer/Driver adapter 执行。                                                        |
+| `@gamekit/animator-core/playback`                                                     | Playback adapter port                         | Driver/Adapter 实现者使用的 backend-neutral playback frame、batch、reset 和 snapshot 协议；不进入 gameplay 默认入口。                                                                     |
+| `@gamekit/animator-core/testing`                                                      | Test support                                  | Memory Playback Adapter、runtime conformance 和测试类型；不进入业务默认入口。                                                                                                             |
 | `@gamekit/audio-core`                                                                 | App Service facade + presentation bridge      | GameAudio 领域 facade；分别提供 Music、SFX、可选 Dialogue、Mix、Spatial 和共享 Playback 语义，具体 native channel/DSP/runtime 由 Adapter/Driver 持有。                                    |
 | `@gamekit/tca`                                                                        | Game Module                                   | 数据驱动规则 runtime，通过标准 GameModule 无痛安装。                                                                                                                                      |
 | `@gamekit/gas`                                                                        | Game Module                                   | 通用 Actor/Ability/Effect runtime；热状态落在 World component，复用 TCA。                                                                                                                 |
@@ -363,7 +365,7 @@ Navigation 的游戏侧 root、Backend port 和 testing fixture 使用独立入�
 
 ### Animator 与 Audio
 
-Animator Core 管理 semantic parameter、graph、layer、transition、one-shot、marker 与 playback state；Renderer/Driver 负责 native clip、mixer、sprite frame 和资源对象。Gameplay ability phase 是权威时间源，animation marker 只触发表现。
+Animator Core 管理 semantic parameter、graph、layer、transition、one-shot、marker 与 playback state；Renderer/Driver 负责 native clip、mixer、sprite frame 和资源对象。Gameplay ability phase 是权威时间源，animation marker 只触发表现。Marker catch-up 必须有单次 update 上限，订阅者异常不能中断 backend flush；Renderer/Driver 若不能执行 playback frame 声明的 weighted/additive layer，必须在 native mutation 前明确拒绝，不能静默降级。
 
 Audio Core 的首层 API 按游戏音频领域拆分：MusicPlayer 管理音乐状态和过渡，SoundEffects 管理离散音效、variation、空间 emitter 与并发，DialoguePlayer 管理可选的对白队列和打断，AudioMixer/SpatialAudio 提供共享混音与空间状态。Bus 只负责路由，不能用一个通用 Audio Event + `bus` 代替这些领域控制器。共享 PlaybackInstance 与 Backend native channel 必须分离；公共 API 使用 Dialogue 表示配音，不用含义歧义的 `voice` 表示逻辑实例或标准 Bus。AssetManager 负责音频资源状态，Driver/Adapter 负责 Web Audio、Phaser、成熟中间件或平台 SDK；第三方 handle 不进入 Core。音频失败、marker 和播放位置不能改变玩法结果。公共 API 决策见 `docs/adr/0034-game-audio-domain-facades.md`。
 
@@ -455,4 +457,4 @@ Room-side backend bridge 可以把已经由 provider Room 拥有的 session 映�
 - 内部 barrel 不能隐藏循环依赖。跨领域实现优先直接导入窄文件，由 lint/build 维护单向依赖。
 - 小型单职责包可以保持扁平；是否拆目录由职责和依赖决定，不由文件数量或其他 package 的外观决定。
 
-具体包必须在对应 `docs/modules/<module>.md` 维护长期包内架构。Audio Core 的 feature-first 目录、subpath export 和依赖图见 `docs/modules/audio.md` 与 ADR 0035。
+具体包必须在对应 `docs/modules/<module>.md` 维护长期包内架构。Animator、Audio 和 Navigation Core 的领域目录、subpath export 与依赖图分别见 `docs/modules/animator.md`、`docs/modules/audio.md`、`docs/modules/navigation.md` 以及 ADR 0042、ADR 0043、ADR 0035、ADR 0037。

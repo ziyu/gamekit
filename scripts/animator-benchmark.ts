@@ -1,10 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { createAssetDataType } from "../packages/asset/src";
-import {
-  createAnimatorDataTypes,
-  createAnimatorRuntime,
-  createMemoryAnimationPlaybackAdapter
-} from "../packages/animator-core/src";
+import { createAnimatorDataTypes, createAnimatorRuntime } from "../packages/animator-core/src";
+import { createMemoryAnimationPlaybackAdapter } from "../packages/animator-core/src/testing";
 import { createDataRegistry, type DataPack } from "../packages/data/src";
 import {
   animatorBenchmarkBudgetCount,

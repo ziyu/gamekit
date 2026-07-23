@@ -1,5 +1,5 @@
 import type { AssetLoaderAdapter } from "@gamekit/asset";
-import type { AnimationPlaybackAdapter } from "@gamekit/animator-core";
+import type { AnimationPlaybackAdapter } from "@gamekit/animator-core/playback";
 import type { AudioBackend } from "@gamekit/audio-core/backend";
 import type { DriverAdapterMap, GameDriver } from "@gamekit/driver-core";
 import type { InputSourceAdapter, NormalizedInputEvent } from "@gamekit/input-core";

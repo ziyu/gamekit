@@ -368,6 +368,9 @@ importers:
 
   apps/sandbox:
     dependencies:
+      '@gamekit/animator-core':
+        specifier: workspace:*
+        version: link:../../packages/animator-core
       '@gamekit/app-host':
         specifier: workspace:*
         version: link:../../packages/app-host

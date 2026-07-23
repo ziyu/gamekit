@@ -243,13 +243,13 @@ describe("Phaser audio runtime fades", () => {
 
 describe("createPhaserAnimationPlaybackAdapter", () => {
   it("binds Animator frames to existing renderer objects without owning a scene", () => {
-    const played: string[] = [];
+    const played: Array<[string, boolean | undefined]> = [];
     let progress = 0;
     let timeScale = 0;
     let stopped = false;
     const target = {
-      play(animationId: string) {
-        played.push(animationId);
+      play(animationId: string, ignoreIfPlaying?: boolean) {
+        played.push([animationId, ignoreIfPlaying]);
       },
       stop() {
         stopped = true;
@@ -308,12 +308,139 @@ describe("createPhaserAnimationPlaybackAdapter", () => {
       reasons: ["transition"]
     });
 
-    expect(played).toEqual(["hero.run"]);
+    expect(played).toEqual([["hero.run", true]]);
     expect(progress).toBe(0.5);
     expect(timeScale).toBe(1.25);
+
+    adapter.apply("hero", {
+      controllerId: "hero",
+      renderObjectId: "render.hero",
+      generation: 0,
+      timestamp: 116,
+      layers: [
+        {
+          layerId: "base",
+          clipId: "clip.run",
+          backendClip: "hero.run",
+          asset: { assetId: "hero.atlas", type: "atlas" },
+          kind: "state",
+          timeMs: 412,
+          normalizedTime: 0.515,
+          speed: 0.75,
+          loop: true,
+          weight: 1,
+          mode: "replace",
+          seek: false
+        }
+      ],
+      markers: [],
+      reasons: ["parameter:speed"]
+    });
+
+    expect(played).toEqual([
+      ["hero.run", true],
+      ["hero.run", true]
+    ]);
+    expect(progress).toBe(0.5);
+    expect(timeScale).toBe(0.75);
     adapter.unbind("hero");
     expect(stopped).toBe(true);
-    expect(adapter.snapshot()).toMatchObject({ boundControllers: 0, appliedFrames: 1 });
+    expect(adapter.snapshot()).toMatchObject({ boundControllers: 0, appliedFrames: 2 });
+  });
+
+  it("rejects unsupported weighted or additive layers before native playback", () => {
+    const played: string[] = [];
+    const target = {
+      play(animationId: string) {
+        played.push(animationId);
+      }
+    };
+    const adapter = createPhaserAnimationPlaybackAdapter({
+      id: "phaser.animation",
+      runtime: () =>
+        ({
+          gameObject: () => target,
+          node: () => target
+        }) as never
+    });
+    adapter.bind(
+      "hero",
+      {
+        id: "binding.hero",
+        graph: { type: "animator.graph", id: "graph.hero" },
+        clips: { run: { type: "animation.clip", id: "clip.run" } }
+      },
+      "render.hero"
+    );
+
+    expect(() =>
+      adapter.apply("hero", {
+        controllerId: "hero",
+        renderObjectId: "render.hero",
+        generation: 0,
+        timestamp: 100,
+        layers: [
+          {
+            layerId: "base",
+            clipId: "clip.run",
+            asset: { assetId: "hero.atlas", type: "atlas" },
+            kind: "state",
+            timeMs: 0,
+            normalizedTime: 0,
+            speed: 1,
+            loop: true,
+            weight: 1,
+            mode: "replace",
+            seek: true
+          },
+          {
+            layerId: "overlay",
+            clipId: "clip.run",
+            asset: { assetId: "hero.atlas", type: "atlas" },
+            kind: "state",
+            timeMs: 0,
+            normalizedTime: 0,
+            speed: 1,
+            loop: true,
+            weight: 0.5,
+            mode: "replace",
+            seek: true
+          }
+        ],
+        markers: [],
+        reasons: ["bind"]
+      })
+    ).toThrowError(/does not support weighted or additive layers/);
+    expect(played).toEqual([]);
+
+    expect(() =>
+      adapter.apply("hero", {
+        controllerId: "hero",
+        renderObjectId: "render.hero",
+        generation: 0,
+        timestamp: 116,
+        layers: [
+          {
+            layerId: "overlay",
+            clipId: "clip.run",
+            asset: { assetId: "hero.atlas", type: "atlas" },
+            kind: "state",
+            timeMs: 0,
+            normalizedTime: 0,
+            speed: 1,
+            loop: true,
+            weight: 1,
+            mode: "additive",
+            seek: true
+          }
+        ],
+        markers: [],
+        reasons: ["bind"]
+      })
+    ).toThrowError(/does not support weighted or additive layers/);
+    expect(played).toEqual([]);
+    expect(adapter.snapshot()).toMatchObject({ appliedFrames: 0, boundControllers: 1 });
+    adapter.unbind("hero");
   });
 });
 

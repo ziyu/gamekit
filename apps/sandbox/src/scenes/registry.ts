@@ -28,6 +28,14 @@ export const sandboxSceneCatalog: readonly SandboxSceneDefinition[] = [
     load: () => import("./audio-lab")
   },
   {
+    id: "animator-lab",
+    shortLabel: "AN",
+    title: "Animator Lab",
+    description: "Semantic state, one-shot, marker, and phase playback bay",
+    capabilities: ["Graph", "Layer", "One-shot", "Marker", "Phase Seek"],
+    load: () => import("./animator-lab")
+  },
+  {
     id: "navigation-lab",
     shortLabel: "NV",
     title: "Navigation Lab",

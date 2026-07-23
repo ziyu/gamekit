@@ -8,7 +8,7 @@ import {
   type AppProfile,
   type AppServiceBinding
 } from "@gamekit/app-host";
-import { createMemoryAnimationPlaybackAdapter } from "@gamekit/animator-core";
+import { createMemoryAnimationPlaybackAdapter } from "@gamekit/animator-core/testing";
 import { createMemoryAudioBackend } from "@gamekit/audio-core/testing";
 import { createCameraController, screenToWorld } from "@gamekit/camera-core";
 import { createDataRegistry } from "@gamekit/data";

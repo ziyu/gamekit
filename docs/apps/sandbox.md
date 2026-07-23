@@ -427,6 +427,23 @@ Audio Lab 的 UI 是低频测试控制台：每个按钮必须对应一个明确
 
 Audio 的公共职责、领域 API 与 Backend 边界以 [`../modules/audio.md`](../modules/audio.md)、ADR 0034 和 ADR 0035 为准。Audio Lab 只拥有测试内容、合成 fixture、控制台交互和场景级装配。
 
+## 场景：Animator Lab
+
+`Animator Lab` 是 Animator Core 与真实 Renderer Driver 的独立表现验证场景。它通过独立 App Host 组合 DataRegistry、Asset、Phaser Driver、Renderer、标准 Animator GameModule 和 DevTools；测试者只通过 Animator Handle 修改语义参数、提交 one-shot 或同步 Gameplay Phase，不能直接调用 Phaser Animation 或在 UI 中维护平行动画状态机。
+
+场景使用一个含 `body` 与 `action` 两个 RenderNode 的复合 RenderObject，让不同 Animator layer 绑定到不同节点，并覆盖以下可观察行为：
+
+- Graph transition：连续修改 `speed` 参数，验证 idle、run、sprint 状态切换与 backend clip 映射。
+- Layer playback：locomotion 长期播放时，action one-shot 或 Gameplay Phase 在独立节点叠加，不覆盖基础移动层。
+- One-shot policy：单次 fire、三连请求的 `queue-one` 有界排队，以及高优先级 hit reaction 对低优先级动作的打断。
+- Marker：footstep、pulse、impact、phase lock/release 跨越播放时间点时进入场景 marker receiver，并由 Animator trace 保留可解释证据。
+- Gameplay Phase：按指定进度恢复 authority phase，验证 phase mapping、normalized time、seek frame、取消以及 graph 重新接管。
+- Reset/lifecycle：generation reset 清理 phase、one-shot queue、marker 视图与参数；场景退出时依次解绑 controller、销毁 RenderObject 并释放 Host/Driver runtime。
+
+场景本地使用确定性生成的 spritesheet fixture，经 `asset.definition` 和 Phaser asset loader 进入 Driver 持有的同一个 runtime。fixture、Signal Runner 造型、自动检查序列和控制面板都属于 Sandbox 内容，不进入 Animator 或 Renderer 公共包。主面板只展示完成验证所需的当前 layer、clip、marker 和有界 trace 摘要；完整 Driver、Asset、Renderer、GameRuntime 与 Animator 状态仍由标准 DevTools 数据源提供。
+
+Animator 的公共职责、层/one-shot/phase 协议与 Driver 边界以 [`../modules/animator.md`](../modules/animator.md) 为准。Animator Lab 的 headless 测试必须覆盖同一份 DataPack 的 graph、排队/打断、marker、phase seek 和 generation reset；浏览器 smoke test 另外证明真实 Phaser adapter 能把公共 playback frame 应用到两个 RenderNode。
+
 ## 场景：Navigation Lab
 
 `Navigation Lab` 使用多张真实俯视游戏地形验证 Navigation Core 与不同 Backend。`Ashen Ford` 是紧凑的三通路基础场景，包含出发营地、守望城门、河流、石桥、狭窄山道、芦苇沼泽和可开关的传送石；`Blackglass Basin` 是 30 × 20 米的反应堆街区深入场景，由建筑占地、围墙、院落、狭窄室内通道、死路、中央防爆门、只适合轻型单位的高架通路、高成本冷却液区域和应急传送中继构成，起终点横跨街区对角线，路径必须围绕真实阻挡连续转向。玩家在两个场景中都选择斥候、补给车或重甲卫队，下达单体移动或队伍集结命令。技术 trace 和压力测试保留在次级 QA 区域，主画面首先表达“单位为什么选这条路、世界变化后路线发生了什么”。

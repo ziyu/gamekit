@@ -1,8 +1,8 @@
+import type { AnimatorBindingDefinition } from "@gamekit/animator-core";
 import type {
   AnimationPlaybackAdapter,
-  AnimationPlaybackFrame,
-  AnimatorBindingDefinition
-} from "@gamekit/animator-core";
+  AnimationPlaybackFrame
+} from "@gamekit/animator-core/playback";
 import type { RenderNodePath, RenderObjectId } from "@gamekit/renderer-core";
 import type { PhaserRendererNative } from "@gamekit/renderer-phaser";
 
@@ -77,6 +77,7 @@ export function createPhaserAnimationPlaybackAdapter(options: {
     if (controller === undefined) {
       return;
     }
+    assertPhaserLayerSupport(frame);
     const native = options.runtime();
     for (const layer of frame.layers) {
       const targetPath = layer.target ?? controller.binding.target;
@@ -96,6 +97,16 @@ export function createPhaserAnimationPlaybackAdapter(options: {
     }
     appliedFrames += 1;
   }
+}
+
+function assertPhaserLayerSupport(frame: AnimationPlaybackFrame): void {
+  const unsupported = frame.layers.find((layer) => layer.mode !== "replace" || layer.weight !== 1);
+  if (unsupported === undefined) {
+    return;
+  }
+  throw new Error(
+    `Phaser animation playback does not support weighted or additive layers: ${unsupported.layerId} (${unsupported.mode}, weight ${unsupported.weight})`
+  );
 }
 
 function resolveTarget(
