@@ -29,6 +29,10 @@ export default defineConfig({
       "@gamekit/tca": new URL("./packages/tca/src/index.ts", import.meta.url).pathname,
       "@gamekit/gas": new URL("./packages/gas/src/index.ts", import.meta.url).pathname,
       "@gamekit/combat": new URL("./packages/combat/src/index.ts", import.meta.url).pathname,
+      "@gamekit/ai-core/testing": new URL(
+        "./packages/ai-core/src/testing/index.ts",
+        import.meta.url
+      ).pathname,
       "@gamekit/ai-core": new URL("./packages/ai-core/src/index.ts", import.meta.url).pathname,
       "@gamekit/animator-core/playback": new URL(
         "./packages/animator-core/src/playback/index.ts",

@@ -148,7 +148,7 @@ asset → data / core
 tca → core / data / event-bus / game-runtime / save
 gas → core / data / event-bus / game-runtime / tca / world / save
 combat → core / data / event-bus / game-runtime / world / physics-core / gas
-ai-core → core / data / event-bus / game-runtime / world / navigation-core / save
+ai-core → core / data / event-bus / game-runtime / world / physics-core / navigation-core / save
 navigation-core → core / data / game-runtime
 navigation-graph/navigation-grid/navigation-navmesh → navigation-core/backend / data / backend-owned contracts
 navigation-recast → navigation-core/backend / navigation-navmesh / recast-navigation
@@ -242,6 +242,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 | `@gamekit/physics-rapier2d` / `@gamekit/physics-rapier3d` / `@gamekit/physics-matter` | Game Module backend adapter                   | 独立物理库 adapter；Rapier 按 2D / 3D 分包，第三方类型不进入 physics-core 或 gameplay 公共 API。                                                                                          |
 | `@gamekit/combat`                                                                     | Game Module toolkit                           | 通用 effect delivery、target relationship、hit resolution、projectile/hitscan/area executor；不定义具体游戏数值。                                                                         |
 | `@gamekit/ai-core`                                                                    | Game Module toolkit                           | 感知记忆、Utility goal、Task lifecycle、预算调度和 trace；不拥有 World、Physics、Navigation backend 或游戏行为。                                                                          |
+| `@gamekit/ai-core/testing`                                                            | Test support                                  | AI runtime conformance 与 framework-neutral memory fixture；不进入业务默认入口。                                                                                                          |
 | `@gamekit/navigation-core`                                                            | Game Module toolkit / facade                  | Path/shared route-field query、layout factory、agent profile、dynamic blocker/cost、异步 request budget 和稳定 Handle。                                                                   |
 | `@gamekit/navigation-core/backend`                                                    | Backend port                                  | submit/poll/cancel/release、revision、route-field sample 和 layout factory；只供 adapter/driver 实现者使用。                                                                              |
 | `@gamekit/navigation-core/testing`                                                    | Test support                                  | Memory/Deferred Backend、conformance 和 framework-neutral fixture；不进入业务默认入口。                                                                                                   |

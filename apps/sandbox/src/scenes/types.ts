@@ -3,6 +3,7 @@ export type SandboxSceneId =
   | "combat"
   | "audio-lab"
   | "animator-lab"
+  | "ai-lab"
   | "navigation-lab";
 
 export type SandboxSceneModule = {

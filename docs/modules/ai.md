@@ -40,6 +40,7 @@ export type AiAgentDefinition = {
   goals: DataRef<"ai.goal">[];
   decisionIntervalMs: number;
   memoryLimit: number;
+  blackboardLimit?: number;
   schedulerClass?: string;
 };
 ```
@@ -70,6 +71,16 @@ export type AiPerceptionFact = {
 
 Memory 使用固定容量与过期策略。大群 agent 可共享只读 spatial fact cache，例如“可见玩家候选”“核心位置”“被攻击设施”，但每个 agent 的仇恨、最后观察和 task state 保持独立。
 
+Blackboard 同样必须有硬上限。`blackboardLimit` 未声明时使用 runtime 的有界默认值；新 key
+超限时原子拒绝，不能静默淘汰 task 正在协作的状态。Value 只接受有限深度、有限节点数的
+JSON-like 数据；循环引用、函数、native object 和非有限数字不能进入 checkpoint。
+
+Sensor、consideration 和 task executor 只读取 `AiWorldReadModel` 的
+`has/get/query/count`。该 facade 不暴露 `spawn/despawn/add/set/remove`；Physics 只提供
+`PhysicsQueries`，Navigation 只提供 `NavigationQueries`，都不把 step、scene/obstacle mutation
+或 runtime lifecycle 暴露给 agent。Encounter、队伍和目标等共享低频事实通过可选的
+`AiSharedFactQueries` 注入；读取返回隔离副本，不会自动混入 agent 自己的 perception memory。
+
 ## Utility Decision
 
 Goal 由多个 consideration 评分：
@@ -90,6 +101,10 @@ export type AiGoalDefinition = {
 Consideration 读取预编译 input，再通过 curve 映射到 0–1。组合方式与补偿因子必须稳定并有测试，避免 consideration 数量增加时无意把所有分数压到零。
 
 Selector 使用 deterministic tie-break、hysteresis、minimum commitment 和 switch threshold。目标切换原因进入 trace，不能只记录最终 goal。
+
+`safe-point` 和 `never` 是 task 的真实中断约束：即使当前 goal 已不再 eligible，selector 也只能
+记录 `interrupt-policy` 并保持任务；只有 executor 到达安全点、任务自行结束，或
+unbind/dispose/checkpoint restore 等强制生命周期清理才能取消它。
 
 ## Task Lifecycle
 
@@ -123,15 +138,25 @@ Task failure 必须区分 target-lost、path-failed、ability-rejected、timeout
 
 ## Planner 扩展点
 
-AI Core 可以暴露 `AiPlanner` 接口，把 world state 与 goal 转换为 task sequence。默认 Utility + Task 模型不需要 planner。
+默认入口不提供只有类型、没有 runtime 语义的 `AiPlanner`。Utility + Task 模型是当前唯一标准
+决策路径。
 
-GOAP、HTN 或行为树 backend 只有在真实游戏需要动态多步计划时才作为 adapter 接入。Planner 不能拥有 agent/entity lifecycle，计划长度、搜索节点、时间和 allocation 必须有硬上限，并产生可解释 trace。
+只有第二个真实游戏证明需要把 world state 与 goal 动态转换为 task sequence 时，才通过独立
+ADR 和 planner adapter subpath 引入 GOAP、HTN 或行为树 backend。Planner 不能拥有
+agent/entity lifecycle，计划长度、搜索节点、时间和 allocation 必须有硬上限，并产生可解释
+trace。
 
 ## Scheduler 与性能
 
 - Agent 按 stable hash 分散到 decision bucket，避免同一帧全部重评。
 - Scheduler 为 perception、decision、path request 和 trace 分别设预算。
+- App policy 可以通过 `setSchedulerClass(agentId, schedulerClassId)` 动态升降 agent 的感知、决策
+  频率和 priority。切换按新旧 interval 比例缩放剩余 due time，不重置已经到期的工作；当前 class
+  进入 snapshot/checkpoint，restore 后继续使用。
 - 近战中/屏内/高威胁 agent 获得更高决策频率；远处 agent 降低感知与重评频率，但 movement 仍由稳定 navigation/physics 路径推进。
+- AI 的 path request 预算只约束 AI context 发起的新请求；超限请求不进入 Navigation backend，
+  `poll()` 返回稳定的 `queue-full` rejection，并累计 budget trace/snapshot 计数。Navigation 自身仍
+  负责全局 queue、backend 并发和 cache budget。
 - Task executor 不在每 tick 创建闭包、数组、动态对象树或解释 JSON path。
 - benchmark 覆盖 250 standard agent、1,000 stress agent、目标 churn、批量 despawn 和 trace disabled/enabled。
 
@@ -139,9 +164,14 @@ Budget 超限时延后低优先级决策，并产生 summary diagnostic；不能
 
 ## Save、Multiplayer 与 Trace
 
-- Save 可以保存 active goal、task state、commit/cooldown、必要 memory 与 deterministic scheduler cursor；不保存 Physics query cache 或第三方 planner native object。
+- Save 可以保存 active goal、task state、commit/cooldown、必要 memory、当前 scheduler class 与 deterministic scheduler cursor；不保存 Physics query cache 或第三方 planner native object。Restore 通过上层 resolver 重绑 entity、actor 和 task state 中的 route/path handle；无法重绑的 active task 被清除并立即重新决策。
 - AI 只在 authority 运行。客户端复制 gameplay-visible state，例如 target、telegraph、ability execution 与 animation semantic state，不复制完整 blackboard 或 utility score。
 - Trace 记录 sensor sample、candidate goals、score breakdown、goal switch、task transition、intent、failure 和 budget delay。
+- Trace 留存由 app/profile 通过 `traceRetention` 显式配置：`limit` 是全局硬上限，`kinds` 是可选类别白名单，`kindLimits` 为高频类别提供更小的独立上限。所有限制都必须有界，不能为了延长诊断窗口无限扩大 runtime buffer。
+- Trace 生产与留存分开配置。`traceProduction.maxEntriesPerUpdate` 限制单次 update 的 observer 与
+  buffer 写入量，超限只产生一条 `ai.trace_dropped` summary；`goalScoreDetail` 默认只保留 summary，
+  上层可按诊断场景选择 `winner` 或 `all`。留存关闭时，显式配置的 live observer 仍可接收预算内
+  trace，不需要为了监听事件维持 ring buffer。
 - 默认 DevTools 只展开选中 agent，summary 只聚合 goal/task/budget 计数，避免每帧复制全部 agent trace。
 
 ## 最佳实践
@@ -151,11 +181,15 @@ Budget 超限时延后低优先级决策，并产生 summary diagnostic；不能
 - AI module 通过 DI 获得 World read model、PhysicsQueries、NavigationHandle、clock 和 intent sink，不创建对应 runtime。
 - Sensor、consideration 和 task executor registry 在启动时检查重复 type；每个 agent definition 首次 bind 时从 DataRegistry 编译并缓存 sensor/goal/task/scheduler 索引，update 热路径不重复查询 definition。
 - 使用 memory fixture 验证 deterministic selection、interrupt、timeout、cleanup 和 trace；第三方 planner/steering adapter 再运行专属 conformance。
+- Conformance 与 memory fixture 从 `@gamekit/ai-core/testing` 导入，不从 gameplay root 导入。
 - `onTrace/onTraceError` 只用于 DevTools/diagnostics 旁路，observer 失败不能改变 goal、task 或 intent 结果。
+- App/profile 应优先保留 `goal`、`task`、`budget` 等低频解释性 trace，并按调试需求限制或关闭逐 tick 的 `intent`、`perception` 留存；业务已经维护专用 intent/history buffer 时，不在 AI trace 中重复长期保存同一高频事实。
 
 ### 模块使用
 
 - 角色差异由 data + registered definitions 组成，不为每种敌人复制一套 update loop。
 - Encounter director、boss phase、剧情规则和 wave budget 留在 app/TCA，不塞入单 agent AI Core。
 - Steering、movement integration、projectile 和 animation 不由 AI task 直接实现；task 只提交 intent。
+- Blackboard 只保存 agent 决策需要的稳定数据，不保存 World component 引用、Navigation native
+  route、Physics handle、GAS actor object 或 renderer object。
 - 高频 spatial candidate 应共享索引或缓存，不能让每个 agent 每 tick 扫描全部 World entity。

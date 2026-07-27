@@ -11,6 +11,7 @@
     { "path": "../event-bus" },
     { "path": "../game-runtime" },
     { "path": "../navigation-core" },
+    { "path": "../physics-core" },
     { "path": "../save" },
     { "path": "../world" }
   ]

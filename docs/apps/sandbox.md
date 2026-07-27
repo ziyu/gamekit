@@ -444,6 +444,30 @@ Audio 的公共职责、领域 API 与 Backend 边界以 [`../modules/audio.md`]
 
 Animator 的公共职责、层/one-shot/phase 协议与 Driver 边界以 [`../modules/animator.md`](../modules/animator.md) 为准。Animator Lab 的 headless 测试必须覆盖同一份 DataPack 的 graph、排队/打断、marker、phase seek 和 generation reset；浏览器 smoke test 另外证明真实 Phaser adapter 能把公共 playback frame 应用到两个 RenderNode。
 
+## 场景：AI Lab
+
+`AI Lab` 是 AI Core 的独立生态决策验证场景。它通过独立 App Host 组合 DataRegistry、World、GameRuntime、标准 AI GameModule、UI 和 DevTools，在一张微型生存地图里让多只小动物持续寻找食物、水源和休息处。测试者先看见普通游戏对象和行为结果，再按需展开选中个体的决策解释；页面不能要求用户先理解 Utility、Task 或 Scheduler 才能看懂场景。
+
+常态生态中的每只可见动物都对应一个真实 AI agent 和 World entity，不使用只为制造诊断数字而存在的假 background agent。容量压力模式额外生成的动物也必须完整进入相同 World、AI、Navigation 和 Physics 链路；地图可以固定抽样表现，但 UI 必须同时显示真实总量与表现样本数，不能把样本数冒充实际负载。动物的位置、饥饿、口渴、体力和健康，以及食物、水源和休息处的位置与存量，都属于 Sandbox 本地 World 组件。场景覆盖以下可观察行为：
+
+- 生存循环：动物持续代谢并根据需求在觅食、饮水、休息和探索之间选择；食物与水会被消耗并按各自速率再生，长期缺食或缺水会影响健康。
+- Perception 与 Utility：Sensor 只通过 AI World read model 读取个体需求和最近资源，形成 bounded memory；hunger、thirst、fatigue、resource access 和 contentment 进入数据驱动 consideration。选中动物时用普通语言解释当前选择，具体 score 和 fact 放在次级详情。
+- Task 与 Intent：寻路式移动、进食、饮水和休息全部由 task executor 输出标准 movement / interaction intent；executor 不直接改写位置、需求或资源。觅食、饮水和休息必须经过定向、移动、到达准备、持续执行和收尾，探索必须经过定向、移动和停留观察；成功路径不能在启动 tick 直接结束。Sandbox controller 在 authority tick 后统一结算 intent、代谢和资源再生。
+- Scheduler：所有动物共享固定 decision/sensor/path/trace tick budget；当前被观察的动物自动切到 `nimble`，上一只自动回到 `steady`，让对象选择本身成为动态 LOD 策略。当前 class、决策延迟、path rejection 与 trace drop 只进入折叠详情或 DevTools，不在主界面堆成能力控制台。受控预算压力只能从真实 task context 发起请求，不能生成与地图无关的假 agent；触发时主舞台必须显示鸟群、全体“重算”气泡和当前路线。
+- 容量压力：主场景提供可选测试上限，并从小规模开始自动倍增真实动物；压测动物使用明确的 background scheduler class，相同资源目标和有限 Wander 目标池共享 goal-keyed route field，不能为每个个体创建一次性目标和重复的全图搜索。AI 路径准入、Navigation 每 tick 处理量、pending/result/route/cache 容量统一在 app profile 配置；准入允许把可控突发先送入有界 Navigation 队列，后端仍按帧预算消费，queue-full 或结果丢失时 task 使用确定性退避而不是逐 tick 重试。
+- 每档先等待导航启动积压收敛，再采集真实 animation frame interval、完整 authority simulation 耗时、AI 调度延后、Sensor 延后和 path rejection；少量持续在途请求视为稳态，不要求队列绝对归零，预热超时与冷启动耗时必须单独报告，不能混入稳态 p95。稳定上限按可交互的 30 FPS 帧预算判定，frame p95 允许 36ms 的浏览器抖动窗口，同时要求 authority simulation p95 不超过 28ms，并检查调度延后和路径拒绝 QoS；达到所选上限时结果表达为“至少达到该上限”，未通过时保留上一档稳定数量。
+- 测试停止或完成后必须 unbind 压测 agent、despawn 对应 World entity 并恢复常态生态。压力状态机只在每档稳态采样的起止边界读取完整 runtime counters，观察册按低频 UI cadence 读取 presentation snapshot；不能在 authority frame 中复制 O(agent) 诊断状态并把复制成本混进真实帧率。行为日志和林地事件只记录常驻故事动物，trace retention 继续服从上层配置；地图最多投影固定数量的真实压测动物，动物节点保持稳定并只更新发生变化的表现属性，background 样本关闭纯装饰动画，避免 DOM reconciliation、layout 和 paint 遮蔽 AI/Navigation 容量。
+- 空间与共享事实：所有资源移动和探索 task 都必须进入 Navigation 的 request、poll、sample、release route lifecycle，不能按 Physics raycast 结果绕过寻路。AI Lab 使用覆盖整个林地的细粒度 Grid backend；Grid cell 从倒木、岩石所用的同一份 Sandbox obstacle blueprint 生成，并按 agent radius 扩张 collider footprint。地图对象开关同时更新 Physics collider 与 `navigation.updateObstacle()` 的 custom target，使 Navigation revision、route field、retained route 和最终路径真实失效/重算。主舞台投影 backend 返回的 route points；authority movement 在应用位移前再用同半径 Physics shape cast 阻止穿模。林地警戒通过只读 `AiSharedFactQueries` 注入并形成高优先级安全 Goal；动物必须经过定向、寻路、移动、藏好、等待和解除后的收尾过程，不能只降低探索分数或只改变诊断数字。
+- Checkpoint：测试者可以用“叶印”保存和恢复 AI checkpoint 与对应的 Sandbox World 状态，包括动物位置/需求、资源存量、障碍开关和共享警戒。AI 恢复必须经过 entity、actor 和 task state resolver；task state 中的 request/route handle 不能原样复用，而应清除 native/runtime identity 并从稳定目标重新申请路线。主舞台用位置残影和回溯波直接表达保存/恢复结果，resolver 数量只保留在诊断数据中。
+- 地图表达：主视野直接显示动物、资源余量、当前动作、真实直行/绕行路线、昼夜时间、警戒波、鸟群重规划、叶印残影与回溯效果；每只动物头顶持续显示当前行为气泡，并根据 task phase 区分觅食/进食、找水/喝水、找窝/休息、躲藏/等待、探索/观察、重算和收尾。右侧观察册展示选中个体的生存状态、行为阶段、连续进度、五个候选选择和近期林地事件。原始 memory、blackboard、task id、scheduler 与预算指标默认折叠，完整 trace 仍由标准 DevTools 提供。
+- 行为诊断：场景持续为每只动物保留最近 10 秒的有界行为历史，而不是从选中时才开始记录。选中动物后可以导出 JSON，内容至少包含定频位置/需求/goal/task/phase/progress/target 样本、标准 intent、AI trace、场景事件、当前 memory/blackboard、资源快照和 runtime summary；日志采样与 intent 保留必须限频并随时间窗口裁剪，不能形成无界开发期存储。
+- 自然干预：测试者可以补充食物、触发降雨、直接点击并移动物理遮挡、敲响或解除警铃、惊起鸟群、留下或恢复叶印、暂停、确定性单步和调整观察速度。干预只改变 Sandbox world/resource/collider/shared-fact/checkpoint state，不能绕开标准 AI 决策直接指定动物 goal。
+- Lifecycle：场景启动时创建 World entity 并绑定对应 agent；退出时先 unbind 全部动物、释放场景 entity，再由 App Host 释放 GameRuntime 和 AI module。
+
+动物物种、名字、林地布局、食物点、水塘、地洞、倒木、岩石、昼夜节奏和自然观察册视觉都属于 Sandbox 内容，不进入 AI Core。Headless 测试使用 `@gamekit/ai-core/testing` memory fixture 消费同一 DataPack、Sensor、input resolver 和 task executor，并组合正式 Grid Navigation backend 与 Memory Physics backend，验证可见动物与 agent 一一对应、移动与生存交互、全部行为的阶段序列、自动动态 LOD、共享警戒驱动躲藏、动态 obstacle revision、route 线段不进入扩张 collider、清障后最短路缩短、逐 tick 圆形体积不穿模、path/trace budget、压力动物真实 bind/unbind 与 World 清理、容量探顶状态机、AI 与 World checkpoint 恢复、选中前历史仍可导出、资源干预、选中个体解释和确定性单步；浏览器 smoke test 另外验证地图第一屏、常驻行为气泡、警戒群体行为、全体重算、真实 route 折线、可点击障碍后的路径变化、容量压力选项与实时结果、叶印残影/回溯、日志导出、自然干预和 console error。
+
+AI 的公共职责、Utility/Task/Scheduler/Trace 协议与应用边界以 [`../modules/ai.md`](../modules/ai.md)、ADR 0031 和 ADR 0044 为准。
+
 ## 场景：Navigation Lab
 
 `Navigation Lab` 使用多张真实俯视游戏地形验证 Navigation Core 与不同 Backend。`Ashen Ford` 是紧凑的三通路基础场景，包含出发营地、守望城门、河流、石桥、狭窄山道、芦苇沼泽和可开关的传送石；`Blackglass Basin` 是 30 × 20 米的反应堆街区深入场景，由建筑占地、围墙、院落、狭窄室内通道、死路、中央防爆门、只适合轻型单位的高架通路、高成本冷却液区域和应急传送中继构成，起终点横跨街区对角线，路径必须围绕真实阻挡连续转向。玩家在两个场景中都选择斥候、补给车或重甲卫队，下达单体移动或队伍集结命令。技术 trace 和压力测试保留在次级 QA 区域，主画面首先表达“单位为什么选这条路、世界变化后路线发生了什么”。

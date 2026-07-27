@@ -36,6 +36,14 @@ export const sandboxSceneCatalog: readonly SandboxSceneDefinition[] = [
     load: () => import("./animator-lab")
   },
   {
+    id: "ai-lab",
+    shortLabel: "AI",
+    title: "AI Lab",
+    description: "Utility decisions, interruption policy, memory, and budget pressure",
+    capabilities: ["Utility", "Memory", "Task", "Intent", "Scheduler"],
+    load: () => import("./ai-lab")
+  },
+  {
     id: "navigation-lab",
     shortLabel: "NV",
     title: "Navigation Lab",

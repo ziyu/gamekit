@@ -68,6 +68,30 @@ const BUDGETS: AiBenchmarkBudget[] = [
     where: { agents: 250, traceLimit: 256, ticks: 120 },
     metric: "retainedTraceEntries",
     maximum: 256
+  },
+  {
+    suite: "ai-agent-churn",
+    where: { operation: "target-and-lod-churn", agents: 1000, ticks: 120 },
+    metric: "p95MsPerTick",
+    maximum: 50
+  },
+  {
+    suite: "ai-agent-churn",
+    where: { operation: "target-and-lod-churn", agents: 1000, ticks: 120 },
+    metric: "retainedAfterDispose",
+    maximum: 0
+  },
+  {
+    suite: "ai-agent-churn",
+    where: { operation: "bulk-unbind", agents: 1000, removed: 500 },
+    metric: "elapsedMs",
+    maximum: 100
+  },
+  {
+    suite: "ai-agent-churn",
+    where: { operation: "bulk-unbind", agents: 1000, removed: 500 },
+    metric: "retainedAfterDispose",
+    maximum: 0
   }
 ];
 

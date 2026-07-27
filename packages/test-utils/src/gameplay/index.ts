@@ -2,7 +2,7 @@ export {
   runAiRuntimeConformance,
   type AiConformanceHarness,
   type AiConformanceReport
-} from "@gamekit/ai-core";
+} from "@gamekit/ai-core/testing";
 export {
   createMemoryAnimationPlaybackAdapter,
   runAnimatorRuntimeConformance,

@@ -368,6 +368,9 @@ importers:
 
   apps/sandbox:
     dependencies:
+      '@gamekit/ai-core':
+        specifier: workspace:*
+        version: link:../../packages/ai-core
       '@gamekit/animator-core':
         specifier: workspace:*
         version: link:../../packages/animator-core
@@ -547,6 +550,9 @@ importers:
       '@gamekit/navigation-core':
         specifier: workspace:*
         version: link:../navigation-core
+      '@gamekit/physics-core':
+        specifier: workspace:*
+        version: link:../physics-core
       '@gamekit/save':
         specifier: workspace:*
         version: link:../save

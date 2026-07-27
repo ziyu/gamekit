@@ -1,6 +1,11 @@
 import { performance } from "node:perf_hooks";
 import { createDataRegistry, type DataPack } from "../packages/data/src";
-import { createAiDataTypes, createAiRuntime, type AiRuntime } from "../packages/ai-core/src";
+import {
+  createAiDataTypes,
+  createAiRuntime,
+  createAiWorldReadModel,
+  type AiRuntime
+} from "../packages/ai-core/src";
 import type { ComponentDef, EntityId, GameWorld } from "../packages/world/src";
 import {
   aiBenchmarkBudgetCount,
@@ -18,6 +23,10 @@ function main(): void {
     {
       suite: "ai-trace-overhead",
       cases: [runTraceOverhead(0), runTraceOverhead(256)]
+    },
+    {
+      suite: "ai-agent-churn",
+      cases: [runTargetAndLodChurn(1000), runBulkUnbind(1000, 500)]
     }
   ];
   const checkEnabled = process.argv.includes("--check");
@@ -31,6 +40,7 @@ function main(): void {
           warmupTicks: 10,
           measuredTicks: 120,
           profiles: ["uniform", "mixed-lod"],
+          churn: ["target", "dynamic-lod", "bulk-unbind"],
           reports: ["mean", "p50", "p95", "max", "per-agent", "retained-after-dispose"]
         },
         suites,
@@ -106,6 +116,66 @@ function runTraceOverhead(traceLimit: number): AiBenchmarkCase {
   };
 }
 
+function runTargetAndLodChurn(agents: number): AiBenchmarkCase {
+  const ticks = 120;
+  const runtime = createBenchmarkRuntime(0);
+  bindAgents(runtime, agents, "mixed-lod");
+  warmup(runtime);
+  const samples: number[] = [];
+  for (let tick = 0; tick < ticks; tick += 1) {
+    const started = performance.now();
+    if (tick % 12 === 0) {
+      const epoch = tick / 12 + 1;
+      for (let index = 0; index < agents; index += 1) {
+        const agentId = benchmarkAgentId(index);
+        runtime.setBlackboard(agentId, "targetEpoch", epoch);
+        runtime.setSchedulerClass(agentId, (index + epoch) % 4 === 0 ? "near" : "far");
+      }
+    }
+    runtime.update(16, (tick + 11) * 16);
+    samples.push(performance.now() - started);
+  }
+  const snapshot = runtime.snapshot();
+  runtime.dispose();
+  const disposed = runtime.snapshot();
+  const stats = summarize(samples);
+  return {
+    operation: "target-and-lod-churn",
+    agents,
+    ticks,
+    reclassificationRequests: Math.ceil(ticks / 12) * agents,
+    delayedDecisions: snapshot.delayedDecisions,
+    retainedAfterDispose: disposed.agents.length + disposed.memoryFacts + disposed.activeTasks,
+    meanMsPerTick: stats.mean,
+    p50MsPerTick: stats.p50,
+    p95MsPerTick: stats.p95,
+    maxMsPerTick: stats.max
+  };
+}
+
+function runBulkUnbind(agents: number, removed: number): AiBenchmarkCase {
+  const runtime = createBenchmarkRuntime(0);
+  bindAgents(runtime, agents, "mixed-lod");
+  warmup(runtime);
+  const started = performance.now();
+  for (let index = 0; index < removed; index += 1) {
+    runtime.unbind(benchmarkAgentId(index), "benchmark-bulk-unbind");
+  }
+  runtime.update(16, 176);
+  const elapsedMs = performance.now() - started;
+  const remaining = runtime.snapshot().agents.length;
+  runtime.dispose();
+  const disposed = runtime.snapshot();
+  return {
+    operation: "bulk-unbind",
+    agents,
+    removed,
+    remaining,
+    elapsedMs: round(elapsedMs),
+    retainedAfterDispose: disposed.agents.length + disposed.memoryFacts + disposed.activeTasks
+  };
+}
+
 function createBenchmarkRuntime(traceLimit: number): AiRuntime {
   const registry = createDataRegistry();
   for (const type of createAiDataTypes()) {
@@ -117,7 +187,7 @@ function createBenchmarkRuntime(traceLimit: number): AiRuntime {
   }
   return createAiRuntime({
     dataRegistry: registry,
-    world: createMemoryWorld(),
+    world: createAiWorldReadModel(createMemoryWorld()),
     intentSink: { emit() {} },
     sensors: [
       {
@@ -139,13 +209,15 @@ function createBenchmarkRuntime(traceLimit: number): AiRuntime {
       {
         id: "aggression",
         read(context) {
-          return stableValue(context.agent.agentId);
+          const epoch = context.blackboard<number>("targetEpoch") ?? 0;
+          return stableValue(`${context.agent.agentId}:${epoch}`);
         }
       },
       {
         id: "danger",
         read(context) {
-          return 1 - stableValue(context.agent.agentId);
+          const epoch = context.blackboard<number>("targetEpoch") ?? 0;
+          return 1 - stableValue(`${context.agent.agentId}:${epoch}`);
         }
       }
     ],
@@ -173,10 +245,14 @@ function createBenchmarkRuntime(traceLimit: number): AiRuntime {
 function bindAgents(runtime: AiRuntime, count: number, profile: "uniform" | "mixed-lod"): void {
   for (let index = 0; index < count; index += 1) {
     runtime.bind({
-      agentId: `agent.${index.toString().padStart(4, "0")}`,
+      agentId: benchmarkAgentId(index),
       definitionId: profile === "mixed-lod" && index % 4 !== 0 ? "agent.far" : "agent.near"
     });
   }
+}
+
+function benchmarkAgentId(index: number): string {
+  return `agent.${index.toString().padStart(4, "0")}`;
 }
 
 function warmup(runtime: AiRuntime): void {
