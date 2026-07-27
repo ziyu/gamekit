@@ -1,7 +1,21 @@
 import { defineGameModule } from "@gamekit/core";
+import { createAiHandle, type AiHandle } from "@gamekit/ai-core";
+import {
+  createCombatHandle,
+  createCombatTraceStore,
+  type CombatHandle,
+  type CombatTraceStore
+} from "@gamekit/combat";
 import type { DataRegistry } from "@gamekit/data";
 import { createGame, type GameInstallContext, type GameRuntime } from "@gamekit/game-runtime";
 import type { EventBus } from "@gamekit/event-bus";
+import {
+  createNavigationHandle,
+  createNavigationModule,
+  type NavigationAgentProfileDefinition,
+  type NavigationHandle
+} from "@gamekit/navigation-core";
+import { createGraphNavigationBackendFactory } from "@gamekit/navigation-graph";
 import {
   createGasHandle,
   createGasModule,
@@ -34,8 +48,22 @@ import {
   type TcaTraceStore
 } from "@gamekit/tca";
 
-import { OUTPOST_ARENA_PHYSICS_LAYOUT_ID, OUTPOST_ARENA_PHYSICS_SCENE_ID } from "../content";
+import {
+  OUTPOST_ARENA_PHYSICS_LAYOUT_ID,
+  OUTPOST_ARENA_PHYSICS_SCENE_ID,
+  OUTPOST_NAVIGATION_BACKEND_ID,
+  OUTPOST_NAVIGATION_LAYOUT_ID
+} from "../content";
 import { OUTPOST_PLAYER_TYPE, type OutpostPlayerDefinition } from "../domain";
+import {
+  createOutpostAuthorityAi,
+  type OutpostAuthorityAiIntegration,
+  type OutpostAuthorityAiSnapshot
+} from "./authority-ai";
+import {
+  createOutpostAuthorityNavigationIntegration,
+  type OutpostAuthorityNavigationBlockerSnapshot
+} from "./authority-navigation";
 import {
   createOutpostIdentityRegistry,
   type OutpostIdentityRegistry
@@ -91,6 +119,8 @@ export type OutpostAuthorityGameplaySnapshot = {
     recentTraceCount: number;
   };
   combat: OutpostAuthorityCombatSnapshot;
+  ai: OutpostAuthorityAiSnapshot;
+  navigationBlockers: OutpostAuthorityNavigationBlockerSnapshot[];
 };
 
 export type OutpostAuthorityGameplayRuntime = {
@@ -100,8 +130,13 @@ export type OutpostAuthorityGameplayRuntime = {
   physicsTrace: PhysicsTraceStore;
   gas: GasHandle;
   gasTrace: GasTraceStore;
+  combatCore: CombatHandle;
+  combatTrace: CombatTraceStore;
+  navigation: NavigationHandle;
+  ai: AiHandle;
   tca: TcaHandle;
   tcaTrace: TcaTraceStore;
+  setNavigationArenaObjectBlocked(objectId: string, blocked: boolean): boolean;
   snapshot(): OutpostAuthorityGameplaySnapshot;
 };
 
@@ -140,6 +175,10 @@ export function createOutpostAuthorityGameplayRuntime(
   const physicsTrace = createPhysicsTraceStore({ limit: 180 });
   const gas = createGasHandle({ id: "outpost.authority.gas" });
   const gasTrace = createGasTraceStore({ limit: 240 });
+  const combatCore = createCombatHandle({ id: "outpost.authority.combat-core" });
+  const combatTrace = createCombatTraceStore({ limit: 320 });
+  const navigation = createNavigationHandle({ id: "outpost.authority.navigation" });
+  const ai = createAiHandle({ id: "outpost.authority.ai" });
   const tca = createTcaHandle({ id: "outpost.authority.tca" });
   const tcaTrace = createTcaTraceStore({ limit: 180 });
   const state: AuthorityGameplayState = {
@@ -151,6 +190,7 @@ export function createOutpostAuthorityGameplayRuntime(
     playerSource: options.players,
     gas
   };
+  let authorityAi: OutpostAuthorityAiIntegration | undefined;
   const combat = createOutpostAuthorityCombat({
     dataRegistry: options.dataRegistry,
     world: options.world,
@@ -158,11 +198,28 @@ export function createOutpostAuthorityGameplayRuntime(
     physics,
     physicsTrace,
     gas,
+    combat: combatCore,
+    combatTrace,
     eventBus: options.eventBus,
     players: () => state.players,
     commands: options.combatCommands ?? (() => []),
+    aiState(actorId) {
+      return authorityAi?.actorState(actorId);
+    },
     ...(options.initialEnemies === undefined ? {} : { initialEnemies: options.initialEnemies })
   });
+  authorityAi = createOutpostAuthorityAi({
+    dataRegistry: options.dataRegistry,
+    world: options.world,
+    physics,
+    navigation,
+    ai,
+    gas,
+    enemies: combat.aiEnemies,
+    players: () => state.players,
+    activateAction: combat.activateAiAction
+  });
+  const authorityNavigation = createOutpostAuthorityNavigationIntegration(navigation);
   const runtime = createGame({
     seed: options.seed ?? "outpost-siege.authority.v1",
     world: options.world,
@@ -174,7 +231,44 @@ export function createOutpostAuthorityGameplayRuntime(
         layoutId: OUTPOST_ARENA_PHYSICS_LAYOUT_ID
       }),
       createAuthorityPlayerModule(state),
+      combat.enemyLifecycleModule,
+      createNavigationModule({
+        id: "outpost.authority.navigation",
+        dataRegistry: options.dataRegistry,
+        layout: { type: "navigation.layout", id: OUTPOST_NAVIGATION_LAYOUT_ID },
+        backendFactories: [
+          createGraphNavigationBackendFactory({
+            id: OUTPOST_NAVIGATION_BACKEND_ID,
+            maxRouteFields: 16
+          })
+        ],
+        profiles: [
+          options.dataRegistry.getValue<NavigationAgentProfileDefinition>(
+            "navigation.agent-profile",
+            "navigation.outpost.raider"
+          )
+        ],
+        handle: navigation,
+        maxRequestsPerTick: 24,
+        maxBackendPollsPerTick: 48,
+        maxPendingRequests: 256,
+        maxPendingPerRequester: 2,
+        maxRetainedResults: 256,
+        maxRetainedRoutes: 256,
+        maxCacheEntries: 64,
+        traceLimit: 320
+      }),
+      authorityNavigation.module,
+      authorityAi.bindingModule,
+      authorityAi.module,
+      authorityAi.intentModule,
       combat.prePhysicsModule,
+      createGasModule({
+        id: "outpost.authority.gas",
+        dataRegistry: options.dataRegistry,
+        traceStore: gasTrace,
+        handle: gas
+      }),
       createPhysicsModule({
         id: "outpost.authority.physics",
         backend: options.physicsBackend,
@@ -184,13 +278,8 @@ export function createOutpostAuthorityGameplayRuntime(
         traceStore: physicsTrace,
         handle: physics
       }),
+      combat.coreModule,
       combat.postPhysicsModule,
-      createGasModule({
-        id: "outpost.authority.gas",
-        dataRegistry: options.dataRegistry,
-        traceStore: gasTrace,
-        handle: gas
-      }),
       createTcaModule({
         id: "outpost.authority.tca",
         dataRegistry: options.dataRegistry,
@@ -208,8 +297,15 @@ export function createOutpostAuthorityGameplayRuntime(
     physicsTrace,
     gas,
     gasTrace,
+    combatCore,
+    combatTrace,
+    navigation,
+    ai,
     tca,
     tcaTrace,
+    setNavigationArenaObjectBlocked(objectId, blocked) {
+      return authorityNavigation.setArenaObjectBlocked(objectId, blocked);
+    },
     snapshot() {
       const clock = runtime.clock.snapshot();
       return {
@@ -224,7 +320,9 @@ export function createOutpostAuthorityGameplayRuntime(
           bound: physics.isBound(),
           recentTraceCount: physicsTrace.list().length
         },
-        combat: combat.snapshot()
+        combat: combat.snapshot(),
+        ai: authorityAi.snapshot(),
+        navigationBlockers: authorityNavigation.blockers()
       };
     }
   };

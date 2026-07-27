@@ -4,7 +4,7 @@ import type { ColyseusNativeStateUpdate } from "@gamekit/multiplayer-colyseus";
 import type { OutpostClientAuthoritySnapshot } from "../gameplay/client-shadow-runtime";
 import type { OutpostMatchAuthoritySnapshot } from "./match-authority";
 
-export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v2";
+export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v3";
 export const OUTPOST_COLYSEUS_SOURCE_ENDPOINT_ID = "outpost.colyseus-schema";
 
 export const OutpostColyseusParticipantState = schema(
@@ -57,7 +57,15 @@ export const OutpostColyseusCombatActorState = schema(
     stamina: "float64",
     resource: "float64",
     tags: "string",
-    cooldowns: { map: "float64" }
+    cooldowns: { map: "float64" },
+    targetActorId: "string",
+    aiGoalId: "string",
+    aiTaskPhase: "string",
+    abilityExecutionId: "string",
+    abilityId: "string",
+    abilityPhase: "string",
+    abilityPhaseStartedAt: "float64",
+    abilityPhaseEndsAt: "float64"
   },
   "OutpostColyseusCombatActorState"
 );
@@ -227,7 +235,15 @@ export function projectOutpostMatchToColyseusState(
         shield: actor.shield,
         stamina: actor.stamina,
         resource: actor.resource,
-        tags: encodeTags(actor.tags)
+        tags: encodeTags(actor.tags),
+        targetActorId: actor.targetActorId ?? "",
+        aiGoalId: actor.aiGoalId ?? "",
+        aiTaskPhase: actor.aiTaskPhase ?? "",
+        abilityExecutionId: actor.abilityExecutionId ?? "",
+        abilityId: actor.abilityId ?? "",
+        abilityPhase: actor.abilityPhase ?? "",
+        abilityPhaseStartedAt: actor.abilityPhaseStartedAt ?? -1,
+        abilityPhaseEndsAt: actor.abilityPhaseEndsAt ?? -1
       });
     next.objectId = actor.objectId;
     next.kind = actor.kind;
@@ -243,6 +259,14 @@ export function projectOutpostMatchToColyseusState(
     next.stamina = actor.stamina;
     next.resource = actor.resource;
     next.tags = encodeTags(actor.tags);
+    next.targetActorId = actor.targetActorId ?? "";
+    next.aiGoalId = actor.aiGoalId ?? "";
+    next.aiTaskPhase = actor.aiTaskPhase ?? "";
+    next.abilityExecutionId = actor.abilityExecutionId ?? "";
+    next.abilityId = actor.abilityId ?? "";
+    next.abilityPhase = actor.abilityPhase ?? "";
+    next.abilityPhaseStartedAt = actor.abilityPhaseStartedAt ?? -1;
+    next.abilityPhaseEndsAt = actor.abilityPhaseEndsAt ?? -1;
     syncNumberMap(next.cooldowns, actor.cooldowns);
     if (current === undefined) {
       state.combatActors.set(key, next);
@@ -442,7 +466,15 @@ function readCombatActor(
     !finiteNumber(value.shield) ||
     !finiteNumber(value.stamina) ||
     !finiteNumber(value.resource) ||
-    typeof value.tags !== "string"
+    typeof value.tags !== "string" ||
+    typeof value.targetActorId !== "string" ||
+    typeof value.aiGoalId !== "string" ||
+    typeof value.aiTaskPhase !== "string" ||
+    typeof value.abilityExecutionId !== "string" ||
+    typeof value.abilityId !== "string" ||
+    typeof value.abilityPhase !== "string" ||
+    !finiteNumber(value.abilityPhaseStartedAt) ||
+    !finiteNumber(value.abilityPhaseEndsAt)
   ) {
     return undefined;
   }
@@ -467,7 +499,19 @@ function readCombatActor(
     stamina: value.stamina,
     resource: value.resource,
     tags: decodeTags(value.tags),
-    cooldowns
+    cooldowns,
+    ...(value.targetActorId.length === 0 ? {} : { targetActorId: value.targetActorId }),
+    ...(value.aiGoalId.length === 0 ? {} : { aiGoalId: value.aiGoalId }),
+    ...(value.aiTaskPhase.length === 0 ? {} : { aiTaskPhase: value.aiTaskPhase }),
+    ...(value.abilityExecutionId.length === 0
+      ? {}
+      : { abilityExecutionId: value.abilityExecutionId }),
+    ...(value.abilityId.length === 0 ? {} : { abilityId: value.abilityId }),
+    ...(value.abilityPhase.length === 0 ? {} : { abilityPhase: value.abilityPhase }),
+    ...(value.abilityPhaseStartedAt < 0
+      ? {}
+      : { abilityPhaseStartedAt: value.abilityPhaseStartedAt }),
+    ...(value.abilityPhaseEndsAt < 0 ? {} : { abilityPhaseEndsAt: value.abilityPhaseEndsAt })
   };
 }
 

@@ -58,6 +58,7 @@ export type OutpostEnemyDefinition = {
   attackAbility: DataRef<"gas.ability">;
   physicsBody: DataRef<"physics.body">;
   renderObject: DataRef<typeof OUTPOST_RENDER_OBJECT_TYPE>;
+  aiAgent: DataRef<"ai.agent">;
   moveSpeed: number;
   attackRange: number;
   attackDamage: number;

@@ -5,8 +5,10 @@ import {
   type AppProfile
 } from "@gamekit/app-host";
 import type { AssetDiagnosticEvent, AssetLoaderAdapter, AssetManager } from "@gamekit/asset";
+import type { GameAudio } from "@gamekit/audio-core";
+import { createMemoryAudioBackend } from "@gamekit/audio-core/testing";
 import type { DataRegistry } from "@gamekit/data";
-import type { DevToolsRuntime } from "@gamekit/devtools";
+import type { DevToolsDataSource, DevToolsRuntime } from "@gamekit/devtools";
 import { createEventBus, type EventBus } from "@gamekit/event-bus";
 import type { GameRuntime } from "@gamekit/game-runtime";
 import { createInputRouter, type InputRouter } from "@gamekit/input-core";
@@ -21,7 +23,12 @@ import { createUiRuntime, type UiRuntime } from "@gamekit/ui-core";
 import type { GameWorld } from "@gamekit/world";
 import { createKootaWorld } from "@gamekit/world-koota";
 import { createOutpostDataRegistry } from "../content";
-import { createOutpostPreviewRuntime, type OutpostPreviewRuntime } from "../gameplay";
+import {
+  createOutpostPreviewRuntime,
+  type OutpostAuthorityGameplayRuntime,
+  type OutpostPreviewRuntime
+} from "../gameplay";
+import { OUTPOST_AUDIO_CONFIG } from "../presentation";
 import { outpostProfileDefinition, type OutpostProfileId } from "./definitions";
 
 type OutpostNonVisualProfileId = Extract<
@@ -34,6 +41,7 @@ export type OutpostNonVisualContext = {
   platform?: PlatformRuntime | undefined;
   dataRegistry?: DataRegistry | undefined;
   assets?: AssetManager | undefined;
+  audio?: GameAudio | undefined;
   renderer?: RendererAdapter | undefined;
   inputRouter?: InputRouter | undefined;
   multiplayer?: MultiplayerRuntime | undefined;
@@ -42,6 +50,7 @@ export type OutpostNonVisualContext = {
   devtools?: DevToolsRuntime | undefined;
   game?: GameRuntime | undefined;
   preview?: OutpostPreviewRuntime | undefined;
+  authority?: OutpostAuthorityGameplayRuntime | undefined;
 };
 
 export type CreateOutpostNonVisualRuntimeContext = {
@@ -108,6 +117,7 @@ export function createOutpostNonVisualProfile(
       exposed.platform = state.platform;
       exposed.dataRegistry = state.data;
       exposed.assets = state.assets;
+      exposed.audio = state.audio;
       exposed.renderer = state.renderer;
       exposed.inputRouter = state.input;
       exposed.multiplayer = state.multiplayer;
@@ -130,6 +140,11 @@ export function createOutpostNonVisualProfile(
             context.assetDiagnostics.pop();
           }
         }
+      },
+      audio: {
+        backend: createMemoryAudioBackend({ id: `outpost.${options.profileId}.audio` }),
+        config: OUTPOST_AUDIO_CONFIG,
+        disposeBackend: true
       },
       input: { router: inputRouter },
       multiplayer: { runtime: multiplayer },
@@ -172,7 +187,7 @@ export function createOutpostNonVisualProfile(
           profilerBudgetMs: 8
         },
         dataSources({ context: activeContext }) {
-          return [
+          const sources: DevToolsDataSource[] = [
             {
               id: `outpost.${options.profileId}.runtime`,
               label: `Outpost ${profileDefinition.runtime} Runtime`,
@@ -187,10 +202,94 @@ export function createOutpostNonVisualProfile(
               }
             }
           ];
+          sources.push(
+            authoritySource(activeContext, "combat"),
+            authoritySource(activeContext, "gas"),
+            authoritySource(activeContext, "tca"),
+            authoritySource(activeContext, "navigation"),
+            authoritySource(activeContext, "ai"),
+            {
+              id: "outpost.authority-correlation",
+              label: "Outpost Authority Correlation",
+              kind: "custom",
+              snapshot() {
+                return authorityCorrelationSnapshot(activeContext.authority);
+              }
+            }
+          );
+          return sources;
         }
       }
     }
   });
+}
+
+function authoritySource(
+  context: OutpostNonVisualContext,
+  kind: "combat" | "gas" | "tca" | "navigation" | "ai"
+): DevToolsDataSource {
+  return {
+    id: `outpost.authority-${kind}`,
+    label: `Outpost Authority ${kind.toUpperCase()}`,
+    kind,
+    snapshot() {
+      const authority = context.authority;
+      if (!authority) {
+        return { status: "not-authority-runtime" };
+      }
+      switch (kind) {
+        case "combat":
+          return {
+            runtime: authority.combatCore.snapshot(),
+            traces: authority.combatTrace.list().slice(-80)
+          };
+        case "gas":
+          return {
+            runtime: authority.gas.snapshot(),
+            traces: authority.gasTrace.list().slice(-80)
+          };
+        case "tca":
+          return {
+            runtime: { bound: authority.tca.isBound() },
+            traces: authority.tcaTrace.list().slice(-80)
+          };
+        case "navigation":
+          return {
+            runtime: authority.navigation.snapshot(),
+            blockers: authority.snapshot().navigationBlockers,
+            traces: authority.navigation.traces().slice(-80)
+          };
+        case "ai":
+          return {
+            runtime: authority.ai.snapshot(),
+            traces: authority.ai.traces().slice(-80)
+          };
+      }
+    }
+  };
+}
+
+function authorityCorrelationSnapshot(authority: OutpostAuthorityGameplayRuntime | undefined) {
+  if (!authority) {
+    return { status: "not-authority-runtime", correlations: [] };
+  }
+  const correlations = new Map<string, { combat: number; gas: number; tca: number }>();
+  const retain = (kind: "combat" | "gas" | "tca", correlationId: string | undefined) => {
+    if (!correlationId) {
+      return;
+    }
+    const current = correlations.get(correlationId) ?? { combat: 0, gas: 0, tca: 0 };
+    current[kind] += 1;
+    correlations.set(correlationId, current);
+  };
+  for (const trace of authority.combatTrace.list()) retain("combat", trace.correlationId);
+  for (const trace of authority.gasTrace.list()) retain("gas", trace.correlationId);
+  for (const trace of authority.tcaTrace.list()) retain("tca", trace.correlationId);
+  return {
+    correlations: [...correlations.entries()]
+      .map(([correlationId, counts]) => ({ correlationId, ...counts }))
+      .slice(-120)
+  };
 }
 
 function requireState<T>(value: T | undefined, name: string): T {

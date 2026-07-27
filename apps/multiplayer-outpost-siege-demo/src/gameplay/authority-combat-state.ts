@@ -1,4 +1,5 @@
 import type { DataRegistry } from "@gamekit/data";
+import type { CombatHandle, CombatTraceStore } from "@gamekit/combat";
 import type { EventBus } from "@gamekit/event-bus";
 import type { GasHandle, GasOperationContext } from "@gamekit/gas";
 import {
@@ -36,9 +37,18 @@ export type CreateOutpostAuthorityCombatOptions = {
   physics: PhysicsHandle;
   physicsTrace: PhysicsTraceStore;
   gas: GasHandle;
+  combat: CombatHandle;
+  combatTrace: CombatTraceStore;
   eventBus: EventBus;
   players(): ReadonlyMap<string, OutpostAuthorityCombatPlayer>;
   commands(): readonly OutpostAuthorityCombatCommand[];
+  aiState?(actorId: string):
+    | {
+        targetActorId?: string | undefined;
+        goalId?: string | undefined;
+        taskPhase?: string | undefined;
+      }
+    | undefined;
   initialEnemies?: readonly OutpostAuthorityEnemySpawn[] | undefined;
 };
 
@@ -75,8 +85,8 @@ export type CombatState = {
     string,
     { actorId: string; correlationId?: string | undefined; parentId?: string | undefined }
   >;
+  rememberCombatAim(actorId: string, point: PhysicsVector): void;
   initialWaveSpawned: boolean;
-  nextProjectileId: number;
   nextTurretId: number;
   acceptedCommands: number;
   rejectedCommands: number;
@@ -96,8 +106,8 @@ export function createCombatState(options: CreateOutpostAuthorityCombatOptions):
     dashesByPlayerId: new Map(),
     knockbacksByObjectId: new Map(),
     pendingDeaths: new Map(),
+    rememberCombatAim() {},
     initialWaveSpawned: false,
-    nextProjectileId: 1,
     nextTurretId: 1,
     acceptedCommands: 0,
     rejectedCommands: 0,
@@ -178,72 +188,6 @@ export function materializeActorObject(
     }
     throw error;
   }
-}
-
-export function materializeProjectile(
-  state: CombatState,
-  input: {
-    id: string;
-    bodyDefinitionId: string;
-    renderKey: string;
-    origin: PhysicsVector;
-    direction: PhysicsVector;
-    speed: number;
-    damage: number;
-    lifetimeMs: number;
-    sourceActorId: string;
-    sourceBodyId: string;
-    command: OutpostAuthorityCombatCommand;
-  }
-): CombatObject {
-  const bodyData = state.options.dataRegistry.getValue<PhysicsBodyData>(
-    "physics.body",
-    input.bodyDefinitionId
-  );
-  const colliderData = firstCollider(state.options.dataRegistry, bodyData);
-  const entityId = state.options.world.spawn();
-  const bodyId = `${input.id}.body`;
-  const colliderId = `${input.id}.collider`;
-  const object: CombatObject = {
-    id: input.id,
-    kind: "projectile",
-    definitionId: input.bodyDefinitionId,
-    renderKey: input.renderKey,
-    entityId,
-    bodyId,
-    colliderId,
-    sourceActorId: input.sourceActorId,
-    sourceBodyId: input.sourceBodyId,
-    damage: input.damage,
-    remainingMs: input.lifetimeMs,
-    previousPosition: { ...input.origin },
-    correlationId: input.command.correlationId,
-    parentId: input.command.parentId ?? input.command.id
-  };
-  state.options.world.add(entityId, OutpostGameplayObject, { id: input.id, kind: "projectile" });
-  state.options.world.add(entityId, PhysicsTransformComponent, { position: input.origin });
-  state.options.world.add(entityId, PhysicsVelocityComponent, {
-    linear: { x: input.direction.x * input.speed, y: input.direction.y * input.speed }
-  });
-  state.options.world.add(entityId, PhysicsBodyComponent, {
-    definition: toBodyDefinition(bodyData, bodyId),
-    syncVelocityFromWorld: true
-  });
-  state.options.world.add(entityId, PhysicsColliderComponent, {
-    definition: {
-      ...toColliderDefinition(colliderData, colliderId),
-      userData: { sourceActorId: input.sourceActorId, sourceBodyId: input.sourceBodyId }
-    }
-  });
-  state.options.identity.register({
-    gameplayObjectId: input.id,
-    entityId,
-    physicsBodyId: bodyId,
-    physicsColliderIds: [colliderId],
-    network: { entityId: input.id, generation: 0 }
-  });
-  registerCombatObject(state, object);
-  return object;
 }
 
 export function removeCombatObject(
@@ -473,6 +417,13 @@ function pushActorSnapshot(
   const velocity = state.options.world.get(actor.entityId, PhysicsVelocityComponent);
   const gameplay = state.options.world.get(actor.entityId, OutpostGameplayObject);
   const identity = state.options.identity.byGameplayObjectId(actor.id);
+  const execution = state.options.gas
+    .listAbilityExecutions({ actorId: actor.actorId })
+    .filter((candidate) => candidate.phase !== "completed" && candidate.phase !== "cancelled")
+    .sort(
+      (left, right) => right.requestedAt - left.requestedAt || right.id.localeCompare(left.id)
+    )[0];
+  const ai = state.options.aiState?.(actor.actorId);
   target.push({
     ...actor,
     networkEntityId: identity?.network?.entityId ?? actor.id,
@@ -487,7 +438,23 @@ function pushActorSnapshot(
     stamina: gas.attributes.current.stamina ?? 0,
     resource: gas.attributes.current["shared-resource"] ?? 0,
     tags: [...gas.tags.values].sort(),
-    cooldowns: { ...gas.abilities.cooldowns }
+    cooldowns: { ...gas.abilities.cooldowns },
+    ...((execution?.targetActorId ?? ai?.targetActorId) === undefined
+      ? {}
+      : { targetActorId: execution?.targetActorId ?? ai?.targetActorId }),
+    ...(ai?.goalId === undefined ? {} : { aiGoalId: ai.goalId }),
+    ...(ai?.taskPhase === undefined ? {} : { aiTaskPhase: ai.taskPhase }),
+    ...(execution === undefined
+      ? {}
+      : {
+          abilityExecutionId: execution.id,
+          abilityId: execution.abilityId,
+          abilityPhase: execution.phase,
+          abilityPhaseStartedAt: execution.phaseStartedAt,
+          ...(execution.phaseEndsAt === undefined
+            ? {}
+            : { abilityPhaseEndsAt: execution.phaseEndsAt })
+        })
   });
 }
 
@@ -495,7 +462,9 @@ function captureProjectileSnapshots(
   state: CombatState
 ): OutpostAuthorityCombatProjectileSnapshot[] {
   const projectiles: OutpostAuthorityCombatProjectileSnapshot[] = [];
-  for (const projectile of combatObjects(state, "projectile")) {
+  for (const projectile of state.options.combat.isBound()
+    ? state.options.combat.listProjectiles()
+    : []) {
     if (!state.options.world.has(projectile.entityId)) {
       continue;
     }
@@ -503,12 +472,11 @@ function captureProjectileSnapshots(
     const velocity = state.options.world.get(projectile.entityId, PhysicsVelocityComponent);
     const velocityX = velocity?.linear.x ?? 0;
     const velocityY = velocity?.linear.y ?? 0;
-    const identity = state.options.identity.byGameplayObjectId(projectile.id);
     projectiles.push({
-      id: projectile.id,
-      renderKey: projectile.renderKey,
-      networkEntityId: identity?.network?.entityId ?? projectile.id,
-      generation: identity?.network?.generation ?? 0,
+      id: projectile.projectileId,
+      renderKey: "render.outpost.projectile",
+      networkEntityId: projectile.projectileId,
+      generation: 0,
       entityId: projectile.entityId,
       x: transform.position.x,
       y: transform.position.y,

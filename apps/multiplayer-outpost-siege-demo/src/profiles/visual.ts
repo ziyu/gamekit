@@ -1,8 +1,9 @@
 import { createStandardAppProfile, type AppProfile } from "@gamekit/app-host";
 import type { AssetDiagnosticEvent, AssetManager } from "@gamekit/asset";
+import type { GameAudio } from "@gamekit/audio-core";
 import { createCameraController, type CameraController } from "@gamekit/camera-core";
 import type { DataRegistry } from "@gamekit/data";
-import type { DevToolsRuntime } from "@gamekit/devtools";
+import type { DevToolsDataSource, DevToolsRuntime } from "@gamekit/devtools";
 import { createPhaserDriver } from "@gamekit/driver-phaser";
 import { createInputRouter, type InputRouter } from "@gamekit/input-core";
 import { createDomInputAdapter } from "@gamekit/input-dom";
@@ -30,6 +31,7 @@ import {
   type OutpostPreviewRuntime
 } from "../gameplay";
 import { outpostProfileDefinition, type OutpostProfileId } from "./definitions";
+import { OUTPOST_AUDIO_CONFIG } from "../presentation";
 
 const PHASER_DRIVER_ID = "outpost.phaser";
 
@@ -48,6 +50,7 @@ export type OutpostVisualContext = {
   platform?: PlatformRuntime | undefined;
   dataRegistry?: DataRegistry | undefined;
   assets?: AssetManager | undefined;
+  audio?: GameAudio | undefined;
   renderer?: RendererAdapter | undefined;
   inputRouter?: InputRouter | undefined;
   camera?: CameraController | undefined;
@@ -122,6 +125,7 @@ export function createOutpostVisualProfile(
       exposed.platform = state.platform;
       exposed.dataRegistry = state.data;
       exposed.assets = state.assets;
+      exposed.audio = state.audio;
       exposed.renderer = state.renderer;
       exposed.inputRouter = state.input;
       exposed.camera = camera;
@@ -152,6 +156,10 @@ export function createOutpostVisualProfile(
         onDiagnostic(event) {
           contextAssetDiagnostic(context, event);
         }
+      },
+      audio: {
+        driver: PHASER_DRIVER_ID,
+        config: OUTPOST_AUDIO_CONFIG
       },
       input: {
         router: inputRouter,
@@ -203,6 +211,8 @@ export function createOutpostVisualProfile(
               snapshotSource: options.client.snapshotSource,
               renderer: requireState(state.renderer, "renderer"),
               applyRenderTargetState: applyPhaserRenderTargetState,
+              animationAdapter: phaserDriver.adapters().animation,
+              audio: requireState(state.audio, "audio"),
               camera,
               cameraAdapter: phaserDriver.adapters().camera
             });
@@ -242,7 +252,7 @@ export function createOutpostVisualProfile(
         },
         ui: { pins: false },
         dataSources({ context: activeContext }) {
-          return [
+          const sources: DevToolsDataSource[] = [
             {
               id: activeContext.client ? "outpost.client-shadow" : "outpost.preview",
               label: activeContext.client ? "Outpost Authority Shadow" : "Outpost Local Preview",
@@ -287,6 +297,58 @@ export function createOutpostVisualProfile(
               }
             }
           ];
+          sources.push(
+            {
+              id: "outpost.client-animator",
+              label: "Outpost Client Animator",
+              kind: "animator",
+              snapshot() {
+                const animator = activeContext.client?.animator;
+                return animator?.isBound()
+                  ? { runtime: animator.snapshot(), traces: animator.traces().slice(-120) }
+                  : { status: "not-client-runtime" };
+              }
+            },
+            {
+              id: "outpost.replicated-combat",
+              label: "Outpost Replicated Combat",
+              kind: "combat",
+              snapshot() {
+                const match = activeContext.client?.view();
+                return match
+                  ? {
+                      tick: match.tick,
+                      elapsedMs: match.elapsedMs,
+                      combat: match.combat
+                    }
+                  : { status: "awaiting-authority" };
+              }
+            },
+            {
+              id: "outpost.replicated-ai",
+              label: "Outpost Replicated AI Semantics",
+              kind: "ai",
+              snapshot() {
+                const match = activeContext.client?.view();
+                return {
+                  serverOnlyDetailsReplicated: false,
+                  actors:
+                    match?.combat.actors
+                      .filter((actor) => actor.kind === "enemy")
+                      .map((actor) => ({
+                        objectId: actor.objectId,
+                        targetActorId: actor.targetActorId,
+                        goalId: actor.aiGoalId,
+                        taskPhase: actor.aiTaskPhase,
+                        executionId: actor.abilityExecutionId,
+                        abilityId: actor.abilityId,
+                        abilityPhase: actor.abilityPhase
+                      })) ?? []
+                };
+              }
+            }
+          );
+          return sources;
         },
         panels() {
           return [
@@ -295,7 +357,7 @@ export function createOutpostVisualProfile(
               label: "Outpost Session",
               area: "dock",
               order: 7,
-              sourceKinds: ["world", "camera", "physics"]
+              sourceKinds: ["world", "camera", "physics", "combat", "ai", "animator", "audio"]
             }
           ];
         }

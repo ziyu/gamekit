@@ -63,6 +63,7 @@ export function createOutpostEnemyDataType(): DataTypeDefinition<OutpostEnemyDef
       return [
         dataRef(document.data.actor, "actor"),
         dataRef(document.data.attackAbility, "attackAbility"),
+        dataRef(document.data.aiAgent, "aiAgent"),
         dataRef(document.data.physicsBody, "physicsBody"),
         dataRef(document.data.renderObject, "renderObject")
       ];

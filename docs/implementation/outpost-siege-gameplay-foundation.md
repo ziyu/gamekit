@@ -2,6 +2,10 @@
 
 Status: Active.
 
+统一 app 集成的当前执行记录见
+[`outpost-siege-foundation-integration.md`](./outpost-siege-foundation-integration.md)。本文保留底层库建设与
+review checkpoint；新的 Combat/AI/Navigation/Animator/Asset/Audio 装配、迁移和验证证据只写入该执行记录。
+
 ## Goal
 
 把 Outpost Siege 从“authority combat slice 已接线”推进为完整、坚实、可复用基础之上的可玩游戏。所有缺失的通用能力优先进入对应 Core/新 package，Outpost 只保留游戏内容、policy、encounter 和 presentation mapping。

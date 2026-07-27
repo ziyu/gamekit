@@ -42,12 +42,28 @@ describe("Outpost app-owned Colyseus state", () => {
           }
         ],
         combat: {
-          actors: [{ objectId: "enemy.opening.1", health: 45 }],
+          actors: [
+            {
+              objectId: "enemy.opening.1",
+              health: 45,
+              targetActorId: "player.ranger-1",
+              aiGoalId: "ai.outpost.goal.assault",
+              aiTaskPhase: "telegraph",
+              abilityExecutionId: "enemy.opening.1:attack:1",
+              abilityId: "ability.outpost.enemy_attack",
+              abilityPhase: "preparing",
+              abilityPhaseStartedAt: 300,
+              abilityPhaseEndsAt: 700
+            }
+          ],
           projectiles: [{ objectId: "projectile.1", velocityX: 760 }]
         }
       }
     });
     expect(update?.stateBytes).toBeGreaterThan(0);
+    expect(JSON.stringify(update?.state)).not.toContain("blackboard");
+    expect(JSON.stringify(update?.state)).not.toContain("utilityScore");
+    expect(JSON.stringify(update?.state)).not.toContain("routePoints");
 
     snapshot.tick = 8;
     snapshot.participants = [];
@@ -120,7 +136,15 @@ function createMatchSnapshot(): OutpostMatchAuthoritySnapshot {
           stamina: 0,
           resource: 0,
           tags: ["team.enemies"],
-          cooldowns: { "ability.outpost.enemy_attack": 900 }
+          cooldowns: { "ability.outpost.enemy_attack": 900 },
+          targetActorId: "player.ranger-1",
+          aiGoalId: "ai.outpost.goal.assault",
+          aiTaskPhase: "telegraph",
+          abilityExecutionId: "enemy.opening.1:attack:1",
+          abilityId: "ability.outpost.enemy_attack",
+          abilityPhase: "preparing",
+          abilityPhaseStartedAt: 300,
+          abilityPhaseEndsAt: 700
         }
       ],
       projectiles: [

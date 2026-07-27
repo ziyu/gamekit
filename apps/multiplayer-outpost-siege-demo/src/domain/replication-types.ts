@@ -16,6 +16,14 @@ export type OutpostReplicatedActor = {
   resource: number;
   tags: string[];
   cooldowns: Record<string, number>;
+  targetActorId?: string | undefined;
+  aiGoalId?: string | undefined;
+  aiTaskPhase?: string | undefined;
+  abilityExecutionId?: string | undefined;
+  abilityId?: string | undefined;
+  abilityPhase?: string | undefined;
+  abilityPhaseStartedAt?: number | undefined;
+  abilityPhaseEndsAt?: number | undefined;
 };
 
 export type OutpostReplicatedProjectile = {

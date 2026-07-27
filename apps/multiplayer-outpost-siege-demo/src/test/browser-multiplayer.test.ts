@@ -1,3 +1,6 @@
+import { createMemoryAnimationPlaybackAdapter } from "@gamekit/animator-core/testing";
+import { createGameAudio } from "@gamekit/audio-core";
+import { createMemoryAudioBackend } from "@gamekit/audio-core/testing";
 import { createMultiplayerRuntime, type MultiplayerRuntime } from "@gamekit/multiplayer-core";
 import { createMemoryMultiplayerBackend } from "@gamekit/multiplayer-memory";
 import { createMemoryPhysicsBackend } from "@gamekit/physics-core";
@@ -7,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { createOutpostDataRegistry } from "../content";
 import { createOutpostClientShadowRuntime, type OutpostClientAuthoritySnapshot } from "../gameplay";
+import { OUTPOST_AUDIO_CONFIG } from "../presentation";
 import {
   loadOutpostBrowserServerConfig,
   normalizeOutpostDisplayName,
@@ -86,6 +90,9 @@ describe("Outpost Browser multiplayer", () => {
     });
     const world = createKootaWorld();
     const renderer = createMemoryRenderer("outpost.client-combat.renderer");
+    const animationAdapter = createMemoryAnimationPlaybackAdapter();
+    const audioBackend = createMemoryAudioBackend({ unlocked: true });
+    const audio = createGameAudio({ ...OUTPOST_AUDIO_CONFIG, backend: audioBackend });
     const targetStates = new Map<string, Record<string, unknown>>();
     const client = createOutpostClientShadowRuntime({
       dataRegistry: createOutpostDataRegistry(),
@@ -94,6 +101,8 @@ describe("Outpost Browser multiplayer", () => {
       physicsBackend: createMemoryPhysicsBackend(),
       localPlayerId: "player.ranger-1",
       renderer,
+      animationAdapter,
+      audio,
       applyRenderTargetState(native, state) {
         const object = native as { id: string };
         targetStates.set(object.id, state.props ?? {});
@@ -102,6 +111,17 @@ describe("Outpost Browser multiplayer", () => {
     await client.runtime.start();
     const snapshot = authoritySnapshot(1, 1);
     snapshot.combat.actors = [combatActor("enemy.opening.1", "enemy", "render.outpost.raider")];
+    snapshot.combat.actors[0] = {
+      ...snapshot.combat.actors[0]!,
+      targetActorId: "player.ranger-1",
+      aiGoalId: "ai.outpost.goal.assault",
+      aiTaskPhase: "telegraph",
+      abilityExecutionId: "enemy.opening.1:attack:1",
+      abilityId: "ability.outpost.enemy_attack",
+      abilityPhase: "preparing",
+      abilityPhaseStartedAt: 0,
+      abilityPhaseEndsAt: 400
+    };
     snapshot.combat.projectiles = [combatProjectile("projectile.1")];
     await sendSnapshot(server, snapshot);
     client.runtime.tick(16);
@@ -115,6 +135,26 @@ describe("Outpost Browser multiplayer", () => {
         "outpost.client.projectile.projectile.1.0"
       ])
     );
+    expect(client.animator.listControllers()).toHaveLength(2);
+    const enemyAnimatorControllerId = "outpost.animator.outpost.client.enemy.enemy.opening.1.0";
+    expect(client.animator.traces().map((trace) => trace.label)).toContain("animator.phase_synced");
+    expect({
+      runtime: client.animator.snapshot(),
+      controller: client.animator.getController(enemyAnimatorControllerId),
+      traces: client.animator.traces(),
+      frame: animationAdapter.frame(enemyAnimatorControllerId)?.layers[0]
+    }).toMatchObject({
+      runtime: { activeGameplayPhases: 1 },
+      frame: { kind: "gameplay-phase", clipId: "animation.outpost.raider.attack" }
+    });
+    expect(targetStates.get("outpost.client.enemy.enemy.opening.1.0")).toMatchObject({
+      tint: 0xffa94d
+    });
+    expect(audio.sfx.snapshot().active).toBe(1);
+    const playbackStarts = audioBackend.commands().filter((command) => command.type === "start");
+    expect(playbackStarts).toHaveLength(2);
+    client.runtime.tick(450);
+    expect(audioBackend.commands().filter((command) => command.type === "start")).toHaveLength(2);
 
     snapshot.tick = 2;
     snapshot.elapsedMs = 100;
@@ -130,6 +170,7 @@ describe("Outpost Browser multiplayer", () => {
     });
 
     await client.runtime.dispose();
+    audio.dispose();
     await multiplayer.dispose();
     await server.dispose();
     expect(world.count()).toBe(0);

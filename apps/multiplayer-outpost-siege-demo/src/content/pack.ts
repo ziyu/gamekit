@@ -15,6 +15,11 @@ import type { TcaRule } from "@gamekit/tca";
 import { outpostRuntimeImageAssets, type OutpostRuntimeImageAsset } from "./runtime-image-assets";
 import { OUTPOST_ARENA_SOLID_COLLIDER_ID, outpostArenaDefinition } from "./arena-scene";
 import {
+  outpostFoundationDataEntries,
+  outpostGeneratedAudioAssets,
+  outpostSpriteAnimations
+} from "./foundation-definitions";
+import {
   OUTPOST_ARENA_STATIC_BODY_ID,
   outpostArenaPhysicsLayout,
   outpostArenaPhysicsScene
@@ -38,7 +43,10 @@ import {
   type OutpostWeaponDefinition
 } from "../domain";
 
-const assets: AssetDefinition[] = outpostRuntimeImageAssets.map(imageAsset);
+const assets: AssetDefinition[] = [
+  ...outpostRuntimeImageAssets.map(imageAsset),
+  ...outpostGeneratedAudioAssets
+];
 
 const attributes: GasAttributeDefinition[] = [
   { id: "health", min: 0, max: 1000, defaultValue: 100 },
@@ -59,13 +67,26 @@ const effects: GasEffectDefinition[] = [
   {
     id: "effect.outpost.combat_recovery",
     attributeModifiers: [{ attribute: "health", operation: "add", value: 4 }]
+  },
+  {
+    id: "effect.outpost.combat_hit",
+    cues: ["cue.outpost.combat.hit"]
   }
 ];
 
 const abilities: GasAbilityDefinition[] = [
   {
     id: "ability.outpost.rifle_fire",
-    cooldownMs: 120
+    cooldownMs: 120,
+    execution: {
+      preparingMs: 35,
+      activeMs: 45,
+      recoveringMs: 40,
+      phaseCues: {
+        preparing: ["cue.outpost.rifle.telegraph"],
+        committed: ["cue.outpost.rifle.commit"]
+      }
+    }
   },
   {
     id: "ability.outpost.dash",
@@ -74,7 +95,16 @@ const abilities: GasAbilityDefinition[] = [
   },
   {
     id: "ability.outpost.shock_field",
-    cooldownMs: 6000
+    cooldownMs: 6000,
+    execution: {
+      preparingMs: 260,
+      activeMs: 160,
+      recoveringMs: 260,
+      phaseCues: {
+        preparing: ["cue.outpost.shock.telegraph"],
+        committed: ["cue.outpost.shock.commit"]
+      }
+    }
   },
   {
     id: "ability.outpost.deploy_turret",
@@ -83,8 +113,27 @@ const abilities: GasAbilityDefinition[] = [
   },
   {
     id: "ability.outpost.enemy_attack",
-    cooldownMs: 900
+    cooldownMs: 900,
+    execution: {
+      preparingMs: 450,
+      activeMs: 120,
+      recoveringMs: 330,
+      phaseCues: {
+        preparing: ["cue.outpost.enemy.telegraph"],
+        committed: ["cue.outpost.enemy.commit"]
+      }
+    }
   }
+];
+
+const cues = [
+  cue("cue.outpost.combat.hit", "outpost.combat.hit"),
+  cue("cue.outpost.rifle.telegraph", "outpost.rifle.telegraph"),
+  cue("cue.outpost.rifle.commit", "outpost.rifle.commit"),
+  cue("cue.outpost.shock.telegraph", "outpost.shock.telegraph"),
+  cue("cue.outpost.shock.commit", "outpost.shock.commit"),
+  cue("cue.outpost.enemy.telegraph", "outpost.enemy.telegraph"),
+  cue("cue.outpost.enemy.commit", "outpost.enemy.commit")
 ];
 
 const actors: GasActorDefinition[] = [
@@ -215,6 +264,7 @@ const enemies: OutpostEnemyDefinition[] = [
     attackAbility: ref("gas.ability", "ability.outpost.enemy_attack"),
     physicsBody: ref("physics.body", "body.outpost.raider"),
     renderObject: ref(OUTPOST_RENDER_OBJECT_TYPE, "render.outpost.raider"),
+    aiAgent: ref("ai.agent", "ai.outpost.agent.raider"),
     moveSpeed: 105,
     attackRange: 38,
     attackDamage: 8
@@ -226,6 +276,7 @@ const enemies: OutpostEnemyDefinition[] = [
     attackAbility: ref("gas.ability", "ability.outpost.enemy_attack"),
     physicsBody: ref("physics.body", "body.outpost.overseer"),
     renderObject: ref(OUTPOST_RENDER_OBJECT_TYPE, "render.outpost.overseer"),
+    aiAgent: ref("ai.agent", "ai.outpost.agent.overseer"),
     moveSpeed: 72,
     attackRange: 58,
     attackDamage: 18
@@ -334,6 +385,7 @@ export const outpostContentPack: DataPack = {
     ...entries("asset.definition", assets),
     ...entries("gas.attribute", attributes),
     ...entries("gas.effect", effects),
+    ...entries("gas.cue", cues),
     ...entries("gas.ability", abilities),
     ...entries("gas.actor", actors),
     ...entries("physics.material", materials),
@@ -349,7 +401,8 @@ export const outpostContentPack: DataPack = {
     ...entries(OUTPOST_BUILDABLE_TYPE, buildables),
     ...entries(OUTPOST_OBJECTIVE_TYPE, objectives),
     ...entries(OUTPOST_WAVE_TYPE, waves),
-    ...entries("tca.rule", rules)
+    ...entries("tca.rule", rules),
+    ...outpostFoundationDataEntries
   ]
 };
 
@@ -366,13 +419,20 @@ function ref<TType extends string>(type: TType, id: string): DataRef<TType> {
 }
 
 function imageAsset(asset: OutpostRuntimeImageAsset): AssetDefinition {
+  const animations = outpostSpriteAnimations(asset.id);
   return {
     id: asset.id,
-    type: "image",
+    type: animations.length === 0 ? "image" : "spritesheet",
     source: { type: "url", url: asset.runtimeUrl },
     group: asset.group,
     preload: asset.preload,
     lazy: asset.lazy ?? false,
+    ...(animations.length === 0
+      ? {}
+      : {
+          frame: { width: asset.width, height: asset.height },
+          animations
+        }),
     tags: ["outpost", asset.group],
     metadata: {
       authoringSource: asset.authoringSource,
@@ -381,6 +441,10 @@ function imageAsset(asset: OutpostRuntimeImageAsset): AssetDefinition {
       height: asset.height
     }
   };
+}
+
+function cue(id: string, type: string) {
+  return { id, type, tags: ["outpost", "presentation"] };
 }
 
 function circleCollider(

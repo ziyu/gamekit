@@ -20,17 +20,18 @@ export const outpostAppDefinition = defineGameApp({
     { id: "data" },
     { id: "renderer", dependencies: ["drivers"] },
     { id: "assets", dependencies: ["data", "drivers", "renderer"] },
+    { id: "audio", dependencies: ["assets", "drivers"] },
     { id: "input", dependencies: ["renderer"] },
     { id: "multiplayer", dependencies: ["platform"] },
     { id: "ui", dependencies: ["input"] },
     {
       id: "game",
-      dependencies: ["data", "assets", "renderer", "input", "multiplayer", "ui"]
+      dependencies: ["data", "assets", "audio", "renderer", "input", "multiplayer", "ui"]
     },
     { id: "save", dependencies: ["data", "game"] },
     {
       id: "devtools",
-      dependencies: ["data", "assets", "renderer", "input", "multiplayer", "game", "save"]
+      dependencies: ["data", "assets", "audio", "renderer", "input", "multiplayer", "game", "save"]
     }
   ]
 });

@@ -78,7 +78,7 @@ describe("Outpost authority combat", () => {
       authority.snapshot().combat.actors.some((actor) => actor.id === "enemy.test.raider")
     ).toBe(false);
     expect(
-      authority.physicsTrace.list().some((trace) => trace.correlationId === "outpost.test.rifle.4")
+      authority.combatTrace.list().some((trace) => trace.correlationId === "outpost.test.rifle.4")
     ).toBe(true);
     expect(
       authority.gasTrace.list().some((trace) => trace.correlationId === "outpost.test.rifle.4")
@@ -109,7 +109,7 @@ describe("Outpost authority combat", () => {
       ]
     });
     authority.runtime.start();
-    tickUntil(authority, () => authority.snapshot().combat.enemyAttacks > 0, 10);
+    tickUntil(authority, () => authority.snapshot().combat.enemyAttacks > 0, 120);
 
     pendingCommands.push(
       command("invalid-placement", player.playerId, "deploy-turret", 2_000, 300)
@@ -129,6 +129,16 @@ describe("Outpost authority combat", () => {
 
     pendingCommands.push(command("shock", player.playerId, "shock-field", 340, 300));
     tick(authority, 1);
+    expect(
+      authority.gas
+        .listAbilityExecutions({ actorId: player.playerId })
+        .some((execution) => execution.phase === "preparing")
+    ).toBe(true);
+    tickUntil(
+      authority,
+      () => combatActor(authority, "enemy.test.attacker").tags.includes("status.shocked"),
+      30
+    );
     expect(combatActor(authority, "enemy.test.attacker").tags).toContain("status.shocked");
 
     pendingCommands.push(command("dash-1", player.playerId, "dash", 500, 300));
@@ -191,7 +201,7 @@ describe("Outpost authority combat", () => {
       velocityY: 0
     });
 
-    tickUntil(authority, () => authority.snapshot().combat.enemyAttacks > 0, 5);
+    tickUntil(authority, () => authority.snapshot().combat.enemyAttacks > 0, 120);
     expect(authority.snapshot().combat.enemyAttacks).toBeGreaterThan(0);
 
     authority.runtime.dispose();
@@ -229,6 +239,16 @@ describe("Outpost authority combat", () => {
 
     pendingCommands.push(command("boss-shock", player.playerId, "shock-field", 430, 300));
     tick(authority, 1);
+    expect(
+      authority.gas
+        .listAbilityExecutions({ actorId: player.playerId })
+        .some((execution) => execution.phase === "preparing")
+    ).toBe(true);
+    tickUntil(
+      authority,
+      () => combatActor(authority, "enemy.test.overseer").tags.includes("status.shocked"),
+      30
+    );
     expect(combatActor(authority, "enemy.test.overseer").tags).toContain("status.shocked");
     tick(authority, 61);
     expect(combatActor(authority, "enemy.test.overseer").health).toBeLessThan(600);
@@ -254,6 +274,75 @@ describe("Outpost authority combat", () => {
     expect(
       authority.tcaTrace.list().some((trace) => trace.correlationId === "outpost.test.boss-phase")
     ).toBe(true);
+
+    authority.runtime.dispose();
+    expect(world.count()).toBe(0);
+  });
+
+  it("derives arena barricade blockers and makes dependent routes explicitly stale", () => {
+    const world = createKootaWorld();
+    const authority = createOutpostAuthorityGameplayRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world,
+      physicsBackend,
+      eventBus: createEventBus(),
+      players: () => [],
+      initialEnemies: []
+    });
+    authority.runtime.start();
+    tick(authority, 1);
+
+    expect(authority.snapshot().navigationBlockers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "navigation.blocker.outpost.north-west",
+          edgeId: "edge.outpost.north-west-inner",
+          blocked: true,
+          objectIds: ["barricade.north-west.horizontal", "barricade.north-west.vertical"]
+        })
+      ])
+    );
+    expect(authority.navigation.revision()).toBe(4);
+
+    expect(
+      authority.setNavigationArenaObjectBlocked("barricade.north-west.horizontal", false)
+    ).toBe(true);
+    expect(authority.setNavigationArenaObjectBlocked("barricade.north-west.vertical", false)).toBe(
+      true
+    );
+    tick(authority, 1);
+    const requestId = authority.navigation.requestPath({
+      id: "outpost.test.barricade-route",
+      requesterId: "outpost.test.navigation",
+      profileId: "navigation.outpost.raider",
+      start: { x: 740, y: 350 },
+      goal: { x: 740, y: 500 },
+      routeKind: "path"
+    });
+    tick(authority, 1);
+    const result = authority.navigation.poll(requestId);
+    expect(result.status).toBe("complete");
+    if (result.status !== "complete") {
+      throw new Error(`Expected a complete Outpost navigation route, received ${result.status}`);
+    }
+    expect(
+      authority.navigation.sampleRoute(result.route.routeId, { x: 740, y: 350 })
+    ).toMatchObject({ status: "valid" });
+
+    authority.setNavigationArenaObjectBlocked("barricade.north-west.horizontal", true);
+    tick(authority, 1);
+    expect(authority.navigation.sampleRoute(result.route.routeId, { x: 740, y: 350 }).status).toBe(
+      "stale"
+    );
+    expect(authority.navigation.traces()).toContainEqual(
+      expect.objectContaining({
+        label: "navigation.obstacle_changed",
+        payload: expect.objectContaining({
+          obstacleId: "navigation.blocker.outpost.north-west",
+          staleRoutes: 1
+        })
+      })
+    );
 
     authority.runtime.dispose();
     expect(world.count()).toBe(0);
@@ -290,6 +379,10 @@ function tickUntil(
     throw new Error(
       JSON.stringify({
         combat: authority.snapshot().combat,
+        ai: authority.snapshot().ai,
+        aiAgents: authority.ai.isBound() ? authority.ai.listAgents() : [],
+        aiTraces: authority.ai.isBound() ? authority.ai.traces().slice(-24) : [],
+        navigation: authority.navigation.isBound() ? authority.navigation.snapshot() : undefined,
         physics: authority.physics.snapshot(),
         traces: authority.physicsTrace.list().filter((trace) => trace.kind === "query")
       })

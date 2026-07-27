@@ -126,6 +126,11 @@ Input / AI intent
   -> GAS cue / replicated presentation fact
 ```
 
+Intent 与结果使用同一条权威边界。玩家输入和 AI action 都先转换为稳定的 semantic action，随后由
+GAS 返回 execution/rejection，由 Combat 返回 delivery/hit/rejection；AI task 只能消费这些结果决定
+recover、backoff 或重新规划，不能为 AI 建立更宽松的命中、冷却或伤害规则。客户端表现也只消费相同
+execution、cue 与 Combat 空间事实，不能从动画 marker 或本地 overlap 反推 authority result。
+
 框架职责固定如下：
 
 - World 保存实体热状态、movement intent、projectile、lifetime、team、spawn identity 和 authority-owned combat bindings。
@@ -137,8 +142,12 @@ Input / AI intent
 
 所有具体武器、模块、设施和敌人都通过相同的通用 app-local 机制实例化：
 
-- 主动行为通过 GAS 校验 cost、cooldown、tag 和 target，由 app gameplay module 创建 projectile、query 或 action。
-- 命中先由 Physics 产生候选，再由玩法层校验阵营、owner、target 和当前 match state，最后应用 GAS effect。
+- 主动行为通过 GAS 校验 cost、cooldown、tag 和 target；committed execution 由 Combat
+  ability-delivery binding 解析 projectile、area、melee 或其他 executor，Outpost gameplay
+  module 只提供 aim/origin、relationship 和数值 policy。
+- 命中先由 Physics 产生空间候选，再由 Combat 校验 relationship、owner、target、hit ticket
+  与 delivery policy，最后交付 GAS effect；Outpost 消费稳定 hit result 计算护盾、伤害、击退和
+  match result，不维护第二套 projectile/hit memory。
 - 设施部署通过 Multiplayer action、Physics placement query、共享资源规则和 entity materialization 完成。
 - AI 只提交移动和能力意图，不能绕过与玩家相同的 authority combat、Physics 和 GAS 边界。
 - TCA 消费语义化低频 fact，在条件满足时触发额外 effect、cue、奖励或 objective update。

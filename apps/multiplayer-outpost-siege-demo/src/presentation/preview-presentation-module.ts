@@ -22,6 +22,7 @@ export type OutpostRenderTargetState = {
   transform?: {
     position?: { x?: number; y?: number };
     rotation?: { z?: number };
+    scale?: { x?: number; y?: number };
   };
   props?: Record<string, unknown>;
 };

@@ -30,6 +30,19 @@ export type OutpostAuthorityCombatPlayer = {
   colliderId: string;
 };
 
+export type OutpostAuthorityAiEnemy = {
+  id: string;
+  agentId: string;
+  entityId: EntityId;
+  actorId: string;
+  definitionId: string;
+  active: boolean;
+};
+
+export type OutpostAuthorityAiActionResult =
+  | { status: "accepted"; executionId: string }
+  | { status: "rejected"; reason: string };
+
 export type OutpostAuthorityCombatActorSnapshot = {
   id: string;
   kind: "player" | "enemy" | "buildable";
@@ -50,6 +63,14 @@ export type OutpostAuthorityCombatActorSnapshot = {
   resource: number;
   tags: string[];
   cooldowns: Record<string, number>;
+  targetActorId?: string | undefined;
+  aiGoalId?: string | undefined;
+  aiTaskPhase?: string | undefined;
+  abilityExecutionId?: string | undefined;
+  abilityId?: string | undefined;
+  abilityPhase?: string | undefined;
+  abilityPhaseStartedAt?: number | undefined;
+  abilityPhaseEndsAt?: number | undefined;
 };
 
 export type OutpostAuthorityCombatProjectileSnapshot = {

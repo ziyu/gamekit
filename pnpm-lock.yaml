@@ -179,15 +179,27 @@ importers:
       '@colyseus/schema':
         specifier: ^4.0.27
         version: 4.0.27(typescript@5.9.3)
+      '@gamekit/ai-core':
+        specifier: workspace:*
+        version: link:../../packages/ai-core
+      '@gamekit/animator-core':
+        specifier: workspace:*
+        version: link:../../packages/animator-core
       '@gamekit/app-host':
         specifier: workspace:*
         version: link:../../packages/app-host
       '@gamekit/asset':
         specifier: workspace:*
         version: link:../../packages/asset
+      '@gamekit/audio-core':
+        specifier: workspace:*
+        version: link:../../packages/audio-core
       '@gamekit/camera-core':
         specifier: workspace:*
         version: link:../../packages/camera-core
+      '@gamekit/combat':
+        specifier: workspace:*
+        version: link:../../packages/combat
       '@gamekit/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -227,6 +239,12 @@ importers:
       '@gamekit/multiplayer-memory':
         specifier: workspace:*
         version: link:../../packages/multiplayer-memory
+      '@gamekit/navigation-core':
+        specifier: workspace:*
+        version: link:../../packages/navigation-core
+      '@gamekit/navigation-graph':
+        specifier: workspace:*
+        version: link:../../packages/navigation-graph
       '@gamekit/physics-core':
         specifier: workspace:*
         version: link:../../packages/physics-core

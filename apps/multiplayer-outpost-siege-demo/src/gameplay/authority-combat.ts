@@ -1,4 +1,5 @@
 import { defineGameModule } from "@gamekit/core";
+import type { CombatHitResult } from "@gamekit/combat";
 import type { GasOperationContext } from "@gamekit/gas";
 import type { GameInstallContext } from "@gamekit/game-runtime";
 import {
@@ -25,15 +26,12 @@ import {
   actorHealth,
   actorKind,
   captureCombatSnapshot,
-  combatObjectForQueryResult,
   combatObjects,
   createCombatState,
   firstCollider,
   insideArena,
   materializeActorObject,
-  materializeProjectile,
   nearestObject,
-  nearestPlayer,
   normalizeVector,
   normalizedAim,
   operationContext,
@@ -45,7 +43,13 @@ import {
   type CombatState,
   type CreateOutpostAuthorityCombatOptions
 } from "./authority-combat-state";
+import {
+  createOutpostCombatCoreIntegration,
+  type OutpostCombatCoreIntegration
+} from "./authority-combat-core";
 import type {
+  OutpostAuthorityAiActionResult,
+  OutpostAuthorityAiEnemy,
   OutpostAuthorityCombatCommand,
   OutpostAuthorityCombatPlayer,
   OutpostAuthorityCombatSnapshot,
@@ -53,6 +57,8 @@ import type {
 } from "./authority-combat-types";
 
 export type {
+  OutpostAuthorityAiActionResult,
+  OutpostAuthorityAiEnemy,
   OutpostAuthorityCombatActorSnapshot,
   OutpostAuthorityCombatCommand,
   OutpostAuthorityCombatPlayer,
@@ -65,17 +71,19 @@ export type { CreateOutpostAuthorityCombatOptions } from "./authority-combat-sta
 const RIFLE_DEFINITION_ID = "weapon.outpost.rifle";
 const RAIDER_DEFINITION_ID = "enemy.outpost.raider";
 const TURRET_DEFINITION_ID = "buildable.outpost.turret";
-const SHOCK_EFFECT_ID = "effect.outpost.shocked";
 const DASH_SPEED = 640;
 const DASH_DURATION_MS = 180;
-const SHOCK_FIELD_RADIUS = 150;
 const TURRET_RANGE = 360;
 const KNOCKBACK_DURATION_MS = 120;
 
 export type OutpostAuthorityCombat = {
+  enemyLifecycleModule: ReturnType<typeof defineGameModule<GameInstallContext>>;
   prePhysicsModule: ReturnType<typeof defineGameModule<GameInstallContext>>;
   postPhysicsModule: ReturnType<typeof defineGameModule<GameInstallContext>>;
+  coreModule: OutpostCombatCoreIntegration["module"];
   tcaDefinitions: TcaDefinitionSet;
+  aiEnemies(): OutpostAuthorityAiEnemy[];
+  activateAiAction(enemyId: string, targetActorId: string): OutpostAuthorityAiActionResult;
   snapshot(): OutpostAuthorityCombatSnapshot;
 };
 
@@ -107,39 +115,65 @@ export function createOutpostAuthorityCombat(
   options: CreateOutpostAuthorityCombatOptions
 ): OutpostAuthorityCombat {
   const state = createCombatState(options);
+  const core = createOutpostCombatCoreIntegration(state, (hit, context) =>
+    resolveCombatCoreHit(state, hit, context)
+  );
+  state.rememberCombatAim = core.rememberAim;
 
   return {
-    prePhysicsModule: createCombatPrePhysicsModule(state),
+    enemyLifecycleModule: createEnemyLifecycleModule(state),
+    prePhysicsModule: createCombatPrePhysicsModule(state, core),
     postPhysicsModule: createCombatPostPhysicsModule(state),
+    coreModule: core.module,
     tcaDefinitions: createOutpostCombatTcaDefinitions({
       gas: state.options.gas,
       actorKind: (actorId) => actorKind(state, actorId)
     }),
+    aiEnemies() {
+      return captureAiEnemies(state);
+    },
+    activateAiAction(enemyId, targetActorId) {
+      return activateEnemyAction(state, enemyId, targetActorId);
+    },
     snapshot() {
       return captureCombatSnapshot(state);
     }
   };
 }
 
-function createCombatPrePhysicsModule(state: CombatState) {
+function createEnemyLifecycleModule(state: CombatState) {
+  return defineGameModule<GameInstallContext>({
+    id: "outpost.authority.enemies.lifecycle",
+    install(ctx) {
+      ctx.systems.register({
+        id: "outpost.authority.enemies.materialize",
+        update({ delta }) {
+          ensureInitialEnemies(state);
+          updateEnemyActivationDelays(state, delta);
+        }
+      });
+    }
+  });
+}
+
+function createCombatPrePhysicsModule(state: CombatState, core: OutpostCombatCoreIntegration) {
   return defineGameModule<GameInstallContext>({
     id: "outpost.authority.combat.pre-physics",
     install(ctx) {
       ctx.systems.register({
         id: "outpost.authority.combat.intent",
         update({ delta }) {
-          ensureInitialEnemies(state);
           for (const command of state.options.commands()) {
             executeCombatCommand(state, command);
           }
           updateDashes(state, delta);
-          updateEnemySteering(state, delta);
           updateKnockbacks(state, delta);
           updateTurrets(state);
         }
       });
 
       return () => {
+        core.dispose();
         for (const object of state.objectsById.values()) {
           removeCombatObject(state, object, false);
         }
@@ -174,8 +208,7 @@ function createCombatPostPhysicsModule(state: CombatState) {
 
       ctx.systems.register({
         id: "outpost.authority.combat.resolve",
-        update({ delta, tick, elapsed }) {
-          resolveProjectiles(state, delta, tick, elapsed);
+        update() {
           flushDeaths(state);
         }
       });
@@ -228,6 +261,8 @@ function executeRifle(
     OUTPOST_WEAPON_TYPE,
     definition.weapon.id
   );
+  const aim = { x: command.aimX, y: command.aimY };
+  state.rememberCombatAim(player.actorId, aim);
   const activation = state.options.gas.activateAbility({
     actorId: player.actorId,
     abilityId: weapon.ability.id,
@@ -237,22 +272,6 @@ function executeRifle(
     rejectCommand(state, command, activation.reason);
     return;
   }
-  const origin = requireTransform(state.options.world, player.entityId).position;
-  const direction = normalizedAim(state.options.world, player.entityId, command.aimX, command.aimY);
-  materializeProjectile(state, {
-    id: `projectile.${state.nextProjectileId}`,
-    bodyDefinitionId: weapon.projectileBody.id,
-    renderKey: weapon.projectileRenderObject.id,
-    origin,
-    direction,
-    speed: weapon.projectileSpeed,
-    damage: weapon.damage,
-    lifetimeMs: weapon.projectileLifetimeMs,
-    sourceActorId: player.actorId,
-    sourceBodyId: player.bodyId,
-    command
-  });
-  state.nextProjectileId += 1;
   state.acceptedCommands += 1;
 }
 
@@ -295,40 +314,6 @@ function executeShockField(
     rejectCommand(state, command, activation.reason);
     return;
   }
-  const position = requireTransform(state.options.world, player.entityId).position;
-  const enemyBodies = combatObjects(state, "enemy").map((enemy) => enemy.bodyId);
-  const hits = state.options.physics.overlapShape(
-    { type: "circle", radius: SHOCK_FIELD_RADIUS },
-    position,
-    {
-      includeBodies: enemyBodies,
-      triggerInteraction: "include",
-      mode: "all",
-      maxResults: 64
-    }
-  );
-  const affected = new Set<string>();
-  for (const hit of hits) {
-    const target = combatObjectForQueryResult(state, hit);
-    if (!target?.actorId || target.kind !== "enemy" || affected.has(target.actorId)) {
-      continue;
-    }
-    affected.add(target.actorId);
-    state.options.gas.applyEffect({
-      effectId: SHOCK_EFFECT_ID,
-      sourceActorId: player.actorId,
-      targetActorId: target.actorId,
-      ...operationContext(command)
-    });
-  }
-  state.options.physicsTrace.push({
-    kind: "query",
-    label: "outpost.shock-field.overlap",
-    entityId: player.entityId,
-    ...(command.correlationId === undefined ? {} : { correlationId: command.correlationId }),
-    parentId: command.parentId ?? command.id,
-    payload: { affected: affected.size, radius: SHOCK_FIELD_RADIUS }
-  });
   state.acceptedCommands += 1;
 }
 
@@ -435,73 +420,97 @@ function updateDashes(state: CombatState, deltaMs: number): void {
   }
 }
 
-function updateEnemySteering(state: CombatState, deltaMs: number): void {
-  const players = [...state.options.players().values()].filter(
-    (player) => state.options.gas.hasActor(player.actorId) && actorHealth(state, player.actorId) > 0
-  );
-  if (players.length === 0) {
-    return;
-  }
+function updateEnemyActivationDelays(state: CombatState, deltaMs: number): void {
   for (const enemy of combatObjects(state, "enemy")) {
-    if ((enemy.activationDelayMs ?? 0) > 0) {
-      enemy.activationDelayMs = Math.max(0, (enemy.activationDelayMs ?? 0) - Math.max(0, deltaMs));
-      state.options.world.set(enemy.entityId, PhysicsVelocityComponent, {
-        linear: { x: 0, y: 0 }
-      });
+    if ((enemy.activationDelayMs ?? 0) <= 0) {
       continue;
     }
-    if (
-      !enemy.actorId ||
-      !state.options.gas.hasActor(enemy.actorId) ||
-      actorHealth(state, enemy.actorId) <= 0
-    ) {
-      continue;
-    }
-    const definition = state.options.dataRegistry.getValue<OutpostEnemyDefinition>(
-      OUTPOST_ENEMY_TYPE,
-      enemy.definitionId
-    );
-    const transform = requireTransform(state.options.world, enemy.entityId);
-    const target = nearestPlayer(state.options.world, transform.position, players);
-    const targetTransform = requireTransform(state.options.world, target.entityId);
-    const dx = targetTransform.position.x - transform.position.x;
-    const dy = targetTransform.position.y - transform.position.y;
-    const distance = Math.hypot(dx, dy);
-    if (distance > definition.attackRange) {
-      const scale = distance === 0 ? 0 : definition.moveSpeed / distance;
-      state.options.world.set(enemy.entityId, PhysicsVelocityComponent, {
-        linear: { x: dx * scale, y: dy * scale }
-      });
-      state.options.world.set(enemy.entityId, OutpostGameplayObject, {
-        facing: Math.atan2(dy, dx)
-      });
-      continue;
-    }
-    state.options.world.set(enemy.entityId, PhysicsVelocityComponent, { linear: { x: 0, y: 0 } });
-    const overlaps = state.options.physics.overlapShape(
-      { type: "circle", radius: definition.attackRange },
-      transform.position,
-      { includeBodies: [target.bodyId], triggerInteraction: "include", mode: "any" }
-    );
-    if (overlaps.length === 0) {
-      continue;
-    }
-    const correlationId = `outpost.ai.${enemy.id}`;
-    const activation = state.options.gas.activateAbility({
-      actorId: enemy.actorId,
-      abilityId: definition.attackAbility.id,
-      targetActorId: target.actorId,
-      correlationId,
-      parentId: enemy.id
+    enemy.activationDelayMs = Math.max(0, (enemy.activationDelayMs ?? 0) - Math.max(0, deltaMs));
+    state.options.world.set(enemy.entityId, PhysicsVelocityComponent, {
+      linear: { x: 0, y: 0 }
     });
-    if (activation.status === "activated") {
-      applyDamage(state, target.actorId, definition.attackDamage, enemy.actorId, {
-        correlationId,
-        parentId: enemy.id
-      });
-      state.enemyAttacks += 1;
-    }
   }
+}
+
+function captureAiEnemies(state: CombatState): OutpostAuthorityAiEnemy[] {
+  return combatObjects(state, "enemy")
+    .flatMap((enemy) =>
+      enemy.actorId === undefined || !state.options.gas.hasActor(enemy.actorId)
+        ? []
+        : [
+            {
+              id: enemy.id,
+              agentId: `outpost.ai.${enemy.id}`,
+              entityId: enemy.entityId,
+              actorId: enemy.actorId,
+              definitionId: enemy.definitionId,
+              active: (enemy.activationDelayMs ?? 0) <= 0 && actorHealth(state, enemy.actorId) > 0
+            }
+          ]
+    )
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function activateEnemyAction(
+  state: CombatState,
+  enemyId: string,
+  targetActorId: string
+): OutpostAuthorityAiActionResult {
+  const enemy = state.objectsById.get(enemyId);
+  if (
+    enemy?.kind !== "enemy" ||
+    enemy.actorId === undefined ||
+    (enemy.activationDelayMs ?? 0) > 0 ||
+    !state.options.gas.hasActor(enemy.actorId) ||
+    actorHealth(state, enemy.actorId) <= 0
+  ) {
+    return { status: "rejected", reason: "owner-unavailable" };
+  }
+  const target = [...state.options.players().values()].find(
+    (player) => player.actorId === targetActorId
+  );
+  if (
+    target === undefined ||
+    !state.options.gas.hasActor(target.actorId) ||
+    actorHealth(state, target.actorId) <= 0
+  ) {
+    return { status: "rejected", reason: "target-unavailable" };
+  }
+  const definition = state.options.dataRegistry.getValue<OutpostEnemyDefinition>(
+    OUTPOST_ENEMY_TYPE,
+    enemy.definitionId
+  );
+  const origin = requireTransform(state.options.world, enemy.entityId).position;
+  const targetPosition = requireTransform(state.options.world, target.entityId).position;
+  const distance = Math.hypot(targetPosition.x - origin.x, targetPosition.y - origin.y);
+  if (distance > definition.attackRange) {
+    return { status: "rejected", reason: "target-out-of-range" };
+  }
+  if (
+    state.options.physics.overlapShape({ type: "circle", radius: definition.attackRange }, origin, {
+      includeBodies: [target.bodyId],
+      triggerInteraction: "include",
+      mode: "any"
+    }).length === 0
+  ) {
+    return { status: "rejected", reason: "target-not-overlapping" };
+  }
+  state.options.world.set(enemy.entityId, OutpostGameplayObject, {
+    facing: Math.atan2(targetPosition.y - origin.y, targetPosition.x - origin.x)
+  });
+  const correlationId = `outpost.ai.${enemy.id}`;
+  const activation = state.options.gas.activateAbility({
+    actorId: enemy.actorId,
+    abilityId: definition.attackAbility.id,
+    targetActorId: target.actorId,
+    correlationId,
+    parentId: enemy.id
+  });
+  if (activation.status !== "activated") {
+    return { status: "rejected", reason: activation.reason };
+  }
+  state.enemyAttacks += 1;
+  return { status: "accepted", executionId: activation.executionId };
 }
 
 function normalizeEnemyActivationDelay(spawn: OutpostAuthorityEnemySpawn): number {
@@ -550,111 +559,67 @@ function updateTurrets(state: CombatState): void {
     if (activation.status !== "activated") {
       continue;
     }
-    const weapon = state.options.dataRegistry.getValue<OutpostWeaponDefinition>(
-      OUTPOST_WEAPON_TYPE,
-      RIFLE_DEFINITION_ID
-    );
-    const direction = normalizeVector({
-      x: targetTransform.position.x - transform.position.x,
-      y: targetTransform.position.y - transform.position.y
-    });
-    materializeProjectile(state, {
-      id: `projectile.${state.nextProjectileId}`,
-      bodyDefinitionId: weapon.projectileBody.id,
-      renderKey: weapon.projectileRenderObject.id,
-      origin: transform.position,
-      direction,
-      speed: weapon.projectileSpeed,
-      damage: weapon.damage,
-      lifetimeMs: weapon.projectileLifetimeMs,
-      sourceActorId: turret.actorId,
-      sourceBodyId: turret.bodyId,
-      command: {
-        id: turret.id,
-        playerId: turret.sourceActorId ?? turret.actorId,
-        ability: "rifle",
-        aimX: targetTransform.position.x,
-        aimY: targetTransform.position.y,
-        correlationId,
-        parentId: turret.id
-      }
-    });
-    state.nextProjectileId += 1;
+    state.rememberCombatAim(turret.actorId, targetTransform.position);
   }
 }
 
-function resolveProjectiles(
+function resolveCombatCoreHit(
   state: CombatState,
-  deltaMs: number,
-  tick: number,
-  elapsed: number
+  hit: CombatHitResult,
+  context: GasOperationContext
 ): void {
-  for (const projectile of combatObjects(state, "projectile")) {
-    const transform = state.options.world.get(projectile.entityId, PhysicsTransformComponent);
-    if (!transform || !projectile.previousPosition) {
-      removeCombatObject(state, projectile);
-      continue;
-    }
-    const path = {
-      x: transform.position.x - projectile.previousPosition.x,
-      y: transform.position.y - projectile.previousPosition.y
-    };
-    const distance = Math.hypot(path.x, path.y);
-    if (distance > 0) {
-      const hit = state.options.physics.raycast(projectile.previousPosition, path, {
-        maxDistance: distance,
-        triggerInteraction: "include",
-        mode: "closest",
-        sort: "distance",
-        ignoreBodies: [
-          projectile.bodyId,
-          ...(projectile.sourceBodyId === undefined ? [] : [projectile.sourceBodyId])
-        ],
-        ignoreColliders: [projectile.colliderId]
-      })[0];
-      if (hit) {
-        const target = combatObjectForQueryResult(state, hit);
-        const trace = state.options.physicsTrace.push({
-          kind: "query",
-          label: "outpost.projectile.sweep",
-          tick,
-          elapsed,
-          bodyId: projectile.bodyId,
-          colliderId: hit.colliderId,
-          ...(projectile.correlationId === undefined
-            ? {}
-            : { correlationId: projectile.correlationId }),
-          ...(projectile.parentId === undefined ? {} : { parentId: projectile.parentId }),
-          payload: { hitEntityId: hit.entityId, distance: hit.distance ?? distance }
-        });
-        if (
-          target?.actorId &&
-          target.kind === "enemy" &&
-          projectile.damage !== undefined &&
-          projectile.sourceActorId
-        ) {
-          applyDamage(state, target.actorId, projectile.damage, projectile.sourceActorId, {
-            ...(projectile.correlationId === undefined
-              ? {}
-              : { correlationId: projectile.correlationId }),
-            parentId: trace.id
-          });
-          applyKnockback(state, target, path, projectile.damage * 12);
-          state.projectileHits += 1;
-        }
-        removeCombatObject(state, projectile);
-        continue;
-      }
-    }
-    projectile.previousPosition = { ...transform.position };
-    projectile.remainingMs = (projectile.remainingMs ?? 0) - Math.max(0, deltaMs);
-    if (
-      (projectile.remainingMs ?? 0) <= 0 ||
-      !insideArena(transform.position.x, transform.position.y, 0)
-    ) {
-      removeCombatObject(state, projectile);
+  if (hit.status !== "applied" || !state.options.gas.hasActor(hit.targetActorId)) {
+    return;
+  }
+  let damage = 0;
+  if (hit.projectileId !== undefined) {
+    damage = state.options.dataRegistry.getValue<OutpostWeaponDefinition>(
+      OUTPOST_WEAPON_TYPE,
+      RIFLE_DEFINITION_ID
+    ).damage;
+    state.projectileHits += 1;
+  } else {
+    const source = state.objectsByActorId.get(hit.sourceActorId);
+    if (source?.kind === "enemy") {
+      damage = state.options.dataRegistry.getValue<OutpostEnemyDefinition>(
+        OUTPOST_ENEMY_TYPE,
+        source.definitionId
+      ).attackDamage;
     }
   }
+  if (damage <= 0) {
+    return;
+  }
+  applyDamage(state, hit.targetActorId, damage, hit.sourceActorId, {
+    correlationId: context.correlationId ?? hit.ticketId,
+    parentId: context.parentId ?? hit.ticketId
+  });
+  const target = state.objectsByActorId.get(hit.targetActorId);
+  if (target !== undefined) {
+    const sourcePosition = actorPosition(state, hit.sourceActorId);
+    const targetPosition = requireTransform(state.options.world, target.entityId).position;
+    if (sourcePosition !== undefined) {
+      applyKnockback(
+        state,
+        target,
+        {
+          x: targetPosition.x - sourcePosition.x,
+          y: targetPosition.y - sourcePosition.y
+        },
+        damage * 12
+      );
+    }
+  }
+}
+
+function actorPosition(state: CombatState, actorId: string): PhysicsVector | undefined {
+  if (!state.options.gas.hasActor(actorId)) {
+    return undefined;
+  }
+  const entityId = state.options.gas.getActor(actorId).actor.entityId;
+  return entityId === undefined
+    ? undefined
+    : state.options.world.get(entityId, PhysicsTransformComponent)?.position;
 }
 
 function flushDeaths(state: CombatState): void {

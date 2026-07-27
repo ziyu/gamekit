@@ -60,6 +60,7 @@ async function boot(root: HTMLElement): Promise<void> {
         onGameFocus={() => {
           if (context) {
             context.inputBlocked = false;
+            void context.audio?.unlock();
           }
           uiRuntime.setFocus({ scope: "game", reason: "outpost.viewport" });
         }}

@@ -11,6 +11,7 @@ import {
   OUTPOST_ARENA,
   OUTPOST_ARENA_DEFINITION_ID,
   OUTPOST_ARENA_PHYSICS_LAYOUT_ID,
+  OUTPOST_AUDIO_ASSET_IDS,
   outpostContentPack,
   outpostRuntimeImageAssets,
   registerOutpostDataTypes
@@ -43,9 +44,14 @@ describe("Outpost content pipeline", () => {
     expect(snapshot.types).toEqual(
       expect.arrayContaining([
         "asset.definition",
+        "ai.agent",
+        "animation.clip",
+        "animator.graph",
+        "combat.delivery",
         "gas.actor",
         "gas.ability",
         "gas.effect",
+        "navigation.layout",
         "physics.body",
         "physics.collider",
         "tca.rule",
@@ -217,6 +223,30 @@ describe("Outpost content pipeline", () => {
     }
   });
 
+  it("ships a licensed compressed music track instead of the generated audio fixture", () => {
+    const registry = createOutpostDataRegistry();
+    const definition = registry.get<AssetDefinition>(
+      "asset.definition",
+      OUTPOST_AUDIO_ASSET_IDS.ambience
+    ).data;
+
+    expect(definition).toMatchObject({
+      type: "audio",
+      source: { type: "url", url: "/assets/outpost/audio/magic-space.ogg" },
+      group: "match",
+      metadata: {
+        title: "Magic Space",
+        author: "CodeManu",
+        license: "CC0-1.0"
+      }
+    });
+    if (definition.source.type !== "url") {
+      throw new Error("Outpost music requires a runtime URL source");
+    }
+    const runtimeFile = readFileSync(join(APP_ROOT, "public", definition.source.url.slice(1)));
+    expect(runtimeFile.subarray(0, 4).toString("ascii")).toBe("OggS");
+  });
+
   it("derives every static render placement and collider from the same arena object", () => {
     const registry = createOutpostDataRegistry();
     const arenaAsset = outpostRuntimeImageAssets.find(
@@ -270,6 +300,7 @@ describe("Outpost content pipeline", () => {
       "data",
       "renderer",
       "assets",
+      "audio",
       "input",
       "multiplayer",
       "ui",
@@ -280,6 +311,9 @@ describe("Outpost content pipeline", () => {
     expect(
       outpostAppDefinition.services.find((service) => service.id === "assets")?.dependencies
     ).toEqual(["data", "drivers", "renderer"]);
+    expect(
+      outpostAppDefinition.services.find((service) => service.id === "audio")?.dependencies
+    ).toEqual(["assets", "drivers"]);
   });
 });
 

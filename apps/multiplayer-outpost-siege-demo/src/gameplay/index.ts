@@ -6,6 +6,7 @@ export type OutpostGameplayContext = {
   identities: OutpostIdentityRegistry;
 };
 export * from "./authority-combat";
+export * from "./authority-navigation";
 export * from "./authority-runtime";
 export * from "./client-shadow-runtime";
 export * from "./components";

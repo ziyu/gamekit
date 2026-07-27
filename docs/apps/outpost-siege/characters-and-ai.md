@@ -107,6 +107,11 @@ acquire-target
   -> succeeded
 ```
 
+`request-gas-ability` 只提交 semantic action intent。Task 必须等待 authority GAS/Combat 返回
+accepted、rejected 或 cancelled：accepted 后进入 recover；cooldown、target-lost、out-of-range 等
+rejection 进入带原因的 backoff 或重新寻路；owner removal、death 和 session reset 强制取消并释放
+route/slot。Task 不能直接调用 attribute mutation、damage helper、Physics teleport 或 Renderer/Audio API。
+
 任何阶段都定义 timeout、cancel 与 failure：target invalid、no path、slot lost、line of sight lost、ability rejected、stagger、owner death。Failure 使用 backoff 后重评，不能同 tick 反复请求 ability。
 
 ### 移动任务

@@ -1,4 +1,7 @@
 import { createAssetDataType } from "@gamekit/asset";
+import { createAiDataTypes } from "@gamekit/ai-core";
+import { createAnimatorDataTypes } from "@gamekit/animator-core";
+import { createCombatDataTypes } from "@gamekit/combat";
 import {
   createDataRegistry,
   type DataPack,
@@ -6,6 +9,8 @@ import {
   type DataTypeDefinition
 } from "@gamekit/data";
 import { createGasDataTypes } from "@gamekit/gas";
+import { createNavigationDataTypes } from "@gamekit/navigation-core";
+import { createNavigationGraphDataType } from "@gamekit/navigation-graph";
 import { createPhysicsDataTypes } from "@gamekit/physics-core";
 import { createTcaRuleDataType } from "@gamekit/tca";
 import { createOutpostDataTypes } from "./data-types";
@@ -28,9 +33,17 @@ export function createOutpostDataRegistry(
 
 export function createAllOutpostDataTypes(): Array<DataTypeDefinition<any>> {
   return [
-    createAssetDataType({ supportedTypes: ["image"], supportedSources: ["url"] }),
+    createAssetDataType({
+      supportedTypes: ["image", "spritesheet", "audio"],
+      supportedSources: ["url"]
+    }),
     ...createGasDataTypes(),
     ...createPhysicsDataTypes(),
+    ...createCombatDataTypes(),
+    ...createNavigationDataTypes(),
+    createNavigationGraphDataType(),
+    ...createAiDataTypes(),
+    ...createAnimatorDataTypes(),
     createTcaRuleDataType(),
     ...createOutpostDataTypes()
   ];

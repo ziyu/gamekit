@@ -27,6 +27,15 @@ export type OutpostRoomAuthorityRuntimeSnapshot = {
   physicsBound: boolean;
   physicsBackend: string;
   combat?: OutpostAuthorityCombatSnapshot | undefined;
+  ai?: ReturnType<OutpostAuthorityGameplayRuntime["snapshot"]>["ai"] | undefined;
+  navigation?:
+    | {
+        revision: number;
+        pendingRequests: number;
+        retainedRoutes: number;
+        blockers: ReturnType<OutpostAuthorityGameplayRuntime["snapshot"]>["navigationBlockers"];
+      }
+    | undefined;
   match: OutpostMatchAuthoritySnapshot;
 };
 
@@ -80,6 +89,7 @@ export async function createOutpostRoomAuthorityRuntime(
           players: match.simulationPlayers,
           combatCommands: match.drainCombatCommands
         });
+        context.authority = gameplay;
         return gameplay.runtime;
       }
     }),
@@ -111,6 +121,8 @@ export async function createOutpostRoomAuthorityRuntime(
         await configured.host.dispose();
       } finally {
         match.dispose();
+        delete context.authority;
+        gameplay = undefined;
       }
     },
     snapshot() {
@@ -124,6 +136,17 @@ export async function createOutpostRoomAuthorityRuntime(
         physicsBound: authorityGameplay?.physics.bound ?? false,
         physicsBackend: physicsBackend.kind,
         ...(authorityGameplay === undefined ? {} : { combat: authorityGameplay.combat }),
+        ...(authorityGameplay === undefined
+          ? {}
+          : {
+              ai: authorityGameplay.ai,
+              navigation: {
+                revision: authorityGameplay.ai.navigationRevision,
+                pendingRequests: authorityGameplay.ai.pendingNavigationRequests,
+                retainedRoutes: authorityGameplay.ai.retainedRoutes,
+                blockers: authorityGameplay.navigationBlockers
+              }
+            }),
         match: match.snapshot()
       };
     }

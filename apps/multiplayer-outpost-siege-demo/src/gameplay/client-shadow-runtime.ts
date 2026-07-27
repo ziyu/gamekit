@@ -1,4 +1,11 @@
 import type { CameraController, CameraState2D, PointLike } from "@gamekit/camera-core";
+import {
+  createAnimatorHandle,
+  createAnimatorModule,
+  type AnimatorHandle
+} from "@gamekit/animator-core";
+import type { AnimationPlaybackAdapter } from "@gamekit/animator-core/playback";
+import type { GameAudio } from "@gamekit/audio-core";
 import { defineGameModule } from "@gamekit/core";
 import type { DataRegistry } from "@gamekit/data";
 import { createEventBus, type EventBus } from "@gamekit/event-bus";
@@ -112,6 +119,7 @@ export type OutpostClientShadowRuntime = {
   runtime: GameRuntime;
   input: OutpostInputState;
   identity: OutpostIdentityRegistry;
+  animator: AnimatorHandle;
   screenToWorld(point: PointLike): PointLike;
   view(): OutpostClientAuthoritySnapshot | undefined;
   snapshot(): OutpostClientShadowSnapshot;
@@ -129,6 +137,8 @@ export type CreateOutpostClientShadowRuntimeOptions = {
   localPlayerId: string;
   snapshotSource?: MultiplayerClientReplicationSnapshotSource | undefined;
   renderer?: RendererAdapter | undefined;
+  animationAdapter?: AnimationPlaybackAdapter | undefined;
+  audio?: GameAudio | undefined;
   applyRenderTargetState?: OutpostRenderTargetWriter | undefined;
   camera?: CameraController | undefined;
   cameraAdapter?: OutpostClientCameraAdapter | undefined;
@@ -194,11 +204,20 @@ type OutpostPresentedPlayerState = {
   velocityX: number;
   velocityY: number;
   facing: number;
+  tags: readonly string[];
+  generation?: number | undefined;
+  authorityElapsedMs?: number | undefined;
+  targetActorId?: string | undefined;
+  aiGoalId?: string | undefined;
+  aiTaskPhase?: string | undefined;
+  abilityExecutionId?: string | undefined;
+  abilityId?: string | undefined;
+  abilityPhase?: string | undefined;
+  abilityPhaseStartedAt?: number | undefined;
+  abilityPhaseEndsAt?: number | undefined;
 };
 
-type OutpostPresentedCombatObjectState = OutpostPresentedPlayerState & {
-  tags: readonly string[];
-};
+type OutpostPresentedCombatObjectState = OutpostPresentedPlayerState;
 
 export function createOutpostClientShadowRuntime(
   options: CreateOutpostClientShadowRuntimeOptions
@@ -217,6 +236,7 @@ export function createOutpostClientShadowRuntime(
     presentedCombatObjects: new Map(),
     lastAppliedTick: -1
   };
+  const animator = createAnimatorHandle({ id: "outpost.client.animator" });
   const runtime = createGame({
     seed: options.seed ?? `outpost.client.${options.localPlayerId}`,
     world: options.world,
@@ -229,6 +249,9 @@ export function createOutpostClientShadowRuntime(
             createOutpostClientPresentationModule({
               dataRegistry: options.dataRegistry,
               renderer: options.renderer,
+              animator: options.animationAdapter === undefined ? undefined : animator,
+              audio: options.audio,
+              listenerObjectId: options.localPlayerId,
               applyRenderTargetState: options.applyRenderTargetState,
               readObjectState(objectId) {
                 return (
@@ -238,6 +261,21 @@ export function createOutpostClientShadowRuntime(
             })
           ]
         : []),
+      ...(options.animationAdapter === undefined
+        ? []
+        : [
+            createAnimatorModule({
+              id: "outpost.client.animator",
+              dataRegistry: options.dataRegistry,
+              adapter: options.animationAdapter,
+              handle: animator,
+              maxControllers: 1_024,
+              maxQueuedOneShotsPerController: 2,
+              markerHistoryLimit: 64,
+              maxMarkerEventsPerControllerUpdate: 12,
+              traceLimit: 320
+            })
+          ]),
       createClientShadowInputResetModule(state),
       createClientShadowLifecycleModule(state)
     ]
@@ -247,6 +285,7 @@ export function createOutpostClientShadowRuntime(
     runtime,
     input: state.input,
     identity: state.identity,
+    animator,
     screenToWorld(point) {
       return options.camera?.screenToWorld(point) ?? point;
     },
@@ -611,7 +650,8 @@ function applyPresentedSnapshot(
         position: { x: player.x, y: player.y },
         velocityX: player.velocityX,
         velocityY: player.velocityY,
-        facing: player.facing
+        facing: player.facing,
+        tags: []
       };
       state.presentedPlayers.set(player.playerId, target);
     }
@@ -621,6 +661,13 @@ function applyPresentedSnapshot(
       target.velocityX = predictedState.velocityX;
       target.velocityY = predictedState.velocityY;
       target.facing = predictedState.facing;
+      applyPresentedActorSemantics(
+        target,
+        snapshot.combat.actors.find(
+          (actor) => actor.kind === "player" && actor.objectId === player.playerId
+        ),
+        snapshot.elapsedMs
+      );
       continue;
     }
     fallbackPosition.x = player.x;
@@ -629,6 +676,13 @@ function applyPresentedSnapshot(
     target.velocityX = player.velocityX;
     target.velocityY = player.velocityY;
     target.facing = presented.angleRadians(playerFacingKey(player), player.facing);
+    applyPresentedActorSemantics(
+      target,
+      snapshot.combat.actors.find(
+        (actor) => actor.kind === "player" && actor.objectId === player.playerId
+      ),
+      snapshot.elapsedMs
+    );
   }
   for (const playerId of state.presentedPlayers.keys()) {
     if (!snapshot.players.some((player) => player.playerId === playerId)) {
@@ -641,11 +695,25 @@ function applyPresentedSnapshot(
       continue;
     }
     presentedCombatIds.add(actor.objectId);
-    applyPresentedCombatObject(state, actor, actor.tags, presented, fallbackPosition);
+    applyPresentedCombatObject(
+      state,
+      actor,
+      actor.tags,
+      presented,
+      fallbackPosition,
+      snapshot.elapsedMs
+    );
   }
   for (const projectile of snapshot.combat.projectiles) {
     presentedCombatIds.add(projectile.objectId);
-    applyPresentedCombatObject(state, projectile, [], presented, fallbackPosition);
+    applyPresentedCombatObject(
+      state,
+      projectile,
+      [],
+      presented,
+      fallbackPosition,
+      snapshot.elapsedMs
+    );
   }
   for (const objectId of state.presentedCombatObjects.keys()) {
     if (!presentedCombatIds.has(objectId)) {
@@ -659,7 +727,8 @@ function applyPresentedCombatObject(
   object: OutpostReplicatedActor | OutpostReplicatedProjectile,
   tags: readonly string[],
   presented: PresentedSnapshotTracks,
-  fallbackPosition: NetworkVector2
+  fallbackPosition: NetworkVector2,
+  authorityElapsedMs: number
 ): void {
   let target = state.presentedCombatObjects.get(object.objectId);
   if (target === undefined) {
@@ -679,6 +748,57 @@ function applyPresentedCombatObject(
   target.velocityY = object.velocityY;
   target.facing = presented.angleRadians(combatObjectFacingKey(object), object.facing);
   target.tags = tags;
+  if ("kind" in object) {
+    applyPresentedActorSemantics(target, object, authorityElapsedMs);
+  } else {
+    clearPresentedActorSemantics(target);
+  }
+}
+
+function applyPresentedActorSemantics(
+  target: OutpostPresentedPlayerState,
+  actor: OutpostReplicatedActor | undefined,
+  authorityElapsedMs: number
+): void {
+  target.tags = actor?.tags ?? [];
+  assignOptional(target, "generation", actor?.generation);
+  target.authorityElapsedMs = authorityElapsedMs;
+  assignOptional(target, "targetActorId", actor?.targetActorId);
+  assignOptional(target, "aiGoalId", actor?.aiGoalId);
+  assignOptional(target, "aiTaskPhase", actor?.aiTaskPhase);
+  assignOptional(target, "abilityExecutionId", actor?.abilityExecutionId);
+  assignOptional(target, "abilityId", actor?.abilityId);
+  assignOptional(target, "abilityPhase", actor?.abilityPhase);
+  assignOptional(target, "abilityPhaseStartedAt", actor?.abilityPhaseStartedAt);
+  assignOptional(target, "abilityPhaseEndsAt", actor?.abilityPhaseEndsAt);
+}
+
+function clearPresentedActorSemantics(target: OutpostPresentedPlayerState): void {
+  target.tags = [];
+  delete target.generation;
+  delete target.authorityElapsedMs;
+  delete target.targetActorId;
+  delete target.aiGoalId;
+  delete target.aiTaskPhase;
+  delete target.abilityExecutionId;
+  delete target.abilityId;
+  delete target.abilityPhase;
+  delete target.abilityPhaseStartedAt;
+  delete target.abilityPhaseEndsAt;
+}
+
+function assignOptional<
+  TKey extends Exclude<keyof OutpostPresentedPlayerState, "position" | "tags">
+>(
+  target: OutpostPresentedPlayerState,
+  key: TKey,
+  value: OutpostPresentedPlayerState[TKey] | undefined
+): void {
+  if (value === undefined) {
+    delete target[key];
+  } else {
+    target[key] = value;
+  }
 }
 
 function predictedStateFromSnapshot(
@@ -1125,7 +1245,18 @@ function readCombatActor(value: unknown): OutpostReplicatedActor | undefined {
     !Array.isArray(value.tags) ||
     value.tags.length > 64 ||
     !value.tags.every(nonEmptyString) ||
-    !isRecord(value.cooldowns)
+    !isRecord(value.cooldowns) ||
+    !optionalNonEmptyString(value.targetActorId) ||
+    !optionalNonEmptyString(value.aiGoalId) ||
+    !optionalNonEmptyString(value.aiTaskPhase) ||
+    !optionalNonEmptyString(value.abilityExecutionId) ||
+    !optionalNonEmptyString(value.abilityId) ||
+    !optionalNonEmptyString(value.abilityPhase) ||
+    !optionalNonNegativeFinite(value.abilityPhaseStartedAt) ||
+    !optionalNonNegativeFinite(value.abilityPhaseEndsAt) ||
+    (value.abilityPhaseStartedAt !== undefined &&
+      value.abilityPhaseEndsAt !== undefined &&
+      value.abilityPhaseEndsAt < value.abilityPhaseStartedAt)
   ) {
     return undefined;
   }
@@ -1153,7 +1284,21 @@ function readCombatActor(value: unknown): OutpostReplicatedActor | undefined {
     stamina: value.stamina,
     resource: value.resource,
     tags: [...value.tags],
-    cooldowns
+    cooldowns,
+    ...(value.targetActorId === undefined ? {} : { targetActorId: value.targetActorId }),
+    ...(value.aiGoalId === undefined ? {} : { aiGoalId: value.aiGoalId }),
+    ...(value.aiTaskPhase === undefined ? {} : { aiTaskPhase: value.aiTaskPhase }),
+    ...(value.abilityExecutionId === undefined
+      ? {}
+      : { abilityExecutionId: value.abilityExecutionId }),
+    ...(value.abilityId === undefined ? {} : { abilityId: value.abilityId }),
+    ...(value.abilityPhase === undefined ? {} : { abilityPhase: value.abilityPhase }),
+    ...(value.abilityPhaseStartedAt === undefined
+      ? {}
+      : { abilityPhaseStartedAt: value.abilityPhaseStartedAt }),
+    ...(value.abilityPhaseEndsAt === undefined
+      ? {}
+      : { abilityPhaseEndsAt: value.abilityPhaseEndsAt })
   };
 }
 
@@ -1217,12 +1362,20 @@ function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 128;
 }
 
+function optionalNonEmptyString(value: unknown): value is string | undefined {
+  return value === undefined || nonEmptyString(value);
+}
+
 function nonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 function nonNegativeFinite(value: unknown): value is number {
   return finite(value) && value >= 0;
+}
+
+function optionalNonNegativeFinite(value: unknown): value is number | undefined {
+  return value === undefined || nonNegativeFinite(value);
 }
 
 function finite(value: unknown): value is number {
