@@ -51,14 +51,22 @@ import type {
   CombatProjectileCancellation,
   CombatProjectileCancellationResult,
   CombatProjectileDefinition,
+  CombatProjectileDespawnFact,
   CombatProjectileId,
+  CombatProjectileImpactFact,
   CombatProjectileQuery,
+  CombatProjectileSpawnFact,
   CombatProjectileState,
   CombatRuntimeCheckpoint,
   CombatRuntimeConfig,
   CombatSubject,
   CombatTraceStore
 } from "./types";
+
+type ProjectileRemoval = {
+  reason: string;
+  impact?: CombatProjectileImpactFact | undefined;
+};
 
 export type CombatProjectileController = {
   spawn(
@@ -257,8 +265,9 @@ export function createCombatProjectileController(
       enabled: true
     });
     config.world.add(entityId, PhysicsTransformComponent, { position: cloneVector(position) });
+    const velocity = scaleVector(direction, definition.speed ?? 0);
     config.world.add(entityId, PhysicsVelocityComponent, {
-      linear: scaleVector(direction, definition.speed ?? 0)
+      linear: velocity
     });
     activeEntityByProjectileId.set(projectileId, entityId);
     hitMemoryByProjectileId.set(projectileId, new Map());
@@ -272,8 +281,23 @@ export function createCombatProjectileController(
       parentId: state.parentId,
       details: { entityId, definitionId: definition.id }
     });
-    if (config.eventPolicy?.emitProjectiles !== false) {
-      config.eventBus?.emit("combat.projectile_spawned", cloneProjectile(state), runtimeId, {
+    if (config.eventPolicy?.emitProjectiles !== false && config.eventBus !== undefined) {
+      const fact: CombatProjectileSpawnFact = {
+        runtimeId,
+        projectileId,
+        entityId,
+        definitionId: definition.id,
+        sourceActorId: state.sourceActorId,
+        ...(state.sourceEntityId === undefined ? {} : { sourceEntityId: state.sourceEntityId }),
+        ...(state.executionId === undefined ? {} : { executionId: state.executionId }),
+        position: cloneVector(position),
+        velocity: cloneVector(velocity),
+        spawnedAt: state.spawnedAt,
+        expiresAt: state.expiresAt,
+        ...(state.correlationId === undefined ? {} : { correlationId: state.correlationId }),
+        ...(state.parentId === undefined ? {} : { parentId: state.parentId })
+      };
+      config.eventBus.emit("combat.projectile_spawned", fact, runtimeId, {
         correlationId: state.correlationId,
         parentId: state.parentId
       });
@@ -285,7 +309,7 @@ export function createCombatProjectileController(
     if (activeEntityByProjectileId.size === 0) {
       return;
     }
-    const removals = new Map<CombatProjectileId, string>();
+    const removals = new Map<CombatProjectileId, ProjectileRemoval>();
     const entityIndex = createPhysicsEntityIndex(config.world);
     for (const projectileId of [...activeEntityByProjectileId.keys()].sort()) {
       const entityId = activeEntityByProjectileId.get(projectileId)!;
@@ -300,7 +324,7 @@ export function createCombatProjectileController(
         componentState.runtimeId !== runtimeId ||
         transform === undefined
       ) {
-        removals.set(projectileId, "invalid-entity-state");
+        removals.set(projectileId, { reason: "invalid-entity-state" });
         continue;
       }
       const state = cloneProjectile(componentState);
@@ -313,14 +337,14 @@ export function createCombatProjectileController(
           correlationId: state.correlationId,
           parentId: state.parentId
         });
-        removals.set(projectileId, "expired");
+        removals.set(projectileId, { reason: "expired" });
         continue;
       }
       if (
         config.projectileBounds !== undefined &&
         !isInsideBounds(transform.position, config.projectileBounds)
       ) {
-        removals.set(projectileId, "out-of-bounds");
+        removals.set(projectileId, { reason: "out-of-bounds" });
         continue;
       }
       if (state.executionOwnership === "cancel-with-execution" && state.executionId !== undefined) {
@@ -330,7 +354,7 @@ export function createCombatProjectileController(
           execution.phase === "cancelled" ||
           execution.phase === "completed"
         ) {
-          removals.set(projectileId, "execution-ended");
+          removals.set(projectileId, { reason: "execution-ended" });
           continue;
         }
       }
@@ -353,8 +377,8 @@ export function createCombatProjectileController(
         }
       }
     }
-    for (const [projectileId, reason] of removals) {
-      despawn(projectileId, reason);
+    for (const [projectileId, removal] of removals) {
+      despawn(projectileId, removal.reason, removal.impact);
     }
   }
 
@@ -420,7 +444,7 @@ export function createCombatProjectileController(
     state: CombatProjectileState,
     candidates: PhysicsQueryResult[],
     entityIndex: PhysicsEntityIndex,
-    removals: Map<CombatProjectileId, string>
+    removals: Map<CombatProjectileId, ProjectileRemoval>
   ): void {
     if (candidates.length === 0) {
       return;
@@ -510,16 +534,37 @@ export function createCombatProjectileController(
           details: { bounceCount: state.bounceCount }
         });
         if (state.bounceCount > state.maxBounces) {
-          removals.set(state.projectileId, "bounce-limit");
+          removals.set(state.projectileId, {
+            reason: "bounce-limit",
+            impact: createProjectileImpactFact(
+              resolvedCandidate.decision.disposition,
+              target,
+              candidate
+            )
+          });
         }
         break;
       }
       if (state.hitPolicy === "stop") {
-        removals.set(state.projectileId, "impact");
+        removals.set(state.projectileId, {
+          reason: "impact",
+          impact: createProjectileImpactFact(
+            resolvedCandidate.decision.disposition,
+            target,
+            candidate
+          )
+        });
         break;
       }
       if (state.hitCount >= state.maxHits) {
-        removals.set(state.projectileId, "hit-limit");
+        removals.set(state.projectileId, {
+          reason: "hit-limit",
+          impact: createProjectileImpactFact(
+            resolvedCandidate.decision.disposition,
+            target,
+            candidate
+          )
+        });
         break;
       }
     }
@@ -704,15 +749,43 @@ export function createCombatProjectileController(
     );
   }
 
-  function despawn(projectileId: string, reason: string): void {
+  function despawn(
+    projectileId: string,
+    reason: string,
+    impact?: CombatProjectileImpactFact
+  ): void {
     const entityId = activeEntityByProjectileId.get(projectileId);
     if (entityId === undefined) {
       return;
     }
-    const state = config.world.has(entityId)
-      ? config.world.get(entityId, CombatProjectileComponent)
-      : undefined;
-    if (config.world.has(entityId) && state?.runtimeId === runtimeId) {
+    const entityExists = config.world.has(entityId);
+    const state = entityExists ? config.world.get(entityId, CombatProjectileComponent) : undefined;
+    const eventBus = config.eventBus;
+    let fact: CombatProjectileDespawnFact | undefined;
+    if (config.eventPolicy?.emitProjectiles !== false && eventBus !== undefined) {
+      const transform = entityExists
+        ? config.world.get(entityId, PhysicsTransformComponent)
+        : undefined;
+      const velocity = entityExists
+        ? config.world.get(entityId, PhysicsVelocityComponent)
+        : undefined;
+      fact = {
+        runtimeId,
+        projectileId,
+        entityId,
+        reason,
+        ...(state?.definitionId === undefined ? {} : { definitionId: state.definitionId }),
+        ...(state?.sourceActorId === undefined ? {} : { sourceActorId: state.sourceActorId }),
+        ...(state?.sourceEntityId === undefined ? {} : { sourceEntityId: state.sourceEntityId }),
+        ...(state?.executionId === undefined ? {} : { executionId: state.executionId }),
+        ...(transform === undefined ? {} : { finalPosition: cloneVector(transform.position) }),
+        ...(velocity === undefined ? {} : { finalVelocity: cloneVector(velocity.linear) }),
+        ...(impact === undefined ? {} : { impact }),
+        ...(state?.correlationId === undefined ? {} : { correlationId: state.correlationId }),
+        ...(state?.parentId === undefined ? {} : { parentId: state.parentId })
+      };
+    }
+    if (entityExists && state?.runtimeId === runtimeId) {
       config.world.despawn(entityId);
     }
     forget(projectileId);
@@ -723,15 +796,13 @@ export function createCombatProjectileController(
       sourceActorId: state?.sourceActorId,
       correlationId: state?.correlationId,
       parentId: state?.parentId,
-      details: { reason }
+      details: { reason, hasImpact: impact !== undefined }
     });
-    if (config.eventPolicy?.emitProjectiles !== false) {
-      config.eventBus?.emit(
-        "combat.projectile_despawned",
-        { projectileId, entityId, reason },
-        runtimeId,
-        { correlationId: state?.correlationId, parentId: state?.parentId }
-      );
+    if (fact !== undefined && eventBus !== undefined) {
+      eventBus.emit("combat.projectile_despawned", fact, runtimeId, {
+        correlationId: state?.correlationId,
+        parentId: state?.parentId
+      });
     }
   }
 
@@ -757,6 +828,27 @@ export function createCombatProjectileController(
     captureCheckpoint,
     restoreCheckpoint,
     dispose
+  };
+}
+
+function createProjectileImpactFact(
+  disposition: "target" | "blocker",
+  subject: CombatSubject,
+  candidate: PhysicsQueryResult
+): CombatProjectileImpactFact {
+  const entityId = subject.entityId ?? candidate.entityId;
+  const bodyId = subject.bodyId ?? candidate.bodyId;
+  return {
+    disposition,
+    subject: {
+      ...(subject.actorId === undefined ? {} : { actorId: subject.actorId }),
+      ...(entityId === undefined ? {} : { entityId }),
+      ...(bodyId === undefined ? {} : { bodyId }),
+      colliderId: subject.colliderId ?? candidate.colliderId
+    },
+    ...(candidate.point === undefined ? {} : { point: cloneVector(candidate.point) }),
+    ...(candidate.normal === undefined ? {} : { normal: cloneVector(candidate.normal) }),
+    ...(candidate.distance === undefined ? {} : { distance: candidate.distance })
   };
 }
 

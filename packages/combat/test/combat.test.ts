@@ -32,6 +32,9 @@ import {
   createCombatSaveContributor,
   createCombatTraceStore,
   runCombatRuntimeConformance,
+  type CombatEventPolicy,
+  type CombatProjectileDespawnFact,
+  type CombatProjectileSpawnFact,
   type CombatRuntime
 } from "../src";
 
@@ -303,6 +306,200 @@ describe("Combat runtime", () => {
     harness.dispose();
   });
 
+  it("emits bounded authoritative projectile despawn facts for impact, expiry, and cancel", () => {
+    const harness = createRuntimeHarness();
+    const facts: CombatProjectileDespawnFact[] = [];
+    const spawnFacts: CombatProjectileSpawnFact[] = [];
+    const unsubscribeDespawn = harness.eventBus.on<CombatProjectileDespawnFact>(
+      "combat.projectile_despawned",
+      (event) => facts.push(event.payload)
+    );
+    const unsubscribeSpawn = harness.eventBus.on<CombatProjectileSpawnFact>(
+      "combat.projectile_spawned",
+      (event) => spawnFacts.push(event.payload)
+    );
+    const impacted = harness.runtime.deliver(
+      projectileRequest("projectile.fact-impact", "projectile.stop")
+    );
+    if (impacted.status !== "resolved" || impacted.projectile === undefined) {
+      throw new Error("Expected impact fact projectile spawn");
+    }
+    expect(spawnFacts.at(-1)).toMatchObject({
+      projectileId: "projectile.fact-impact.projectile",
+      definitionId: "projectile.stop",
+      sourceActorId: "actor.source",
+      entityId: impacted.projectile.entityId,
+      position: { x: 0, y: 0 },
+      velocity: { x: 120, y: 0 },
+      spawnedAt: 0,
+      expiresAt: 1000,
+      correlationId: "projectile.fact-impact"
+    });
+    expect(JSON.stringify(spawnFacts.at(-1))).not.toMatch(
+      /tags|metadata|payloads|hitMemory|candidate|query|relationshipPolicy|sourceSubject/
+    );
+    harness.world.set(impacted.projectile.entityId, PhysicsTransformComponent, {
+      position: { x: 3, y: 1 }
+    });
+    harness.setRayResults([
+      {
+        ...candidate(harness.entities.enemy, "collider.enemy", 2),
+        point: { x: 2, y: 0.5 },
+        normal: { x: -1, y: 0 },
+        fraction: 0.5,
+        inside: false,
+        sensor: true
+      }
+    ]);
+    harness.runtime.update(16, 16);
+
+    const impactFact = facts.at(-1);
+    expect(impactFact).toMatchObject({
+      projectileId: "projectile.fact-impact.projectile",
+      entityId: impacted.projectile.entityId,
+      definitionId: "projectile.stop",
+      sourceActorId: "actor.source",
+      reason: "impact",
+      finalPosition: { x: 3, y: 1 },
+      finalVelocity: { x: 120, y: 0 },
+      correlationId: "projectile.fact-impact",
+      impact: {
+        disposition: "target",
+        point: { x: 2, y: 0.5 },
+        normal: { x: -1, y: 0 },
+        distance: 2,
+        subject: {
+          actorId: "actor.enemy",
+          entityId: harness.entities.enemy,
+          bodyId: "collider.enemy.body",
+          colliderId: "collider.enemy"
+        }
+      }
+    });
+    expect(JSON.stringify(impactFact)).not.toMatch(
+      /fraction|inside|sensor|tags|metadata|payloads|hitMemory|candidate|query/
+    );
+
+    const blockerEntity = harness.world.spawn();
+    const blocked = harness.runtime.deliver(
+      projectileRequest("projectile.fact-blocker", "projectile.stop")
+    );
+    if (blocked.status !== "resolved" || blocked.projectile === undefined) {
+      throw new Error("Expected blocker fact projectile spawn");
+    }
+    harness.world.set(blocked.projectile.entityId, PhysicsTransformComponent, {
+      position: { x: 2, y: -1 }
+    });
+    harness.setRayResults([
+      {
+        entityId: blockerEntity,
+        colliderId: "collider.wall",
+        bodyId: "body.wall",
+        point: { x: 1.5, y: -0.5 },
+        normal: { x: 0, y: 1 },
+        distance: 1.5
+      }
+    ]);
+    harness.runtime.update(16, 32);
+    expect(facts.at(-1)).toMatchObject({
+      projectileId: "projectile.fact-blocker.projectile",
+      reason: "impact",
+      impact: {
+        disposition: "blocker",
+        point: { x: 1.5, y: -0.5 },
+        normal: { x: 0, y: 1 },
+        distance: 1.5,
+        subject: {
+          entityId: blockerEntity,
+          bodyId: "body.wall",
+          colliderId: "collider.wall"
+        }
+      }
+    });
+    expect(facts.at(-1)?.impact?.subject.actorId).toBeUndefined();
+
+    harness.setRayResults([]);
+    const expiring = harness.runtime.deliver(
+      projectileRequest("projectile.fact-expiry", "projectile.short")
+    );
+    if (expiring.status !== "resolved" || expiring.projectile === undefined) {
+      throw new Error("Expected expiry fact projectile spawn");
+    }
+    harness.world.set(expiring.projectile.entityId, PhysicsTransformComponent, {
+      position: { x: 4, y: 2 }
+    });
+    harness.runtime.update(100, 200);
+    expect(facts.at(-1)).toMatchObject({
+      projectileId: "projectile.fact-expiry.projectile",
+      reason: "expired",
+      finalPosition: { x: 4, y: 2 }
+    });
+    expect(facts.at(-1)?.impact).toBeUndefined();
+
+    const cancelled = harness.runtime.deliver(
+      projectileRequest("projectile.fact-cancel", "projectile.stop")
+    );
+    if (cancelled.status !== "resolved" || cancelled.projectile === undefined) {
+      throw new Error("Expected cancellation fact projectile spawn");
+    }
+    harness.world.set(cancelled.projectile.entityId, PhysicsTransformComponent, {
+      position: { x: 5, y: 3 }
+    });
+    expect(
+      harness.runtime.cancelProjectile({
+        projectileId: cancelled.projectile.projectileId,
+        reason: "test-cancelled"
+      })
+    ).toEqual({ status: "cancelled", projectileId: cancelled.projectile.projectileId });
+    expect(facts.at(-1)).toMatchObject({
+      projectileId: "projectile.fact-cancel.projectile",
+      reason: "test-cancelled",
+      finalPosition: { x: 5, y: 3 }
+    });
+    expect(facts.at(-1)?.impact).toBeUndefined();
+
+    unsubscribeDespawn();
+    unsubscribeSpawn();
+    const countAfterUnsubscribe = facts.length;
+    const spawnCountAfterUnsubscribe = spawnFacts.length;
+    const silent = harness.runtime.deliver(
+      projectileRequest("projectile.fact-unsubscribed", "projectile.stop")
+    );
+    if (silent.status !== "resolved" || silent.projectile === undefined) {
+      throw new Error("Expected unsubscribe probe projectile spawn");
+    }
+    harness.runtime.cancelProjectile({ projectileId: silent.projectile.projectileId });
+    expect(facts).toHaveLength(countAfterUnsubscribe);
+    expect(spawnFacts).toHaveLength(spawnCountAfterUnsubscribe);
+    harness.dispose();
+
+    const disabledHarness = createRuntimeHarness({ emitProjectiles: false });
+    let disabledEventCount = 0;
+    const unsubscribeDisabledSpawn = disabledHarness.eventBus.on(
+      "combat.projectile_spawned",
+      () => {
+        disabledEventCount += 1;
+      }
+    );
+    const unsubscribeDisabledDespawn = disabledHarness.eventBus.on(
+      "combat.projectile_despawned",
+      () => {
+        disabledEventCount += 1;
+      }
+    );
+    const disabled = disabledHarness.runtime.deliver(
+      projectileRequest("projectile.fact-disabled", "projectile.stop")
+    );
+    if (disabled.status !== "resolved" || disabled.projectile === undefined) {
+      throw new Error("Expected disabled event policy projectile spawn");
+    }
+    disabledHarness.runtime.cancelProjectile({ projectileId: disabled.projectile.projectileId });
+    expect(disabledEventCount).toBe(0);
+    unsubscribeDisabledSpawn();
+    unsubscribeDisabledDespawn();
+    disabledHarness.dispose();
+  });
+
   it("enforces projectile pierce, bounce, contact, and bounded hit memory policies", () => {
     const harness = createRuntimeHarness();
     const pierced = harness.runtime.deliver(
@@ -480,6 +677,11 @@ describe("Combat module with real Rapier2D and GAS", () => {
     const registry = createRegistry();
     const world = createKootaWorld();
     const eventBus = createEventBus();
+    const despawnFacts: CombatProjectileDespawnFact[] = [];
+    const unsubscribeDespawn = eventBus.on<CombatProjectileDespawnFact>(
+      "combat.projectile_despawned",
+      (event) => despawnFacts.push(event.payload)
+    );
     const gas = createGasHandle();
     const physics = createPhysicsHandle();
     const combat = createCombatHandle();
@@ -550,6 +752,20 @@ describe("Combat module with real Rapier2D and GAS", () => {
     }
     expect(gas.getActor("actor.enemy").attributes.current.health).toBe(80);
     expect(combat.listProjectiles()).toEqual([]);
+    expect(despawnFacts.at(-1)).toMatchObject({
+      projectileId: "real.projectile.projectile",
+      reason: "impact",
+      impact: {
+        disposition: "target",
+        subject: {
+          actorId: "actor.enemy",
+          entityId: enemy
+        },
+        point: { x: expect.any(Number), y: expect.any(Number) },
+        normal: { x: expect.any(Number), y: expect.any(Number) }
+      }
+    });
+    unsubscribeDespawn();
     game.dispose();
     expect(combat.isBound()).toBe(false);
     expect(physics.isBound()).toBe(false);
@@ -558,10 +774,11 @@ describe("Combat module with real Rapier2D and GAS", () => {
   });
 });
 
-function createRuntimeHarness() {
+function createRuntimeHarness(eventPolicy?: CombatEventPolicy) {
   const registry = createRegistry();
   const world = createKootaWorld();
-  const gas = createGasRuntime({ world, dataRegistry: registry, eventBus: createEventBus() });
+  const eventBus = createEventBus();
+  const gas = createGasRuntime({ world, dataRegistry: registry, eventBus });
   const entities = {
     source: spawnSubject(world, { x: 0, y: 0 }),
     ally: spawnSubject(world, { x: 1, y: 0 }),
@@ -591,6 +808,8 @@ function createRuntimeHarness() {
     gas,
     physics,
     dataRegistry: registry,
+    eventBus,
+    eventPolicy,
     relationshipResolver,
     traceStore: createCombatTraceStore({ limit: 128 }),
     limits: { maxActiveProjectiles: 32 }
@@ -600,6 +819,7 @@ function createRuntimeHarness() {
     world,
     gas,
     physics,
+    eventBus,
     runtime,
     entities,
     setRayResults(results: PhysicsQueryResult[]) {

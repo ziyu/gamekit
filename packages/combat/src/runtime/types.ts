@@ -283,6 +283,47 @@ export type CombatProjectileState = {
   parentId?: string | undefined;
 };
 
+export type CombatProjectileImpactSubject = Pick<
+  CombatSubject,
+  "actorId" | "entityId" | "bodyId" | "colliderId"
+>;
+
+export type CombatProjectileImpactFact = {
+  disposition: "target" | "blocker";
+  subject: CombatProjectileImpactSubject;
+  point?: PhysicsVector | undefined;
+  normal?: PhysicsVector | undefined;
+  distance?: number | undefined;
+};
+
+export type CombatProjectileSpawnFact = CombatOperationContext & {
+  runtimeId: string;
+  projectileId: CombatProjectileId;
+  entityId: EntityId;
+  definitionId: string;
+  sourceActorId: string;
+  sourceEntityId?: EntityId | undefined;
+  executionId?: string | undefined;
+  position: PhysicsVector;
+  velocity: PhysicsVector;
+  spawnedAt: number;
+  expiresAt: number;
+};
+
+export type CombatProjectileDespawnFact = CombatOperationContext & {
+  runtimeId: string;
+  projectileId: CombatProjectileId;
+  entityId: EntityId;
+  reason: string;
+  definitionId?: string | undefined;
+  sourceActorId?: string | undefined;
+  sourceEntityId?: EntityId | undefined;
+  executionId?: string | undefined;
+  finalPosition?: PhysicsVector | undefined;
+  finalVelocity?: PhysicsVector | undefined;
+  impact?: CombatProjectileImpactFact | undefined;
+};
+
 export type CombatProjectileQuery = {
   sourceActorId?: string | undefined;
   definitionId?: string | undefined;

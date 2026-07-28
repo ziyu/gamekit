@@ -156,6 +156,53 @@ Combat 只补充表现需要、但 GAS Cue 不应承载的动态事实：
 - projectile entity、transform、spawn/hit/bounce/expire/despawn lifecycle。
 - miss、cover block、bounce 和 expire 等没有成功 Effect 的空间结果。
 
+Projectile lifecycle 使用两个独立的有界 payload：
+
+```ts
+export type CombatProjectileSpawnFact = {
+  runtimeId: string;
+  projectileId: string;
+  entityId: EntityId;
+  definitionId: string;
+  sourceActorId: string;
+  sourceEntityId?: EntityId;
+  executionId?: string;
+  position: PhysicsVector;
+  velocity: PhysicsVector;
+  spawnedAt: number;
+  expiresAt: number;
+  correlationId?: string;
+  parentId?: string;
+};
+
+export type CombatProjectileDespawnFact = {
+  runtimeId: string;
+  projectileId: string;
+  entityId: EntityId;
+  reason: string;
+  definitionId?: string;
+  sourceActorId?: string;
+  sourceEntityId?: EntityId;
+  executionId?: string;
+  finalPosition?: PhysicsVector;
+  finalVelocity?: PhysicsVector;
+  impact?: {
+    disposition: "target" | "blocker";
+    subject: { actorId?: string; entityId?: EntityId; bodyId?: string; colliderId?: string };
+    point?: PhysicsVector;
+    normal?: PhysicsVector;
+    distance?: number;
+  };
+  correlationId?: string;
+  parentId?: string;
+};
+```
+
+`combat.projectile_spawned` 与 `combat.projectile_despawned` 分别派发上述 fact。Despawn 在 World entity
+销毁前复制 final state；collision cleanup 保留最后一个候选的有界 impact，非 collision cleanup 不伪造
+impact。Fact 不包含完整 projectile state、query/candidate、payload、tags、metadata 或 hit memory；需要读取
+当前完整状态的工具使用 `getProjectile/listProjectiles/snapshot`。连续 transform 仍只存在于 World。
+
 表现组合层通过 EventBus envelope 的 `correlationId/parentId` 以及 execution、ticket、projectile id，把 GAS Cue 的“播放什么”与 Combat fact/World state 的“在哪里、沿什么方向播放”关联起来，再交给 Animator、Renderer、Audio、Camera 或 UI。Combat fact 不能伪装成 GAS Cue；连续 projectile transform 也不能进入低频 EventBus 流。
 
 ## 运行顺序
@@ -207,6 +254,7 @@ Trace 默认只保存摘要和稳定 id，不保存完整 query payload 或每�
 - Physics query adapter 可以省略 entity id；集成测试必须至少使用一个只返回 body/collider id 的真实 backend，锁定 World identity fallback。
 - 新 delivery executor 通过统一 conformance 覆盖 target filtering、stable ordering、duplicate suppression、cleanup、trace 和 error code。
 - benchmark 至少覆盖大量 projectile sweep、area query、pierce hit memory、entity churn 和 dispose retained state。
+- Lifecycle event benchmark 必须真实开启 `emitProjectiles`，同时约束 spawn/despawn数量、p95/max、fact序列化大小、unsubscribe后回调和 dispose retained state；关闭事件的 hot-path benchmark不能替代该预算。
 
 ### 模块使用
 
@@ -214,3 +262,4 @@ Trace 默认只保存摘要和稳定 id，不保存完整 query payload 或每�
 - 具体伤害公式、队伍关系、核心/设施规则通过注入 policy 实现，不向 Combat Core 增加游戏枚举。
 - 动画、音频和镜头以 GAS Cue 为表现语义源，并按需关联 Combat 空间 fact；它们不反向决定 hit result。
 - 高频 projectile transform 和 candidate list 留在 World/Physics/Combat runtime，不进入 React、EventBus 或完整网络 fact stream。
+- 表现优先使用 `despawn.impact.point`；只有 backend 未提供 collision point 时才回退 `finalPosition`。消费者不能在收到 despawn 后反查已销毁 entity。

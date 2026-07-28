@@ -90,6 +90,24 @@ const BUDGETS: CombatBenchmarkBudget[] = [
   {
     suite: "combat-entity-churn",
     where: { projectilesPerCycle: 300, cycles: 20 },
+    metric: "maxMsPerCycle",
+    maximum: 75
+  },
+  {
+    suite: "combat-entity-churn",
+    where: { projectilesPerCycle: 300, cycles: 20 },
+    metric: "lifecycleFactBytes",
+    maximum: 768
+  },
+  {
+    suite: "combat-entity-churn",
+    where: { projectilesPerCycle: 300, cycles: 20 },
+    metric: "lifecycleEventsAfterUnsubscribe",
+    maximum: 0
+  },
+  {
+    suite: "combat-entity-churn",
+    where: { projectilesPerCycle: 300, cycles: 20 },
     metric: "retainedAfterDispose",
     maximum: 0
   }

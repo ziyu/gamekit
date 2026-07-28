@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { performance } from "node:perf_hooks";
 import { createDataRegistry, type DataRegistry } from "../packages/data/src";
 import { createEventBus } from "../packages/event-bus/src";
@@ -7,7 +8,9 @@ import {
   createCombatDataTypes,
   createCombatRuntime,
   createCombatTraceStore,
-  type CombatGasFacade
+  type CombatGasFacade,
+  type CombatProjectileDespawnFact,
+  type CombatProjectileSpawnFact
 } from "../packages/combat/src";
 import {
   createPhysicsDataTypes,
@@ -42,7 +45,16 @@ function main(): void {
         package: "@gamekit/combat",
         methodology: {
           warmupTicks: 10,
-          reports: ["mean", "p50", "p95", "max", "per-unit", "retained-after-dispose"]
+          reports: [
+            "mean",
+            "p50",
+            "p95",
+            "max",
+            "per-unit",
+            "lifecycle-event-count",
+            "serialized-fact-bytes",
+            "retained-after-dispose"
+          ]
         },
         suites,
         ...(checkEnabled
@@ -236,7 +248,24 @@ function runMassHit(): CombatBenchmarkCase {
 function runEntityChurn(): CombatBenchmarkCase {
   const projectilesPerCycle = 300;
   const cycles = 20;
-  const harness = createBenchmarkHarness();
+  const harness = createBenchmarkHarness(0, true);
+  let lifecycleEvents = 0;
+  let sampledSpawnFact: CombatProjectileSpawnFact | undefined;
+  let sampledDespawnFact: CombatProjectileDespawnFact | undefined;
+  const unsubscribeSpawn = harness.eventBus.on<CombatProjectileSpawnFact>(
+    "combat.projectile_spawned",
+    (event) => {
+      lifecycleEvents += 1;
+      sampledSpawnFact ??= event.payload;
+    }
+  );
+  const unsubscribeDespawn = harness.eventBus.on<CombatProjectileDespawnFact>(
+    "combat.projectile_despawned",
+    (event) => {
+      lifecycleEvents += 1;
+      sampledDespawnFact ??= event.payload;
+    }
+  );
   const samples: number[] = [];
   for (let cycle = 0; cycle < cycles; cycle += 1) {
     const start = performance.now();
@@ -250,12 +279,38 @@ function runEntityChurn(): CombatBenchmarkCase {
     }
     samples.push(performance.now() - start);
   }
+  const expectedLifecycleEvents = projectilesPerCycle * cycles * 2;
+  if (
+    lifecycleEvents !== expectedLifecycleEvents ||
+    sampledSpawnFact === undefined ||
+    sampledDespawnFact === undefined
+  ) {
+    throw new Error(
+      `Projectile lifecycle benchmark expected ${expectedLifecycleEvents} lifecycle facts, received ${lifecycleEvents}`
+    );
+  }
+  const lifecycleFactBytes = Math.max(
+    Buffer.byteLength(JSON.stringify(sampledSpawnFact), "utf8"),
+    Buffer.byteLength(JSON.stringify(sampledDespawnFact), "utf8")
+  );
+  unsubscribeSpawn();
+  unsubscribeDespawn();
+  const lifecycleEventsBeforeProbe = lifecycleEvents;
+  const probe = harness.runtime.deliver(projectileRequest("churn-unsubscribe-probe"));
+  if (probe.status !== "resolved" || probe.projectile === undefined) {
+    throw new Error("Projectile lifecycle unsubscribe probe failed to spawn");
+  }
+  harness.runtime.cancelProjectile({ projectileId: probe.projectile.projectileId });
+  const lifecycleEventsAfterUnsubscribe = lifecycleEvents - lifecycleEventsBeforeProbe;
   harness.runtime.dispose();
   const stats = summarize(samples);
   return {
     projectilesPerCycle,
     cycles,
     totalProjectiles: projectilesPerCycle * cycles,
+    lifecycleEvents,
+    lifecycleFactBytes,
+    lifecycleEventsAfterUnsubscribe,
     retainedAfterDispose: harness.world.query([CombatProjectileComponent]).length,
     meanMsPerCycle: stats.mean,
     p50MsPerCycle: stats.p50,
@@ -265,9 +320,10 @@ function runEntityChurn(): CombatBenchmarkCase {
   };
 }
 
-function createBenchmarkHarness(targetCount = 0) {
+function createBenchmarkHarness(targetCount = 0, emitProjectileEvents = false) {
   const registry = createBenchmarkRegistry();
   const world = createKootaWorld();
+  const eventBus = createEventBus({ clock: () => 0 });
   const sourceEntity = world.spawn();
   world.add(sourceEntity, PhysicsTransformComponent, { position: { x: 0, y: 0 } });
   const targetEntities = Array.from({ length: targetCount }, () => world.spawn());
@@ -312,13 +368,18 @@ function createBenchmarkHarness(targetCount = 0) {
     world,
     gas,
     physics,
+    eventBus,
     dataRegistry: registry,
     relationshipResolver: {
       resolve: () => "hostile",
       allows: () => true
     },
     traceStore: createCombatTraceStore({ enabled: false }),
-    eventPolicy: { emitDeliveries: false, emitHits: false, emitProjectiles: false },
+    eventPolicy: {
+      emitDeliveries: false,
+      emitHits: false,
+      emitProjectiles: emitProjectileEvents
+    },
     limits: {
       maxCandidatesPerRequest: 2_000,
       maxTargetsPerRequest: 2_000,
@@ -329,6 +390,7 @@ function createBenchmarkHarness(targetCount = 0) {
   });
   return {
     world,
+    eventBus,
     runtime,
     targetEntities,
     setCandidates(next: PhysicsQueryResult[]) {
