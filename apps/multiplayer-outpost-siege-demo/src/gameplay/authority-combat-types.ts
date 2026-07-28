@@ -1,6 +1,6 @@
 import type { EntityId } from "@gamekit/world";
 
-import type { OutpostCombatAbility } from "../domain";
+import type { OutpostCombatAbility, OutpostReplicatedWeaponState } from "../domain";
 
 export type OutpostAuthorityCombatCommand = {
   id: string;
@@ -11,6 +11,10 @@ export type OutpostAuthorityCombatCommand = {
   correlationId?: string | undefined;
   parentId?: string | undefined;
 };
+
+export type OutpostAuthorityCombatCommandResult =
+  | { status: "accepted" }
+  | { status: "rejected"; reason: string };
 
 export type OutpostAuthorityEnemySpawn = {
   id: string;
@@ -71,6 +75,7 @@ export type OutpostAuthorityCombatActorSnapshot = {
   abilityPhase?: string | undefined;
   abilityPhaseStartedAt?: number | undefined;
   abilityPhaseEndsAt?: number | undefined;
+  weapon?: OutpostReplicatedWeaponState | undefined;
 };
 
 export type OutpostAuthorityCombatProjectileSnapshot = {

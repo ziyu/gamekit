@@ -1,5 +1,6 @@
 import type { AnimatorHandle } from "@gamekit/animator-core";
 import type { GameAudio } from "@gamekit/audio-core";
+import type { CameraController } from "@gamekit/camera-core";
 import { defineGameModule } from "@gamekit/core";
 import type { DataRegistry } from "@gamekit/data";
 import type { GameInstallContext } from "@gamekit/game-runtime";
@@ -14,12 +15,15 @@ import {
   type OutpostRenderTargetWriter
 } from "./preview-presentation-module";
 import { createOutpostDynamicRenderObjectDefinition } from "./player-render-object";
+import type { OutpostClientPlayerPresentation } from "./player";
 
 export type CreateOutpostClientPresentationModuleOptions = {
   dataRegistry: DataRegistry;
   renderer: RendererAdapter;
   animator?: AnimatorHandle | undefined;
   audio?: GameAudio | undefined;
+  camera?: CameraController | undefined;
+  playerPresentation?: OutpostClientPlayerPresentation | undefined;
   listenerObjectId?: string | undefined;
   applyRenderTargetState?: OutpostRenderTargetWriter | undefined;
   readObjectState?(objectId: string):
@@ -39,6 +43,8 @@ export type CreateOutpostClientPresentationModuleOptions = {
         abilityPhase?: string | undefined;
         abilityPhaseStartedAt?: number | undefined;
         abilityPhaseEndsAt?: number | undefined;
+        weaponShotSequence?: number | undefined;
+        weaponLastShotCorrelationId?: string | undefined;
       }
     | undefined;
 };
@@ -63,8 +69,14 @@ export function createOutpostClientPresentationModule(
       const animatorGenerations = new Map<string, number>();
       const animatorControllers = new Map<string, string>();
       const audioPhaseSignatures = new Map<string, string>();
+      const weaponShotSequences = new Map<string, number>();
+      const localWeaponPresentation = createLocalWeaponPresentationState();
+      const muzzleObjectId = options.listenerObjectId
+        ? `outpost.player-presentation.${options.listenerObjectId}.muzzle`
+        : undefined;
       let musicStarted = false;
       let arenaCreated = false;
+      let muzzleCreated = false;
 
       ctx.systems.register({
         id: "outpost.client.presentation.sync",
@@ -77,6 +89,8 @@ export function createOutpostClientPresentationModule(
             }
             arenaCreated = true;
           }
+
+          syncLocalWeaponPresentation(options, localWeaponPresentation, elapsed);
 
           const desiredObjectIds = new Set<string>();
           const audioEmitters: Array<{
@@ -131,8 +145,15 @@ export function createOutpostClientPresentationModule(
             const shocked = presented?.tags?.includes("status.shocked") ?? false;
             const dead = presented?.tags?.includes("state.dead") ?? false;
             const phase = presented?.abilityPhase;
-            const tint = presentationTint(shocked, dead, phase);
-            const scale = presentationScale(phase);
+            const isLocalPlayer = object.id === options.listenerObjectId;
+            const riflePulse = isLocalPlayer && elapsed < localWeaponPresentation.muzzleEndsAt;
+            const denyPulse = isLocalPlayer && elapsed < localWeaponPresentation.denyEndsAt;
+            const tint = riflePulse
+              ? 0xfff1a8
+              : denyPulse
+                ? 0xff8a80
+                : presentationTint(shocked, dead, phase);
+            const scale = riflePulse ? 1.06 : denyPulse ? 0.97 : presentationScale(phase);
             const signature = `${position.x.toFixed(3)}:${position.y.toFixed(3)}:${facing.toFixed(3)}:${tint}:${scale}`;
             if (signatures.get(objectId) !== signature) {
               signatures.set(objectId, signature);
@@ -171,7 +192,53 @@ export function createOutpostClientPresentationModule(
               presented,
               elapsed
             );
-            syncAudioPhase(options.audio, audioPhaseSignatures, objectId, position, presented);
+            syncAudioPhase(
+              options.audio,
+              audioPhaseSignatures,
+              objectId,
+              position,
+              presented,
+              isLocalPlayer &&
+                presented?.weaponLastShotCorrelationId !== undefined &&
+                localWeaponPresentation.anticipatedCorrelations.has(
+                  presented.weaponLastShotCorrelationId
+                )
+            );
+            if (isLocalPlayer) {
+              flushLocalWeaponAudio(options, localWeaponPresentation, position);
+            }
+            if (options.playerPresentation === undefined) {
+              syncWeaponFeedback(
+                options.camera,
+                weaponShotSequences,
+                object.id,
+                options.listenerObjectId,
+                presented
+              );
+            }
+            if (isLocalPlayer && muzzleObjectId !== undefined) {
+              if (!muzzleCreated) {
+                const definition = createOutpostDynamicRenderObjectDefinition(
+                  options.dataRegistry,
+                  "render.outpost.projectile",
+                  muzzleObjectId,
+                  position.x,
+                  position.y,
+                  facing,
+                  ["outpost.player-rifle-muzzle"]
+                );
+                options.renderer.createObject({ ...definition, visible: false, alpha: 0 });
+                muzzleCreated = true;
+              }
+              syncMuzzlePresentation(
+                options,
+                muzzleObjectId,
+                position,
+                facing,
+                elapsed,
+                localWeaponPresentation
+              );
+            }
             if (options.audio) {
               audioEmitters.push({
                 id: objectId,
@@ -202,6 +269,7 @@ export function createOutpostClientPresentationModule(
               animatorPhaseExecutions,
               animatorGenerations,
               audioPhaseSignatures,
+              weaponShotSequences,
               objectId
             );
             options.renderer.destroyObject(objectId);
@@ -221,6 +289,7 @@ export function createOutpostClientPresentationModule(
             animatorPhaseExecutions,
             animatorGenerations,
             audioPhaseSignatures,
+            weaponShotSequences,
             objectId
           );
           options.renderer.destroyObject(objectId);
@@ -237,6 +306,11 @@ export function createOutpostClientPresentationModule(
         animatorPhaseExecutions.clear();
         animatorGenerations.clear();
         audioPhaseSignatures.clear();
+        weaponShotSequences.clear();
+        if (muzzleCreated && muzzleObjectId !== undefined) {
+          options.renderer.destroyObject(muzzleObjectId);
+        }
+        muzzleCreated = false;
         if (options.audio) {
           options.audio.music.stop({ fadeMs: 240 });
           if (options.listenerObjectId) {
@@ -365,7 +439,8 @@ function syncAudioPhase(
   signatures: Map<string, string>,
   objectId: string,
   position: { x: number; y: number },
-  presented: OutpostPresentedObjectState | undefined
+  presented: OutpostPresentedObjectState | undefined,
+  suppressLocalRifle: boolean
 ): void {
   const executionId = presented?.abilityExecutionId;
   const phase = presented?.abilityPhase;
@@ -380,7 +455,7 @@ function syncAudioPhase(
   }
   signatures.set(objectId, signature);
   const soundId =
-    abilityId === "ability.outpost.rifle_fire" && phase === "committed"
+    abilityId === "ability.outpost.rifle_fire" && phase === "committed" && !suppressLocalRifle
       ? OUTPOST_AUDIO_IDS.rifle
       : abilityId === "ability.outpost.enemy_attack" && phase === "preparing"
         ? OUTPOST_AUDIO_IDS.enemyTelegraph
@@ -396,6 +471,141 @@ function syncAudioPhase(
   });
 }
 
+type LocalWeaponPresentationState = {
+  cueWatermark: number;
+  muzzleStartedAt: number;
+  muzzleEndsAt: number;
+  denyEndsAt: number;
+  pendingRifleAudioKeys: string[];
+  anticipatedCorrelations: Map<string, number>;
+};
+
+function createLocalWeaponPresentationState(): LocalWeaponPresentationState {
+  return {
+    cueWatermark: 0,
+    muzzleStartedAt: Number.NEGATIVE_INFINITY,
+    muzzleEndsAt: Number.NEGATIVE_INFINITY,
+    denyEndsAt: Number.NEGATIVE_INFINITY,
+    pendingRifleAudioKeys: [],
+    anticipatedCorrelations: new Map()
+  };
+}
+
+function syncLocalWeaponPresentation(
+  options: CreateOutpostClientPresentationModuleOptions,
+  state: LocalWeaponPresentationState,
+  elapsed: number
+): void {
+  if (!options.playerPresentation || !options.listenerObjectId) {
+    return;
+  }
+  for (const cue of options.playerPresentation.cuesAfter(state.cueWatermark)) {
+    state.cueWatermark = Math.max(state.cueWatermark, cue.sequence);
+    if (cue.phase === "anticipated") {
+      state.anticipatedCorrelations.delete(cue.correlationId);
+      state.anticipatedCorrelations.set(cue.correlationId, cue.sequence);
+      while (state.anticipatedCorrelations.size > 32) {
+        const oldest = state.anticipatedCorrelations.keys().next().value as string | undefined;
+        if (oldest === undefined) {
+          break;
+        }
+        state.anticipatedCorrelations.delete(oldest);
+      }
+      state.muzzleStartedAt = elapsed;
+      state.muzzleEndsAt = elapsed + 82;
+      options.camera?.shake({
+        id: `outpost.rifle.anticipation.${cue.correlationId}.${cue.sequence}`,
+        amplitude: 3.5,
+        durationMs: 72,
+        frequency: 18
+      });
+      state.pendingRifleAudioKeys.push(`${cue.correlationId}:${cue.sequence}:anticipated`);
+    } else if (cue.phase === "rejected" || cue.phase === "expired") {
+      state.anticipatedCorrelations.delete(cue.correlationId);
+      state.denyEndsAt = elapsed + 90;
+      options.camera?.shake({
+        id: `outpost.rifle.deny.${cue.correlationId}.${cue.sequence}`,
+        amplitude: 1.1,
+        durationMs: 54,
+        frequency: 24
+      });
+    }
+  }
+}
+
+function flushLocalWeaponAudio(
+  options: CreateOutpostClientPresentationModuleOptions,
+  state: LocalWeaponPresentationState,
+  position: { x: number; y: number }
+): void {
+  if (!options.audio || !options.listenerObjectId || state.pendingRifleAudioKeys.length === 0) {
+    return;
+  }
+  for (const dedupeKey of state.pendingRifleAudioKeys) {
+    options.audio.sfx.play(OUTPOST_AUDIO_IDS.rifle, {
+      ownerId: options.listenerObjectId,
+      transform: { position },
+      dedupeKey
+    });
+  }
+  state.pendingRifleAudioKeys.length = 0;
+}
+
+function syncMuzzlePresentation(
+  options: CreateOutpostClientPresentationModuleOptions,
+  objectId: string,
+  playerPosition: { x: number; y: number },
+  facing: number,
+  elapsed: number,
+  state: LocalWeaponPresentationState
+): void {
+  const handle = options.renderer.getObjectHandle?.(objectId);
+  if (!handle || !options.applyRenderTargetState) {
+    return;
+  }
+  const active = elapsed < state.muzzleEndsAt;
+  const duration = Math.max(1, state.muzzleEndsAt - state.muzzleStartedAt);
+  const alpha = active ? Math.max(0, Math.min(1, (state.muzzleEndsAt - elapsed) / duration)) : 0;
+  const offset = 52;
+  options.applyRenderTargetState(handle.native, {
+    visible: active,
+    alpha,
+    transform: {
+      position: {
+        x: playerPosition.x + Math.cos(facing) * offset,
+        y: playerPosition.y + Math.sin(facing) * offset
+      },
+      rotation: { z: facing },
+      scale: { x: 1.2, y: 0.58 }
+    },
+    props: { tint: 0xffe08a, tintMode: "fill" }
+  });
+}
+
+function syncWeaponFeedback(
+  camera: CameraController | undefined,
+  shotSequences: Map<string, number>,
+  objectId: string,
+  localPlayerId: string | undefined,
+  presented: OutpostPresentedObjectState | undefined
+): void {
+  if (objectId !== localPlayerId || presented?.weaponShotSequence === undefined) {
+    return;
+  }
+  const current = presented.weaponShotSequence;
+  const previous = shotSequences.get(objectId);
+  shotSequences.set(objectId, current);
+  if (!camera || previous === undefined || current <= previous) {
+    return;
+  }
+  camera.shake({
+    id: `outpost.rifle.recoil.${objectId}.${current}`,
+    amplitude: 3.5,
+    durationMs: 72,
+    frequency: 18
+  });
+}
+
 function removeDynamicPresentation(
   options: CreateOutpostClientPresentationModuleOptions,
   controllers: Map<string, string>,
@@ -404,6 +614,7 @@ function removeDynamicPresentation(
   phaseExecutions: Map<string, string>,
   generations: Map<string, number>,
   audioSignatures: Map<string, string>,
+  weaponShotSequences: Map<string, number>,
   objectId: string
 ): void {
   const controllerId = controllers.get(objectId);
@@ -416,6 +627,7 @@ function removeDynamicPresentation(
   phaseExecutions.delete(objectId);
   generations.delete(objectId);
   audioSignatures.delete(objectId);
+  weaponShotSequences.delete(objectId);
   options.audio?.sfx.stopOwner(objectId, { fadeMs: 60 });
   options.audio?.spatial.removeEmitter(objectId, { stopPlayback: true, fadeMs: 60 });
 }

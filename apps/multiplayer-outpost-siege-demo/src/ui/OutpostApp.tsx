@@ -3,6 +3,7 @@ import { DevToolsOverlay } from "@gamekit/devtools-ui";
 import type { UiRuntime } from "@gamekit/ui-core";
 import { useCallback } from "react";
 import { OutpostLobby, type OutpostConnectionView } from "./OutpostLobby";
+import { WeaponHud } from "./player/WeaponHud";
 
 export type OutpostBootPhase = "initializing" | "booting" | "running" | "failed";
 
@@ -119,6 +120,8 @@ export function OutpostApp({
             <Meter label="SH" max={50} value={localActor?.shield ?? 50} tone="shield" />
           </div>
         </section>
+
+        <WeaponHud weapon={localActor?.weapon} elapsedMs={match?.elapsedMs ?? 0} />
 
         <section className="outpost-abilities" aria-label="Ability bar">
           {abilities.map((ability) => (

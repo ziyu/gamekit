@@ -51,6 +51,7 @@ import type {
   OutpostAuthorityAiActionResult,
   OutpostAuthorityAiEnemy,
   OutpostAuthorityCombatCommand,
+  OutpostAuthorityCombatCommandResult,
   OutpostAuthorityCombatPlayer,
   OutpostAuthorityCombatSnapshot,
   OutpostAuthorityEnemySpawn
@@ -61,6 +62,7 @@ export type {
   OutpostAuthorityAiEnemy,
   OutpostAuthorityCombatActorSnapshot,
   OutpostAuthorityCombatCommand,
+  OutpostAuthorityCombatCommandResult,
   OutpostAuthorityCombatPlayer,
   OutpostAuthorityCombatProjectileSnapshot,
   OutpostAuthorityCombatSnapshot,
@@ -83,6 +85,11 @@ export type OutpostAuthorityCombat = {
   coreModule: OutpostCombatCoreIntegration["module"];
   tcaDefinitions: TcaDefinitionSet;
   aiEnemies(): OutpostAuthorityAiEnemy[];
+  activatePlayerAction(command: OutpostAuthorityCombatCommand): OutpostAuthorityCombatCommandResult;
+  rejectPlayerAction(
+    command: OutpostAuthorityCombatCommand,
+    reason: string
+  ): OutpostAuthorityCombatCommandResult;
   activateAiAction(enemyId: string, targetActorId: string): OutpostAuthorityAiActionResult;
   snapshot(): OutpostAuthorityCombatSnapshot;
 };
@@ -131,6 +138,13 @@ export function createOutpostAuthorityCombat(
     }),
     aiEnemies() {
       return captureAiEnemies(state);
+    },
+    activatePlayerAction(command) {
+      return executeCombatCommand(state, command);
+    },
+    rejectPlayerAction(command, reason) {
+      rejectCommand(state, command, reason);
+      return { status: "rejected", reason };
     },
     activateAiAction(enemyId, targetActorId) {
       return activateEnemyAction(state, enemyId, targetActorId);
@@ -222,7 +236,10 @@ function createCombatPostPhysicsModule(state: CombatState) {
   });
 }
 
-function executeCombatCommand(state: CombatState, command: OutpostAuthorityCombatCommand): void {
+function executeCombatCommand(
+  state: CombatState,
+  command: OutpostAuthorityCombatCommand
+): OutpostAuthorityCombatCommandResult {
   const player = state.options.players().get(command.playerId);
   if (
     !player ||
@@ -230,21 +247,18 @@ function executeCombatCommand(state: CombatState, command: OutpostAuthorityComba
     actorHealth(state, player.actorId) <= 0
   ) {
     rejectCommand(state, command, "player-unavailable");
-    return;
+    return { status: "rejected", reason: "player-unavailable" };
   }
 
   switch (command.ability) {
     case "rifle":
-      executeRifle(state, player, command);
-      return;
+      return executeRifle(state, player, command);
     case "dash":
-      executeDash(state, player, command);
-      return;
+      return executeDash(state, player, command);
     case "shock-field":
-      executeShockField(state, player, command);
-      return;
+      return executeShockField(state, player, command);
     case "deploy-turret":
-      executeTurretPlacement(state, player, command);
+      return executeTurretPlacement(state, player, command);
   }
 }
 
@@ -252,7 +266,7 @@ function executeRifle(
   state: CombatState,
   player: OutpostAuthorityCombatPlayer,
   command: OutpostAuthorityCombatCommand
-): void {
+): OutpostAuthorityCombatCommandResult {
   const definition = state.options.dataRegistry.getValue<OutpostPlayerDefinition>(
     OUTPOST_PLAYER_TYPE,
     OUTPOST_COMBAT_PLAYER_DEFINITION_ID
@@ -270,16 +284,17 @@ function executeRifle(
   });
   if (activation.status !== "activated") {
     rejectCommand(state, command, activation.reason);
-    return;
+    return { status: "rejected", reason: activation.reason };
   }
   state.acceptedCommands += 1;
+  return { status: "accepted" };
 }
 
 function executeDash(
   state: CombatState,
   player: OutpostAuthorityCombatPlayer,
   command: OutpostAuthorityCombatCommand
-): void {
+): OutpostAuthorityCombatCommandResult {
   const activation = state.options.gas.activateAbility({
     actorId: player.actorId,
     abilityId: "ability.outpost.dash",
@@ -287,7 +302,7 @@ function executeDash(
   });
   if (activation.status !== "activated") {
     rejectCommand(state, command, activation.reason);
-    return;
+    return { status: "rejected", reason: activation.reason };
   }
   const direction = normalizedAim(state.options.world, player.entityId, command.aimX, command.aimY);
   state.dashesByPlayerId.set(player.playerId, {
@@ -298,13 +313,14 @@ function executeDash(
   });
   state.options.gas.addTag(player.actorId, "state.dashing", command.id, operationContext(command));
   state.acceptedCommands += 1;
+  return { status: "accepted" };
 }
 
 function executeShockField(
   state: CombatState,
   player: OutpostAuthorityCombatPlayer,
   command: OutpostAuthorityCombatCommand
-): void {
+): OutpostAuthorityCombatCommandResult {
   const activation = state.options.gas.activateAbility({
     actorId: player.actorId,
     abilityId: "ability.outpost.shock_field",
@@ -312,16 +328,17 @@ function executeShockField(
   });
   if (activation.status !== "activated") {
     rejectCommand(state, command, activation.reason);
-    return;
+    return { status: "rejected", reason: activation.reason };
   }
   state.acceptedCommands += 1;
+  return { status: "accepted" };
 }
 
 function executeTurretPlacement(
   state: CombatState,
   player: OutpostAuthorityCombatPlayer,
   command: OutpostAuthorityCombatCommand
-): void {
+): OutpostAuthorityCombatCommandResult {
   const definition = state.options.dataRegistry.getValue<OutpostBuildableDefinition>(
     OUTPOST_BUILDABLE_TYPE,
     TURRET_DEFINITION_ID
@@ -330,7 +347,7 @@ function executeTurretPlacement(
   const distance = Math.hypot(command.aimX - origin.x, command.aimY - origin.y);
   if (distance > definition.placementRange || !insideArena(command.aimX, command.aimY, 20)) {
     rejectCommand(state, command, "placement-out-of-range");
-    return;
+    return { status: "rejected", reason: "placement-out-of-range" };
   }
   const bodyData = state.options.dataRegistry.getValue<PhysicsBodyData>(
     "physics.body",
@@ -347,7 +364,7 @@ function executeTurretPlacement(
     )
   ) {
     rejectCommand(state, command, "placement-obstructed");
-    return;
+    return { status: "rejected", reason: "placement-obstructed" };
   }
   const activation = state.options.gas.activateAbility({
     actorId: player.actorId,
@@ -356,7 +373,7 @@ function executeTurretPlacement(
   });
   if (activation.status !== "activated") {
     rejectCommand(state, command, activation.reason);
-    return;
+    return { status: "rejected", reason: activation.reason };
   }
   materializeActorObject(state, {
     id: `turret.${state.nextTurretId}`,
@@ -372,6 +389,7 @@ function executeTurretPlacement(
   });
   state.nextTurretId += 1;
   state.acceptedCommands += 1;
+  return { status: "accepted" };
 }
 
 function ensureInitialEnemies(state: CombatState): void {

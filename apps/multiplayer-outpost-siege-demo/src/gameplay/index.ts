@@ -12,4 +12,6 @@ export * from "./client-shadow-runtime";
 export * from "./components";
 export * from "./constants";
 export * from "./input";
+export * from "./player/action-mapping";
+export * from "./player/action-types";
 export * from "./preview-runtime";

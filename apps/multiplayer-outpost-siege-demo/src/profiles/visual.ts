@@ -6,7 +6,11 @@ import type { DataRegistry } from "@gamekit/data";
 import type { DevToolsDataSource, DevToolsRuntime } from "@gamekit/devtools";
 import { createPhaserDriver } from "@gamekit/driver-phaser";
 import { createInputRouter, type InputRouter } from "@gamekit/input-core";
-import { createDomInputAdapter } from "@gamekit/input-dom";
+import {
+  createDomInputAdapter,
+  createWebGamepadInputAdapter,
+  type WebGamepadInputDiagnostic
+} from "@gamekit/input-dom";
 import {
   createMultiplayerRuntime,
   type MultiplayerClientReplicationSnapshotSource,
@@ -47,6 +51,7 @@ export type OutpostVisualContext = {
   physicsBackend?: PhysicsBackendAdapter | undefined;
   inputBlocked: boolean;
   assetDiagnostics: AssetDiagnosticEvent[];
+  inputDiagnostics?: WebGamepadInputDiagnostic[];
   platform?: PlatformRuntime | undefined;
   dataRegistry?: DataRegistry | undefined;
   assets?: AssetManager | undefined;
@@ -177,6 +182,16 @@ export function createOutpostVisualProfile(
               onInput(event) {
                 router.handle(event);
               }
+            }),
+            createWebGamepadInputAdapter({
+              source: `outpost.${options.profileId}.web.gamepad`,
+              scope: () => resolveKeyboardScope(activeContext),
+              onInput(event) {
+                router.handle(event);
+              },
+              onDiagnostic(event) {
+                contextInputDiagnostic(activeContext, event);
+              }
             })
           ];
         },
@@ -253,6 +268,16 @@ export function createOutpostVisualProfile(
         ui: { pins: false },
         dataSources({ context: activeContext }) {
           const sources: DevToolsDataSource[] = [
+            {
+              id: "outpost.input",
+              label: "Outpost Input",
+              kind: "custom",
+              snapshot() {
+                return {
+                  gamepadDiagnostics: activeContext.inputDiagnostics ?? []
+                };
+              }
+            },
             {
               id: activeContext.client ? "outpost.client-shadow" : "outpost.preview",
               label: activeContext.client ? "Outpost Authority Shadow" : "Outpost Local Preview",
@@ -357,7 +382,16 @@ export function createOutpostVisualProfile(
               label: "Outpost Session",
               area: "dock",
               order: 7,
-              sourceKinds: ["world", "camera", "physics", "combat", "ai", "animator", "audio"]
+              sourceKinds: [
+                "custom",
+                "world",
+                "camera",
+                "physics",
+                "combat",
+                "ai",
+                "animator",
+                "audio"
+              ]
             }
           ];
         }
@@ -386,6 +420,17 @@ function contextAssetDiagnostic(
   context.assetDiagnostics.unshift(event);
   if (context.assetDiagnostics.length > 16) {
     context.assetDiagnostics.pop();
+  }
+}
+
+function contextInputDiagnostic(
+  context: OutpostVisualContext,
+  event: WebGamepadInputDiagnostic
+): void {
+  const diagnostics = (context.inputDiagnostics ??= []);
+  diagnostics.unshift(event);
+  if (diagnostics.length > 16) {
+    diagnostics.pop();
   }
 }
 

@@ -19,6 +19,8 @@ import { OutpostGameplayObject, OutpostPresentation } from "../gameplay/componen
 import { OUTPOST_PRESENTATION_SIZE } from "../gameplay/constants";
 
 export type OutpostRenderTargetState = {
+  visible?: boolean;
+  alpha?: number;
   transform?: {
     position?: { x?: number; y?: number };
     rotation?: { z?: number };

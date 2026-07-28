@@ -85,6 +85,7 @@ kbd {
 .outpost-objective,
 .outpost-squad,
 .outpost-vitals,
+.outpost-weapon,
 .outpost-abilities,
 .outpost-control-hint,
 .outpost-boot {
@@ -315,6 +316,86 @@ kbd {
 }
 .outpost-meter--shield > div i {
   background: linear-gradient(90deg, #2a8393, #71e2e6);
+}
+
+.outpost-weapon {
+  right: 30px;
+  bottom: 62px;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  width: 226px;
+  min-height: 74px;
+  padding: 9px 11px 8px;
+  border: 1px solid var(--hud-line);
+  border-right: 3px solid var(--hud-amber);
+  background: linear-gradient(110deg, rgba(4, 13, 11, 0.9), rgba(6, 24, 20, 0.7));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(9px);
+  pointer-events: none;
+}
+.outpost-weapon > div {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--hud-muted);
+  font:
+    700 7px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.08em;
+}
+.outpost-weapon kbd {
+  padding: 2px 4px;
+  border: 1px solid rgba(242, 189, 80, 0.42);
+  color: var(--hud-amber);
+  font:
+    7px "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.outpost-weapon > strong {
+  align-self: end;
+  color: var(--hud-paper);
+  font:
+    800 28px/0.86 "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: -0.08em;
+}
+.outpost-weapon > small {
+  align-self: end;
+  margin-left: 7px;
+  color: var(--hud-muted);
+  font:
+    9px "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.outpost-weapon > i {
+  grid-column: 1 / -1;
+  height: 3px;
+  margin-top: 7px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+.outpost-weapon > i b {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--hud-amber), #ffe49a);
+}
+.outpost-weapon > em {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  color: var(--hud-mint);
+  font:
+    normal 7px "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.07em;
+}
+.outpost-weapon.is-reloading {
+  border-color: rgba(242, 189, 80, 0.62);
 }
 
 .outpost-abilities {
@@ -963,6 +1044,11 @@ kbd {
   .outpost-control-hint {
     display: none;
   }
+  .outpost-weapon {
+    right: 18px;
+    bottom: 96px;
+    width: 180px;
+  }
 }
 @media (max-width: 640px) {
   .outpost-brand {
@@ -979,6 +1065,9 @@ kbd {
   .outpost-vitals {
     bottom: 94px;
     left: 16px;
+  }
+  .outpost-weapon {
+    display: none;
   }
   .outpost-abilities {
     bottom: 18px;

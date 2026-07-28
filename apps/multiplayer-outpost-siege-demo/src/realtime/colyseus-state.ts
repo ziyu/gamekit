@@ -4,7 +4,7 @@ import type { ColyseusNativeStateUpdate } from "@gamekit/multiplayer-colyseus";
 import type { OutpostClientAuthoritySnapshot } from "../gameplay/client-shadow-runtime";
 import type { OutpostMatchAuthoritySnapshot } from "./match-authority";
 
-export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v3";
+export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v6";
 export const OUTPOST_COLYSEUS_SOURCE_ENDPOINT_ID = "outpost.colyseus-schema";
 
 export const OutpostColyseusParticipantState = schema(
@@ -65,7 +65,24 @@ export const OutpostColyseusCombatActorState = schema(
     abilityId: "string",
     abilityPhase: "string",
     abilityPhaseStartedAt: "float64",
-    abilityPhaseEndsAt: "float64"
+    abilityPhaseEndsAt: "float64",
+    weaponId: "string",
+    weaponMagazine: "int32",
+    weaponMagazineSize: "int32",
+    weaponReserveAmmo: "int32",
+    weaponPhase: "string",
+    weaponShotSequence: "uint32",
+    weaponLastShotCorrelationId: "string",
+    weaponReloadStartedAt: "float64",
+    weaponReloadEndsAt: "float64",
+    weaponReloadRequestId: "string",
+    weaponReloadCorrelationId: "string",
+    weaponFeedbackSequence: "uint32",
+    weaponFeedbackKind: "string",
+    weaponFeedbackAction: "string",
+    weaponFeedbackReason: "string",
+    weaponFeedbackAt: "float64",
+    weaponFeedbackCorrelationId: "string"
   },
   "OutpostColyseusCombatActorState"
 );
@@ -243,7 +260,24 @@ export function projectOutpostMatchToColyseusState(
         abilityId: actor.abilityId ?? "",
         abilityPhase: actor.abilityPhase ?? "",
         abilityPhaseStartedAt: actor.abilityPhaseStartedAt ?? -1,
-        abilityPhaseEndsAt: actor.abilityPhaseEndsAt ?? -1
+        abilityPhaseEndsAt: actor.abilityPhaseEndsAt ?? -1,
+        weaponId: actor.weapon?.weaponId ?? "",
+        weaponMagazine: actor.weapon?.magazine ?? 0,
+        weaponMagazineSize: actor.weapon?.magazineSize ?? 0,
+        weaponReserveAmmo: actor.weapon?.reserveAmmo ?? 0,
+        weaponPhase: actor.weapon?.phase ?? "",
+        weaponShotSequence: actor.weapon?.shotSequence ?? 0,
+        weaponLastShotCorrelationId: actor.weapon?.lastShotCorrelationId ?? "",
+        weaponReloadStartedAt: actor.weapon?.reloadStartedAt ?? -1,
+        weaponReloadEndsAt: actor.weapon?.reloadEndsAt ?? -1,
+        weaponReloadRequestId: actor.weapon?.reloadRequestId ?? "",
+        weaponReloadCorrelationId: actor.weapon?.reloadCorrelationId ?? "",
+        weaponFeedbackSequence: actor.weapon?.lastFeedback?.sequence ?? 0,
+        weaponFeedbackKind: actor.weapon?.lastFeedback?.kind ?? "",
+        weaponFeedbackAction: actor.weapon?.lastFeedback?.action ?? "",
+        weaponFeedbackReason: actor.weapon?.lastFeedback?.reason ?? "",
+        weaponFeedbackAt: actor.weapon?.lastFeedback?.at ?? -1,
+        weaponFeedbackCorrelationId: actor.weapon?.lastFeedback?.correlationId ?? ""
       });
     next.objectId = actor.objectId;
     next.kind = actor.kind;
@@ -267,6 +301,23 @@ export function projectOutpostMatchToColyseusState(
     next.abilityPhase = actor.abilityPhase ?? "";
     next.abilityPhaseStartedAt = actor.abilityPhaseStartedAt ?? -1;
     next.abilityPhaseEndsAt = actor.abilityPhaseEndsAt ?? -1;
+    next.weaponId = actor.weapon?.weaponId ?? "";
+    next.weaponMagazine = actor.weapon?.magazine ?? 0;
+    next.weaponMagazineSize = actor.weapon?.magazineSize ?? 0;
+    next.weaponReserveAmmo = actor.weapon?.reserveAmmo ?? 0;
+    next.weaponPhase = actor.weapon?.phase ?? "";
+    next.weaponShotSequence = actor.weapon?.shotSequence ?? 0;
+    next.weaponLastShotCorrelationId = actor.weapon?.lastShotCorrelationId ?? "";
+    next.weaponReloadStartedAt = actor.weapon?.reloadStartedAt ?? -1;
+    next.weaponReloadEndsAt = actor.weapon?.reloadEndsAt ?? -1;
+    next.weaponReloadRequestId = actor.weapon?.reloadRequestId ?? "";
+    next.weaponReloadCorrelationId = actor.weapon?.reloadCorrelationId ?? "";
+    next.weaponFeedbackSequence = actor.weapon?.lastFeedback?.sequence ?? 0;
+    next.weaponFeedbackKind = actor.weapon?.lastFeedback?.kind ?? "";
+    next.weaponFeedbackAction = actor.weapon?.lastFeedback?.action ?? "";
+    next.weaponFeedbackReason = actor.weapon?.lastFeedback?.reason ?? "";
+    next.weaponFeedbackAt = actor.weapon?.lastFeedback?.at ?? -1;
+    next.weaponFeedbackCorrelationId = actor.weapon?.lastFeedback?.correlationId ?? "";
     syncNumberMap(next.cooldowns, actor.cooldowns);
     if (current === undefined) {
       state.combatActors.set(key, next);
@@ -474,7 +525,41 @@ function readCombatActor(
     typeof value.abilityId !== "string" ||
     typeof value.abilityPhase !== "string" ||
     !finiteNumber(value.abilityPhaseStartedAt) ||
-    !finiteNumber(value.abilityPhaseEndsAt)
+    !finiteNumber(value.abilityPhaseEndsAt) ||
+    typeof value.weaponId !== "string" ||
+    !nonNegativeInteger(value.weaponMagazine) ||
+    !nonNegativeInteger(value.weaponMagazineSize) ||
+    !nonNegativeInteger(value.weaponReserveAmmo) ||
+    typeof value.weaponPhase !== "string" ||
+    !nonNegativeInteger(value.weaponShotSequence) ||
+    typeof value.weaponLastShotCorrelationId !== "string" ||
+    value.weaponLastShotCorrelationId.length > 256 ||
+    !finiteNumber(value.weaponReloadStartedAt) ||
+    !finiteNumber(value.weaponReloadEndsAt) ||
+    typeof value.weaponReloadRequestId !== "string" ||
+    value.weaponReloadRequestId.length > 256 ||
+    typeof value.weaponReloadCorrelationId !== "string" ||
+    value.weaponReloadCorrelationId.length > 256 ||
+    !nonNegativeInteger(value.weaponFeedbackSequence) ||
+    typeof value.weaponFeedbackKind !== "string" ||
+    typeof value.weaponFeedbackAction !== "string" ||
+    typeof value.weaponFeedbackReason !== "string" ||
+    value.weaponFeedbackReason.length > 256 ||
+    !finiteNumber(value.weaponFeedbackAt) ||
+    typeof value.weaponFeedbackCorrelationId !== "string" ||
+    value.weaponFeedbackCorrelationId.length > 256 ||
+    (value.weaponId.length > 0 &&
+      (!positiveInteger(value.weaponMagazineSize) ||
+        value.weaponMagazine > value.weaponMagazineSize ||
+        !isWeaponPhase(value.weaponPhase) ||
+        (value.weaponFeedbackKind.length > 0 &&
+          (!isWeaponFeedbackKind(value.weaponFeedbackKind) ||
+            !isWeaponFeedbackAction(value.weaponFeedbackAction) ||
+            !nonEmptyString(value.weaponFeedbackReason) ||
+            value.weaponFeedbackAt < 0)) ||
+        (value.weaponReloadStartedAt >= 0 &&
+          value.weaponReloadEndsAt >= 0 &&
+          value.weaponReloadEndsAt < value.weaponReloadStartedAt)))
   ) {
     return undefined;
   }
@@ -511,7 +596,46 @@ function readCombatActor(
     ...(value.abilityPhaseStartedAt < 0
       ? {}
       : { abilityPhaseStartedAt: value.abilityPhaseStartedAt }),
-    ...(value.abilityPhaseEndsAt < 0 ? {} : { abilityPhaseEndsAt: value.abilityPhaseEndsAt })
+    ...(value.abilityPhaseEndsAt < 0 ? {} : { abilityPhaseEndsAt: value.abilityPhaseEndsAt }),
+    ...(value.weaponId.length === 0
+      ? {}
+      : {
+          weapon: {
+            weaponId: value.weaponId,
+            magazine: value.weaponMagazine,
+            magazineSize: value.weaponMagazineSize,
+            reserveAmmo: value.weaponReserveAmmo,
+            phase: value.weaponPhase as "ready" | "reloading" | "empty",
+            shotSequence: value.weaponShotSequence,
+            ...(value.weaponLastShotCorrelationId.length === 0
+              ? {}
+              : { lastShotCorrelationId: value.weaponLastShotCorrelationId }),
+            ...(value.weaponReloadStartedAt < 0
+              ? {}
+              : { reloadStartedAt: value.weaponReloadStartedAt }),
+            ...(value.weaponReloadEndsAt < 0 ? {} : { reloadEndsAt: value.weaponReloadEndsAt }),
+            ...(value.weaponReloadRequestId.length === 0
+              ? {}
+              : { reloadRequestId: value.weaponReloadRequestId }),
+            ...(value.weaponReloadCorrelationId.length === 0
+              ? {}
+              : { reloadCorrelationId: value.weaponReloadCorrelationId }),
+            ...(value.weaponFeedbackKind.length === 0
+              ? {}
+              : {
+                  lastFeedback: {
+                    sequence: value.weaponFeedbackSequence,
+                    kind: value.weaponFeedbackKind as "rejected" | "cancelled",
+                    action: value.weaponFeedbackAction as "rifle" | "reload",
+                    reason: value.weaponFeedbackReason,
+                    at: value.weaponFeedbackAt,
+                    ...(value.weaponFeedbackCorrelationId.length === 0
+                      ? {}
+                      : { correlationId: value.weaponFeedbackCorrelationId })
+                  }
+                })
+          }
+        })
   };
 }
 
@@ -653,6 +777,11 @@ function estimateSnapshotBytes(
       estimateStringBytes(actor.networkEntityId) +
       estimateStringBytes(actor.definitionId) +
       estimateStringBytes(actor.renderKey) +
+      estimateStringBytes(actor.weapon?.lastShotCorrelationId ?? "") +
+      estimateStringBytes(actor.weapon?.reloadRequestId ?? "") +
+      estimateStringBytes(actor.weapon?.reloadCorrelationId ?? "") +
+      estimateStringBytes(actor.weapon?.lastFeedback?.reason ?? "") +
+      estimateStringBytes(actor.weapon?.lastFeedback?.correlationId ?? "") +
       actor.tags.reduce((total, tag) => total + estimateStringBytes(tag), 0) +
       Object.keys(actor.cooldowns).reduce(
         (total, abilityId) => total + 16 + estimateStringBytes(abilityId),
@@ -714,4 +843,16 @@ function isCombatActorKind(
   value: unknown
 ): value is OutpostClientAuthoritySnapshot["combat"]["actors"][number]["kind"] {
   return value === "player" || value === "enemy" || value === "buildable";
+}
+
+function isWeaponPhase(value: string): value is "ready" | "reloading" | "empty" {
+  return value === "ready" || value === "reloading" || value === "empty";
+}
+
+function isWeaponFeedbackKind(value: string): value is "rejected" | "cancelled" {
+  return value === "rejected" || value === "cancelled";
+}
+
+function isWeaponFeedbackAction(value: string): value is "rifle" | "reload" {
+  return value === "rifle" || value === "reload";
 }

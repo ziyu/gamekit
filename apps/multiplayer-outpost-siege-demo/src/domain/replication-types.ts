@@ -1,3 +1,5 @@
+import type { OutpostReplicatedWeaponState } from "./player/weapon";
+
 export type OutpostReplicatedActor = {
   objectId: string;
   networkEntityId: string;
@@ -24,6 +26,7 @@ export type OutpostReplicatedActor = {
   abilityPhase?: string | undefined;
   abilityPhaseStartedAt?: number | undefined;
   abilityPhaseEndsAt?: number | undefined;
+  weapon?: OutpostReplicatedWeaponState | undefined;
 };
 
 export type OutpostReplicatedProjectile = {

@@ -12,7 +12,7 @@ import {
 } from "@gamekit/multiplayer-core";
 
 import { OUTPOST_ARENA } from "../content";
-import type { OutpostCombatAbility, OutpostReplicatedCombatState } from "../domain";
+import type { OutpostPlayerAction, OutpostReplicatedCombatState } from "../domain";
 import type {
   OutpostAuthorityGameplaySnapshot,
   OutpostAuthorityPlayerInput,
@@ -20,6 +20,7 @@ import type {
   OutpostAuthorityPlayerState
 } from "../gameplay/authority-runtime";
 import type { OutpostAuthorityCombatCommand } from "../gameplay/authority-combat";
+import type { OutpostAuthorityPlayerActionCommand } from "../gameplay/player/action-types";
 
 const DEFAULT_COUNTDOWN_MS = 3_000;
 const DEFAULT_MAX_PLAYERS = 4;
@@ -40,8 +41,8 @@ export type OutpostMatchAction =
       ready: boolean;
     }
   | {
-      type: "combat";
-      ability: OutpostCombatAbility;
+      type: "player-action";
+      action: OutpostPlayerAction;
       aimX: number;
       aimY: number;
     };
@@ -80,6 +81,7 @@ export type OutpostMatchAuthority = {
   beginTick(deltaMs: number): void;
   commitTick(): Promise<void>;
   simulationPlayers(): OutpostAuthorityPlayerState[];
+  drainPlayerActions(): OutpostAuthorityPlayerActionCommand[];
   drainCombatCommands(): OutpostAuthorityCombatCommand[];
   snapshot(): OutpostMatchAuthoritySnapshot;
   dispose(): void;
@@ -127,6 +129,7 @@ export function createOutpostMatchAuthority(
   const readyByPeerId = new Map<string, boolean>();
   const inputsByPlayerId = new Map<string, OutpostMatchInput>();
   const inputAcksByPeerId = new Map<string, number>();
+  const pendingPlayerActions: OutpostAuthorityPlayerActionCommand[] = [];
   const pendingCombatCommands: OutpostAuthorityCombatCommand[] = [];
   let phase: OutpostMatchPhase = "lobby";
   let countdownMsRemaining = countdownMs;
@@ -200,13 +203,16 @@ export function createOutpostMatchAuthority(
         "Combat actions are accepted only while the match is running."
       );
     }
-    if (pendingCombatCommands.length >= maxPlayers * 4) {
-      return reject("combat-queue-full", "Outpost combat command queue is full for this tick.");
+    if (pendingCombatCommands.length + pendingPlayerActions.length >= maxPlayers * 4) {
+      return reject(
+        "player-action-queue-full",
+        "Outpost player action queue is full for this tick."
+      );
     }
-    pendingCombatCommands.push({
+    pendingPlayerActions.push({
       id: message.id,
       playerId: binding.playerId,
-      ability: action.ability,
+      action: action.action,
       aimX: action.aimX,
       aimY: action.aimY,
       ...(message.correlationId === undefined ? {} : { correlationId: message.correlationId }),
@@ -410,6 +416,9 @@ export function createOutpostMatchAuthority(
       return disposed ? Promise.resolve() : authorityLoop.commitTick();
     },
     simulationPlayers,
+    drainPlayerActions() {
+      return pendingPlayerActions.splice(0, pendingPlayerActions.length);
+    },
     drainCombatCommands() {
       return pendingCombatCommands.splice(0, pendingCombatCommands.length);
     },
@@ -425,6 +434,7 @@ export function createOutpostMatchAuthority(
       readyByPeerId.clear();
       inputsByPlayerId.clear();
       inputAcksByPeerId.clear();
+      pendingPlayerActions.length = 0;
       pendingCombatCommands.length = 0;
     }
   };
@@ -452,7 +462,17 @@ function projectCombatState(
       objectId: id,
       ...actor,
       tags: [...actor.tags],
-      cooldowns: { ...actor.cooldowns }
+      cooldowns: { ...actor.cooldowns },
+      ...(actor.weapon === undefined
+        ? {}
+        : {
+            weapon: {
+              ...actor.weapon,
+              ...(actor.weapon.lastFeedback === undefined
+                ? {}
+                : { lastFeedback: { ...actor.weapon.lastFeedback } })
+            }
+          })
     })),
     projectiles: combat.projectiles.map(({ id, entityId: _entityId, ...projectile }) => ({
       objectId: id,
@@ -496,14 +516,14 @@ function readMatchAction(payload: unknown): OutpostMatchAction | undefined {
     return { type: "ready", ready: payload.ready };
   }
   if (
-    payload.type === "combat" &&
-    isCombatAbility(payload.ability) &&
+    payload.type === "player-action" &&
+    isPlayerAction(payload.action) &&
     finiteNumber(payload.aimX) &&
     finiteNumber(payload.aimY)
   ) {
     return {
-      type: "combat",
-      ability: payload.ability,
+      type: "player-action",
+      action: payload.action,
       aimX: payload.aimX,
       aimY: payload.aimY
     };
@@ -527,7 +547,14 @@ function readMatchInput(payload: unknown): OutpostMatchInput | undefined {
     moveX: clamp(payload.moveX, -1, 1),
     moveY: clamp(payload.moveY, -1, 1),
     aimX: finiteNumber(payload.aimX) ? payload.aimX : OUTPOST_ARENA.width / 2,
-    aimY: finiteNumber(payload.aimY) ? payload.aimY : OUTPOST_ARENA.height / 2
+    aimY: finiteNumber(payload.aimY) ? payload.aimY : OUTPOST_ARENA.height / 2,
+    fireHeld: payload.fireHeld === true,
+    fireSequence:
+      typeof payload.fireSequence === "number" &&
+      Number.isSafeInteger(payload.fireSequence) &&
+      payload.fireSequence >= 0
+        ? payload.fireSequence
+        : 0
   };
 }
 
@@ -537,7 +564,9 @@ function idleInput(): OutpostMatchInput {
     moveX: 0,
     moveY: 0,
     aimX: OUTPOST_ARENA.width / 2,
-    aimY: OUTPOST_ARENA.height / 2
+    aimY: OUTPOST_ARENA.height / 2,
+    fireHeld: false,
+    fireSequence: 0
   };
 }
 
@@ -605,8 +634,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isCombatAbility(value: unknown): value is OutpostCombatAbility {
+function isPlayerAction(value: unknown): value is OutpostPlayerAction {
   return (
-    value === "rifle" || value === "dash" || value === "shock-field" || value === "deploy-turret"
+    value === "reload" || value === "dash" || value === "shock-field" || value === "deploy-turret"
   );
 }

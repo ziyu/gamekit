@@ -53,7 +53,28 @@ describe("Outpost app-owned Colyseus state", () => {
               abilityId: "ability.outpost.enemy_attack",
               abilityPhase: "preparing",
               abilityPhaseStartedAt: 300,
-              abilityPhaseEndsAt: 700
+              abilityPhaseEndsAt: 700,
+              weapon: {
+                weaponId: "weapon.outpost.rifle",
+                magazine: 17,
+                magazineSize: 24,
+                reserveAmmo: 120,
+                phase: "reloading",
+                shotSequence: 7,
+                lastShotCorrelationId: "player.ranger-1.rifle.7",
+                reloadStartedAt: 300,
+                reloadEndsAt: 1650,
+                reloadRequestId: "reload.request.7",
+                reloadCorrelationId: "reload.correlation.7",
+                lastFeedback: {
+                  sequence: 3,
+                  kind: "cancelled",
+                  action: "reload",
+                  reason: "interrupted-by-dash",
+                  at: 320,
+                  correlationId: "dash.correlation.3"
+                }
+              }
             }
           ],
           projectiles: [{ objectId: "projectile.1", velocityX: 760 }]
@@ -144,7 +165,28 @@ function createMatchSnapshot(): OutpostMatchAuthoritySnapshot {
           abilityId: "ability.outpost.enemy_attack",
           abilityPhase: "preparing",
           abilityPhaseStartedAt: 300,
-          abilityPhaseEndsAt: 700
+          abilityPhaseEndsAt: 700,
+          weapon: {
+            weaponId: "weapon.outpost.rifle",
+            magazine: 17,
+            magazineSize: 24,
+            reserveAmmo: 120,
+            phase: "reloading",
+            shotSequence: 7,
+            lastShotCorrelationId: "player.ranger-1.rifle.7",
+            reloadStartedAt: 300,
+            reloadEndsAt: 1650,
+            reloadRequestId: "reload.request.7",
+            reloadCorrelationId: "reload.correlation.7",
+            lastFeedback: {
+              sequence: 3,
+              kind: "cancelled",
+              action: "reload",
+              reason: "interrupted-by-dash",
+              at: 320,
+              correlationId: "dash.correlation.3"
+            }
+          }
         }
       ],
       projectiles: [

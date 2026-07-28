@@ -438,14 +438,34 @@ describe("Outpost Room-owned authority", () => {
 
       const combatBefore = requireRoom(room).authoritySnapshot().runtime?.combat;
       expect(combatBefore).toBeDefined();
+      const rejectedActionsBefore =
+        requireRoom(room).authoritySnapshot().runtime?.match.authorityInput.rejectedActions ?? 0;
+      await clients[3]?.send({
+        channel: "reliable",
+        kind: "game.action",
+        targetPeerIds: ["outpost-four-client-session.server"],
+        correlationId: "outpost.test.reject-rifle-action-bypass",
+        payload: {
+          type: "player-action",
+          action: "rifle",
+          aimX: 1_200,
+          aimY: 500
+        }
+      });
+      await waitFor(
+        () =>
+          room?.authoritySnapshot().runtime?.match.authorityInput.rejectedActions ===
+          rejectedActionsBefore + 1
+      );
+
       await clients[3]?.send({
         channel: "reliable",
         kind: "game.action",
         targetPeerIds: ["outpost-four-client-session.server"],
         correlationId: "outpost.test.bound-player",
         payload: {
-          type: "combat",
-          ability: "dash",
+          type: "player-action",
+          action: "dash",
           aimX: 1_200,
           aimY: 500,
           playerId: "player.leader"
@@ -468,8 +488,33 @@ describe("Outpost Room-owned authority", () => {
         channel: "reliable",
         kind: "game.action",
         targetPeerIds: ["outpost-four-client-session.server"],
+        correlationId: "outpost.test.reload-edge",
+        payload: { type: "player-action", action: "reload", aimX: 1_200, aimY: 500 }
+      });
+      await waitFor(
+        () =>
+          room
+            ?.authoritySnapshot()
+            .runtime?.combat?.actors.find((actor) => actor.id === "player.ranger-4")?.weapon
+            ?.lastFeedback?.reason === "magazine-full"
+      );
+      expect(
+        requireRoom(room)
+          .authoritySnapshot()
+          .runtime?.combat?.actors.find((actor) => actor.id === "player.ranger-4")?.weapon
+          ?.lastFeedback
+      ).toMatchObject({
+        kind: "rejected",
+        action: "reload",
+        correlationId: "outpost.test.reload-edge"
+      });
+
+      await clients[3]?.send({
+        channel: "reliable",
+        kind: "game.action",
+        targetPeerIds: ["outpost-four-client-session.server"],
         correlationId: "outpost.test.cooldown-rejection",
-        payload: { type: "combat", ability: "dash", aimX: 1_200, aimY: 500 }
+        payload: { type: "player-action", action: "dash", aimX: 1_200, aimY: 500 }
       });
       await waitFor(
         () =>

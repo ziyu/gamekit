@@ -4,6 +4,7 @@ import type { RenderObjectType } from "@gamekit/renderer-core";
 import type { EntityId } from "@gamekit/world";
 
 export type OutpostCombatAbility = "rifle" | "dash" | "shock-field" | "deploy-turret";
+export type OutpostDiscreteCombatAbility = Exclude<OutpostCombatAbility, "rifle">;
 
 export const OUTPOST_PLAYER_TYPE = "outpost.player";
 export const OUTPOST_ENEMY_TYPE = "outpost.enemy";
@@ -67,9 +68,13 @@ export type OutpostEnemyDefinition = {
 export type OutpostWeaponDefinition = {
   id: string;
   ability: DataRef<"gas.ability">;
+  reloadAbility: DataRef<"gas.ability">;
   projectileBody: DataRef<"physics.body">;
   projectileRenderObject: DataRef<typeof OUTPOST_RENDER_OBJECT_TYPE>;
   fireIntervalMs: number;
+  magazineSize: number;
+  reserveAmmo: number;
+  reloadDurationMs: number;
   damage: number;
   projectileSpeed: number;
   projectileLifetimeMs: number;

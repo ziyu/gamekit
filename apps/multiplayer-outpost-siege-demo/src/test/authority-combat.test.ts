@@ -8,6 +8,7 @@ import { createOutpostDataRegistry } from "../content";
 import {
   createOutpostAuthorityGameplayRuntime,
   type OutpostAuthorityCombatCommand,
+  type OutpostAuthorityPlayerActionCommand,
   type OutpostAuthorityPlayerState
 } from "../gameplay";
 
@@ -86,6 +87,262 @@ describe("Outpost authority combat", () => {
     expect(
       authority.tcaTrace.list().some((trace) => trace.correlationId === "outpost.test.rifle.4")
     ).toBe(true);
+
+    authority.runtime.dispose();
+    expect(world.count()).toBe(0);
+  });
+
+  it("owns held-fire cadence, magazine depletion, and timed reload on authority", () => {
+    const world = createKootaWorld();
+    const player = createPlayer();
+    const pendingPlayerActions: OutpostAuthorityPlayerActionCommand[] = [];
+    const authority = createOutpostAuthorityGameplayRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world,
+      physicsBackend,
+      eventBus: createEventBus(),
+      players: () => [player],
+      playerActions() {
+        return pendingPlayerActions.splice(0, pendingPlayerActions.length);
+      },
+      initialEnemies: []
+    });
+    authority.runtime.start();
+    tick(authority, 2);
+
+    player.input.fireSequence = 1;
+    tickUntil(
+      authority,
+      () => combatActor(authority, player.playerId).weapon?.shotSequence === 1,
+      10
+    );
+    expect(combatActor(authority, player.playerId).weapon).toMatchObject({
+      magazine: 23,
+      shotSequence: 1,
+      lastShotCorrelationId: `${player.playerId}.rifle.1`
+    });
+
+    player.input.fireHeld = true;
+    tickUntil(
+      authority,
+      () => combatActor(authority, player.playerId).weapon?.phase === "reloading",
+      240
+    );
+    const depleted = combatActor(authority, player.playerId).weapon;
+    expect(depleted).toMatchObject({
+      magazine: 0,
+      magazineSize: 24,
+      reserveAmmo: 144,
+      phase: "reloading",
+      shotSequence: 24
+    });
+    expect(authority.snapshot().combat).toMatchObject({
+      acceptedCommands: 24,
+      rejectedCommands: 0
+    });
+
+    player.input.fireHeld = false;
+    tickUntil(
+      authority,
+      () => combatActor(authority, player.playerId).weapon?.phase === "ready",
+      120
+    );
+    expect(combatActor(authority, player.playerId).weapon).toMatchObject({
+      magazine: 24,
+      reserveAmmo: 120,
+      phase: "ready",
+      shotSequence: 24
+    });
+    expect(
+      authority.gas
+        .listAbilityExecutions({
+          actorId: player.playerId,
+          abilityId: "ability.outpost.rifle_reload",
+          includeRecent: true
+        })
+        .some((execution) => execution.phase === "completed")
+    ).toBe(true);
+
+    player.input.fireHeld = true;
+    tickUntil(
+      authority,
+      () => (combatActor(authority, player.playerId).weapon?.shotSequence ?? 0) === 26,
+      40
+    );
+    player.input.fireHeld = false;
+    pendingPlayerActions.push({
+      id: "player.test.manual-reload",
+      playerId: player.playerId,
+      action: "reload",
+      aimX: 600,
+      aimY: 300,
+      correlationId: "outpost.test.manual-reload"
+    });
+    tick(authority, 1);
+    expect(combatActor(authority, player.playerId).weapon).toMatchObject({
+      magazine: 22,
+      reserveAmmo: 120,
+      phase: "reloading",
+      shotSequence: 26,
+      reloadRequestId: "player.test.manual-reload",
+      reloadCorrelationId: "outpost.test.manual-reload"
+    });
+
+    player.input.fireSequence = 2;
+    tickUntil(
+      authority,
+      () => combatActor(authority, player.playerId).weapon?.shotSequence === 27,
+      10
+    );
+    expect(combatActor(authority, player.playerId).weapon).toMatchObject({
+      magazine: 21,
+      reserveAmmo: 120,
+      phase: "ready",
+      shotSequence: 27,
+      lastFeedback: {
+        kind: "cancelled",
+        action: "reload",
+        reason: "interrupted-by-rifle",
+        correlationId: `${player.playerId}.rifle.27`
+      }
+    });
+    expect(
+      authority.gas
+        .listAbilityExecutions({
+          actorId: player.playerId,
+          abilityId: "ability.outpost.rifle_reload",
+          includeRecent: true
+        })
+        .some(
+          (execution) =>
+            execution.requestId === "player.test.manual-reload" &&
+            execution.phase === "cancelled" &&
+            execution.cancellationReason === "interrupted-by-rifle"
+        )
+    ).toBe(true);
+
+    pendingPlayerActions.push({
+      id: "player.test.committed-reload",
+      playerId: player.playerId,
+      action: "reload",
+      aimX: 600,
+      aimY: 300,
+      correlationId: "outpost.test.committed-reload"
+    });
+    tick(authority, 1);
+    tickUntil(
+      authority,
+      () =>
+        combatActor(authority, player.playerId).weapon?.phase === "reloading" &&
+        combatActor(authority, player.playerId).weapon?.magazine === 24,
+      90
+    );
+    pendingPlayerActions.push({
+      id: "player.test.dash-after-reload-commit",
+      playerId: player.playerId,
+      action: "dash",
+      aimX: 700,
+      aimY: 300,
+      correlationId: "outpost.test.dash-after-reload-commit"
+    });
+    tick(authority, 1);
+    expect(combatActor(authority, player.playerId)).toMatchObject({
+      stamina: 75,
+      weapon: {
+        magazine: 24,
+        reserveAmmo: 117,
+        phase: "reloading",
+        reloadRequestId: "player.test.committed-reload"
+      }
+    });
+    expect(combatActor(authority, player.playerId).tags).toContain("state.dashing");
+
+    tickUntil(
+      authority,
+      () => combatActor(authority, player.playerId).weapon?.phase === "ready",
+      60
+    );
+    tick(authority, 60);
+    player.input.fireSequence = 3;
+    tickUntil(
+      authority,
+      () => combatActor(authority, player.playerId).weapon?.shotSequence === 28,
+      10
+    );
+    pendingPlayerActions.push({
+      id: "player.test.reload-before-conflict",
+      playerId: player.playerId,
+      action: "reload",
+      aimX: 700,
+      aimY: 300,
+      correlationId: "outpost.test.reload-before-conflict"
+    });
+    tick(authority, 1);
+    const rejectedBeforeConflict = authority.snapshot().combat.rejectedCommands;
+    pendingPlayerActions.push({
+      id: "player.test.shock-during-reload",
+      playerId: player.playerId,
+      action: "shock-field",
+      aimX: 700,
+      aimY: 300,
+      correlationId: "outpost.test.shock-during-reload"
+    });
+    tick(authority, 1);
+    expect(authority.snapshot().combat.rejectedCommands).toBe(rejectedBeforeConflict + 1);
+    expect(combatActor(authority, player.playerId).weapon).toMatchObject({
+      phase: "reloading",
+      reloadRequestId: "player.test.reload-before-conflict"
+    });
+    expect(
+      authority.gas
+        .listAbilityExecutions({ actorId: player.playerId })
+        .some((execution) => execution.abilityId === "ability.outpost.shock_field")
+    ).toBe(false);
+
+    pendingPlayerActions.push({
+      id: "player.test.dash-cancels-reload",
+      playerId: player.playerId,
+      action: "dash",
+      aimX: 700,
+      aimY: 300,
+      correlationId: "outpost.test.dash-cancels-reload"
+    });
+    tick(authority, 1);
+    expect(combatActor(authority, player.playerId).weapon).toMatchObject({
+      phase: "ready",
+      lastFeedback: {
+        kind: "cancelled",
+        action: "reload",
+        reason: "interrupted-by-dash",
+        correlationId: "outpost.test.dash-cancels-reload"
+      }
+    });
+
+    pendingPlayerActions.push({
+      id: "player.test.reload-survives-rejected-dash",
+      playerId: player.playerId,
+      action: "reload",
+      aimX: 700,
+      aimY: 300,
+      correlationId: "outpost.test.reload-survives-rejected-dash"
+    });
+    tick(authority, 1);
+    const rejectedBeforeCooldownDash = authority.snapshot().combat.rejectedCommands;
+    pendingPlayerActions.push({
+      id: "player.test.rejected-dash-does-not-cancel",
+      playerId: player.playerId,
+      action: "dash",
+      aimX: 700,
+      aimY: 300,
+      correlationId: "outpost.test.rejected-dash-does-not-cancel"
+    });
+    tick(authority, 1);
+    expect(authority.snapshot().combat.rejectedCommands).toBe(rejectedBeforeCooldownDash + 1);
+    expect(combatActor(authority, player.playerId).weapon).toMatchObject({
+      phase: "reloading",
+      reloadRequestId: "player.test.reload-survives-rejected-dash",
+      reloadCorrelationId: "outpost.test.reload-survives-rejected-dash"
+    });
 
     authority.runtime.dispose();
     expect(world.count()).toBe(0);
@@ -354,7 +611,15 @@ function createPlayer(): OutpostAuthorityPlayerState {
     playerId: "player.test.ranger",
     slot: 0,
     spawn: { x: 300, y: 300 },
-    input: { sequence: 0, moveX: 0, moveY: 0, aimX: 450, aimY: 300 }
+    input: {
+      sequence: 0,
+      moveX: 0,
+      moveY: 0,
+      aimX: 450,
+      aimY: 300,
+      fireHeld: false,
+      fireSequence: 0
+    }
   };
 }
 

@@ -11,6 +11,7 @@
 | 文档                                                                   | 唯一负责内容                                                   |
 | ---------------------------------------------------------------------- | -------------------------------------------------------------- |
 | [`game-flow.md`](./game-flow.md)                                       | 产品定位、体验支柱、完整单局状态机、胜负、局内强化与结算       |
+| [`player-experience.md`](./player-experience.md)                       | 玩家域、控制意图、角色运行时、表现帧与端到端体验合同           |
 | [`combat.md`](./combat.md)                                             | 武器、投射物、技能阶段、命中、伤害、状态、倒地、救援与战斗顺序 |
 | [`animation-and-feedback.md`](./animation-and-feedback.md)             | 角色动画图、动作相位、VFX、音频、镜头、资源制作与多人恢复      |
 | [`characters-and-ai.md`](./characters-and-ai.md)                       | 敌人阵容、Utility AI、Task 状态机、感知、导航、攻击槽与首领 AI |

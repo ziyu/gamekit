@@ -12,7 +12,7 @@ import {
 
 import { OUTPOST_BROWSER_CONFIG_PATH } from "./browser-protocol";
 import { OUTPOST_COLYSEUS_SCHEMA_VERSION, readOutpostColyseusStateUpdate } from "./colyseus-state";
-import type { OutpostCombatAbility } from "../domain";
+import type { OutpostPlayerAction } from "../domain";
 
 export type OutpostBrowserServerConfig = {
   endpoint: string;
@@ -194,18 +194,18 @@ export async function sendOutpostReady(
   });
 }
 
-export async function sendOutpostCombatAction(
+export async function sendOutpostPlayerAction(
   runtime: MultiplayerRuntime,
   authorityPeerId: string,
-  ability: OutpostCombatAbility,
+  action: OutpostPlayerAction,
   aim: { x: number; y: number }
 ): Promise<void> {
   await runtime.send({
     channel: "reliable",
     kind: "game.action",
     targetPeerIds: [authorityPeerId],
-    correlationId: `outpost.combat.${ability}.${createIdentitySuffix()}`,
-    payload: { type: "combat", ability, aimX: aim.x, aimY: aim.y }
+    correlationId: `outpost.player-action.${action}.${createIdentitySuffix()}`,
+    payload: { type: "player-action", action, aimX: aim.x, aimY: aim.y }
   });
 }
 

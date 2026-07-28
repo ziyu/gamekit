@@ -77,7 +77,6 @@ const effects: GasEffectDefinition[] = [
 const abilities: GasAbilityDefinition[] = [
   {
     id: "ability.outpost.rifle_fire",
-    cooldownMs: 120,
     execution: {
       preparingMs: 35,
       activeMs: 45,
@@ -85,6 +84,18 @@ const abilities: GasAbilityDefinition[] = [
       phaseCues: {
         preparing: ["cue.outpost.rifle.telegraph"],
         committed: ["cue.outpost.rifle.commit"]
+      }
+    }
+  },
+  {
+    id: "ability.outpost.rifle_reload",
+    execution: {
+      preparingMs: 800,
+      activeMs: 100,
+      recoveringMs: 450,
+      cancellation: {
+        beforeCommit: "allow",
+        afterCommit: "deny"
       }
     }
   },
@@ -142,6 +153,7 @@ const actors: GasActorDefinition[] = [
     attributes: { health: 100, shield: 50, stamina: 100, "shared-resource": 100 },
     abilities: [
       "ability.outpost.rifle_fire",
+      "ability.outpost.rifle_reload",
       "ability.outpost.dash",
       "ability.outpost.shock_field",
       "ability.outpost.deploy_turret"
@@ -236,9 +248,13 @@ const weapons: OutpostWeaponDefinition[] = [
   {
     id: "weapon.outpost.rifle",
     ability: ref("gas.ability", "ability.outpost.rifle_fire"),
+    reloadAbility: ref("gas.ability", "ability.outpost.rifle_reload"),
     projectileBody: ref("physics.body", "body.outpost.projectile"),
     projectileRenderObject: ref(OUTPOST_RENDER_OBJECT_TYPE, "render.outpost.projectile"),
     fireIntervalMs: 120,
+    magazineSize: 24,
+    reserveAmmo: 144,
+    reloadDurationMs: 1350,
     damage: 12,
     projectileSpeed: 760,
     projectileLifetimeMs: 1200

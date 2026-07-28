@@ -54,7 +54,12 @@ import {
   OUTPOST_NAVIGATION_BACKEND_ID,
   OUTPOST_NAVIGATION_LAYOUT_ID
 } from "../content";
-import { OUTPOST_PLAYER_TYPE, type OutpostPlayerDefinition } from "../domain";
+import {
+  OUTPOST_PLAYER_TYPE,
+  OUTPOST_WEAPON_TYPE,
+  type OutpostPlayerDefinition,
+  type OutpostWeaponDefinition
+} from "../domain";
 import {
   createOutpostAuthorityAi,
   type OutpostAuthorityAiIntegration,
@@ -76,6 +81,13 @@ import {
   type OutpostAuthorityCombatSnapshot,
   type OutpostAuthorityEnemySpawn
 } from "./authority-combat";
+import {
+  captureOutpostPlayerWeaponSnapshot,
+  createOutpostAuthorityPlayerWeapon,
+  type OutpostAuthorityPlayerWeapon
+} from "./player/weapon-runtime";
+import type { OutpostAuthorityPlayerActionCommand } from "./player/action-types";
+import { createOutpostAuthorityPlayerActionModule } from "./player/action-runtime";
 
 const PLAYER_DEFINITION_ID = "player.outpost.ranger";
 
@@ -85,6 +97,8 @@ export type OutpostAuthorityPlayerInput = {
   moveY: number;
   aimX: number;
   aimY: number;
+  fireHeld: boolean;
+  fireSequence: number;
 };
 
 export type OutpostAuthorityPlayerState = {
@@ -146,6 +160,7 @@ export type CreateOutpostAuthorityGameplayRuntimeOptions = {
   physicsBackend: PhysicsBackendAdapter;
   eventBus: EventBus;
   players(): readonly OutpostAuthorityPlayerState[];
+  playerActions?(): readonly OutpostAuthorityPlayerActionCommand[];
   combatCommands?(): readonly OutpostAuthorityCombatCommand[];
   initialEnemies?: readonly OutpostAuthorityEnemySpawn[] | undefined;
   seed?: string | undefined;
@@ -156,6 +171,8 @@ type MaterializedPlayer = OutpostAuthorityCombatPlayer & {
   slot: number;
   networkEntityId: string;
   generation: number;
+  input: OutpostAuthorityPlayerInput;
+  weapon: OutpostAuthorityPlayerWeapon;
 };
 
 type AuthorityGameplayState = {
@@ -165,6 +182,7 @@ type AuthorityGameplayState = {
   players: Map<string, MaterializedPlayer>;
   generationsByNetworkEntityId: Map<string, number>;
   playerSource(): readonly OutpostAuthorityPlayerState[];
+  playerActionSource(): readonly OutpostAuthorityPlayerActionCommand[];
   gas: GasHandle;
 };
 
@@ -188,6 +206,7 @@ export function createOutpostAuthorityGameplayRuntime(
     players: new Map(),
     generationsByNetworkEntityId: new Map(),
     playerSource: options.players,
+    playerActionSource: options.playerActions ?? (() => []),
     gas
   };
   let authorityAi: OutpostAuthorityAiIntegration | undefined;
@@ -203,6 +222,10 @@ export function createOutpostAuthorityGameplayRuntime(
     eventBus: options.eventBus,
     players: () => state.players,
     commands: options.combatCommands ?? (() => []),
+    playerWeapon(playerId) {
+      const weapon = state.players.get(playerId)?.weapon;
+      return weapon === undefined ? undefined : captureOutpostPlayerWeaponSnapshot(weapon);
+    },
     aiState(actorId) {
       return authorityAi?.actorState(actorId);
     },
@@ -268,6 +291,12 @@ export function createOutpostAuthorityGameplayRuntime(
         dataRegistry: options.dataRegistry,
         traceStore: gasTrace,
         handle: gas
+      }),
+      createOutpostAuthorityPlayerActionModule({
+        gas: state.gas,
+        players: () => state.players.values(),
+        actions: state.playerActionSource,
+        combat
       }),
       createPhysicsModule({
         id: "outpost.authority.physics",
@@ -345,6 +374,10 @@ function createAuthorityPlayerModule(state: AuthorityGameplayState) {
     colliderRef.type,
     colliderRef.id
   );
+  const weaponDefinition = state.dataRegistry.getValue<OutpostWeaponDefinition>(
+    OUTPOST_WEAPON_TYPE,
+    definition.weapon.id
+  );
 
   return defineGameModule<GameInstallContext>({
     id: "outpost.authority.players",
@@ -357,7 +390,7 @@ function createAuthorityPlayerModule(state: AuthorityGameplayState) {
           for (const desired of desiredPlayers.values()) {
             const player =
               state.players.get(desired.playerId) ??
-              materializePlayer(state, desired, bodyData, colliderData);
+              materializePlayer(state, desired, bodyData, colliderData, weaponDefinition);
             applyPlayerInput(state, player, desired, definition.moveSpeed);
           }
         }
@@ -416,7 +449,8 @@ function materializePlayer(
   state: AuthorityGameplayState,
   player: OutpostAuthorityPlayerState,
   bodyData: PhysicsBodyData,
-  colliderData: PhysicsColliderData
+  colliderData: PhysicsColliderData,
+  weaponDefinition: OutpostWeaponDefinition
 ): MaterializedPlayer {
   const entityId = state.world.spawn();
   const bodyId = `${player.playerId}.body`;
@@ -432,7 +466,9 @@ function materializePlayer(
     generation,
     actorId,
     bodyId,
-    colliderId
+    colliderId,
+    input: { ...player.input },
+    weapon: createOutpostAuthorityPlayerWeapon(weaponDefinition)
   };
 
   try {
@@ -484,6 +520,7 @@ function applyPlayerInput(
   moveSpeed: number
 ): void {
   const world = state.world;
+  player.input = { ...desired.input };
   if (
     !state.gas.hasActor(player.actorId) ||
     (state.gas.getActor(player.actorId).attributes.current.health ?? 0) <= 0

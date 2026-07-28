@@ -181,7 +181,15 @@ function player(playerId: string, slot: number, x: number, y: number): OutpostAu
     playerId,
     slot,
     spawn: { x, y },
-    input: { sequence: 0, moveX: 0, moveY: 0, aimX: 900, aimY: 500 }
+    input: {
+      sequence: 0,
+      moveX: 0,
+      moveY: 0,
+      aimX: 900,
+      aimY: 500,
+      fireHeld: false,
+      fireSequence: 0
+    }
   };
 }
 

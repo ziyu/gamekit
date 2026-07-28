@@ -1,6 +1,10 @@
 # Outpost Siege Foundation Integration
 
-Status: Active.
+Status: Paused.
+
+玩家操作、角色、武器、复制和表现的后续重做由
+[`outpost-siege-player-experience-rebuild.md`](./outpost-siege-player-experience-rebuild.md) 接管。本工作流停在
+`1fc7189`，保留底层模块统一接入的历史与验收矩阵，不在这里继续追加玩家体验切片。
 
 ## Goal
 

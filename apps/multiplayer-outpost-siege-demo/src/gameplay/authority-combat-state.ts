@@ -17,7 +17,7 @@ import {
 import type { EntityId, GameWorld } from "@gamekit/world";
 
 import { OUTPOST_ARENA } from "../content";
-import type { OutpostIdentityRegistry } from "../domain";
+import type { OutpostIdentityRegistry, OutpostReplicatedWeaponState } from "../domain";
 import { OutpostGameplayObject } from "./components";
 import type {
   OutpostAuthorityCombatActorSnapshot,
@@ -42,6 +42,7 @@ export type CreateOutpostAuthorityCombatOptions = {
   eventBus: EventBus;
   players(): ReadonlyMap<string, OutpostAuthorityCombatPlayer>;
   commands(): readonly OutpostAuthorityCombatCommand[];
+  playerWeapon?(playerId: string): OutpostReplicatedWeaponState | undefined;
   aiState?(actorId: string):
     | {
         targetActorId?: string | undefined;
@@ -219,7 +220,8 @@ export function captureCombatSnapshot(state: CombatState): OutpostAuthorityComba
       definitionId: OUTPOST_COMBAT_PLAYER_DEFINITION_ID,
       renderKey: "render.outpost.player",
       entityId: player.entityId,
-      actorId: player.actorId
+      actorId: player.actorId,
+      weapon: state.options.playerWeapon?.(player.playerId)
     });
   }
   for (const object of state.objectsById.values()) {
@@ -407,7 +409,7 @@ function pushActorSnapshot(
   actor: Pick<
     OutpostAuthorityCombatActorSnapshot,
     "id" | "kind" | "definitionId" | "renderKey" | "entityId" | "actorId"
-  >
+  > & { weapon?: OutpostReplicatedWeaponState | undefined }
 ): void {
   if (!state.options.gas.hasActor(actor.actorId) || !state.options.world.has(actor.entityId)) {
     return;
@@ -439,6 +441,7 @@ function pushActorSnapshot(
     resource: gas.attributes.current["shared-resource"] ?? 0,
     tags: [...gas.tags.values].sort(),
     cooldowns: { ...gas.abilities.cooldowns },
+    ...(actor.weapon === undefined ? {} : { weapon: { ...actor.weapon } }),
     ...((execution?.targetActorId ?? ai?.targetActorId) === undefined
       ? {}
       : { targetActorId: execution?.targetActorId ?? ai?.targetActorId }),

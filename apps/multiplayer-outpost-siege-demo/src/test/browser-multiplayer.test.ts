@@ -1,6 +1,7 @@
 import { createMemoryAnimationPlaybackAdapter } from "@gamekit/animator-core/testing";
 import { createGameAudio } from "@gamekit/audio-core";
 import { createMemoryAudioBackend } from "@gamekit/audio-core/testing";
+import { createCameraController } from "@gamekit/camera-core";
 import { createMultiplayerRuntime, type MultiplayerRuntime } from "@gamekit/multiplayer-core";
 import { createMemoryMultiplayerBackend } from "@gamekit/multiplayer-memory";
 import { createMemoryPhysicsBackend } from "@gamekit/physics-core";
@@ -217,8 +218,24 @@ describe("Outpost Browser multiplayer", () => {
     client.runtime.tick(25);
     await waitFor(() => receivedInputs.length === 2);
     expect(receivedInputs).toEqual([
-      { sequence: 1, moveX: 1, moveY: 0, aimX: 900, aimY: 500 },
-      { sequence: 2, moveX: 1, moveY: 0, aimX: 900, aimY: 500 }
+      {
+        sequence: 1,
+        moveX: 1,
+        moveY: 0,
+        aimX: 900,
+        aimY: 500,
+        fireHeld: false,
+        fireSequence: 0
+      },
+      {
+        sequence: 2,
+        moveX: 1,
+        moveY: 0,
+        aimX: 900,
+        aimY: 500,
+        fireHeld: false,
+        fireSequence: 0
+      }
     ]);
 
     await sendSnapshot(server, {
@@ -233,6 +250,91 @@ describe("Outpost Browser multiplayer", () => {
 
     unsubscribe();
     await client.runtime.dispose();
+    await multiplayer.dispose();
+    await server.dispose();
+  });
+
+  it("presents rifle anticipation immediately and suppresses duplicate authority feedback", async () => {
+    const backend = createMemoryMultiplayerBackend({ id: "outpost.client-rifle-cues.test" });
+    const server = createMultiplayerRuntime({ id: "server", backend });
+    const multiplayer = createMultiplayerRuntime({ id: "client", backend });
+    await server.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "session.server", role: "server" }
+    });
+    await multiplayer.joinSession({
+      sessionId: "session-1",
+      localPeer: { id: "ranger-1", role: "client", playerId: "player.ranger-1" }
+    });
+    const renderer = createMemoryRenderer("outpost.client-rifle-cues.renderer");
+    const audioBackend = createMemoryAudioBackend({ unlocked: true });
+    const audio = createGameAudio({ ...OUTPOST_AUDIO_CONFIG, backend: audioBackend });
+    const camera = createCameraController({ viewport: { width: 1280, height: 720 } });
+    const targetStates = new Map<string, Record<string, unknown>>();
+    const client = createOutpostClientShadowRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world: createKootaWorld(),
+      multiplayer,
+      physicsBackend: createMemoryPhysicsBackend(),
+      localPlayerId: "player.ranger-1",
+      renderer,
+      audio,
+      camera,
+      applyRenderTargetState(native, state) {
+        targetStates.set((native as { id: string }).id, state as Record<string, unknown>);
+      }
+    });
+    const snapshot = authoritySnapshot(1, 1);
+    snapshot.combat.actors = [playerCombatActor()];
+    await client.runtime.start();
+    await sendSnapshot(server, snapshot);
+    client.runtime.tick(0);
+    const playbackStartsBeforeFire = audioBackend
+      .commands()
+      .filter((command) => command.type === "start").length;
+
+    client.input.fireHeld = true;
+    client.input.fireSequence = 1;
+    client.runtime.tick(16);
+
+    const muzzleId = "outpost.player-presentation.player.ranger-1.muzzle";
+    expect(client.playerPresentation.snapshot()).toMatchObject({
+      cueWatermark: 1,
+      pendingAnticipations: 1,
+      anticipatedShots: 1
+    });
+    expect(renderer.objects().map((object) => object.id)).toContain(muzzleId);
+    expect(targetStates.get(muzzleId)).toMatchObject({ visible: true });
+    expect(audioBackend.commands().filter((command) => command.type === "start")).toHaveLength(
+      playbackStartsBeforeFire + 1
+    );
+
+    snapshot.tick = 2;
+    snapshot.elapsedMs = 16;
+    snapshot.combat.actors[0] = {
+      ...snapshot.combat.actors[0]!,
+      weapon: {
+        ...snapshot.combat.actors[0]!.weapon!,
+        magazine: 23,
+        shotSequence: 1,
+        lastShotCorrelationId: "player.ranger-1.rifle.1"
+      }
+    };
+    await sendSnapshot(server, snapshot);
+    client.runtime.tick(16);
+
+    expect(client.playerPresentation.snapshot()).toMatchObject({
+      cueWatermark: 2,
+      pendingAnticipations: 0,
+      confirmedShots: 1
+    });
+    expect(audioBackend.commands().filter((command) => command.type === "start")).toHaveLength(
+      playbackStartsBeforeFire + 1
+    );
+
+    await client.runtime.dispose();
+    audio.dispose();
     await multiplayer.dispose();
     await server.dispose();
   });
@@ -304,7 +406,10 @@ describe("Outpost Browser multiplayer", () => {
       physicsBackend: createMemoryPhysicsBackend(),
       localPlayerId: "player.ranger-1",
       renderer: createMemoryRenderer("outpost.client-movement.renderer"),
-      applyRenderTargetState(_native, state) {
+      applyRenderTargetState(native, state) {
+        if ((native as { id: string }).id !== "outpost.client.player.0.0") {
+          return;
+        }
         const x = state.transform?.position?.x;
         if (x !== undefined) {
           positions.push(x);
@@ -421,6 +526,36 @@ function combatActor(
     resource: 0,
     tags: [kind === "enemy" ? "team.enemies" : "team.players"],
     cooldowns: {}
+  };
+}
+
+function playerCombatActor(): OutpostClientAuthoritySnapshot["combat"]["actors"][number] {
+  return {
+    objectId: "player.ranger-1",
+    networkEntityId: "player.ranger-1",
+    generation: 0,
+    kind: "player",
+    definitionId: "player.outpost.ranger",
+    renderKey: "render.outpost.player",
+    x: 800,
+    y: 500,
+    velocityX: 0,
+    velocityY: 0,
+    facing: 0,
+    health: 100,
+    shield: 50,
+    stamina: 100,
+    resource: 0,
+    tags: ["team.players"],
+    cooldowns: {},
+    weapon: {
+      weaponId: "weapon.outpost.rifle",
+      magazine: 24,
+      magazineSize: 24,
+      reserveAmmo: 144,
+      phase: "ready",
+      shotSequence: 0
+    }
   };
 }
 

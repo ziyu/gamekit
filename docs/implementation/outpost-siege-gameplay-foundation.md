@@ -2,9 +2,11 @@
 
 Status: Active.
 
-统一 app 集成的当前执行记录见
-[`outpost-siege-foundation-integration.md`](./outpost-siege-foundation-integration.md)。本文保留底层库建设与
-review checkpoint；新的 Combat/AI/Navigation/Animator/Asset/Audio 装配、迁移和验证证据只写入该执行记录。
+统一 app 集成的历史执行记录见
+[`outpost-siege-foundation-integration.md`](./outpost-siege-foundation-integration.md)。玩家操作、角色、武器、
+复制和表现的当前执行记录见
+[`outpost-siege-player-experience-rebuild.md`](./outpost-siege-player-experience-rebuild.md)。本文只保留底层库建设与
+review checkpoint，不继续追加 app 玩家体验状态。
 
 ## Goal
 

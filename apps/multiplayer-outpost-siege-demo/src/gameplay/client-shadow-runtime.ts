@@ -39,10 +39,13 @@ import type { EntityId, GameWorld } from "@gamekit/world";
 
 import {
   OUTPOST_PLAYER_TYPE,
+  OUTPOST_WEAPON_TYPE,
   type OutpostPlayerDefinition,
   type OutpostReplicatedCombatState,
   type OutpostReplicatedActor,
-  type OutpostReplicatedProjectile
+  type OutpostReplicatedProjectile,
+  type OutpostReplicatedWeaponFeedback,
+  type OutpostWeaponDefinition
 } from "../domain";
 import { OUTPOST_ARENA_PHYSICS_LAYOUT_ID, OUTPOST_ARENA_PHYSICS_SCENE_ID } from "../content";
 import {
@@ -50,7 +53,10 @@ import {
   type OutpostIdentityRegistry
 } from "../domain/identity-registry";
 import {
+  createOutpostClientPlayerPresentation,
+  createOutpostClientPlayerPresentationModule,
   createOutpostClientPresentationModule,
+  type OutpostClientPlayerPresentation,
   type OutpostRenderTargetWriter
 } from "../presentation";
 import { OutpostGameplayObject, OutpostPresentation } from "./components";
@@ -120,6 +126,7 @@ export type OutpostClientShadowRuntime = {
   input: OutpostInputState;
   identity: OutpostIdentityRegistry;
   animator: AnimatorHandle;
+  playerPresentation: OutpostClientPlayerPresentation;
   screenToWorld(point: PointLike): PointLike;
   view(): OutpostClientAuthoritySnapshot | undefined;
   snapshot(): OutpostClientShadowSnapshot;
@@ -188,6 +195,8 @@ type OutpostPredictionInput = {
   moveY: number;
   aimX: number;
   aimY: number;
+  fireHeld: boolean;
+  fireSequence: number;
 };
 
 type OutpostPredictedPlayerState = {
@@ -215,6 +224,8 @@ type OutpostPresentedPlayerState = {
   abilityPhase?: string | undefined;
   abilityPhaseStartedAt?: number | undefined;
   abilityPhaseEndsAt?: number | undefined;
+  weaponShotSequence?: number | undefined;
+  weaponLastShotCorrelationId?: string | undefined;
 };
 
 type OutpostPresentedCombatObjectState = OutpostPresentedPlayerState;
@@ -223,6 +234,18 @@ export function createOutpostClientShadowRuntime(
   options: CreateOutpostClientShadowRuntimeOptions
 ): OutpostClientShadowRuntime {
   const eventBus = options.eventBus ?? createEventBus({ clock: () => Date.now() });
+  const playerDefinition = options.dataRegistry.getValue<OutpostPlayerDefinition>(
+    OUTPOST_PLAYER_TYPE,
+    PLAYER_DEFINITION_ID
+  );
+  const weaponDefinition = options.dataRegistry.getValue<OutpostWeaponDefinition>(
+    OUTPOST_WEAPON_TYPE,
+    playerDefinition.weapon.id
+  );
+  const playerPresentation = createOutpostClientPlayerPresentation({
+    playerId: options.localPlayerId,
+    fireIntervalMs: weaponDefinition.fireIntervalMs
+  });
   const state: ClientShadowState = {
     dataRegistry: options.dataRegistry,
     world: options.world,
@@ -243,6 +266,22 @@ export function createOutpostClientShadowRuntime(
     eventBus,
     modules: [
       createClientReplicationModule(state, options.multiplayer, options.snapshotSource),
+      createOutpostClientPlayerPresentationModule({
+        presentation: playerPresentation,
+        readFrame() {
+          const match = state.received;
+          const actor = match?.combat.actors.find(
+            (candidate) => candidate.objectId === options.localPlayerId
+          );
+          return {
+            active: match?.phase === "running",
+            health: actor?.health ?? 0,
+            fireHeld: state.input.fireHeld,
+            fireSequence: state.input.fireSequence,
+            ...(actor?.weapon === undefined ? {} : { weapon: actor.weapon })
+          };
+        }
+      }),
       createClientShadowCameraModule(state, options.camera, options.cameraAdapter),
       ...(options.renderer
         ? [
@@ -251,6 +290,8 @@ export function createOutpostClientShadowRuntime(
               renderer: options.renderer,
               animator: options.animationAdapter === undefined ? undefined : animator,
               audio: options.audio,
+              camera: options.camera,
+              playerPresentation,
               listenerObjectId: options.localPlayerId,
               applyRenderTargetState: options.applyRenderTargetState,
               readObjectState(objectId) {
@@ -286,6 +327,7 @@ export function createOutpostClientShadowRuntime(
     input: state.input,
     identity: state.identity,
     animator,
+    playerPresentation,
     screenToWorld(point) {
       return options.camera?.screenToWorld(point) ?? point;
     },
@@ -445,7 +487,9 @@ function createClientReplicationModule(
             moveX: state.input.moveX,
             moveY: state.input.moveY,
             aimX: state.input.aimX,
-            aimY: state.input.aimY
+            aimY: state.input.aimY,
+            fireHeld: state.input.fireHeld,
+            fireSequence: state.input.fireSequence
           };
         },
         encodeInput({ input, predictionFrame }) {
@@ -771,6 +815,8 @@ function applyPresentedActorSemantics(
   assignOptional(target, "abilityPhase", actor?.abilityPhase);
   assignOptional(target, "abilityPhaseStartedAt", actor?.abilityPhaseStartedAt);
   assignOptional(target, "abilityPhaseEndsAt", actor?.abilityPhaseEndsAt);
+  assignOptional(target, "weaponShotSequence", actor?.weapon?.shotSequence);
+  assignOptional(target, "weaponLastShotCorrelationId", actor?.weapon?.lastShotCorrelationId);
 }
 
 function clearPresentedActorSemantics(target: OutpostPresentedPlayerState): void {
@@ -785,6 +831,8 @@ function clearPresentedActorSemantics(target: OutpostPresentedPlayerState): void
   delete target.abilityPhase;
   delete target.abilityPhaseStartedAt;
   delete target.abilityPhaseEndsAt;
+  delete target.weaponShotSequence;
+  delete target.weaponLastShotCorrelationId;
 }
 
 function assignOptional<
@@ -1267,6 +1315,10 @@ function readCombatActor(value: unknown): OutpostReplicatedActor | undefined {
     }
     cooldowns[abilityId] = until;
   }
+  const weapon = value.weapon === undefined ? undefined : readWeaponState(value.weapon);
+  if (value.weapon !== undefined && weapon === undefined) {
+    return undefined;
+  }
   return {
     objectId: value.objectId,
     networkEntityId: value.networkEntityId,
@@ -1298,7 +1350,73 @@ function readCombatActor(value: unknown): OutpostReplicatedActor | undefined {
       : { abilityPhaseStartedAt: value.abilityPhaseStartedAt }),
     ...(value.abilityPhaseEndsAt === undefined
       ? {}
-      : { abilityPhaseEndsAt: value.abilityPhaseEndsAt })
+      : { abilityPhaseEndsAt: value.abilityPhaseEndsAt }),
+    ...(weapon === undefined ? {} : { weapon })
+  };
+}
+
+function readWeaponState(value: unknown): OutpostReplicatedActor["weapon"] | undefined {
+  if (
+    !isRecord(value) ||
+    !nonEmptyString(value.weaponId) ||
+    !nonNegativeInteger(value.magazine) ||
+    !nonNegativeInteger(value.magazineSize) ||
+    value.magazine > value.magazineSize ||
+    !nonNegativeInteger(value.reserveAmmo) ||
+    (value.phase !== "ready" && value.phase !== "reloading" && value.phase !== "empty") ||
+    !nonNegativeInteger(value.shotSequence) ||
+    !optionalNonEmptyString(value.lastShotCorrelationId) ||
+    !optionalNonNegativeFinite(value.reloadStartedAt) ||
+    !optionalNonNegativeFinite(value.reloadEndsAt) ||
+    !optionalNonEmptyString(value.reloadRequestId) ||
+    !optionalNonEmptyString(value.reloadCorrelationId)
+  ) {
+    return undefined;
+  }
+  const lastFeedback =
+    value.lastFeedback === undefined ? undefined : readWeaponFeedback(value.lastFeedback);
+  if (value.lastFeedback !== undefined && lastFeedback === undefined) {
+    return undefined;
+  }
+  return {
+    weaponId: value.weaponId,
+    magazine: value.magazine,
+    magazineSize: value.magazineSize,
+    reserveAmmo: value.reserveAmmo,
+    phase: value.phase,
+    shotSequence: value.shotSequence,
+    ...(value.lastShotCorrelationId === undefined
+      ? {}
+      : { lastShotCorrelationId: value.lastShotCorrelationId }),
+    ...(value.reloadStartedAt === undefined ? {} : { reloadStartedAt: value.reloadStartedAt }),
+    ...(value.reloadEndsAt === undefined ? {} : { reloadEndsAt: value.reloadEndsAt }),
+    ...(value.reloadRequestId === undefined ? {} : { reloadRequestId: value.reloadRequestId }),
+    ...(value.reloadCorrelationId === undefined
+      ? {}
+      : { reloadCorrelationId: value.reloadCorrelationId }),
+    ...(lastFeedback === undefined ? {} : { lastFeedback })
+  };
+}
+
+function readWeaponFeedback(value: unknown): OutpostReplicatedWeaponFeedback | undefined {
+  if (
+    !isRecord(value) ||
+    !nonNegativeInteger(value.sequence) ||
+    (value.kind !== "rejected" && value.kind !== "cancelled") ||
+    (value.action !== "rifle" && value.action !== "reload") ||
+    !nonEmptyString(value.reason) ||
+    !nonNegativeFinite(value.at) ||
+    !optionalNonEmptyString(value.correlationId)
+  ) {
+    return undefined;
+  }
+  return {
+    sequence: value.sequence,
+    kind: value.kind,
+    action: value.action,
+    reason: value.reason,
+    at: value.at,
+    ...(value.correlationId === undefined ? {} : { correlationId: value.correlationId })
   };
 }
 
@@ -1342,7 +1460,17 @@ function cloneAuthoritySnapshot(
       actors: snapshot.combat.actors.map((actor) => ({
         ...actor,
         tags: [...actor.tags],
-        cooldowns: { ...actor.cooldowns }
+        cooldowns: { ...actor.cooldowns },
+        ...(actor.weapon === undefined
+          ? {}
+          : {
+              weapon: {
+                ...actor.weapon,
+                ...(actor.weapon.lastFeedback === undefined
+                  ? {}
+                  : { lastFeedback: { ...actor.weapon.lastFeedback } })
+              }
+            })
       })),
       projectiles: snapshot.combat.projectiles.map((projectile) => ({ ...projectile }))
     },

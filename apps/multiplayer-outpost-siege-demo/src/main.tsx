@@ -8,8 +8,13 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 
 import { outpostAppDefinition } from "./app-definition";
-import { applyOutpostInputAction, OUTPOST_ACTION, OUTPOST_VIEWPORT } from "./gameplay";
-import type { OutpostCombatAbility } from "./domain";
+import {
+  applyOutpostInputAction,
+  applyOutpostGamepadAimTarget,
+  outpostPlayerActionForInputAction,
+  OUTPOST_ACTION,
+  OUTPOST_VIEWPORT
+} from "./gameplay";
 import { createOutpostBrowserProfile, type OutpostBrowserContext } from "./profiles";
 import {
   createOutpostBrowserIdentity,
@@ -18,7 +23,7 @@ import {
   enterOutpostBrowserSession,
   loadOutpostBrowserServerConfig,
   normalizeOutpostSessionId,
-  sendOutpostCombatAction,
+  sendOutpostPlayerAction,
   sendOutpostReady,
   type OutpostBrowserSessionIntent
 } from "./realtime";
@@ -113,7 +118,8 @@ async function boot(root: HTMLElement): Promise<void> {
         uiRuntime,
         physicsBackend,
         inputBlocked: true,
-        assetDiagnostics: []
+        assetDiagnostics: [],
+        inputDiagnostics: []
       };
       bootPhase = "booting";
       bootMessage = "arming client presentation runtime";
@@ -204,7 +210,9 @@ async function boot(root: HTMLElement): Promise<void> {
       };
       render();
 
-      unsubscribeInput = inputRouter.onAction((event) => routeInputAction(activeContext, event));
+      unsubscribeInput = inputRouter.onAction((event) =>
+        routeInputAction(activeContext, event, identity.playerId)
+      );
       activeContext.inputBlocked = false;
       uiRuntime.setFocus({ scope: "game", reason: "outpost.multiplayer.connected" });
 
@@ -265,7 +273,11 @@ async function boot(root: HTMLElement): Promise<void> {
     { once: true }
   );
 
-  function routeInputAction(activeContext: OutpostBrowserContext, event: InputActionEvent): void {
+  function routeInputAction(
+    activeContext: OutpostBrowserContext,
+    event: InputActionEvent,
+    localPlayerId: string
+  ): void {
     const client = activeContext.client;
     if (!client) {
       return;
@@ -283,32 +295,18 @@ async function boot(root: HTMLElement): Promise<void> {
       return;
     }
     applyOutpostInputAction(client.input, event);
-    const combatAbility = combatAbilityForAction(event);
+    const localPlayer = client.view()?.players.find((player) => player.playerId === localPlayerId);
+    if (localPlayer) {
+      applyOutpostGamepadAimTarget(client.input, localPlayer);
+    }
+    const playerAction = outpostPlayerActionForInputAction(event);
     const authorityPeerId = client.snapshot().authorityPeerId;
-    if (combatAbility && authorityPeerId && activeContext.multiplayer) {
-      void sendOutpostCombatAction(activeContext.multiplayer, authorityPeerId, combatAbility, {
+    if (playerAction && authorityPeerId && activeContext.multiplayer) {
+      void sendOutpostPlayerAction(activeContext.multiplayer, authorityPeerId, playerAction, {
         x: client.input.aimX,
         y: client.input.aimY
       });
     }
-  }
-}
-
-function combatAbilityForAction(event: InputActionEvent): OutpostCombatAbility | undefined {
-  if (event.phase !== "pressed") {
-    return undefined;
-  }
-  switch (event.actionId) {
-    case OUTPOST_ACTION.primary:
-      return "rifle";
-    case OUTPOST_ACTION.dash:
-      return "dash";
-    case OUTPOST_ACTION.shockField:
-      return "shock-field";
-    case OUTPOST_ACTION.deployTurret:
-      return "deploy-turret";
-    default:
-      return undefined;
   }
 }
 
@@ -326,7 +324,11 @@ function matchUiSignature(match: NonNullable<OutpostConnectionView["match"]>): s
       (actor) =>
         `${actor.objectId}:${Math.round(actor.health)}:${Math.round(actor.shield)}:${Math.round(
           actor.stamina
-        )}:${Math.round(actor.resource)}:${Object.values(actor.cooldowns).join(",")}`
+        )}:${Math.round(actor.resource)}:${Object.values(actor.cooldowns).join(",")}:${
+          actor.weapon?.magazine ?? "x"
+        }:${actor.weapon?.reserveAmmo ?? "x"}:${
+          actor.weapon?.phase ?? "x"
+        }:${actor.weapon?.shotSequence ?? "x"}`
     )
     .join("|");
   return `${match.phase}:${countdown}:${elapsed}:${participants}:${actors}:${match.combat.kills}:${match.combat.rejectedCommands}`;
