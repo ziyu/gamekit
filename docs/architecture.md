@@ -236,7 +236,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 | `@gamekit/renderer-core`                                                              | App Service facade                            | 渲染对象协议。                                                                                                                                                                            |
 | `@gamekit/renderer-phaser`                                                            | App Service adapter                           | Phaser render object 映射；由 Phaser Driver 绑定共享 runtime，不独立创建 Phaser。                                                                                                         |
 | `@gamekit/input-core`                                                                 | App Service facade + gameplay bridge toolkit  | raw input 归一化、action/context/scope；具体玩法绑定由 GameModule 使用。                                                                                                                  |
-| `@gamekit/input-dom` / `@gamekit/input-tauri`                                         | App Service adapter                           | DOM/Tauri 输入来源接入；Phaser input 来源由 Phaser Driver 暴露。                                                                                                                          |
+| `@gamekit/input-dom` / `@gamekit/input-tauri`                                         | App Service adapter                           | DOM/Web Gamepad/Tauri 输入来源接入；Phaser runtime input 来源由 Phaser Driver 暴露。                                                                                                      |
 | `@gamekit/camera-core`                                                                | Game Module toolkit                           | CameraController、CameraRig、camera system/action helper；不作为 App Host 标准服务。                                                                                                      |
 | `@gamekit/physics-core`                                                               | Game Module toolkit                           | 统一 Physics facade、body/collider/query/contact 协议、标准 physics module helper。                                                                                                       |
 | `@gamekit/physics-rapier2d` / `@gamekit/physics-rapier3d` / `@gamekit/physics-matter` | Game Module backend adapter                   | 独立物理库 adapter；Rapier 按 2D / 3D 分包，第三方类型不进入 physics-core 或 gameplay 公共 API。                                                                                          |
@@ -328,7 +328,9 @@ Input 是独立系统，负责 raw input、action mapping、context、focus 和 
 
 Input 使用 scope 表达输入事件当前所属交互域，例如 `game`、`ui`、`editor`、`text-input` 或 `devtools`。Action 和 Context 都可以声明允许的 scope，避免 gameplay/camera 快捷键在非游戏窗口误触发。
 
-详细设计见 `docs/modules/input.md`。
+Input source 同时支持事件型与 polling 型 adapter。Polling source 通过可选 `poll(frame)` 接受 App Host 的统一 frame/clock；标准 Input service 每帧先按注册顺序 poll source，再由 Input Router 产生 held Action。Source 不创建私有 RAF/timer，stop/disconnect/scope 变化必须取消 active control。Web Gamepad API 由 `@gamekit/input-dom` adapter 持有，不归 Phaser Driver；Phaser Web app 在组合层同时安装 Phaser pointer、DOM keyboard 和 Web Gamepad source。
+
+详细设计见 `docs/modules/input.md`，Web Gamepad 所有权决策见 `docs/adr/0045-web-gamepad-input-source-and-polling.md`。
 
 ### Camera
 
@@ -350,7 +352,7 @@ Fixed-step Physics module 可以提供 opt-in transient interpolation store 给 
 
 Combat 是可选的 effect delivery 与命中执行 toolkit。它通过 Physics 获取空间候选，通过 app-injected relationship/target policy 过滤，再通过 GAS effect 提交玩法结果。Projectile 是 entity-backed runtime object；Combat 不把 weapon、health、team、enemy 或 damage formula 写进 Core。
 
-GAS 是 ability/effect/cue 的语义事实源；Combat 不建立平行 Cue registry。Combat 提供数据驱动的 GAS committed → delivery bridge，以及 hit point、normal、block、projectile lifecycle 等动态空间 fact。表现组合层通过 correlation/execution/ticket/projectile identity 把 GAS Cue 与 Combat fact/World state 关联后交给 Animator、Renderer、Audio、Camera 和 UI。具体边界见 `docs/adr/0032-gas-cue-and-combat-delivery-integration.md`。
+GAS 是 ability/effect/cue 的语义事实源；Combat 不建立平行 Cue registry。Combat 提供数据驱动的 GAS committed → delivery bridge，以及 hit point、normal、block、projectile lifecycle 等动态空间 fact。Projectile spawn/despawn 通过有界 fact 暴露稳定 identity、初始或最终 transform与可选 impact，不把完整 runtime state、query或candidate传入 EventBus；连续 transform仍归 World。表现组合层通过 correlation/execution/ticket/projectile identity 把 GAS Cue 与 Combat fact/World state 关联后交给 Animator、Renderer、Audio、Camera 和 UI。具体边界见 `docs/adr/0032-gas-cue-and-combat-delivery-integration.md` 和 `docs/adr/0046-bounded-combat-projectile-lifecycle-facts.md`。
 
 详细设计见 `docs/modules/combat.md`。
 

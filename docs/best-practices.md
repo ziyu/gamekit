@@ -62,6 +62,7 @@
 - App Host 统一推进 App Service lifecycle：boot、start、stop、dispose、snapshot。底层服务对象不需要为了 Host 继承私有基类，生命周期通过 binding 描述。
 - GameModule 的订阅、system、trace store、controller runtime 和 cleanup 跟随 GameRuntime lifecycle；`stop()` 停 tick，`dispose()` 释放订阅和长期句柄。
 - Driver 先 boot，再派生 renderer/asset/input/camera/physics adapter；adapter 不单独创建同一套外部 runtime。
+- 主动采样的 Input source 由 App Host Input service 每帧调用可选 `poll(frame)`，并严格发生在 Router held tick 之前。Adapter 不创建私有 RAF/timer；事件型 source 继续只使用 start/stop/destroy。
 - App Host 的 service factory 构造不等于 service boot；`game.createRuntime` 和 GameModule `install()` 可能在 Driver `boot()` 前执行。依赖 renderer/asset/input/camera native runtime 的 GameModule 不应在 `install()` 中立即创建 RenderObject 或读取 native handle，应在 Host start 后的首个 tick、显式 start hook 或可验证的 boot gate 中幂等物化，并在 GameRuntime dispose 时先于 Driver 释放。
 - Save/load、asset preload、data registration 和 renderer boot 应由 App Host 或 app profile 编排顺序，不藏在 GameRuntime 内部。
 - Multiplayer create/join/reconnect/leave 应由 App Host、lobby UI、server host 或测试夹具显式触发；GameModule 不隐式创建 socket、Colyseus Room、Nakama match 或 provider room。
@@ -81,7 +82,7 @@
 - DataType 设计应给游戏开发者自由度。框架只要求稳定 `type + id`、可校验、可引用、可诊断，不强迫所有项目套固定 hero/monster/building 模板。
 - DataPack 是数据集合，不是内容包系统。真实 Content Package 未来可以包含 DataPack、资源 payload、脚本、localization、地图、patch 和权限声明。
 - Runtime state 不写回 DataRegistry。Data 是定义和来源追踪，World/Physics/GAS/TCA/Save 承载运行时状态。
-- 跨 GAS 与 Combat 的普通攻击链使用 `combat.ability-delivery` + Combat module bridge：GAS phase/effect Cue 表达表现语义，Combat fact/World state 提供空间上下文。不要让 app 为每个技能手写 committed 订阅，也不要在 Combat 再建一套同义 Cue registry；详细协议见 `docs/modules/gas.md`、`docs/modules/combat.md` 和 ADR 0032。
+- 跨 GAS 与 Combat 的普通攻击链使用 `combat.ability-delivery` + Combat module bridge：GAS phase/effect Cue 表达表现语义，Combat fact/World state 提供空间上下文。不要让 app 为每个技能手写 committed 订阅，也不要在 Combat 再建一套同义 Cue registry；projectile lifecycle event只白名单投影稳定 identity、初始/最终 transform和可选 impact，不能广播完整 runtime/query state，且必须同时有吞吐、payload大小、unsubscribe和 retained-state预算。详细协议见 `docs/modules/gas.md`、`docs/modules/combat.md`、ADR 0032 和 ADR 0046。
 - 引用关系通过 DataRef / AssetRef / 自定义 references 提取进入 reference graph，错误必须能定位 source pack、entry type、entry id、field path 和 target key。
 - 游戏内容文件应优先按真实业务概念组织，同一个业务文件可以混合内置 DataType 和用户自定义 DataType。
 
