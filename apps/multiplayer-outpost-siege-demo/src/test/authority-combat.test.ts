@@ -348,6 +348,72 @@ describe("Outpost authority combat", () => {
     expect(world.count()).toBe(0);
   });
 
+  it("projects bounded correlated combat cues from real authority outcomes", () => {
+    const world = createKootaWorld();
+    const pendingCommands: OutpostAuthorityCombatCommand[] = [];
+    const player = createPlayer();
+    const authority = createOutpostAuthorityGameplayRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world,
+      physicsBackend,
+      eventBus: createEventBus(),
+      players: () => [player],
+      combatCommands() {
+        return pendingCommands.splice(0, pendingCommands.length);
+      },
+      initialEnemies: [
+        { id: "enemy.test.cue-target", definitionId: "enemy.outpost.raider", x: 450, y: 300 }
+      ]
+    });
+    authority.runtime.start();
+    tick(authority, 2);
+
+    pendingCommands.push({
+      id: "combat-cue-shot",
+      playerId: player.playerId,
+      ability: "rifle",
+      aimX: 450,
+      aimY: 300,
+      correlationId: "outpost.test.cue-shot"
+    });
+    tickUntil(authority, () => authority.snapshot().combat.projectileHits > 0, 30);
+    pendingCommands.push(
+      command("combat-cue-rejection", player.playerId, "deploy-turret", 2_000, 300)
+    );
+    tick(authority, 1);
+
+    const combat = authority.snapshot().combat;
+    expect(combat.cues.length).toBeLessThanOrEqual(64);
+    expect(combat.cues.map((cue) => cue.sequence)).toEqual(
+      [...combat.cues].map((cue) => cue.sequence).sort((left, right) => left - right)
+    );
+    expect(combat.cueWatermark).toBe(combat.cues.at(-1)?.sequence);
+    expect(combat.cues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "projectile-spawned",
+          sourceObjectId: player.playerId,
+          correlationId: "outpost.test.cue-shot"
+        }),
+        expect.objectContaining({
+          kind: "health-hit",
+          sourceObjectId: player.playerId,
+          targetObjectId: "enemy.test.cue-target",
+          correlationId: "outpost.test.cue-shot",
+          amount: 12
+        }),
+        expect.objectContaining({
+          kind: "action-rejected",
+          sourceObjectId: player.playerId,
+          correlationId: "outpost.test.combat-cue-rejection"
+        })
+      ])
+    );
+
+    authority.runtime.dispose();
+    expect(world.count()).toBe(0);
+  });
+
   it("validates placement, costs, cooldowns, status effects, dash, and enemy attacks", () => {
     const world = createKootaWorld();
     const pendingCommands: OutpostAuthorityCombatCommand[] = [];

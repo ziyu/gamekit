@@ -15,6 +15,7 @@ import {
   type OutpostRenderTargetWriter
 } from "./preview-presentation-module";
 import { createOutpostDynamicRenderObjectDefinition } from "./player-render-object";
+import type { OutpostClientCombatPresentation, OutpostClientCombatPresentationCue } from "./combat";
 import type { OutpostClientPlayerPresentation } from "./player";
 
 export type CreateOutpostClientPresentationModuleOptions = {
@@ -24,6 +25,7 @@ export type CreateOutpostClientPresentationModuleOptions = {
   audio?: GameAudio | undefined;
   camera?: CameraController | undefined;
   playerPresentation?: OutpostClientPlayerPresentation | undefined;
+  combatPresentation?: OutpostClientCombatPresentation | undefined;
   listenerObjectId?: string | undefined;
   applyRenderTargetState?: OutpostRenderTargetWriter | undefined;
   readObjectState?(objectId: string):
@@ -71,6 +73,7 @@ export function createOutpostClientPresentationModule(
       const audioPhaseSignatures = new Map<string, string>();
       const weaponShotSequences = new Map<string, number>();
       const localWeaponPresentation = createLocalWeaponPresentationState();
+      const authorityCombatPresentation = createAuthorityCombatPresentationState();
       const muzzleObjectId = options.listenerObjectId
         ? `outpost.player-presentation.${options.listenerObjectId}.muzzle`
         : undefined;
@@ -91,6 +94,12 @@ export function createOutpostClientPresentationModule(
           }
 
           syncLocalWeaponPresentation(options, localWeaponPresentation, elapsed);
+          syncAuthorityCombatPresentation(
+            options,
+            authorityCombatPresentation,
+            localWeaponPresentation,
+            elapsed
+          );
 
           const desiredObjectIds = new Set<string>();
           const audioEmitters: Array<{
@@ -311,6 +320,10 @@ export function createOutpostClientPresentationModule(
           options.renderer.destroyObject(muzzleObjectId);
         }
         muzzleCreated = false;
+        for (const effect of authorityCombatPresentation.effects.values()) {
+          options.renderer.destroyObject(effect.objectId);
+        }
+        authorityCombatPresentation.effects.clear();
         if (options.audio) {
           options.audio.music.stop({ fadeMs: 240 });
           if (options.listenerObjectId) {
@@ -322,6 +335,182 @@ export function createOutpostClientPresentationModule(
       };
     }
   });
+}
+
+type ActiveAuthorityCombatEffect = {
+  objectId: string;
+  startedAt: number;
+  endsAt: number;
+  tint: number;
+  scale: number;
+};
+
+type AuthorityCombatPresentationState = {
+  cueWatermark: number;
+  effects: Map<number, ActiveAuthorityCombatEffect>;
+};
+
+const MAX_ACTIVE_AUTHORITY_COMBAT_EFFECTS = 48;
+
+function createAuthorityCombatPresentationState(): AuthorityCombatPresentationState {
+  return { cueWatermark: 0, effects: new Map() };
+}
+
+function syncAuthorityCombatPresentation(
+  options: CreateOutpostClientPresentationModuleOptions,
+  state: AuthorityCombatPresentationState,
+  localWeapon: LocalWeaponPresentationState,
+  elapsed: number
+): void {
+  if (options.combatPresentation !== undefined) {
+    for (const cue of options.combatPresentation.cuesAfter(state.cueWatermark)) {
+      state.cueWatermark = Math.max(state.cueWatermark, cue.sequence);
+      startAuthorityCombatCue(options, state, localWeapon, cue, elapsed);
+    }
+  }
+
+  for (const [sequence, effect] of state.effects) {
+    if (elapsed >= effect.endsAt) {
+      options.renderer.destroyObject(effect.objectId);
+      state.effects.delete(sequence);
+      continue;
+    }
+    const handle = options.renderer.getObjectHandle?.(effect.objectId);
+    if (handle === undefined || options.applyRenderTargetState === undefined) {
+      continue;
+    }
+    const duration = Math.max(1, effect.endsAt - effect.startedAt);
+    const remaining = Math.max(0, Math.min(1, (effect.endsAt - elapsed) / duration));
+    const expansion = 1 + (1 - remaining) * effect.scale;
+    options.applyRenderTargetState(handle.native, {
+      visible: true,
+      alpha: remaining,
+      transform: { scale: { x: expansion, y: expansion } },
+      props: { tint: effect.tint, tintMode: "fill" }
+    });
+  }
+}
+
+function startAuthorityCombatCue(
+  options: CreateOutpostClientPresentationModuleOptions,
+  state: AuthorityCombatPresentationState,
+  localWeapon: LocalWeaponPresentationState,
+  cue: OutpostClientCombatPresentationCue,
+  elapsed: number
+): void {
+  if (cue.kind === "action-rejected") {
+    if (cue.sourceObjectId === options.listenerObjectId) {
+      localWeapon.denyEndsAt = elapsed + 90;
+      options.camera?.shake({
+        id: `outpost.combat.rejected.${cue.authoritySequence}`,
+        amplitude: 1.1,
+        durationMs: 54,
+        frequency: 24
+      });
+    }
+    return;
+  }
+
+  const suppressLocalSpawn =
+    cue.kind === "projectile-spawned" &&
+    cue.sourceObjectId === options.listenerObjectId &&
+    cue.correlationId !== undefined &&
+    localWeapon.anticipatedCorrelations.has(cue.correlationId);
+  if (suppressLocalSpawn) {
+    return;
+  }
+
+  const style = authorityCombatCueStyle(cue.kind);
+  if (cue.position !== undefined && style !== undefined) {
+    while (state.effects.size >= MAX_ACTIVE_AUTHORITY_COMBAT_EFFECTS) {
+      const oldest = state.effects.entries().next().value as
+        | [number, ActiveAuthorityCombatEffect]
+        | undefined;
+      if (oldest === undefined) {
+        break;
+      }
+      options.renderer.destroyObject(oldest[1].objectId);
+      state.effects.delete(oldest[0]);
+    }
+    const objectId = `outpost.combat-cue.${cue.sequence}`;
+    const direction = cue.direction ?? cue.normal;
+    const rotation = direction === undefined ? 0 : Math.atan2(direction.y, direction.x);
+    const definition = createOutpostDynamicRenderObjectDefinition(
+      options.dataRegistry,
+      "render.outpost.projectile",
+      objectId,
+      cue.position.x,
+      cue.position.y,
+      rotation,
+      [`outpost.combat-cue-${cue.kind}`]
+    );
+    options.renderer.createObject({
+      ...definition,
+      alpha: 1,
+      props: { ...definition.props, tint: style.tint, tintMode: "fill" }
+    });
+    state.effects.set(cue.sequence, {
+      objectId,
+      startedAt: elapsed,
+      endsAt: elapsed + style.durationMs,
+      tint: style.tint,
+      scale: style.scale
+    });
+    const soundId =
+      cue.kind === "projectile-spawned" ? OUTPOST_AUDIO_IDS.rifle : OUTPOST_AUDIO_IDS.hit;
+    options.audio?.sfx.play(soundId, {
+      ownerId: objectId,
+      transform: { position: cue.position },
+      dedupeKey: `authority:${cue.authoritySequence}:${soundId}`
+    });
+  }
+
+  if (cue.targetObjectId === options.listenerObjectId) {
+    const amplitude =
+      cue.kind === "kill-confirmed"
+        ? 6
+        : cue.kind === "health-hit"
+          ? 4
+          : cue.kind === "shield-hit"
+            ? 2.2
+            : 0;
+    if (amplitude > 0) {
+      options.camera?.shake({
+        id: `outpost.combat.received.${cue.kind}.${cue.authoritySequence}`,
+        amplitude,
+        durationMs: cue.kind === "kill-confirmed" ? 180 : 110,
+        frequency: 20
+      });
+    }
+  } else if (cue.kind === "kill-confirmed" && cue.sourceObjectId === options.listenerObjectId) {
+    options.camera?.shake({
+      id: `outpost.combat.kill-confirm.${cue.authoritySequence}`,
+      amplitude: 1.6,
+      durationMs: 80,
+      frequency: 16
+    });
+  }
+}
+
+function authorityCombatCueStyle(
+  kind: OutpostClientCombatPresentationCue["kind"]
+): { tint: number; durationMs: number; scale: number } | undefined {
+  switch (kind) {
+    case "projectile-spawned":
+      return { tint: 0xffe08a, durationMs: 80, scale: 0.6 };
+    case "miss":
+      return { tint: 0xc8d0d6, durationMs: 100, scale: 0.8 };
+    case "world-impact":
+      return { tint: 0xffbd66, durationMs: 150, scale: 1.1 };
+    case "shield-hit":
+      return { tint: 0x63fff2, durationMs: 170, scale: 1.4 };
+    case "health-hit":
+      return { tint: 0xff6b6b, durationMs: 190, scale: 1.5 };
+    case "kill-confirmed":
+      return { tint: 0xfff1a8, durationMs: 280, scale: 2 };
+    case "action-rejected":
+      return undefined;
+  }
 }
 
 function bindAnimator(

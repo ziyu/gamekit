@@ -26,6 +26,7 @@ import {
   actorHealth,
   actorKind,
   captureCombatSnapshot,
+  combatObjectIdForActor,
   combatObjects,
   createCombatState,
   firstCollider,
@@ -161,7 +162,8 @@ function createEnemyLifecycleModule(state: CombatState) {
     install(ctx) {
       ctx.systems.register({
         id: "outpost.authority.enemies.materialize",
-        update({ delta }) {
+        update({ delta, elapsed }) {
+          state.elapsedMs = elapsed;
           ensureInitialEnemies(state);
           updateEnemyActivationDelays(state, delta);
         }
@@ -194,6 +196,7 @@ function createCombatPrePhysicsModule(state: CombatState, core: OutpostCombatCor
         state.dashesByPlayerId.clear();
         state.knockbacksByObjectId.clear();
         state.pendingDeaths.clear();
+        state.cueStream.clear();
       };
     }
   });
@@ -608,10 +611,38 @@ function resolveCombatCoreHit(
   if (damage <= 0) {
     return;
   }
-  applyDamage(state, hit.targetActorId, damage, hit.sourceActorId, {
+  const damageResult = applyDamage(state, hit.targetActorId, damage, hit.sourceActorId, {
     correlationId: context.correlationId ?? hit.ticketId,
     parentId: context.parentId ?? hit.ticketId
   });
+  const position = hit.point ?? actorPosition(state, hit.targetActorId);
+  const cueContext = {
+    at: state.elapsedMs,
+    sourceObjectId: combatObjectIdForActor(state, hit.sourceActorId),
+    targetObjectId: combatObjectIdForActor(state, hit.targetActorId),
+    ...(hit.projectileId === undefined ? {} : { projectileId: hit.projectileId }),
+    ...(position === undefined ? {} : { position }),
+    ...(hit.normal === undefined ? {} : { normal: hit.normal }),
+    correlationId: context.correlationId ?? hit.ticketId,
+    parentId: context.parentId ?? hit.ticketId
+  };
+  if (damageResult.shieldDamage > 0) {
+    state.cueStream.append({
+      kind: "shield-hit",
+      ...cueContext,
+      amount: damageResult.shieldDamage
+    });
+  }
+  if (damageResult.healthDamage > 0) {
+    state.cueStream.append({
+      kind: "health-hit",
+      ...cueContext,
+      amount: damageResult.healthDamage
+    });
+  }
+  if (damageResult.killed) {
+    state.cueStream.append({ kind: "kill-confirmed", ...cueContext });
+  }
   const target = state.objectsByActorId.get(hit.targetActorId);
   if (target !== undefined) {
     const sourcePosition = actorPosition(state, hit.sourceActorId);
@@ -679,14 +710,14 @@ function applyDamage(
   damage: number,
   sourceActorId: string,
   context: GasOperationContext
-): void {
+): { shieldDamage: number; healthDamage: number; killed: boolean } {
   if (!state.options.gas.hasActor(targetActorId)) {
-    return;
+    return { shieldDamage: 0, healthDamage: 0, killed: false };
   }
   const actor = state.options.gas.getActor(targetActorId);
   const health = actor.attributes.current.health ?? 0;
   if (health <= 0) {
-    return;
+    return { shieldDamage: 0, healthDamage: 0, killed: false };
   }
   const shield = actor.attributes.current.shield ?? 0;
   const shieldDamage = Math.min(shield, damage);
@@ -698,7 +729,7 @@ function applyDamage(
       context
     );
   }
-  const healthDamage = damage - shieldDamage;
+  const healthDamage = Math.min(health, damage - shieldDamage);
   if (healthDamage > 0) {
     state.options.gas.modifyAttribute(
       targetActorId,
@@ -707,6 +738,11 @@ function applyDamage(
       context
     );
   }
+  return {
+    shieldDamage,
+    healthDamage,
+    killed: healthDamage >= health
+  };
 }
 
 function applyKnockback(

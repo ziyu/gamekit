@@ -43,6 +43,7 @@ import {
   type OutpostPlayerDefinition,
   type OutpostReplicatedCombatState,
   type OutpostReplicatedActor,
+  type OutpostReplicatedCombatCue,
   type OutpostReplicatedProjectile,
   type OutpostReplicatedWeaponFeedback,
   type OutpostWeaponDefinition
@@ -55,7 +56,10 @@ import {
 import {
   createOutpostClientPlayerPresentation,
   createOutpostClientPlayerPresentationModule,
+  createOutpostClientCombatPresentation,
+  createOutpostClientCombatPresentationModule,
   createOutpostClientPresentationModule,
+  type OutpostClientCombatPresentation,
   type OutpostClientPlayerPresentation,
   type OutpostRenderTargetWriter
 } from "../presentation";
@@ -72,6 +76,7 @@ const MAX_PARTICIPANTS = 8;
 const MAX_PLAYERS = 4;
 const MAX_COMBAT_ACTORS = 1_024;
 const MAX_PROJECTILES = 2_048;
+const MAX_COMBAT_CUES = 64;
 
 export type OutpostClientMatchPhase = "lobby" | "countdown" | "running";
 
@@ -118,6 +123,7 @@ export type OutpostClientShadowSnapshot = {
   lastAppliedTick: number;
   entityCount: number;
   match?: OutpostClientAuthoritySnapshot;
+  combatPresentation: ReturnType<OutpostClientCombatPresentation["snapshot"]>;
   replication?: MultiplayerClientReplicationDiagnostics;
 };
 
@@ -127,6 +133,7 @@ export type OutpostClientShadowRuntime = {
   identity: OutpostIdentityRegistry;
   animator: AnimatorHandle;
   playerPresentation: OutpostClientPlayerPresentation;
+  combatPresentation: OutpostClientCombatPresentation;
   screenToWorld(point: PointLike): PointLike;
   view(): OutpostClientAuthoritySnapshot | undefined;
   snapshot(): OutpostClientShadowSnapshot;
@@ -246,6 +253,7 @@ export function createOutpostClientShadowRuntime(
     playerId: options.localPlayerId,
     fireIntervalMs: weaponDefinition.fireIntervalMs
   });
+  const combatPresentation = createOutpostClientCombatPresentation();
   const state: ClientShadowState = {
     dataRegistry: options.dataRegistry,
     world: options.world,
@@ -282,6 +290,15 @@ export function createOutpostClientShadowRuntime(
           };
         }
       }),
+      createOutpostClientCombatPresentationModule({
+        presentation: combatPresentation,
+        readCombat() {
+          const match = state.received;
+          return match === undefined
+            ? undefined
+            : { active: match.phase === "running", combat: match.combat };
+        }
+      }),
       createClientShadowCameraModule(state, options.camera, options.cameraAdapter),
       ...(options.renderer
         ? [
@@ -292,6 +309,7 @@ export function createOutpostClientShadowRuntime(
               audio: options.audio,
               camera: options.camera,
               playerPresentation,
+              combatPresentation,
               listenerObjectId: options.localPlayerId,
               applyRenderTargetState: options.applyRenderTargetState,
               readObjectState(objectId) {
@@ -328,6 +346,7 @@ export function createOutpostClientShadowRuntime(
     identity: state.identity,
     animator,
     playerPresentation,
+    combatPresentation,
     screenToWorld(point) {
       return options.camera?.screenToWorld(point) ?? point;
     },
@@ -348,6 +367,7 @@ export function createOutpostClientShadowRuntime(
         lastReceivedTick: state.received?.tick ?? -1,
         lastAppliedTick: state.lastAppliedTick,
         entityCount: state.world.count(),
+        combatPresentation: combatPresentation.snapshot(),
         ...(state.received === undefined ? {} : { match: cloneAuthoritySnapshot(state.received) }),
         ...(replication === undefined ? {} : { replication })
       };
@@ -1244,6 +1264,9 @@ function readCombatState(value: unknown): OutpostReplicatedCombatState | undefin
     value.actors.length > MAX_COMBAT_ACTORS ||
     !Array.isArray(value.projectiles) ||
     value.projectiles.length > MAX_PROJECTILES ||
+    !nonNegativeInteger(value.cueWatermark) ||
+    !Array.isArray(value.cues) ||
+    value.cues.length > MAX_COMBAT_CUES ||
     !nonNegativeInteger(value.acceptedCommands) ||
     !nonNegativeInteger(value.rejectedCommands) ||
     !nonNegativeInteger(value.projectileHits) ||
@@ -1256,12 +1279,29 @@ function readCombatState(value: unknown): OutpostReplicatedCombatState | undefin
   }
   const actors = value.actors.map(readCombatActor);
   const projectiles = value.projectiles.map(readCombatProjectile);
-  if (actors.some((actor) => !actor) || projectiles.some((projectile) => !projectile)) {
+  const cues = value.cues.map(readCombatCue).sort((left, right) => {
+    if (left === undefined) {
+      return 1;
+    }
+    if (right === undefined) {
+      return -1;
+    }
+    return left.sequence - right.sequence;
+  });
+  if (
+    actors.some((actor) => !actor) ||
+    projectiles.some((projectile) => !projectile) ||
+    cues.some((cue) => !cue) ||
+    cues.some((cue, index) => index > 0 && cue!.sequence <= cues[index - 1]!.sequence) ||
+    (cues.at(-1)?.sequence ?? 0) > value.cueWatermark
+  ) {
     return undefined;
   }
   return {
     actors: actors as OutpostReplicatedActor[],
     projectiles: projectiles as OutpostReplicatedProjectile[],
+    cueWatermark: value.cueWatermark,
+    cues: cues as OutpostReplicatedCombatCue[],
     acceptedCommands: value.acceptedCommands,
     rejectedCommands: value.rejectedCommands,
     projectileHits: value.projectileHits,
@@ -1448,6 +1488,42 @@ function readCombatProjectile(value: unknown): OutpostReplicatedProjectile | und
   };
 }
 
+function readCombatCue(value: unknown): OutpostReplicatedCombatCue | undefined {
+  if (
+    !isRecord(value) ||
+    !positiveInteger(value.sequence) ||
+    !isCombatCueKind(value.kind) ||
+    !nonNegativeFinite(value.at) ||
+    !optionalNonEmptyString(value.correlationId) ||
+    !optionalNonEmptyString(value.parentId) ||
+    !optionalNonEmptyString(value.sourceObjectId) ||
+    !optionalNonEmptyString(value.targetObjectId) ||
+    !optionalNonEmptyString(value.projectileId) ||
+    !optionalVector(value.position) ||
+    !optionalVector(value.normal) ||
+    !optionalVector(value.direction) ||
+    !optionalNonNegativeFinite(value.amount) ||
+    !optionalNonEmptyString(value.reason)
+  ) {
+    return undefined;
+  }
+  return {
+    sequence: value.sequence,
+    kind: value.kind,
+    at: value.at,
+    ...(value.correlationId === undefined ? {} : { correlationId: value.correlationId }),
+    ...(value.parentId === undefined ? {} : { parentId: value.parentId }),
+    ...(value.sourceObjectId === undefined ? {} : { sourceObjectId: value.sourceObjectId }),
+    ...(value.targetObjectId === undefined ? {} : { targetObjectId: value.targetObjectId }),
+    ...(value.projectileId === undefined ? {} : { projectileId: value.projectileId }),
+    ...(value.position === undefined ? {} : { position: { ...value.position } }),
+    ...(value.normal === undefined ? {} : { normal: { ...value.normal } }),
+    ...(value.direction === undefined ? {} : { direction: { ...value.direction } }),
+    ...(value.amount === undefined ? {} : { amount: value.amount }),
+    ...(value.reason === undefined ? {} : { reason: value.reason })
+  };
+}
+
 function cloneAuthoritySnapshot(
   snapshot: OutpostClientAuthoritySnapshot
 ): OutpostClientAuthoritySnapshot {
@@ -1472,7 +1548,13 @@ function cloneAuthoritySnapshot(
               }
             })
       })),
-      projectiles: snapshot.combat.projectiles.map((projectile) => ({ ...projectile }))
+      projectiles: snapshot.combat.projectiles.map((projectile) => ({ ...projectile })),
+      cues: snapshot.combat.cues.map((cue) => ({
+        ...cue,
+        ...(cue.position === undefined ? {} : { position: { ...cue.position } }),
+        ...(cue.normal === undefined ? {} : { normal: { ...cue.normal } }),
+        ...(cue.direction === undefined ? {} : { direction: { ...cue.direction } })
+      }))
     },
     inputAcksByPeerId: { ...snapshot.inputAcksByPeerId }
   };
@@ -1498,12 +1580,32 @@ function nonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+function positiveInteger(value: unknown): value is number {
+  return nonNegativeInteger(value) && value > 0;
+}
+
 function nonNegativeFinite(value: unknown): value is number {
   return finite(value) && value >= 0;
 }
 
 function optionalNonNegativeFinite(value: unknown): value is number | undefined {
   return value === undefined || nonNegativeFinite(value);
+}
+
+function optionalVector(value: unknown): value is { x: number; y: number } | undefined {
+  return value === undefined || (isRecord(value) && finite(value.x) && finite(value.y));
+}
+
+function isCombatCueKind(value: unknown): value is OutpostReplicatedCombatCue["kind"] {
+  return (
+    value === "projectile-spawned" ||
+    value === "miss" ||
+    value === "world-impact" ||
+    value === "shield-hit" ||
+    value === "health-hit" ||
+    value === "kill-confirmed" ||
+    value === "action-rejected"
+  );
 }
 
 function finite(value: unknown): value is number {

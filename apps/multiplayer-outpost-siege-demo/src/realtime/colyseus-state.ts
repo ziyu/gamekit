@@ -4,8 +4,9 @@ import type { ColyseusNativeStateUpdate } from "@gamekit/multiplayer-colyseus";
 import type { OutpostClientAuthoritySnapshot } from "../gameplay/client-shadow-runtime";
 import type { OutpostMatchAuthoritySnapshot } from "./match-authority";
 
-export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v6";
+export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v7";
 export const OUTPOST_COLYSEUS_SOURCE_ENDPOINT_ID = "outpost.colyseus-schema";
+const MAX_COMBAT_CUES = 64;
 
 export const OutpostColyseusParticipantState = schema(
   {
@@ -106,6 +107,34 @@ export const OutpostColyseusProjectileState = schema(
 
 export type OutpostColyseusProjectileState = SchemaType<typeof OutpostColyseusProjectileState>;
 
+export const OutpostColyseusCombatCueState = schema(
+  {
+    sequence: "float64",
+    kind: "string",
+    at: "float64",
+    correlationId: "string",
+    parentId: "string",
+    sourceObjectId: "string",
+    targetObjectId: "string",
+    projectileId: "string",
+    hasPosition: "boolean",
+    positionX: "float64",
+    positionY: "float64",
+    hasNormal: "boolean",
+    normalX: "float64",
+    normalY: "float64",
+    hasDirection: "boolean",
+    directionX: "float64",
+    directionY: "float64",
+    hasAmount: "boolean",
+    amount: "float64",
+    reason: "string"
+  },
+  "OutpostColyseusCombatCueState"
+);
+
+export type OutpostColyseusCombatCueState = SchemaType<typeof OutpostColyseusCombatCueState>;
+
 export const OutpostColyseusState = schema(
   {
     sessionId: "string",
@@ -121,6 +150,8 @@ export const OutpostColyseusState = schema(
     players: { map: OutpostColyseusPlayerState },
     combatActors: { map: OutpostColyseusCombatActorState },
     projectiles: { map: OutpostColyseusProjectileState },
+    combatCueWatermark: "float64",
+    combatCues: { map: OutpostColyseusCombatCueState },
     acceptedCommands: "uint32",
     rejectedCommands: "uint32",
     projectileHits: "uint32",
@@ -167,6 +198,7 @@ export function projectOutpostMatchToColyseusState(
   state.acceptedCommands = snapshot.combat.acceptedCommands;
   state.rejectedCommands = snapshot.combat.rejectedCommands;
   state.projectileHits = snapshot.combat.projectileHits;
+  state.combatCueWatermark = snapshot.combat.cueWatermark;
   state.enemyAttacks = snapshot.combat.enemyAttacks;
   state.kills = snapshot.combat.kills;
   state.drops = snapshot.combat.drops;
@@ -356,6 +388,60 @@ export function projectOutpostMatchToColyseusState(
   }
   removeMissingKeys(state.projectiles, projectileKeys);
 
+  const combatCueKeys = new Set<string>();
+  for (const cue of snapshot.combat.cues) {
+    const key = String(cue.sequence);
+    combatCueKeys.add(key);
+    const current = state.combatCues.get(key);
+    const next =
+      current ??
+      new OutpostColyseusCombatCueState({
+        sequence: cue.sequence,
+        kind: cue.kind,
+        at: cue.at,
+        correlationId: cue.correlationId ?? "",
+        parentId: cue.parentId ?? "",
+        sourceObjectId: cue.sourceObjectId ?? "",
+        targetObjectId: cue.targetObjectId ?? "",
+        projectileId: cue.projectileId ?? "",
+        hasPosition: cue.position !== undefined,
+        positionX: cue.position?.x ?? 0,
+        positionY: cue.position?.y ?? 0,
+        hasNormal: cue.normal !== undefined,
+        normalX: cue.normal?.x ?? 0,
+        normalY: cue.normal?.y ?? 0,
+        hasDirection: cue.direction !== undefined,
+        directionX: cue.direction?.x ?? 0,
+        directionY: cue.direction?.y ?? 0,
+        hasAmount: cue.amount !== undefined,
+        amount: cue.amount ?? 0,
+        reason: cue.reason ?? ""
+      });
+    next.kind = cue.kind;
+    next.at = cue.at;
+    next.correlationId = cue.correlationId ?? "";
+    next.parentId = cue.parentId ?? "";
+    next.sourceObjectId = cue.sourceObjectId ?? "";
+    next.targetObjectId = cue.targetObjectId ?? "";
+    next.projectileId = cue.projectileId ?? "";
+    next.hasPosition = cue.position !== undefined;
+    next.positionX = cue.position?.x ?? 0;
+    next.positionY = cue.position?.y ?? 0;
+    next.hasNormal = cue.normal !== undefined;
+    next.normalX = cue.normal?.x ?? 0;
+    next.normalY = cue.normal?.y ?? 0;
+    next.hasDirection = cue.direction !== undefined;
+    next.directionX = cue.direction?.x ?? 0;
+    next.directionY = cue.direction?.y ?? 0;
+    next.hasAmount = cue.amount !== undefined;
+    next.amount = cue.amount ?? 0;
+    next.reason = cue.reason ?? "";
+    if (current === undefined) {
+      state.combatCues.set(key, next);
+    }
+  }
+  removeMissingKeys(state.combatCues, combatCueKeys);
+
   const ackKeys = new Set<string>();
   for (const [peerId, sequence] of Object.entries(snapshot.inputAcksByPeerId)) {
     ackKeys.add(peerId);
@@ -374,6 +460,12 @@ export function readOutpostColyseusStateUpdate(
   const players = readCollection(value.players, readPlayer);
   const actors = readCollection(value.combatActors, readCombatActor);
   const projectiles = readCollection(value.projectiles, readProjectile);
+  const combatCues = readCollection(value.combatCues, readCombatCue)?.sort(
+    (left, right) => left.sequence - right.sequence
+  );
+  const combatCueSequenceValid =
+    combatCues !== undefined &&
+    combatCues.every((cue, index) => index === 0 || cue.sequence > combatCues[index - 1]!.sequence);
   const inputAcksByPeerId = readNumberMap(value.inputAcksByPeerId);
   if (
     !nonEmptyString(value.sessionId) ||
@@ -389,6 +481,11 @@ export function readOutpostColyseusStateUpdate(
     players === undefined ||
     actors === undefined ||
     projectiles === undefined ||
+    combatCues === undefined ||
+    combatCues.length > MAX_COMBAT_CUES ||
+    !combatCueSequenceValid ||
+    !nonNegativeInteger(value.combatCueWatermark) ||
+    (combatCues.at(-1)?.sequence ?? 0) > value.combatCueWatermark ||
     !nonNegativeInteger(value.acceptedCommands) ||
     !nonNegativeInteger(value.rejectedCommands) ||
     !nonNegativeInteger(value.projectileHits) ||
@@ -414,6 +511,7 @@ export function readOutpostColyseusStateUpdate(
       players,
       actors,
       projectiles,
+      combatCues,
       inputAcksByPeerId
     ),
     state: {
@@ -426,6 +524,8 @@ export function readOutpostColyseusStateUpdate(
       combat: {
         actors,
         projectiles,
+        cueWatermark: value.combatCueWatermark,
+        cues: combatCues,
         acceptedCommands: value.acceptedCommands,
         rejectedCommands: value.rejectedCommands,
         projectileHits: value.projectileHits,
@@ -669,6 +769,58 @@ function readProjectile(
   };
 }
 
+function readCombatCue(
+  value: unknown
+): OutpostClientAuthoritySnapshot["combat"]["cues"][number] | undefined {
+  if (
+    !isRecord(value) ||
+    !positiveInteger(value.sequence) ||
+    !isCombatCueKind(value.kind) ||
+    !nonNegativeFinite(value.at) ||
+    typeof value.correlationId !== "string" ||
+    value.correlationId.length > 256 ||
+    typeof value.parentId !== "string" ||
+    value.parentId.length > 256 ||
+    typeof value.sourceObjectId !== "string" ||
+    value.sourceObjectId.length > 256 ||
+    typeof value.targetObjectId !== "string" ||
+    value.targetObjectId.length > 256 ||
+    typeof value.projectileId !== "string" ||
+    value.projectileId.length > 256 ||
+    typeof value.hasPosition !== "boolean" ||
+    !finiteNumber(value.positionX) ||
+    !finiteNumber(value.positionY) ||
+    typeof value.hasNormal !== "boolean" ||
+    !finiteNumber(value.normalX) ||
+    !finiteNumber(value.normalY) ||
+    typeof value.hasDirection !== "boolean" ||
+    !finiteNumber(value.directionX) ||
+    !finiteNumber(value.directionY) ||
+    typeof value.hasAmount !== "boolean" ||
+    !finiteNumber(value.amount) ||
+    (value.hasAmount && value.amount < 0) ||
+    typeof value.reason !== "string" ||
+    value.reason.length > 256
+  ) {
+    return undefined;
+  }
+  return {
+    sequence: value.sequence,
+    kind: value.kind,
+    at: value.at,
+    ...(value.correlationId.length === 0 ? {} : { correlationId: value.correlationId }),
+    ...(value.parentId.length === 0 ? {} : { parentId: value.parentId }),
+    ...(value.sourceObjectId.length === 0 ? {} : { sourceObjectId: value.sourceObjectId }),
+    ...(value.targetObjectId.length === 0 ? {} : { targetObjectId: value.targetObjectId }),
+    ...(value.projectileId.length === 0 ? {} : { projectileId: value.projectileId }),
+    ...(value.hasPosition ? { position: { x: value.positionX, y: value.positionY } } : {}),
+    ...(value.hasNormal ? { normal: { x: value.normalX, y: value.normalY } } : {}),
+    ...(value.hasDirection ? { direction: { x: value.directionX, y: value.directionY } } : {}),
+    ...(value.hasAmount ? { amount: value.amount } : {}),
+    ...(value.reason.length === 0 ? {} : { reason: value.reason })
+  };
+}
+
 function readCollection<T>(
   value: unknown,
   read: (entry: unknown) => T | undefined
@@ -752,6 +904,7 @@ function estimateSnapshotBytes(
   players: OutpostClientAuthoritySnapshot["players"],
   actors: OutpostClientAuthoritySnapshot["combat"]["actors"],
   projectiles: OutpostClientAuthoritySnapshot["combat"]["projectiles"],
+  combatCues: OutpostClientAuthoritySnapshot["combat"]["cues"],
   inputAcksByPeerId: OutpostClientAuthoritySnapshot["inputAcksByPeerId"]
 ): number {
   let bytes = 96;
@@ -795,6 +948,17 @@ function estimateSnapshotBytes(
       estimateStringBytes(projectile.networkEntityId) +
       estimateStringBytes(projectile.renderKey);
   }
+  for (const cue of combatCues) {
+    bytes +=
+      176 +
+      estimateStringBytes(cue.kind) +
+      estimateStringBytes(cue.correlationId ?? "") +
+      estimateStringBytes(cue.parentId ?? "") +
+      estimateStringBytes(cue.sourceObjectId ?? "") +
+      estimateStringBytes(cue.targetObjectId ?? "") +
+      estimateStringBytes(cue.projectileId ?? "") +
+      estimateStringBytes(cue.reason ?? "");
+  }
   for (const peerId of Object.keys(inputAcksByPeerId)) {
     bytes += 16 + estimateStringBytes(peerId);
   }
@@ -831,6 +995,20 @@ function finiteNumber(value: unknown): value is number {
 
 function isMatchPhase(value: unknown): value is OutpostClientAuthoritySnapshot["phase"] {
   return value === "lobby" || value === "countdown" || value === "running";
+}
+
+function isCombatCueKind(
+  value: unknown
+): value is OutpostClientAuthoritySnapshot["combat"]["cues"][number]["kind"] {
+  return (
+    value === "projectile-spawned" ||
+    value === "miss" ||
+    value === "world-impact" ||
+    value === "shield-hit" ||
+    value === "health-hit" ||
+    value === "kill-confirmed" ||
+    value === "action-rejected"
+  );
 }
 
 function isParticipantStatus(

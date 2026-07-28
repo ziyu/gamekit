@@ -7,11 +7,14 @@ export type OutpostClientBenchmarkResult = {
   maximumEstimatedSchemaStateBytes: number;
   maximumCombatEstimatedSchemaStateBytes: number;
   maximumCombatEntities: number;
+  maximumCombatCueHistory: number;
+  combatCueDropped: number;
   rejectedSnapshots: number;
   predictionPendingInputs: number;
   predictionCachedFrames: number;
   retainedEntitiesAfterDispose: number;
   retainedPhysicsScenesAfterDispose: number;
+  retainedCombatCuesAfterDispose: number;
 };
 
 const BUDGETS: Array<{
@@ -26,11 +29,14 @@ const BUDGETS: Array<{
   { metric: "maximumEstimatedSchemaStateBytes", maximum: 16 * 1024 },
   { metric: "maximumCombatEstimatedSchemaStateBytes", maximum: 256 * 1024 },
   { metric: "maximumCombatEntities", maximum: 460 },
+  { metric: "maximumCombatCueHistory", maximum: 64 },
+  { metric: "combatCueDropped", maximum: 0 },
   { metric: "rejectedSnapshots", maximum: 0 },
   { metric: "predictionPendingInputs", maximum: 8 },
   { metric: "predictionCachedFrames", maximum: 256 },
   { metric: "retainedEntitiesAfterDispose", maximum: 0 },
-  { metric: "retainedPhysicsScenesAfterDispose", maximum: 0 }
+  { metric: "retainedPhysicsScenesAfterDispose", maximum: 0 },
+  { metric: "retainedCombatCuesAfterDispose", maximum: 0 }
 ];
 
 export function checkOutpostClientBudgets(

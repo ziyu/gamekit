@@ -254,6 +254,83 @@ describe("Outpost Browser multiplayer", () => {
     await server.dispose();
   });
 
+  it("presents each authority combat cue once and bounds transient effects", async () => {
+    const backend = createMemoryMultiplayerBackend({ id: "outpost.client-combat-cues.test" });
+    const server = createMultiplayerRuntime({ id: "server", backend });
+    const multiplayer = createMultiplayerRuntime({ id: "client", backend });
+    await server.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "session.server", role: "server" }
+    });
+    await multiplayer.joinSession({
+      sessionId: "session-1",
+      localPeer: { id: "ranger-1", role: "client", playerId: "player.ranger-1" }
+    });
+    const renderer = createMemoryRenderer("outpost.client-combat-cues.renderer");
+    const audioBackend = createMemoryAudioBackend({ unlocked: true });
+    const audio = createGameAudio({ ...OUTPOST_AUDIO_CONFIG, backend: audioBackend });
+    const client = createOutpostClientShadowRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world: createKootaWorld(),
+      multiplayer,
+      physicsBackend: createMemoryPhysicsBackend(),
+      localPlayerId: "player.ranger-1",
+      renderer,
+      audio
+    });
+    await client.runtime.start();
+    await sendSnapshot(server, authoritySnapshot(1, 1));
+    client.runtime.tick(0);
+
+    const cueSnapshot = authoritySnapshot(2, 1);
+    cueSnapshot.combat.cueWatermark = 50;
+    cueSnapshot.combat.cues = Array.from({ length: 50 }, (_, index) => ({
+      sequence: index + 1,
+      kind: "health-hit" as const,
+      at: 16,
+      sourceObjectId: "enemy.opening.1",
+      targetObjectId: "player.ranger-1",
+      position: { x: 800 + index, y: 500 },
+      amount: 1
+    }));
+    await sendSnapshot(server, cueSnapshot);
+    client.runtime.tick(16);
+
+    const combatEffectIds = () =>
+      renderer
+        .objects()
+        .map((object) => object.id)
+        .filter((objectId) => objectId.startsWith("outpost.combat-cue."));
+    expect(combatEffectIds()).toHaveLength(48);
+    expect(combatEffectIds()).not.toContain("outpost.combat-cue.1");
+    expect(combatEffectIds()).toContain("outpost.combat-cue.50");
+    expect(client.combatPresentation.snapshot()).toMatchObject({
+      cueWatermark: 50,
+      authorityCueWatermark: 50,
+      consumedCues: 50,
+      droppedCues: 0
+    });
+    const playbackStarts = audioBackend
+      .commands()
+      .filter((command) => command.type === "start").length;
+
+    cueSnapshot.tick = 3;
+    await sendSnapshot(server, cueSnapshot);
+    client.runtime.tick(16);
+    expect(audioBackend.commands().filter((command) => command.type === "start")).toHaveLength(
+      playbackStarts
+    );
+
+    client.runtime.tick(300);
+    expect(combatEffectIds()).toHaveLength(0);
+
+    await client.runtime.dispose();
+    audio.dispose();
+    await multiplayer.dispose();
+    await server.dispose();
+  });
+
   it("presents rifle anticipation immediately and suppresses duplicate authority feedback", async () => {
     const backend = createMemoryMultiplayerBackend({ id: "outpost.client-rifle-cues.test" });
     const server = createMultiplayerRuntime({ id: "server", backend });
@@ -489,6 +566,8 @@ function authoritySnapshot(tick: number, playerCount: number): OutpostClientAuth
     combat: {
       actors: [],
       projectiles: [],
+      cueWatermark: 0,
+      cues: [],
       acceptedCommands: 0,
       rejectedCommands: 0,
       projectileHits: 0,

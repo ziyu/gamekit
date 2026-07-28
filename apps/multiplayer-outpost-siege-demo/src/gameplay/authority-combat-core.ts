@@ -1,8 +1,14 @@
-import { createCombatModule, type CombatHitResult } from "@gamekit/combat";
+import {
+  createCombatModule,
+  type CombatDeliveryRejection,
+  type CombatHitResult,
+  type CombatProjectileDespawnFact,
+  type CombatProjectileSpawnFact
+} from "@gamekit/combat";
 import { PhysicsTransformComponent, type PhysicsVector } from "@gamekit/physics-core";
 
 import { OUTPOST_ARENA } from "../content";
-import type { CombatState } from "./authority-combat-state";
+import { combatObjectIdForActor, type CombatState } from "./authority-combat-state";
 
 export type OutpostCombatCoreIntegration = {
   module: ReturnType<typeof createCombatModule>;
@@ -24,6 +30,66 @@ export function createOutpostCombatCoreIntegration(
       ...(event.parentId === undefined ? {} : { parentId: event.parentId })
     });
   });
+  const offProjectileSpawned = state.options.eventBus.on<CombatProjectileSpawnFact>(
+    "combat.projectile_spawned",
+    (event) => {
+      state.cueStream.append({
+        kind: "projectile-spawned",
+        at: state.elapsedMs,
+        projectileId: event.payload.projectileId,
+        sourceObjectId: combatObjectIdForActor(state, event.payload.sourceActorId),
+        position: event.payload.position,
+        direction: normalizeDirection(event.payload.velocity),
+        correlationId: event.correlationId ?? event.payload.correlationId,
+        parentId: event.parentId ?? event.payload.parentId
+      });
+    }
+  );
+  const offProjectileDespawned = state.options.eventBus.on<CombatProjectileDespawnFact>(
+    "combat.projectile_despawned",
+    (event) => {
+      const fact = event.payload;
+      const worldImpact = fact.impact?.disposition === "blocker";
+      const miss = fact.reason === "expired" || fact.reason === "out-of-bounds";
+      if (!worldImpact && !miss) {
+        return;
+      }
+      const targetActorId = fact.impact?.subject.actorId;
+      const targetObjectId =
+        targetActorId === undefined
+          ? fact.impact?.subject.entityId === undefined
+            ? undefined
+            : state.objectsByEntityId.get(fact.impact.subject.entityId)?.id
+          : combatObjectIdForActor(state, targetActorId);
+      state.cueStream.append({
+        kind: worldImpact ? "world-impact" : "miss",
+        at: state.elapsedMs,
+        projectileId: fact.projectileId,
+        sourceObjectId:
+          fact.sourceActorId === undefined
+            ? undefined
+            : combatObjectIdForActor(state, fact.sourceActorId),
+        targetObjectId,
+        position: fact.impact?.point ?? fact.finalPosition,
+        normal: fact.impact?.normal,
+        correlationId: event.correlationId ?? fact.correlationId,
+        parentId: event.parentId ?? fact.parentId,
+        reason: fact.reason
+      });
+    }
+  );
+  const offDeliveryRejected = state.options.eventBus.on<CombatDeliveryRejection>(
+    "combat.delivery_rejected",
+    (event) => {
+      state.cueStream.append({
+        kind: "action-rejected",
+        at: state.elapsedMs,
+        correlationId: event.correlationId ?? event.payload.correlationId,
+        parentId: event.parentId,
+        reason: event.payload.reason
+      });
+    }
+  );
   const module = createCombatModule({
     id: "outpost.authority.combat-core",
     dataRegistry: state.options.dataRegistry,
@@ -90,10 +156,18 @@ export function createOutpostCombatCoreIntegration(
       aimByActorId.set(actorId, { ...point });
     },
     dispose() {
+      offDeliveryRejected();
+      offProjectileDespawned();
+      offProjectileSpawned();
       offHit();
       aimByActorId.clear();
     }
   };
+}
+
+function normalizeDirection(vector: PhysicsVector): PhysicsVector {
+  const length = Math.hypot(vector.x, vector.y);
+  return length <= 0.0001 ? { x: 1, y: 0 } : { x: vector.x / length, y: vector.y / length };
 }
 
 function actorPosition(state: CombatState, actorId: string): PhysicsVector | undefined {

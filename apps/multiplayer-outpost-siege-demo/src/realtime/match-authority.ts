@@ -448,6 +448,8 @@ function projectCombatState(
     return {
       actors: [],
       projectiles: [],
+      cueWatermark: 0,
+      cues: [],
       acceptedCommands: 0,
       rejectedCommands: 0,
       projectileHits: 0,
@@ -477,6 +479,13 @@ function projectCombatState(
     projectiles: combat.projectiles.map(({ id, entityId: _entityId, ...projectile }) => ({
       objectId: id,
       ...projectile
+    })),
+    cueWatermark: combat.cueWatermark,
+    cues: combat.cues.map((cue) => ({
+      ...cue,
+      ...(cue.position === undefined ? {} : { position: { ...cue.position } }),
+      ...(cue.normal === undefined ? {} : { normal: { ...cue.normal } }),
+      ...(cue.direction === undefined ? {} : { direction: { ...cue.direction } })
     })),
     acceptedCommands: combat.acceptedCommands,
     rejectedCommands: combat.rejectedCommands,

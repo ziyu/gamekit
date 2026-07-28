@@ -9,6 +9,7 @@ export * from "./authority-combat";
 export * from "./authority-navigation";
 export * from "./authority-runtime";
 export * from "./client-shadow-runtime";
+export * from "./combat-cue-stream";
 export * from "./components";
 export * from "./constants";
 export * from "./input";

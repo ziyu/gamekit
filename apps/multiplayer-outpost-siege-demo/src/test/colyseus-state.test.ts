@@ -77,7 +77,17 @@ describe("Outpost app-owned Colyseus state", () => {
               }
             }
           ],
-          projectiles: [{ objectId: "projectile.1", velocityX: 760 }]
+          projectiles: [{ objectId: "projectile.1", velocityX: 760 }],
+          cueWatermark: 1,
+          cues: [
+            {
+              sequence: 1,
+              kind: "health-hit",
+              sourceObjectId: "player.ranger-1",
+              targetObjectId: "enemy.opening.1",
+              amount: 12
+            }
+          ]
         }
       }
     });
@@ -91,12 +101,14 @@ describe("Outpost app-owned Colyseus state", () => {
     snapshot.players = [];
     snapshot.combat.actors = [];
     snapshot.combat.projectiles = [];
+    snapshot.combat.cues = [];
     snapshot.inputAcksByPeerId = {};
     projectOutpostMatchToColyseusState(state, snapshot, 22);
     expect(state.participants.size).toBe(0);
     expect(state.players.size).toBe(0);
     expect(state.combatActors.size).toBe(0);
     expect(state.projectiles.size).toBe(0);
+    expect(state.combatCues.size).toBe(0);
     expect(state.inputAcksByPeerId.size).toBe(0);
   });
 
@@ -200,6 +212,22 @@ function createMatchSnapshot(): OutpostMatchAuthoritySnapshot {
           velocityX: 760,
           velocityY: 0,
           facing: 0
+        }
+      ],
+      cueWatermark: 1,
+      cues: [
+        {
+          sequence: 1,
+          kind: "health-hit",
+          at: 340,
+          correlationId: "player.ranger-1.rifle.7",
+          sourceObjectId: "player.ranger-1",
+          targetObjectId: "enemy.opening.1",
+          projectileId: "projectile.1",
+          position: { x: 680, y: 500 },
+          normal: { x: -1, y: 0 },
+          direction: { x: 1, y: 0 },
+          amount: 12
         }
       ],
       acceptedCommands: 1,

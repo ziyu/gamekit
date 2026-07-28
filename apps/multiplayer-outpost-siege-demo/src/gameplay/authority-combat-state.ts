@@ -27,6 +27,7 @@ import type {
   OutpostAuthorityCombatSnapshot,
   OutpostAuthorityEnemySpawn
 } from "./authority-combat-types";
+import { createOutpostCombatCueStream, type OutpostCombatCueStream } from "./combat-cue-stream";
 
 export const OUTPOST_COMBAT_PLAYER_DEFINITION_ID = "player.outpost.ranger";
 
@@ -86,6 +87,8 @@ export type CombatState = {
     string,
     { actorId: string; correlationId?: string | undefined; parentId?: string | undefined }
   >;
+  cueStream: OutpostCombatCueStream;
+  elapsedMs: number;
   rememberCombatAim(actorId: string, point: PhysicsVector): void;
   initialWaveSpawned: boolean;
   nextTurretId: number;
@@ -107,6 +110,8 @@ export function createCombatState(options: CreateOutpostAuthorityCombatOptions):
     dashesByPlayerId: new Map(),
     knockbacksByObjectId: new Map(),
     pendingDeaths: new Map(),
+    cueStream: createOutpostCombatCueStream(),
+    elapsedMs: 0,
     rememberCombatAim() {},
     initialWaveSpawned: false,
     nextTurretId: 1,
@@ -239,9 +244,12 @@ export function captureCombatSnapshot(state: CombatState): OutpostAuthorityComba
   }
   actors.sort((left, right) => left.id.localeCompare(right.id));
   const projectiles = captureProjectileSnapshots(state);
+  const cueStream = state.cueStream.snapshot();
   return {
     actors,
     projectiles,
+    cueWatermark: cueStream.cueWatermark,
+    cues: cueStream.cues,
     projectileCount: projectiles.length,
     acceptedCommands: state.acceptedCommands,
     rejectedCommands: state.rejectedCommands,
@@ -259,6 +267,14 @@ export function rejectCommand(
   reason: string
 ): void {
   state.rejectedCommands += 1;
+  state.cueStream.append({
+    kind: "action-rejected",
+    at: state.elapsedMs,
+    sourceObjectId: command.playerId,
+    correlationId: command.correlationId ?? command.id,
+    parentId: command.parentId ?? command.id,
+    reason
+  });
   state.options.eventBus.emit(
     "outpost.combat.command_rejected",
     { commandId: command.id, playerId: command.playerId, ability: command.ability, reason },
@@ -272,6 +288,15 @@ export function actorKind(state: CombatState, actorId: string): string | undefin
     return "player";
   }
   return state.objectsByActorId.get(actorId)?.kind;
+}
+
+export function combatObjectIdForActor(state: CombatState, actorId: string): string | undefined {
+  for (const player of state.options.players().values()) {
+    if (player.actorId === actorId) {
+      return player.playerId;
+    }
+  }
+  return state.objectsByActorId.get(actorId)?.id;
 }
 
 export function actorHealth(state: CombatState, actorId: string): number {

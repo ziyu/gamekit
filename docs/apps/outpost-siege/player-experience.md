@@ -148,7 +148,9 @@ semantic control/action
 
 客户端不能从 counters 猜测动作，也不能只复制“最近一个 execution”而丢失仍需同时表现的 locomotion、weapon、reaction 与 status channel。Projection 应按玩家可见 channel 提供稳定摘要。
 
-一次性表现使用有界 cue stream。Cue 至少具有 sequence、semantic id、source/target、correlation、authority time，以及按类型需要的位置、方向、reason 和 importance。Snapshot/resync 同时复制 watermark；late join 不重播 watermark 之前的 one-shot。
+一次性表现使用有界 cue stream。Cue 至少具有 sequence、semantic id、source/target、correlation、authority time，以及按类型需要的位置、方向、reason 和 importance。Snapshot/resync 同时复制 watermark；late join 的第一份 active snapshot只建立 watermark基线，不重播此前 one-shot。后续 snapshot只消费更大的 authority sequence，sequence断档和 authority reset进入有界 diagnostics，不触发 gameplay retry。
+
+Outpost authority 与 client presentation history各自最多保留64条 cue；world-space瞬时表现最多同时存在48个，超限优先回收最旧对象，按各 cue duration到期回收。连续 projectile transform仍读取 replicated World snapshot，不进入 cue history。`miss`、`world-impact`、`shield-hit`、`health-hit`、`kill-confirmed` 和 `action-rejected` 必须由 authority事实明确区分，客户端不能从 projectile消失猜测结果。
 
 ## 预测与收敛
 

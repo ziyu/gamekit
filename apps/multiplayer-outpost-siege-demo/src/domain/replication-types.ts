@@ -41,9 +41,36 @@ export type OutpostReplicatedProjectile = {
   facing: number;
 };
 
+export type OutpostReplicatedCombatCueKind =
+  | "projectile-spawned"
+  | "miss"
+  | "world-impact"
+  | "shield-hit"
+  | "health-hit"
+  | "kill-confirmed"
+  | "action-rejected";
+
+export type OutpostReplicatedCombatCue = {
+  sequence: number;
+  kind: OutpostReplicatedCombatCueKind;
+  at: number;
+  correlationId?: string | undefined;
+  parentId?: string | undefined;
+  sourceObjectId?: string | undefined;
+  targetObjectId?: string | undefined;
+  projectileId?: string | undefined;
+  position?: { x: number; y: number } | undefined;
+  normal?: { x: number; y: number } | undefined;
+  direction?: { x: number; y: number } | undefined;
+  amount?: number | undefined;
+  reason?: string | undefined;
+};
+
 export type OutpostReplicatedCombatState = {
   actors: OutpostReplicatedActor[];
   projectiles: OutpostReplicatedProjectile[];
+  cueWatermark: number;
+  cues: OutpostReplicatedCombatCue[];
   acceptedCommands: number;
   rejectedCommands: number;
   projectileHits: number;

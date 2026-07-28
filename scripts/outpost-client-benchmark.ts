@@ -35,6 +35,7 @@ const COMBAT_WARMUP_SNAPSHOTS = 40;
 const COMBAT_SNAPSHOTS = 500;
 const COMBAT_ENEMIES = 200;
 const COMBAT_PROJECTILES = 256;
+const COMBAT_CUES = 64;
 const FIXED_DELTA_MS = 1000 / 60;
 
 async function main(): Promise<void> {
@@ -104,6 +105,8 @@ async function main(): Promise<void> {
   const combatDurationMs = performance.now() - combatStartedAt;
   const maximumCombatEntities = world.count();
 
+  snapshot.combat.cueWatermark = 0;
+  snapshot.combat.cues = [];
   const schemaState = createOutpostColyseusState("benchmark.session", "benchmark.session.server");
   let maximumEstimatedSchemaStateBytes = 0;
   for (let tick = 0; tick < WARMUP_SNAPSHOTS; tick += 1) {
@@ -156,7 +159,17 @@ async function main(): Promise<void> {
   const transitionDiagnostics = predictionDiagnostics?.transition as
     | { cachedFrames?: number }
     | undefined;
+  const combatPresentationDiagnostics = diagnostics.combatPresentation;
+  if (
+    combatPresentationDiagnostics.retainedCues !== COMBAT_CUES ||
+    combatPresentationDiagnostics.droppedCues !== 0
+  ) {
+    throw new Error(
+      `Outpost client benchmark expected ${COMBAT_CUES} retained combat cues without drops, received ${combatPresentationDiagnostics.retainedCues} retained and ${combatPresentationDiagnostics.droppedCues} dropped.`
+    );
+  }
   client.runtime.dispose();
+  const retainedCombatCuesAfterDispose = client.combatPresentation.snapshot().retainedCues;
   await multiplayer.runtime.dispose();
 
   const result: OutpostClientBenchmarkResult = {
@@ -174,11 +187,14 @@ async function main(): Promise<void> {
     maximumEstimatedSchemaStateBytes,
     maximumCombatEstimatedSchemaStateBytes,
     maximumCombatEntities,
+    maximumCombatCueHistory: combatPresentationDiagnostics.retainedCues,
+    combatCueDropped: combatPresentationDiagnostics.droppedCues,
     rejectedSnapshots: diagnostics.rejectedSnapshots,
     predictionPendingInputs: predictionDiagnostics?.pendingInputs ?? 0,
     predictionCachedFrames: transitionDiagnostics?.cachedFrames ?? 0,
     retainedEntitiesAfterDispose: world.count(),
-    retainedPhysicsScenesAfterDispose: physics.activeScenes()
+    retainedPhysicsScenesAfterDispose: physics.activeScenes(),
+    retainedCombatCuesAfterDispose
   };
   const checkEnabled = process.argv.includes("--check");
   const failures = checkEnabled ? checkOutpostClientBudgets(result) : [];
@@ -193,7 +209,8 @@ async function main(): Promise<void> {
           playersPerSnapshot: 4,
           combatSnapshots: COMBAT_SNAPSHOTS,
           combatEnemies: COMBAT_ENEMIES,
-          combatProjectiles: COMBAT_PROJECTILES
+          combatProjectiles: COMBAT_PROJECTILES,
+          combatCuesPerSnapshot: COMBAT_CUES
         },
         result,
         ...(checkEnabled
@@ -226,6 +243,8 @@ function createSnapshot(): OutpostMatchAuthoritySnapshot {
     combat: {
       actors: [],
       projectiles: [],
+      cueWatermark: 0,
+      cues: [],
       acceptedCommands: 0,
       rejectedCommands: 0,
       projectileHits: 0,
@@ -335,6 +354,23 @@ function advanceCombatSnapshot(snapshot: OutpostMatchAuthoritySnapshot, tick: nu
     velocityX: index % 2 === 0 ? 760 : -760,
     velocityY: 0,
     facing: index % 2 === 0 ? 0 : Math.PI
+  }));
+  const firstCueSequence = snapshot.combat.cueWatermark + 1;
+  snapshot.combat.cueWatermark += COMBAT_CUES;
+  snapshot.combat.cues = Array.from({ length: COMBAT_CUES }, (_, index) => ({
+    sequence: firstCueSequence + index,
+    kind: "health-hit" as const,
+    at: snapshot.elapsedMs,
+    correlationId: `benchmark.combat.${tick}.${index}`,
+    sourceObjectId: `benchmark.player.${(index % 4) + 1}`,
+    targetObjectId: `benchmark.enemy.${index % COMBAT_ENEMIES}`,
+    projectileId: `benchmark.projectile.${index % COMBAT_PROJECTILES}`,
+    position: {
+      x: 180 + ((index * 37 + tick * 5) % 1440),
+      y: 100 + ((index * 53 + tick * 3) % 800)
+    },
+    normal: { x: index % 2 === 0 ? -1 : 1, y: 0 },
+    amount: 12
   }));
 }
 
