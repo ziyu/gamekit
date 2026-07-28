@@ -365,6 +365,9 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
               }
             },
             tick(_ctx, frame) {
+              for (const adapter of adapters) {
+                adapter.poll?.({ delta: frame.delta, timestamp: frame.timestamp });
+              }
               router.tick({ delta: frame.delta, timestamp: frame.timestamp });
             },
             dispose() {

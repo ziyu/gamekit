@@ -1,4 +1,5 @@
 import type { InputActionEvent, InputBinding, NormalizedInputEvent } from "./types";
+import { createInputInvalidValueError } from "./errors";
 
 export function matchesInputBinding(binding: InputBinding, input: NormalizedInputEvent): boolean {
   if (binding.device !== input.device) {
@@ -23,6 +24,12 @@ export function matchesInputBinding(binding: InputBinding, input: NormalizedInpu
 }
 
 export function inputValue(input: NormalizedInputEvent): number {
+  if (typeof input.value === "number") {
+    if (!Number.isFinite(input.value)) {
+      throw createInputInvalidValueError(input.value, input.id);
+    }
+    return input.value;
+  }
   if (typeof input.wheelDelta === "number") {
     return input.wheelDelta;
   }

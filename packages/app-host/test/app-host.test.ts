@@ -479,7 +479,9 @@ describe("configured app host", () => {
   it("ticks standard input and game services from the app host frame", async () => {
     const router = createInputRouter();
     const emitted: string[] = [];
+    const inputLifecycle: string[] = [];
     const runtimeTicks: number[] = [];
+    let polled = false;
     const app = defineGameApp({
       id: "standard-frame",
       services: [{ id: "input" }, { id: "game", dependencies: ["input"] }]
@@ -502,6 +504,35 @@ describe("configured app host", () => {
             input.onAction((event) => {
               emitted.push(`${event.actionId}:${event.phase}:${event.timestamp}`);
             });
+          },
+          adapters(_ctx, input) {
+            return [
+              {
+                start() {
+                  inputLifecycle.push("start");
+                },
+                stop() {
+                  inputLifecycle.push("stop");
+                },
+                poll(frame) {
+                  inputLifecycle.push(`poll:${frame.timestamp}`);
+                  if (polled) {
+                    return;
+                  }
+                  polled = true;
+                  input.handle({
+                    id: "polled-key-down",
+                    device: "keyboard",
+                    code: "KeyD",
+                    phase: "pressed",
+                    timestamp: frame.timestamp
+                  });
+                },
+                destroy() {
+                  inputLifecycle.push("destroy");
+                }
+              }
+            ];
           }
         },
         game: {
@@ -530,17 +561,19 @@ describe("configured app host", () => {
     });
 
     await configured.host.start();
-    router.handle({
-      id: "key-down",
-      device: "keyboard",
-      code: "KeyD",
-      phase: "pressed",
-      timestamp: 1
-    });
     configured.host.tick(16, 17);
 
-    expect(emitted).toEqual(["camera.pan_right:pressed:1", "camera.pan_right:held:17"]);
+    expect(emitted).toEqual(["camera.pan_right:pressed:17", "camera.pan_right:held:17"]);
+    expect(inputLifecycle).toEqual(["start", "poll:17"]);
     expect(runtimeTicks).toEqual([16]);
+
+    await configured.host.stop();
+    configured.host.tick(16, 33);
+    expect(inputLifecycle).toEqual(["start", "poll:17", "stop"]);
+    expect(runtimeTicks).toEqual([16]);
+
+    await configured.host.dispose();
+    expect(inputLifecycle).toEqual(["start", "poll:17", "stop", "destroy"]);
   });
 
   it("boots the standard UI service with panels and snapshot access", async () => {
