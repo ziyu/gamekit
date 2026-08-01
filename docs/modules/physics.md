@@ -53,7 +53,37 @@ DevTools / Save
 
 Physics Core 保持薄协议。成熟库负责底层 broadphase、solver、constraint 和 shape implementation；GameKit 负责稳定 id、World integration、Data materialization、EventBus 边界、Save contributor 和可解释 trace。
 
-客户端物理预测使用同一分层：`createPhysicsBodyPredictionTransition(...)` 持有一个 backend-owned speculative scene，从 rollback state 同步单个 subject body，应用调用方声明的 input patch，再按 fixed sub-step 写回 predicted state。它用有界 sequence before/after checkpoint 复用基线一致的 replay，不重复移动或 step 当前 solver scene；只有 cache miss 才真正 rewind/replay。它不拥有 authority、ack、renderer 或玩法规则；Multiplayer Core 只通过通用 transition factory 管理 predict/replay/dispose lifecycle，并只读透传 diagnostics。`createPhysicsLayoutDefinitions(...)` 让 World layout 与 speculative scene 复用同一 body/collider definition 解析和 stable id 规则。
+客户端物理预测使用同一分层，但必须区分两种能力：
+
+- 单主体 transition：`createPhysicsBodyPredictionTransition(...)` 持有一个 backend-owned speculative scene，从
+  rollback state 同步一个 subject body，应用调用方声明的 input patch，再按 fixed sub-step 写回 predicted state。
+  它用有界 sequence before/after 公开 body checkpoint 复用基线一致的 replay，适合本地角色对共享静态 layout
+  的移动与 Dash。
+- Prediction-island transition：`createPhysicsPredictionIsland(...)` 为相互作用的多个 dynamic body、constraint、
+  predicted spawn/despawn 保存并恢复同一 simulation tick 的 backend checkpoint，再按 tick/sequence 稳定顺序
+  重放。它只在 backend 明确声明 full-scene capture/restore 与 deterministic replay capability 且调用方提供有界
+  history/member/command 预算时启用；late command、authority reconciliation、membership mismatch、overflow、
+  reset 和 dispose 都返回或记录显式 diagnostic。
+
+单主体 checkpoint 不是完整 solver 存档，不能用于多个 dynamic body、projectile spawn matching 或复杂弹跳/
+制导对象。Prediction island 也不能只恢复部分交互对象；成员缺失、history overflow 或 backend 不支持时必须
+返回明确 diagnostic，让上层 hard-correct 或降级 authority-only。
+
+两种 transition 都不拥有 authority、ack、renderer、Combat hit rule 或玩法策略；Multiplayer Core 只通过通用
+prediction-domain lifecycle 管理 history/predict/replay/dispose，并只读透传 diagnostics。
+`createPhysicsLayoutDefinitions(...)` 让 World layout 与 speculative scene 复用同一 body/collider definition
+解析和 stable id 规则。
+
+直线 kinematic 对象使用 `sweepPhysicsKinematicStep(...)` 运行一个无状态 ray/shape interval。调用方提供
+`PhysicsQueries`、position、velocity、delta、shape 与 query filter；Core 强制 closest/stable sweep 并返回
+新的 position 与首个 hit。它不拥有 projectile identity、lifetime、authority 或 damage，因此同一个函数可以被
+owner prediction 与 authority simulation 复用。直接创建 query-only backend scene 的组合层必须按 backend
+contract 在 materialization 和静态 body 移动后推进一次 scene step，使 query pipeline 与最新 collider 对齐。
+
+`PhysicsQueryResult.point` 和 `normal` 必须是命中 collider 表面的世界空间接触信息；shape-cast backend 不能把
+provider 的 local witness 直接泄漏到公共结果。`PhysicsKinematicSweepStepResult.position` 则表示移动 ray/shape
+在 TOI 时的世界空间原点：ray 的原点与接触点重合，shape 的原点必须按 `distance` / `fraction` 推进，不能把
+表面接触点当成圆心、球心或 box origin。Adapter conformance 必须同时断言这两个位置，避免形状中心嵌入 blocker。
 
 ## 核心模型
 
@@ -93,6 +123,7 @@ export type PhysicsBodyDefinition = {
   angularVelocity?: PhysicsRotation;
   gravityScale?: number;
   damping?: { linear?: number; angular?: number };
+  continuousCollisionDetection?: boolean;
   lockedAxes?: string[];
   userData?: Record<string, unknown>;
 };
@@ -221,6 +252,8 @@ export type PhysicsScene<TNative = unknown> = {
 
   query(query: PhysicsQuery): PhysicsQueryResult[];
   snapshot(): PhysicsSceneSnapshot;
+  captureCheckpoint?(): PhysicsSceneCheckpoint;
+  restoreCheckpoint?(checkpoint: PhysicsSceneCheckpoint): void;
   native?(): TNative;
   dispose(): void;
 };
@@ -237,6 +270,12 @@ Adapter 规则：
 - 3D backend 可以把 `PhysicsRotation` 的 vector 形式解释为 Euler radians，并把 quaternion 作为无损 state/native round-trip；2D backend 可以把 number 解释为平面角度并拒绝 quaternion。
 - Backend native path 只允许 app-specific gameplay integration、Editor 后端工具或 DevTools backend plugin 显式依赖具体 adapter 包时使用。
 - Backend capability 必须声明支持的 shape、query family、trigger interaction、filter 映射、result ordering、rotation support 和 native path。公共 API 遇到不支持的能力时应返回明确 diagnostic 或抛出 GameKit error，不能以近似语义静默降级。
+- 只有能恢复完整 scene/solver state 并在相同输入下稳定重演的 backend 才能声明 `checkpoints.fullScene` 与
+  `checkpoints.deterministicReplay`。Checkpoint payload 始终由 adapter 私有持有，公共 envelope 只公开 backend、
+  scene id 和 byte length；不同 backend/scene 的 restore 必须拒绝。
+- `PhysicsSceneConfig.materialDefinitions` 是 scene-local material registry。Adapter 必须把 collider 的 friction、
+  restitution、density 和 combine rule 映射到底层 solver；未知 material id 必须报错。高速动态 body 通过
+  `continuousCollisionDetection` 显式启用 backend CCD，不能靠放大 collider 掩盖 tunneling。
 
 ## GameModule 集成
 
@@ -574,6 +613,8 @@ Physics module 应默认使用 fixed timestep 和稳定 system order，减少不
 - Contact event 排序应按稳定 body/collider id 或 backend-provided pair id 归一化。
 - Backend snapshot 只承诺 GameKit 层稳定字段，不承诺 native memory layout。
 - 只有 backend 明确声明 deterministic profile 时，游戏才能把它用于 rollback / lockstep 级别的确定性假设。
+- Prediction-island restore 必须恢复所有会在 replay window 内相互作用的 body、constraint 与 spawn/despawn
+  顺序；一个 body 对未来 tick 的 dynamic scene 重放不能称为确定性 rollback。
 
 ## 测试要求
 
@@ -594,6 +635,9 @@ Physics module 应默认使用 fixed timestep 和稳定 system order，减少不
 - entity despawn、body/collider component 移除或 disabled 后释放 backend handle 和反向索引。
 - snapshot 不暴露 native handle。
 - Save capture/restore 可重建 scene。
+- 单主体 prediction transition 覆盖静态碰撞、checkpoint hit/miss、hard reset、history limit 和 dispose。
+- 声明 prediction-island capability 的 backend 额外覆盖多 dynamic body 交互、完整 checkpoint restore、
+  spawn/despawn replay、partial-member rejection、history overflow 和 retained-state cleanup。
 
 Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Phaser Scene 绑定、Matter compound body 等。
 
@@ -611,8 +655,18 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
 - Physics module 的 World sync 顺序必须明确。常见顺序是 input/AI 写意图，physics step 推进，再把 transform/velocity 写回 World，最后 renderer sync。
 - Physics module 在 World sync 时维护 body/collider handle 到 entity 的反向索引，并在 component disabled、entity despawn 或 handle replacement 时释放 stale backend handle；contact 热路径不能为每个 contact 扫描 World。
 - 场景几何通过 `physics.layout` + `createPhysicsLayoutModule(...)` 物化；layout module 与 Physics module 使用同一组 World component binding，并安装在 Physics step module 之前。每个 module 只清理自己创建的 entity，不以全量 World despawn 代替 lifecycle ownership。
-- Authority 使用物理 solver 且客户端启用 rollback prediction 时，通过 `createPhysicsBodyPredictionTransition(...)` 创建每个 binding 独立的 speculative scene；backend 在 app/profile 层初始化，transition 只接收 `PhysicsBackendAdapter`。使用 `createPhysicsLayoutDefinitions(...)` 复用权威 layout，不复制 collider placement；通过 `maxCachedFrames` 约束 sequence checkpoint，观察 `cachedReplays`、`replayCacheMisses` 和 `cachedFrames`。Multiplayer managed replication 负责 transition 的创建、诊断透传和释放。
+- Authority 使用物理 solver 且客户端只预测一个主体与静态 layout 时，通过
+  `createPhysicsBodyPredictionTransition(...)` 创建每个 binding 独立的 speculative scene；backend 在 app/profile
+  层初始化，transition 只接收 `PhysicsBackendAdapter`。使用 `createPhysicsLayoutDefinitions(...)` 复用权威
+  layout，不复制 collider placement；通过 `maxCachedFrames` 约束 sequence checkpoint，观察 `cachedReplays`、
+  `replayCacheMisses` 和 `cachedFrames`。Multiplayer managed replication 负责 transition 的创建、诊断透传和释放。
+- 多个 dynamic body、predicted spawn 或 constraint 在 replay window 内会相互影响时，必须选择显式
+  `createPhysicsPredictionIsland(...)`，并同时限制 history ticks、member/spawn count、checkpoint bytes 和每帧
+  replay work；authority snapshot 必须包含该 tick 的完整成员集合，先完成 predicted-spawn matching 再 reconcile。
+  不能继续扩大单主体 helper 或在 app 中复制半套 scene snapshot。
 - 新 backend 先通过 physics conformance tests，再补 backend-specific behavior test。真实 canvas 或 Phaser Scene 只用于少量集成测试。
+- Backend-specific shape-cast 测试必须区分世界空间 contact point 与移动 shape origin，并至少用一个非零半径/
+  half-extent 断言 origin 停在 blocker 外；只断言 collider id 会遗漏整半径的穿透错误。
 - 改动 Physics World sync、contact mapping、interpolation sampling 或 handle lifecycle 时运行 `corepack pnpm bench:physics:check`，用大实体/固定 contact profile 与大量 reusable-target sampling 观察数量级回归和 dispose 后 retained state。
 - 把 Physics trace 接入跨模块 timeline 时使用有界 trace store 和增量 entry hook；不要每帧读取并合并完整 trace history。修改该路径时运行 `corepack pnpm bench:diagnostics:check`。
 
@@ -625,7 +679,13 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
 - 整张背景图、tilemap 或模型只负责表现，不能被 gameplay 当成隐式碰撞来源。关卡必须提供显式 `physics.layout`、tile collision layer 或 mesh collider companion；运行时不要逐像素扫描图片生成 collider。模块化静态场景应以 app-owned scene instance 为唯一 transform/footprint 来源，同时派生 RenderObject placement 与 collider，并用内容测试逐实例比较 position、rotation 和 shape；只锁定整张场景 bounds 不能防止物体漂移。
 - 高频移动、碰撞和查询留在 physics/world system 内；不要把每帧 contact manifold、position patch 或 query result 全量发到 EventBus、React UI 或 DevTools UI。
 - Renderer/camera 可以读取 interpolation store 的 transient sample；碰撞、能力目标、AI、Save 和 multiplayer authority 仍只读取 World / PhysicsScene 权威 transform。
-- 物理 prediction 的 input mapping 可以表达期望 velocity/kinematic target 和非物理 state 更新，但不能在游戏层再次调用 backend `step()`、维护 solver cache 或手写碰撞近似。匹配 checkpoint 只表示公开 body 基线一致，用于避免无意义 replay；它不是完整 solver 存档。Backend 未承诺 deterministic 时仍保留 reconciliation；correction 是安全网，不是长期模型差异的替代品。
+- 物理 prediction 的 input mapping 可以表达期望 velocity/kinematic target 和非物理 state 更新，但不能在游戏层再次调用 backend `step()`、维护 solver cache 或手写碰撞近似。单主体匹配 checkpoint 只表示公开 body 基线一致，用于避免无意义 replay；它不是完整 solver 存档。Backend 未承诺 deterministic 时仍保留 reconciliation；correction 是安全网，不是长期模型差异的替代品。
+- 可见 projectile 会被 blocker、target、bounce 或 expire 改变轨迹时，presentation 不能只沿初始 velocity 前进。
+  简单可重放弹丸使用 Combat 的 kinematic fire/finish record 与同一 Physics sweep；复杂动态交互对象使用
+  prediction island；Physics Core 不决定 damage 或 authority hit confirmation。
 - Save 只保存可恢复 physics state，不保存 backend cache。Load 后由 Physics module 重建 scene 并恢复 stable body/entity mapping。
 - 修改 Physics checkpoint、backend reset 或 restore rebuild 时运行 `corepack pnpm bench:checkpoint:check`；该基准将 restore 与首个 rebuild tick 一起计量。
+- 修改 prediction island、predicted rigid projectile 或 scene checkpoint 时同时运行
+  `corepack pnpm bench:projectile-prediction:check`；该基准约束完整岛 checkpoint capture、late-command restore、
+  resimulation p95、history bytes/hard limit 与 dispose retained state。
 - 需要后端专属能力时，通过显式 native path 使用具体 adapter 包，并把这段代码限制在 app-specific integration、Editor backend panel 或 DevTools plugin 中。

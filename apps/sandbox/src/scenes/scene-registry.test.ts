@@ -14,7 +14,8 @@ describe("Sandbox scene registry", () => {
       "audio-lab",
       "animator-lab",
       "ai-lab",
-      "navigation-lab"
+      "navigation-lab",
+      "multiplayer-projectile-lab"
     ]);
     expect(resolveSandboxScene("?scene=combat").id).toBe("combat");
     expect(resolveSandboxScene("?scene=tiny-camp").id).toBe("tiny-camp");
@@ -22,11 +23,15 @@ describe("Sandbox scene registry", () => {
     expect(resolveSandboxScene("?scene=animator-lab").id).toBe("animator-lab");
     expect(resolveSandboxScene("?scene=ai-lab").id).toBe("ai-lab");
     expect(resolveSandboxScene("?scene=navigation-lab").id).toBe("navigation-lab");
+    expect(resolveSandboxScene("?scene=multiplayer-projectile-lab").id).toBe(
+      "multiplayer-projectile-lab"
+    );
     expect(resolveSandboxScene("?scene=unknown").id).toBe(DEFAULT_SANDBOX_SCENE_ID);
     expect(requireSandboxScene("combat").capabilities).toContain("Combat");
     expect(requireSandboxScene("audio-lab").capabilities).toContain("Dialogue");
     expect(requireSandboxScene("animator-lab").capabilities).toContain("Marker");
     expect(requireSandboxScene("ai-lab").capabilities).toContain("Scheduler");
     expect(requireSandboxScene("navigation-lab").capabilities).toContain("Route Field");
+    expect(requireSandboxScene("multiplayer-projectile-lab").capabilities).toContain("Prediction");
   });
 });

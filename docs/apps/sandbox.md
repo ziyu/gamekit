@@ -25,6 +25,33 @@ Sandbox 外壳只负责场景发现、选择、懒加载、启动状态和错误
 - 场景清单采用懒加载，未选择的场景不进入当前页面的启动与执行路径。
 - 场景选择可由外壳导航和稳定的 `scene` URL 参数表达，便于自动化测试、问题复现和直接分享。
 
+## 场景：Projectile Combat Field
+
+Multiplayer Projectile 场景采用一个可玩的前线交火区，而不是把 Owner、Authority、Remote 画成三条抽象测试
+轨道。测试者控制一个本地 Owner 单位，从武器装具中选择不同弹丸，瞄准战场中的敌方单位并观察生命、掩体、
+命中和网络收敛结果。
+
+长期演示要求：
+
+- 战场包含可识别的射击单位、多个敌方目标、生命与护甲、静态掩体和明确的空间布局；不能用同质圆点代替
+  游戏对象。
+- 至少展示快速小半径步枪弹、慢速大体积能量弹、带爆炸范围的火箭、多弹丸散射武器，以及一类启用重力、
+  CCD、材质反弹和动态目标冲量的 solver-owned 刚体弹。每类弹丸使用自己的 Combat/Physics definition、速度、
+  寿命、伤害和表现，不只改变颜色。
+- Owner、Authority 和 Remote 继续运行真实 Multiplayer runtime；Sandbox 交互场默认使用 Memory backend，验证
+  runtime 组合与预测语义，不把它表述为生产 transport。主视图显示 Owner 的即时预测，Authority 与 Remote 以
+  辅助 ghost 表达，不把同一场战斗拆成三份互不相关的地图。
+- 目标伤害和击倒只由 Authority 命中事实结算；Owner 可以即时预测空间 impact，但不能提前提交伤害。
+- 网络故障注入应改变一个明确的空间事实，例如 Authority 独有的旧掩体，并产生一次可解释的有界 correction，
+  而不是随机移动无业务含义的测试墙。
+- 场景 UI 优先表达装具、目标、冷却、生命、命中和战斗结果；队列、sweep 和 reconciliation 作为紧凑诊断保留，
+  不能反客为主。
+
+该场景同时验证 `kinematic-data-buffer` 与 `predicted-entity`：前四类弹丸复用同一 Physics sweep 与有界
+fire/finish record；刚体弹则把弹丸和所有可推动目标放入同一 prediction island，在延迟 authority snapshot
+到达时恢复完整 Rapier checkpoint 并重演。场景必须显示回滚 tick、checkpoint bytes 和刚体 contact 数，伤害仍
+只由 Authority 接触事实结算。更复杂的制导或 constraint 不得以不完整的直线近似冒充。
+
 ## 场景：Tiny Camp
 
 Sandbox 的主场景采用一个自动运行、可交互的放置式营地 demo：`Tiny Camp`。

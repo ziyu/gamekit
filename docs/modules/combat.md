@@ -110,6 +110,40 @@ export type CombatProjectileDefinition = {
 
 Projectile module 使用批量 query、复用临时结果与延迟 cleanup queue，避免在 entity 循环内创建大量 Set/Array。是否使用 entity pool 由 World adapter benchmark 决定，公共协议不暴露池化 identity。
 
+## Projectile Network Strategies
+
+Projectile definition 在多人 profile 中必须通过 Data/app composition 显式绑定一种标准 network strategy，
+不能由 presentation 根据“是否先画出来”隐式推断：
+
+- `hitscan-lag-compensated`：用于没有真实飞行时间的 ray/beam。Client 只预演 muzzle/tracer；authority 在有界
+  目标历史中回看并执行 Combat/Physics query，发布最终 hit result。
+- `kinematic-data-buffer`：用于轨迹可按 definition + fixed tick 重放、生命周期有限的弹丸。Owner client 运行与
+  authority 相同的 ray/shape sweep并预测 provisional spatial result；authority 通过有界 fire/finish record
+  提交最终空间结果，remote proxy 从 record 重建。
+- `predicted-entity`：用于 bounce、homing、多 body 或其他动态交互。Client predicted spawn 必须和 authority
+  identity/generation 匹配，相关 dynamic body 进入同一 Physics prediction island。
+- `authority-only`：用于复杂、稀少或非手感关键对象。Client 只插值权威 state，anticipation 不生成虚假的
+  collision/lifecycle。
+
+Combat 定义 strategy vocabulary 和 projectile spatial record，不依赖 Multiplayer runtime。标准 record 至少
+包含 shot/correlation/generation、definition/version、`fireTick`、fire position/velocity，以及完成后可选的
+`finishTick`、hit point/normal、finish reason 和公开 subject identity。Record 使用固定容量 ring、最大 lifetime
+和明确过期规则；fire 与 finish 各更新一次，不按 render frame 复制 transform。
+
+标准实现由三个窄入口组成：`createCombatKinematicProjectileRecordBuffer(...)` 管有界 fire/finish history，
+`createCombatKinematicProjectileRuntime(...)` 复用 Physics kinematic sweep 推进 owner/authority simulation，
+`sampleCombatKinematicProjectileRecord(...)` 按任意 presentation tick 重建 remote transform。
+`reconcileCombatKinematicProjectileRecords(...)` 只比较 fire/finish 空间事实并返回 pending/confirmed/corrected；
+它不应用 GAS effect 或修改 authority state。
+
+Client 的 predicted spatial result 始终是 provisional：可以即时停止弹体、播放可撤销 world impact，却不能
+提交 relationship/target validation、GAS effect、ammo/cost、damage、kill 或 status。Authority result 按稳定
+identity confirm/reject/correct；确认不能重复播放已经预演的反馈，分叉只撤销或修正对应 prediction chain。
+
+`visual-only` 只用于纯装饰。只继承预测显示位置、保持原速度或等待 authority despawn 的 handoff 不具备
+collision 语义，不能用于会被墙、目标、bounce 或 expire 改变轨迹的 projectile。策略边界见
+`docs/adr/0047-selective-network-prediction-and-projectile-strategies.md`。
+
 ## Ability Execution 协作
 
 GAS 负责 ability phase、cost、cooldown、tag gate 和取消。Combat 只在 execution 进入 `committed` 或指定 active marker 时接收 delivery request：
@@ -228,8 +262,11 @@ ability/task intents
 
 - `combat.projectile`、`combat.delivery` 和可选 `combat.relationship-policy` 通过 DataRegistry 校验引用。
 - Save 只保存仍需跨 checkpoint 存活的 projectile state、hit count、lifetime 和 stable identity；不保存 query result、contact cache 或 presentation cue。
-- Multiplayer 复制 projectile/entity presentation state、公开 ability execution 与有界 hit/cue fact；客户端不重新运行 authority target validation。
-- Client-only cosmetic projectile 必须明确标记为 presentation，不能与 authority projectile 共用 gameplay identity。
+- Multiplayer 按 projectile strategy 复制有界 fire/finish record、predicted entity state 或 authority-only state，
+  并公开 ability execution 与有界 hit/cue fact；客户端可以运行所选策略的 provisional spatial simulation，但不
+  重新提交 authority target validation 或 GAS effect。
+- Client-only cosmetic projectile 必须明确标记为 presentation，不能与 authority projectile 共用 gameplay
+  identity，也不能承担 collision、finish reason 或 hit position。
 
 ## Trace
 
@@ -255,6 +292,10 @@ Trace 默认只保存摘要和稳定 id，不保存完整 query payload 或每�
 - 新 delivery executor 通过统一 conformance 覆盖 target filtering、stable ordering、duplicate suppression、cleanup、trace 和 error code。
 - benchmark 至少覆盖大量 projectile sweep、area query、pierce hit memory、entity churn 和 dispose retained state。
 - Lifecycle event benchmark 必须真实开启 `emitProjectiles`，同时约束 spawn/despawn数量、p95/max、fact序列化大小、unsubscribe后回调和 dispose retained state；关闭事件的 hot-path benchmark不能替代该预算。
+- Projectile network strategy conformance 分别覆盖 hitscan rewind window、kinematic fire/finish confirm/correct、
+  predicted-spawn identity/generation 与 authority-only interpolation。Kinematic benchmark 必须真实运行 owner sweep、
+  record churn/serialization 和 remote reconstruction；predicted-entity benchmark 必须真实运行 history capture/
+  restore/resimulation，并限制每对象 bytes、history 上限和 dispose retained state。
 
 ### 模块使用
 
@@ -263,3 +304,6 @@ Trace 默认只保存摘要和稳定 id，不保存完整 query payload 或每�
 - 动画、音频和镜头以 GAS Cue 为表现语义源，并按需关联 Combat 空间 fact；它们不反向决定 hit result。
 - 高频 projectile transform 和 candidate list 留在 World/Physics/Combat runtime，不进入 React、EventBus 或完整网络 fact stream。
 - 表现优先使用 `despawn.impact.point`；只有 backend 未提供 collision point 时才回退 `finalPosition`。消费者不能在收到 despawn 后反查已销毁 entity。
+- 为每个 projectile 声明最窄且语义完整的 network strategy。具有已知静态 blocker 的 owner prediction 必须在
+  本地 sweep tick 停止，任何 frame 都不能把弹体画到 blocker 后方；远端默认从 authority record/state 重建，
+  不预测其未知输入。

@@ -9,6 +9,7 @@ export * from "./conformance";
 export * from "./errors";
 export * from "./peer-player-binding";
 export * from "./participant-policy";
+export * from "./predicted-spawn";
 export * from "./prediction";
 export * from "./prediction-state";
 export * from "./presentation";

@@ -43,6 +43,8 @@
     "bench:gameplay:check": "tsx scripts/gameplay-framework-benchmark.ts --check",
     "bench:combat": "tsx scripts/combat-benchmark.ts",
     "bench:combat:check": "tsx scripts/combat-benchmark.ts --check",
+    "bench:projectile-prediction": "tsx scripts/projectile-prediction-benchmark.ts",
+    "bench:projectile-prediction:check": "tsx scripts/projectile-prediction-benchmark.ts --check",
     "bench:navigation": "tsx scripts/navigation-benchmark.ts",
     "bench:navigation:check": "tsx scripts/navigation-benchmark.ts --check",
     "bench:navigation:grid": "tsx scripts/navigation-grid-benchmark.ts",

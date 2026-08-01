@@ -4,7 +4,8 @@ export type SandboxSceneId =
   | "audio-lab"
   | "animator-lab"
   | "ai-lab"
-  | "navigation-lab";
+  | "navigation-lab"
+  | "multiplayer-projectile-lab";
 
 export type SandboxSceneModule = {
   mount(root: HTMLElement): Promise<void>;

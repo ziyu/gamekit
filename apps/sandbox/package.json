@@ -28,6 +28,8 @@
     "@gamekit/gas": "workspace:*",
     "@gamekit/input-core": "workspace:*",
     "@gamekit/input-dom": "workspace:*",
+    "@gamekit/multiplayer-core": "workspace:*",
+    "@gamekit/multiplayer-memory": "workspace:*",
     "@gamekit/navigation-core": "workspace:*",
     "@gamekit/navigation-graph": "workspace:*",
     "@gamekit/navigation-grid": "workspace:*",

@@ -24,6 +24,8 @@
     { "path": "../../packages/game-runtime" },
     { "path": "../../packages/input-core" },
     { "path": "../../packages/input-dom" },
+    { "path": "../../packages/multiplayer-core" },
+    { "path": "../../packages/multiplayer-memory" },
     { "path": "../../packages/navigation-core" },
     { "path": "../../packages/navigation-graph" },
     { "path": "../../packages/navigation-grid" },

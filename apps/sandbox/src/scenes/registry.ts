@@ -50,6 +50,23 @@ export const sandboxSceneCatalog: readonly SandboxSceneDefinition[] = [
     description: "Ashen Ford terrain, route choices, and replaceable backends",
     capabilities: ["Game Terrain", "Path", "Route Field", "Backend Provider", "Obstacles"],
     load: () => import("./navigation-lab")
+  },
+  {
+    id: "multiplayer-projectile-lab",
+    shortLabel: "MP",
+    title: "Projectile Combat Field",
+    description: "Playable kinematic and rigid-body firefight across three network truths",
+    capabilities: [
+      "Multiplayer",
+      "Multi-weapon Combat",
+      "Prediction",
+      "Physics Sweep",
+      "Rigid Body",
+      "Island Replay",
+      "Authority",
+      "Remote Playback"
+    ],
+    load: () => import("./multiplayer-projectile-lab")
   }
 ] as const;
 

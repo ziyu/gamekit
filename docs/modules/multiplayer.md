@@ -378,6 +378,41 @@ Authoritative snapshot 通常以固定 tick 或 provider state update 到达，�
 - Track 数量、字段类型和 allocation 行为必须由调用方通过 declaration 显式控制；高频路径优先复用 projector、buffer、scratch object 或 renderer-specific write target，并通过 `vector2Into` / `vector3Into` / `quaternionInto` 直接写入，不能为了方便在每个 render frame 深拷贝完整 gameplay snapshot。`presentSnapshotTracks()` 和完整 render-only snapshot materialization 只作为小工具、测试或低规模便利用法，大规模 runtime loop 使用 reusable projector。
 - Diagnostics 采样低频摘要，默认不展开完整高频 payload。
 
+## Selective Prediction Domains
+
+Prediction 是按对象声明的同步策略，不是 renderer 的通用平滑开关，也不是所有联网对象默认进入的完整
+world rollback。标准策略分为：
+
+- `hitscan-lag-compensated`：本地只预演即时反馈，authority 在有界历史中回看目标状态并验证瞬时 query。
+- `kinematic-data-buffer`：owner 用同一 fixed-step 定义和 sweep 预测；authority 发布有界 fire/finish record，
+  remote proxy 按 authority timeline 重建。
+- `predicted-entity`：client spawn 与 authority identity 匹配，涉及的动态对象组成 prediction island 并从同一 tick
+  rollback/replay。
+- `authority-only`：authority simulation，client 只插值公开状态或播放不承诺空间结果的 anticipation。
+
+Multiplayer Core 负责 provider-neutral 的 prediction domain lifecycle：有界 tick/input/history、generation、
+predicted-spawn identity/match、confirm/reject、rollback/replay/hard-reset、overflow 和 diagnostics。Core 不选择具体
+武器策略，不执行 Physics query，不理解 Combat projectile definition。游戏或 Data 声明策略；Physics、Combat
+等 domain transition 提供确定性 simulation 和空间 record。
+
+`createMultiplayerPredictedSpawnRegistry(...)` 是 predicted spawn 的标准轻量 identity helper。它按 kind +
+correlation + generation 匹配 local/authority id，返回 matched/unmatched/duplicate/stale/rejected 结果，并对
+pending、resolved、age 与内部 order index 设置独立硬上限。Registry 不比较 gameplay payload，也不决定
+correction；具体 domain 在 match 后解释 predicted/authority state。
+
+一个 domain 必须显式限制 history tick、对象数、spawn 数、内存和 replay work。Binding/session/generation 改变
+时必须整体释放旧 domain；history overflow 或成员缺失时执行可观察的 hard correction/authority-only 降级，
+不能继续在不完整历史上重放。相互作用的 predicted dynamic object 必须进入同一 prediction island；只回滚
+本地主体、却让它与留在未来 tick 的 dynamic body 交互不是合法 resimulation。
+
+现有 managed `clientReplication` 的单 state transition 是轻量 prediction domain，适合本地角色对静态 layout
+的移动与 Dash。它不自动提供 predicted spawn matching、多 entity solver snapshot 或完整 physics island rollback。
+这些能力需要显式的 domain/transition，不能由 app 在 render handoff 或 network callback 中补 collision 特判。
+
+只有纯装饰对象可以使用 visual-only anticipation。会因 collision、bounce、hit、expire 或 spatial lifecycle 改变
+轨迹的对象必须选择能预测或权威表达该结果的策略；稳定 correlation 继承显示位置只能作为 presentation
+continuity，不能替代 simulation。
+
 ## Provider-Native Capability Bridge
 
 成熟 backend 的强能力不进入 `multiplayer-core`，但 backend package 必须为完整可用场景保留受控接入口。典型能力包括：
@@ -456,7 +491,8 @@ export type MultiplayerReplicationContributor<TSnapshot = unknown, TPatch = unkn
 - state summary：低频发送稳定 summary，用于 DevTools、观战摘要或重连后的应用层校验。
 - provider state mapping：把 Colyseus Schema、Nakama match state 或其他 provider state 映射成 GameKit summary。
 - deterministic lockstep：只同步输入/命令和 tick，要求游戏自己保证确定性。
-- rollback：由具体游戏或后续专用 toolkit 提供；core 只保留 tick、sequence、snapshot 和 authority 入口。
+- selective prediction domain：core 提供有界 history、predicted-spawn identity、rollback/replay lifecycle 与
+  diagnostics；具体 Physics/Combat transition 和 app policy 声明对象集合、simulation 与权威结果。
 
 World、GAS、TCA、Camera 或游戏自定义模块可以各自提供 contributor。Multiplayer core 不直接理解 Koota object、Phaser object、React state、Colyseus Schema class 或具体游戏组件。
 
@@ -535,7 +571,8 @@ Multiplayer diagnostics 应回答：
 - `local` authority endpoint 是正式权威源；它可以没有网络连接，但仍必须经过同一 payload schema、tick boundary、snapshot/apply 和 diagnostics 路径。
 - Runtime phase、session 和 peer 访问器必须反映 backend connection 的最新 snapshot；UI 权限不能依赖 stale `in-session` 缓存。
 - backend adapter 不应把 access token、room secret、平台账号私有字段放入普通 snapshot、EventBus 或 Save。
-- Client prediction 只能作为表现层或可回滚状态，不作为权威事实保存。
+- Client prediction 只能作为可丢弃的 speculative simulation/presentation state，不作为权威事实保存；会产生
+  空间因果的对象不能降级成没有 collision 的 render-only anticipation。
 - 本地 memory backend 不代表生产安全模型；Colyseus/Nakama 等成熟 backend 仍需要按具体游戏设计 server-side validation。
 
 ## 反模式
@@ -553,6 +590,10 @@ Multiplayer diagnostics 应回答：
 - Client 直接广播 `world.patch` 并让其他 client 无校验应用到权威状态。
 - Multiplayer core 维护一个无限扩展的 backend capability catalog，试图包装每个服务商的全部能力。
 - 为了“统一”而把 Colyseus Schema、Nakama match state 或 provider account model 抽象成一套过大的 GameKit 自研多人模型。
+- 把继承显示位置、保持速度或 correction lerp 当成 projectile prediction，却不在本地运行同一 collision/
+  lifecycle simulation。
+- 默认回滚完整 world，或反过来只回滚一个 body 却让它与未来 tick 的动态对象交互；prediction island 必须
+  按真实交互边界声明并有硬预算。
 
 ## 最佳实践
 
@@ -575,6 +616,9 @@ Multiplayer diagnostics 应回答：
 - 多客户端 headless test 不能只断言 peer count；必须断言同一 lifecycle、input 或 snapshot 来自同一个 authority state。
 - Room-owned 物理游戏的多客户端测试应至少覆盖 bounded action、latest continuous state 或 fixed-step predicted input/ack（按实际 contract 选择）、完整 authority begin → GameRuntime/Physics → commit、实体出生/离开清理，以及 leader 离开后剩余 peer 继续读取同一 authority state。Fixed-step predicted input 测试必须证明 burst 到达后 ack 按每个已模拟 step 依次推进。
 - 改动多人高频路径时运行并按需扩展 `bench:multiplayer`。模块级 benchmark 应覆盖 envelope normalization、authority receiver source gate、host/local authority loop、latest-input coalescing、prediction lead backpressure、prediction reconciliation/presentation、snapshot playback 和 presentation projection；定时或手动 performance workflow 使用宽松预算观察数量级回归，并用模拟长时序 + GC 后 retained heap 检查有界缓存，不作为常规 PR merge gate。provider-native backend 可在对应 adapter 包中补独立 benchmark。
+- 新增 selective prediction domain 时，conformance 必须覆盖 spawn confirm/reject/duplicate/late result、generation/
+  binding reset、history overflow、hard correction 与 dispose；benchmark 分开测 history capture、restore、replay、
+  predicted-spawn churn 和 retained bytes。只测 renderer object 数或关闭 prediction 的路径不能作为该能力预算。
 - 改动 Colyseus Room runtime bridge 的 tick、ingress、peer index 或 lifecycle cleanup 时运行 `corepack pnpm bench:multiplayer:room:check`；该基准必须同时检查 dispose 后 peer 与 timer 为零。
 - 字段级 provider state model 优先保持 app-owned；只有第二个稳定应用出现相同 mapping、partition 或 interest-management 需求，并通过真实 benchmark 验证后，才评估下沉 backend package 或 core。
 
@@ -587,6 +631,9 @@ Multiplayer diagnostics 应回答：
 - 普通游戏通过 standard Multiplayer module 的 `clientReplication` 配置连接 authoritative snapshot 和 renderer frame：声明 decoder、timeline、remote `Network*` tracks、deterministic prediction transition、local predicted-state fields 与统一 `applyFrame` writer 后，由底层自动接收、播放、预测、字段插值和校正。只有特殊 netcode、测试或工具才直接调用 low-level playback/projector/prediction factory 或 deprecated custom presentation callbacks。不要让 renderer 直接按低频网络 tick 跳变，不要在 app 层重复实现通用 playback clock/lerp/correction offset，也不要把 presented position 写回 authority state。
 - 本地预测优先只配置 `inputRateHz`，managed runtime 用同一周期推进 prediction step，并用 `maxPredictionLeadInputs`（默认 8，可按 RTT/authority queue 预算调整）阻止未确认序列无限领先；如果 authority tick/ack 使用另一周期，必须显式建立一致的 simulation interval，不能让两个独立数字静默漂移。Prediction field 声明 correction metric、smooth fields、duration 和 max magnitude；managed runtime 自动调用 predict/present/reconcile 并应用 moving-target offset。不要把 prediction buffer `state()` 的 raw endpoint 直接写入 renderer，也不要对 endpoint 再做一整步向前 extrapolate。大 correction、teleport、binding/session change、hard phase transition 和 resync 直接 snap/reset prediction presentation。
 - Authority 使用 Physics backend 时，本地 prediction 不能长期使用 `position += velocity * step` 近似带 damping/碰撞的 solver。优先通过 `createPhysicsBodyPredictionTransition(...)` 复用同一 body/collider/layout definition、backend kind 与 fixed sub-step，并把 transition factory 交给 managed replication；transition 的有界 sequence checkpoint 会在权威基线匹配时复用 replay 结果，避免无意义 rewind 破坏 solver contact cache。游戏只声明 input-to-body patch 和 state binding，不手动推进 solver、调用 replay/interpolation 或释放 prediction scene。
+- 为网络对象选择最窄且语义完整的策略：瞬时攻击用 lag-compensated hitscan，可重放直线弹丸用有界
+  kinematic fire/finish record，复杂动态交互才用 predicted entity + prediction island，非手感关键对象保持
+  authority-only。Remote entity 默认 interpolation；只有输入/history 和交互集合都明确时才预测。
 - UI 和 gameplay 代码应读取 authority binding / last authoritative snapshot 来决定是否显示联网游戏状态；未绑定时只能显示连接中、观战、离线练习或等待同步。
 - 单机 UI 也应读取 local authoritative snapshot，而不是直接读写另一份 mutable gameplay state。
 - 本地 simulation 在联网模式中只能作为 prediction/interpolation cache，必须能被 authority snapshot 校正或丢弃。

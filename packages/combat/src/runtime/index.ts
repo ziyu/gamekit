@@ -4,6 +4,9 @@ export { createCombatHandle, type CombatHandleOptions } from "./create-combat-ha
 export * from "./create-combat-module";
 export * from "./create-combat-runtime";
 export * from "./errors";
+export * from "./kinematic-projectile-runtime";
+export * from "./projectile-network-types";
+export * from "./projectile-record-buffer";
 export * from "./save-contributor";
 export * from "./trace-store";
 export * from "./types";

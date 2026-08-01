@@ -440,6 +440,12 @@ importers:
       '@gamekit/input-dom':
         specifier: workspace:*
         version: link:../../packages/input-dom
+      '@gamekit/multiplayer-core':
+        specifier: workspace:*
+        version: link:../../packages/multiplayer-core
+      '@gamekit/multiplayer-memory':
+        specifier: workspace:*
+        version: link:../../packages/multiplayer-memory
       '@gamekit/navigation-core':
         specifier: workspace:*
         version: link:../../packages/navigation-core

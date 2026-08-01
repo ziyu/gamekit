@@ -25,6 +25,72 @@ beforeAll(async () => {
 });
 
 describe("Rapier 3D physics backend", () => {
+  it("restores solver-owned CCD bodies with material response from a full checkpoint", () => {
+    const scene = backend.createScene({
+      id: "rapier3d.prediction-island.checkpoint",
+      gravity: { x: 0, y: -9.81, z: 0 },
+      materialDefinitions: [
+        {
+          id: "material.ballistic",
+          friction: 0.05,
+          restitution: 0.85,
+          density: 3,
+          combine: { restitution: "max" }
+        },
+        {
+          id: "material.floor",
+          friction: 0.5,
+          restitution: 0.75,
+          combine: { restitution: "max" }
+        }
+      ]
+    });
+    scene.createBody({ id: "floor.body", kind: "static", position: { x: 0, y: -2, z: 0 } });
+    scene.createCollider({
+      id: "floor.collider",
+      bodyId: "floor.body",
+      shape: { type: "box", width: 40, height: 1, depth: 40 },
+      material: "material.floor"
+    });
+    scene.createBody({
+      id: "round.body",
+      kind: "dynamic",
+      position: { x: 0, y: 4, z: 0 },
+      linearVelocity: { x: 3, y: -32, z: 2 },
+      continuousCollisionDetection: true
+    });
+    scene.createCollider({
+      id: "round.collider",
+      bodyId: "round.body",
+      shape: { type: "sphere", radius: 0.35 },
+      material: "material.ballistic"
+    });
+
+    const checkpoint = scene.captureCheckpoint?.();
+    expect(checkpoint).toBeDefined();
+    for (let tick = 0; tick < 24; tick += 1) {
+      scene.step(1000 / 60);
+    }
+    const firstReplay = scene.getBodyState("round.body")!;
+    expect(firstReplay.linearVelocity.y).toBeGreaterThan(0);
+
+    scene.restoreCheckpoint?.(checkpoint!);
+    for (let tick = 0; tick < 24; tick += 1) {
+      scene.step(1000 / 60);
+    }
+    const secondReplay = scene.getBodyState("round.body")!;
+    expect(secondReplay.position.x).toBeCloseTo(firstReplay.position.x, 6);
+    expect(secondReplay.position.y).toBeCloseTo(firstReplay.position.y, 6);
+    expect(secondReplay.position.z).toBeCloseTo(firstReplay.position.z ?? Number.NaN, 6);
+    expect(secondReplay.linearVelocity.y).toBeCloseTo(firstReplay.linearVelocity.y, 6);
+    expect(backend.capabilities().checkpoints).toMatchObject({
+      captureRestore: true,
+      fullScene: true,
+      deterministicReplay: true
+    });
+    scene.dispose();
+  });
+
   it("steps bodies, emits collision events, and supports point and overlap queries", () => {
     const scene = backend.createScene({ gravity: { x: 0, y: 0, z: 0 } });
     const bodyA = scene.createBody({

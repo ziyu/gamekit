@@ -42,6 +42,7 @@ export type PhysicsBodyDefinition = {
     linear?: number;
     angular?: number;
   };
+  continuousCollisionDetection?: boolean;
   lockedAxes?: string[];
   userData?: Record<string, unknown>;
 };
@@ -107,6 +108,20 @@ export type PhysicsSceneConfig = {
   dimension?: PhysicsDimension;
   gravity?: PhysicsVector;
   fixedDeltaMs?: number;
+  materialDefinitions?: readonly PhysicsMaterialDefinition[];
+};
+
+export type PhysicsSceneCheckpoint = {
+  backend: string;
+  sceneId: PhysicsSceneId;
+  byteLength: number;
+  payload: unknown;
+};
+
+export type PhysicsCheckpointCapability = {
+  captureRestore: boolean;
+  fullScene: boolean;
+  deterministicReplay: boolean;
 };
 
 export type PhysicsBackendCapabilities = {
@@ -116,6 +131,7 @@ export type PhysicsBackendCapabilities = {
   sensors: boolean;
   queries: Array<PhysicsQuery["type"]>;
   deterministic?: boolean;
+  checkpoints?: PhysicsCheckpointCapability;
   custom?: Record<string, boolean | string | number>;
 };
 
@@ -351,6 +367,8 @@ export type PhysicsScene<TNative = unknown> = {
   getColliderState(id: PhysicsColliderId): PhysicsColliderState | undefined;
   query(query: PhysicsQuery): PhysicsQueryResult[];
   snapshot(): PhysicsSceneSnapshot;
+  captureCheckpoint?(): PhysicsSceneCheckpoint;
+  restoreCheckpoint?(checkpoint: PhysicsSceneCheckpoint): void;
   native?(): TNative;
   dispose(): void;
 };

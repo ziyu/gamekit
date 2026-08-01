@@ -2,6 +2,9 @@
 
 Status: Accepted on 2026-07-15.
 
+Scope clarification: ADR 0047 keeps this transition as the lightweight single-subject/static-layout tier. Predicted
+spawn、kinematic projectile record 和 multi-body prediction-island resimulation 不属于本 ADR 的能力声明。
+
 ## Context
 
 Managed client replication 已经统一 input pacing、rollback/replay、字段表现插值与 correction smoothing，但 `applyInput` 仍可能使用与 authority 不同的运动模型。Outpost Siege 的 authority 通过 Rapier 以 60 Hz 子步处理 damping、静态碰撞和滑动，客户端最初却用 `position += velocity * step`。即使两端同为 20 Hz input/ack，这种模型差异仍会在普通移动和接触静态物体时持续产生 correction；增加 lerp 只能掩盖错误，不能让预测收敛。
@@ -55,3 +58,4 @@ Rejected because scene lifecycle、layout materialization、sub-step 和 rollbac
 - ADR 0029: `docs/adr/0029-declarative-prediction-state-presentation.md`
 - Multiplayer module: `docs/modules/multiplayer.md`
 - Physics module: `docs/modules/physics.md`
+- ADR 0047: `docs/adr/0047-selective-network-prediction-and-projectile-strategies.md`
