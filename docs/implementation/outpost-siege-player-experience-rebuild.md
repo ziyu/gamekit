@@ -79,6 +79,12 @@ sample 仍按绝对 tick 求值；随后把正常 fire-tick offset 作为位置�
 接管时 correction 为0且位移保持原速度；Outpost client feedback 集成测试锁定接管后300ms位移仍为
 `760 × 0.3`。
 
+同日修复 Reload 期间偶发的 owner-only Rifle 弹体：本地表现层曾把空弹匣时收到的 fire edge 保留到 reload
+commit，并允许 held input 在 `reloading` phase 自行触发 cadence；authority 会消费空仓 edge，且只允许有剩余
+弹药时由新的 edge 中断 reload，因此不会生成对应权威射击。现在本地预表现镜像这两个约束：空仓立即丢弃
+edge，reload 期间只接受新的 edge，不把 held 状态解释为新射击。回归测试分别覆盖空仓 reload commit 不冒出
+本地弹体、held input 不重复射击，以及非空 reload 的新 edge 仍可按 authority 语义中断。
+
 ## Current Increment
 
 2026-07-27 已完成 Rifle 纵切的第一段权威闭环：

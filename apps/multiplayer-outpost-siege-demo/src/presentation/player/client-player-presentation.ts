@@ -128,7 +128,15 @@ export function createOutpostClientPlayerPresentation(
         lastInputFireSequence = frame.fireSequence;
         queuedFireEdge = true;
       }
-      if (!frame.fireHeld && !queuedFireEdge) {
+      if (weapon.magazine === 0 || weapon.phase === "empty") {
+        // Authority consumes an empty-magazine fire edge to start/continue reload and does not
+        // retain it as a shot request. Do the same locally so it cannot surface at reload commit.
+        queuedFireEdge = false;
+        return;
+      }
+      const fireRequested =
+        weapon.phase === "reloading" ? queuedFireEdge : frame.fireHeld || queuedFireEdge;
+      if (!fireRequested) {
         return;
       }
       if (

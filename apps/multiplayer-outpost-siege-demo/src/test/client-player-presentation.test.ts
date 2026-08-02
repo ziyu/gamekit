@@ -107,6 +107,49 @@ describe("Outpost client player presentation", () => {
     });
   });
 
+  it("does not turn a held input into a new local shot while reloading", () => {
+    const presentation = createOutpostClientPlayerPresentation({
+      playerId: "player.ranger-1",
+      fireIntervalMs: 120
+    });
+    const reloading = { ...rifle(), magazine: 12, phase: "reloading" as const };
+
+    presentation.update(frame(0, reloading, { fireHeld: true, fireSequence: 1 }));
+    presentation.update(frame(121, reloading, { fireHeld: true, fireSequence: 1 }));
+
+    expect(presentation.cuesAfter(0)).toEqual([]);
+    expect(presentation.snapshot()).toMatchObject({ anticipatedShots: 0 });
+  });
+
+  it("drops an empty-reload fire edge but allows a fresh non-empty reload interrupt", () => {
+    const presentation = createOutpostClientPlayerPresentation({
+      playerId: "player.ranger-1",
+      fireIntervalMs: 120
+    });
+    const emptyReload = { ...rifle(), magazine: 0, phase: "reloading" as const };
+
+    presentation.update(frame(0, emptyReload));
+    presentation.update(frame(1, emptyReload, { fireHeld: true, fireSequence: 1 }));
+    presentation.update(frame(20, emptyReload, { fireSequence: 1 }));
+    presentation.update(
+      frame(300, { ...emptyReload, magazine: 24 }, { fireHeld: false, fireSequence: 1 })
+    );
+
+    expect(presentation.cuesAfter(0)).toEqual([]);
+
+    presentation.update(
+      frame(301, { ...emptyReload, magazine: 24 }, { fireHeld: true, fireSequence: 2 })
+    );
+
+    expect(presentation.cuesAfter(0)).toMatchObject([
+      {
+        phase: "anticipated",
+        correlationId: "player.ranger-1.rifle.1",
+        predictedShotSequence: 1
+      }
+    ]);
+  });
+
   it("publishes a cloned current aim frame for renderer feedback", () => {
     const presentation = createOutpostClientPlayerPresentation({
       playerId: "player.ranger-1",
