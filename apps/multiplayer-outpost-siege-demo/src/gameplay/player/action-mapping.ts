@@ -6,6 +6,12 @@ import { OUTPOST_ACTION } from "../input";
 export function outpostPlayerActionForInputAction(
   event: InputActionEvent
 ): OutpostPlayerAction | undefined {
+  if (
+    event.actionId === OUTPOST_ACTION.primary &&
+    (event.phase === "pressed" || event.phase === "released" || event.phase === "cancelled")
+  ) {
+    return "rifle";
+  }
   if (event.phase !== "pressed") {
     return undefined;
   }

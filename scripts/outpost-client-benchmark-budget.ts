@@ -4,10 +4,13 @@ export type OutpostClientBenchmarkResult = {
   microsecondsPerFourPlayerSchemaProjectionAndDecode: number;
   microsecondsPerCombatSnapshot: number;
   microsecondsPerCombatSchemaProjectionAndDecode: number;
+  microsecondsPerCombatFeedbackFrame: number;
   maximumEstimatedSchemaStateBytes: number;
   maximumCombatEstimatedSchemaStateBytes: number;
   maximumCombatEntities: number;
   maximumCombatCueHistory: number;
+  maximumCombatFeedbackObjects: number;
+  maximumRecordProjectiles: number;
   combatCueDropped: number;
   rejectedSnapshots: number;
   predictionPendingInputs: number;
@@ -15,6 +18,8 @@ export type OutpostClientBenchmarkResult = {
   retainedEntitiesAfterDispose: number;
   retainedPhysicsScenesAfterDispose: number;
   retainedCombatCuesAfterDispose: number;
+  retainedCombatFeedbackObjectsAfterDispose: number;
+  retainedRecordProjectilesAfterDispose: number;
 };
 
 const BUDGETS: Array<{
@@ -26,17 +31,22 @@ const BUDGETS: Array<{
   { metric: "microsecondsPerFourPlayerSchemaProjectionAndDecode", maximum: 100 },
   { metric: "microsecondsPerCombatSnapshot", maximum: 4_000 },
   { metric: "microsecondsPerCombatSchemaProjectionAndDecode", maximum: 2_000 },
+  { metric: "microsecondsPerCombatFeedbackFrame", maximum: 8_000 },
   { metric: "maximumEstimatedSchemaStateBytes", maximum: 16 * 1024 },
-  { metric: "maximumCombatEstimatedSchemaStateBytes", maximum: 256 * 1024 },
+  { metric: "maximumCombatEstimatedSchemaStateBytes", maximum: 320 * 1024 },
   { metric: "maximumCombatEntities", maximum: 460 },
   { metric: "maximumCombatCueHistory", maximum: 64 },
+  { metric: "maximumCombatFeedbackObjects", maximum: 113 },
+  { metric: "maximumRecordProjectiles", maximum: 64 },
   { metric: "combatCueDropped", maximum: 0 },
   { metric: "rejectedSnapshots", maximum: 0 },
-  { metric: "predictionPendingInputs", maximum: 8 },
+  { metric: "predictionPendingInputs", maximum: 2 },
   { metric: "predictionCachedFrames", maximum: 256 },
   { metric: "retainedEntitiesAfterDispose", maximum: 0 },
   { metric: "retainedPhysicsScenesAfterDispose", maximum: 0 },
-  { metric: "retainedCombatCuesAfterDispose", maximum: 0 }
+  { metric: "retainedCombatCuesAfterDispose", maximum: 0 },
+  { metric: "retainedCombatFeedbackObjectsAfterDispose", maximum: 0 },
+  { metric: "retainedRecordProjectilesAfterDispose", maximum: 0 }
 ];
 
 export function checkOutpostClientBudgets(

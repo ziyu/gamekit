@@ -16,3 +16,4 @@ export * from "./input";
 export * from "./player/action-mapping";
 export * from "./player/action-types";
 export * from "./preview-runtime";
+export * from "./rifle-projectile-network";

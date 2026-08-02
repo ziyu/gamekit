@@ -13,6 +13,10 @@ import type {
 } from "@gamekit/physics-core";
 import type { TcaRule } from "@gamekit/tca";
 import { outpostRuntimeImageAssets, type OutpostRuntimeImageAsset } from "./runtime-image-assets";
+import {
+  OUTPOST_FEEDBACK_ASSET_IDS,
+  outpostFeedbackAssetDefinitions
+} from "./runtime-feedback-assets";
 import { OUTPOST_ARENA_SOLID_COLLIDER_ID, outpostArenaDefinition } from "./arena-scene";
 import {
   outpostFoundationDataEntries,
@@ -45,6 +49,7 @@ import {
 
 const assets: AssetDefinition[] = [
   ...outpostRuntimeImageAssets.map(imageAsset),
+  ...outpostFeedbackAssetDefinitions,
   ...outpostGeneratedAudioAssets
 ];
 
@@ -241,7 +246,15 @@ const renderObjects: OutpostRenderObjectDefinition[] = [
   renderObject("render.outpost.raider", "asset.outpost.raider", "actors"),
   renderObject("render.outpost.overseer", "asset.outpost.overseer", "actors"),
   renderObject("render.outpost.turret", "asset.outpost.turret", "buildables"),
-  renderObject("render.outpost.projectile", "asset.outpost.projectile", "projectiles")
+  renderObject("render.outpost.projectile", "asset.outpost.projectile", "projectiles"),
+  renderObject("render.outpost.feedback.crosshair", OUTPOST_FEEDBACK_ASSET_IDS.crosshair, "ui"),
+  renderObject("render.outpost.feedback.tracer", OUTPOST_FEEDBACK_ASSET_IDS.tracer, "effects"),
+  renderObject("render.outpost.feedback.impact", OUTPOST_FEEDBACK_ASSET_IDS.impact, "effects"),
+  renderObject(
+    "render.outpost.feedback.damage-direction",
+    OUTPOST_FEEDBACK_ASSET_IDS.damageDirection,
+    "ui"
+  )
 ];
 
 const weapons: OutpostWeaponDefinition[] = [

@@ -198,14 +198,23 @@ export async function sendOutpostPlayerAction(
   runtime: MultiplayerRuntime,
   authorityPeerId: string,
   action: OutpostPlayerAction,
-  aim: { x: number; y: number }
+  aim: { x: number; y: number },
+  fireSequence?: number,
+  fireHeld?: boolean
 ): Promise<void> {
   await runtime.send({
     channel: "reliable",
     kind: "game.action",
     targetPeerIds: [authorityPeerId],
     correlationId: `outpost.player-action.${action}.${createIdentitySuffix()}`,
-    payload: { type: "player-action", action, aimX: aim.x, aimY: aim.y }
+    payload: {
+      type: "player-action",
+      action,
+      aimX: aim.x,
+      aimY: aim.y,
+      ...(fireSequence === undefined ? {} : { fireSequence }),
+      ...(fireHeld === undefined ? {} : { fireHeld })
+    }
   });
 }
 

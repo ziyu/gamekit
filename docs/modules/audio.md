@@ -231,6 +231,7 @@ App 可以增加标准 Bus 下的子路由，但不能改变标准 Bus 的含义
 SpatialAudio 管理稳定 Listener/Emitter identity：
 
 - Listener 来自本地玩家/camera presentation，不成为 authority gameplay state。
+- Core启动时提供位于原点的隐式 `main` listener作为未装配 presentation时的fallback；一旦注册任意自定义 listener，该隐式 listener不再参与公开 snapshot、距离裁剪、primary选择或Backend同步。调用方显式更新 `main` 时，它转为普通 listener并遵守相同的weight/id规则。
 - Emitter 可以绑定 owner，并保存 transform、velocity 和 active state。
 - 高频移动声源使用批量更新，不经 EventBus 逐帧广播。
 - Instance 可以引用稳定 Emitter，也可以携带一次性 transform。
@@ -448,7 +449,7 @@ Diagnostics 使用有界、克隆后的白名单 payload。Observer failure 不�
 - Dialogue 测试 queue、speaker、priority、interrupt、skip、ducking activation 和 marker observer isolation。
 - Playback 测试 scheduled/playing/paused/stopping/completed/failed 状态、fade、Backend rejection 和 ended callback 幂等。
 - Mix 测试 Bus 继承、mute/pause、ramp、Snapshot priority/weight/owner cleanup。
-- Spatial 测试 Listener 选择、Emitter batch、删除策略和单 Listener Backend 降级。
+- Spatial 测试隐式fallback替换、Listener选择、Emitter batch、删除策略和单 Listener Backend降级；真实Backend必须覆盖运行中 Listener移动后已有实例重新衰减和pan。
 - 每个 Backend 先通过 `@gamekit/audio-core/testing` conformance，再补真实 runtime 行为。
 - App Host 集成测试从 `GameAudio` facade 和 Driver snapshot 同时观察结果，不能只断言 Backend 私有对象。
 

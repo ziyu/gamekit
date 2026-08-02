@@ -20,6 +20,8 @@ export type SpatialAudioController = SpatialAudio & {
   dispose(): void;
 };
 
+const DEFAULT_LISTENER_ID = "main";
+
 export function createSpatialAudio(options: {
   backend: AudioBackend;
   diagnostics: AudioDiagnosticSink;
@@ -27,21 +29,25 @@ export function createSpatialAudio(options: {
 }): SpatialAudioController {
   const listeners = new Map<string, AudioListenerState>([
     [
-      "main",
+      DEFAULT_LISTENER_ID,
       {
-        id: "main",
+        id: DEFAULT_LISTENER_ID,
         transform: { position: { x: 0, y: 0, z: 0 } },
         weight: 1
       }
     ]
   ]);
   const emitters = new Map<string, AudioEmitterState>();
+  let defaultListenerIsImplicit = true;
   let disposed = false;
 
   const spatial: SpatialAudioController = {
     setListener(listener) {
       requireActive();
       requireId(listener.id, "listener");
+      if (listener.id === DEFAULT_LISTENER_ID) {
+        defaultListenerIsImplicit = false;
+      }
       listeners.set(listener.id, {
         id: listener.id,
         transform: validateTransform(listener.transform),
@@ -53,6 +59,9 @@ export function createSpatialAudio(options: {
       requireActive();
       const removed = listeners.delete(listenerId);
       if (removed) {
+        if (listenerId === DEFAULT_LISTENER_ID) {
+          defaultListenerIsImplicit = false;
+        }
         flushListeners();
       }
       return removed;
@@ -107,17 +116,18 @@ export function createSpatialAudio(options: {
       return emitter === undefined ? undefined : cloneEmitter(emitter);
     },
     primaryListener() {
-      const listener = [...listeners.values()].sort(
+      const listener = effectiveListeners().sort(
         (left, right) => right.weight - left.weight || left.id.localeCompare(right.id)
       )[0];
       return listener === undefined ? undefined : cloneListener(listener);
     },
     isDistanceCulled(definition, transform) {
-      if (definition.distanceCulling === false || listeners.size === 0) {
+      const activeListeners = effectiveListeners();
+      if (definition.distanceCulling === false || activeListeners.length === 0) {
         return false;
       }
       let nearest = Number.POSITIVE_INFINITY;
-      for (const listener of listeners.values()) {
+      for (const listener of activeListeners) {
         if (listener.weight <= 0) {
           continue;
         }
@@ -139,8 +149,16 @@ export function createSpatialAudio(options: {
   flushEmitters();
   return spatial;
 
+  function effectiveListeners(): AudioListenerState[] {
+    const values = [...listeners.values()];
+    if (!defaultListenerIsImplicit || values.length <= 1) {
+      return values;
+    }
+    return values.filter((listener) => listener.id !== DEFAULT_LISTENER_ID);
+  }
+
   function sortedListeners(): AudioListenerState[] {
-    return [...listeners.values()]
+    return effectiveListeners()
       .sort((left, right) => left.id.localeCompare(right.id))
       .map(cloneListener);
   }

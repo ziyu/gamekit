@@ -160,7 +160,7 @@ describe("Outpost gamepad input", () => {
     router.handle(gamepadInput({ id: "dash", code: STANDARD_GAMEPAD_CONTROL.buttonSouth }));
     router.handle(gamepadInput({ id: "shock", code: STANDARD_GAMEPAD_CONTROL.leftBumper }));
     router.handle(gamepadInput({ id: "deploy", code: STANDARD_GAMEPAD_CONTROL.buttonNorth }));
-    expect(actions).toEqual(["reload", "dash", "shock-field", "deploy-turret"]);
+    expect(actions).toEqual(["rifle", "rifle", "reload", "dash", "shock-field", "deploy-turret"]);
   });
 });
 

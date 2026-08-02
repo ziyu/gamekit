@@ -25,7 +25,7 @@ import type { OutpostAuthorityPlayerActionCommand } from "../gameplay/player/act
 const DEFAULT_COUNTDOWN_MS = 3_000;
 const DEFAULT_MAX_PLAYERS = 4;
 const DEFAULT_MIN_PLAYERS = 1;
-const MAX_INPUT_BACKLOG_PER_PLAYER = 32;
+const MAX_INPUT_BACKLOG_PER_PLAYER = 4;
 const DEFAULT_SPAWN_POINTS = Object.freeze([
   { x: OUTPOST_ARENA.width / 2 - 64, y: OUTPOST_ARENA.height / 2 },
   { x: OUTPOST_ARENA.width / 2 + 64, y: OUTPOST_ARENA.height / 2 },
@@ -45,6 +45,8 @@ export type OutpostMatchAction =
       action: OutpostPlayerAction;
       aimX: number;
       aimY: number;
+      fireSequence?: number;
+      fireHeld?: boolean;
     };
 
 export type OutpostMatchInput = OutpostAuthorityPlayerInput;
@@ -215,6 +217,8 @@ export function createOutpostMatchAuthority(
       action: action.action,
       aimX: action.aimX,
       aimY: action.aimY,
+      ...(action.fireSequence === undefined ? {} : { fireSequence: action.fireSequence }),
+      ...(action.fireHeld === undefined ? {} : { fireHeld: action.fireHeld }),
       ...(message.correlationId === undefined ? {} : { correlationId: message.correlationId }),
       parentId: message.id
     });
@@ -448,6 +452,8 @@ function projectCombatState(
     return {
       actors: [],
       projectiles: [],
+      projectileGeneration: "outpost.unbound",
+      projectileRecords: [],
       cueWatermark: 0,
       cues: [],
       acceptedCommands: 0,
@@ -479,6 +485,26 @@ function projectCombatState(
     projectiles: combat.projectiles.map(({ id, entityId: _entityId, ...projectile }) => ({
       objectId: id,
       ...projectile
+    })),
+    projectileGeneration: combat.projectileGeneration,
+    projectileRecords: combat.projectileRecords.map((record) => ({
+      ...record,
+      firePosition: { ...record.firePosition },
+      fireVelocity: { ...record.fireVelocity },
+      ...(record.finish === undefined
+        ? {}
+        : {
+            finish: {
+              ...record.finish,
+              position: { ...record.finish.position },
+              ...(record.finish.normal === undefined
+                ? {}
+                : { normal: { ...record.finish.normal } }),
+              ...(record.finish.subject === undefined
+                ? {}
+                : { subject: { ...record.finish.subject } })
+            }
+          })
     })),
     cueWatermark: combat.cueWatermark,
     cues: combat.cues.map((cue) => ({
@@ -528,13 +554,18 @@ function readMatchAction(payload: unknown): OutpostMatchAction | undefined {
     payload.type === "player-action" &&
     isPlayerAction(payload.action) &&
     finiteNumber(payload.aimX) &&
-    finiteNumber(payload.aimY)
+    finiteNumber(payload.aimY) &&
+    (payload.action !== "rifle" ||
+      (uint32(payload.fireSequence) && typeof payload.fireHeld === "boolean"))
   ) {
     return {
       type: "player-action",
       action: payload.action,
       aimX: payload.aimX,
-      aimY: payload.aimY
+      aimY: payload.aimY,
+      ...(payload.action === "rifle"
+        ? { fireSequence: payload.fireSequence as number, fireHeld: payload.fireHeld as boolean }
+        : {})
     };
   }
   return undefined;
@@ -558,12 +589,7 @@ function readMatchInput(payload: unknown): OutpostMatchInput | undefined {
     aimX: finiteNumber(payload.aimX) ? payload.aimX : OUTPOST_ARENA.width / 2,
     aimY: finiteNumber(payload.aimY) ? payload.aimY : OUTPOST_ARENA.height / 2,
     fireHeld: payload.fireHeld === true,
-    fireSequence:
-      typeof payload.fireSequence === "number" &&
-      Number.isSafeInteger(payload.fireSequence) &&
-      payload.fireSequence >= 0
-        ? payload.fireSequence
-        : 0
+    fireSequence: uint32(payload.fireSequence) ? payload.fireSequence : 0
   };
 }
 
@@ -577,6 +603,12 @@ function idleInput(): OutpostMatchInput {
     fireHeld: false,
     fireSequence: 0
   };
+}
+
+function uint32(value: unknown): value is number {
+  return (
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 0xffff_ffff
+  );
 }
 
 function firstAvailableSlot(
@@ -645,6 +677,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isPlayerAction(value: unknown): value is OutpostPlayerAction {
   return (
-    value === "reload" || value === "dash" || value === "shock-field" || value === "deploy-turret"
+    value === "rifle" ||
+    value === "reload" ||
+    value === "dash" ||
+    value === "shock-field" ||
+    value === "deploy-turret"
   );
 }

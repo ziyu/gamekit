@@ -38,10 +38,151 @@ export const outpostNavigationBarricadeBlockers: readonly OutpostNavigationBarri
 
 export const OUTPOST_AUDIO_ASSET_IDS = {
   ambience: "asset.outpost.audio.ambience",
-  rifle: "asset.outpost.audio.rifle",
-  enemyTelegraph: "asset.outpost.audio.enemy-telegraph",
-  hit: "asset.outpost.audio.hit"
+  rifle: [
+    "asset.outpost.audio.rifle.01",
+    "asset.outpost.audio.rifle.02",
+    "asset.outpost.audio.rifle.03",
+    "asset.outpost.audio.rifle.04",
+    "asset.outpost.audio.rifle.05"
+  ],
+  enemyTelegraph: [
+    "asset.outpost.audio.enemy-telegraph.01",
+    "asset.outpost.audio.enemy-telegraph.02",
+    "asset.outpost.audio.enemy-telegraph.03",
+    "asset.outpost.audio.enemy-telegraph.04",
+    "asset.outpost.audio.enemy-telegraph.05"
+  ],
+  hit: [
+    "asset.outpost.audio.hit.01",
+    "asset.outpost.audio.hit.02",
+    "asset.outpost.audio.hit.03",
+    "asset.outpost.audio.hit.04",
+    "asset.outpost.audio.hit.05"
+  ]
 } as const;
+
+const OUTPOST_DOWNLOADED_SFX = [
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.rifle[0],
+    "rifle-01.ogg",
+    "laserLarge_000.ogg",
+    "Sci-fi Sounds",
+    "https://kenney.nl/assets/sci-fi-sounds",
+    "a56d95794cd732d6c2d66ce488c14cf557fe526c282897c9a77675c2bd9b77e6"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.rifle[1],
+    "rifle-02.ogg",
+    "laserLarge_001.ogg",
+    "Sci-fi Sounds",
+    "https://kenney.nl/assets/sci-fi-sounds",
+    "e678aca631495b7dfef4ac625f0349875ccac81a60f538d530e072241af3e4bd"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.rifle[2],
+    "rifle-03.ogg",
+    "laserLarge_002.ogg",
+    "Sci-fi Sounds",
+    "https://kenney.nl/assets/sci-fi-sounds",
+    "e5e0b6ccc4d5720c8174a3e5b7cc6f9be3057352a89cbb2e99a00efc6fe5cc11"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.rifle[3],
+    "rifle-04.ogg",
+    "laserLarge_003.ogg",
+    "Sci-fi Sounds",
+    "https://kenney.nl/assets/sci-fi-sounds",
+    "3c7b3c9d856ee31fa1b92d29322f6ee472446627381595baeaba2af35c07135f"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.rifle[4],
+    "rifle-05.ogg",
+    "laserLarge_004.ogg",
+    "Sci-fi Sounds",
+    "https://kenney.nl/assets/sci-fi-sounds",
+    "86c749483b40e1bba9bfea6a04e884d479e5481e52efb6f113341141de516b3b"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.enemyTelegraph[0],
+    "enemy-telegraph-01.ogg",
+    "forceField_000.ogg",
+    "Sci-fi Sounds",
+    "https://kenney.nl/assets/sci-fi-sounds",
+    "c2916f2a062c8ddd1aca2826d134fe90847037db31342726ffb0f9097afe339c"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.enemyTelegraph[1],
+    "enemy-telegraph-02.ogg",
+    "forceField_001.ogg",
+    "Sci-fi Sounds",
+    "https://kenney.nl/assets/sci-fi-sounds",
+    "5574e69dd04e5f59322c5ddffde5978f077b09170ae5e29cec0bd9901828cd90"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.enemyTelegraph[2],
+    "enemy-telegraph-03.ogg",
+    "forceField_002.ogg",
+    "Sci-fi Sounds",
+    "https://kenney.nl/assets/sci-fi-sounds",
+    "051b0eafc479695af4ca3607d41fd4be41bae7c21f4f9508d004722b09f1bd63"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.enemyTelegraph[3],
+    "enemy-telegraph-04.ogg",
+    "forceField_003.ogg",
+    "Sci-fi Sounds",
+    "https://kenney.nl/assets/sci-fi-sounds",
+    "15e3fe971ffd3415e5ab641d3a4d043fb31f6712b0956315b524ba29c3889cda"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.enemyTelegraph[4],
+    "enemy-telegraph-05.ogg",
+    "forceField_004.ogg",
+    "Sci-fi Sounds",
+    "https://kenney.nl/assets/sci-fi-sounds",
+    "05609bb296cbc287ae95ac8924c89809d69c89d7bb357cc6a117ec1b1ef65e09"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.hit[0],
+    "hit-01.ogg",
+    "impactMetal_heavy_000.ogg",
+    "Impact Sounds",
+    "https://kenney.nl/assets/impact-sounds",
+    "e07045693e4a2b3d165c424e3dab4c781d9ff8880a386880ac89a51315d7f831"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.hit[1],
+    "hit-02.ogg",
+    "impactMetal_heavy_001.ogg",
+    "Impact Sounds",
+    "https://kenney.nl/assets/impact-sounds",
+    "83554049f81f4db9209379e103c30bfa63f65c42189a03f300b045c2c82e23ae"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.hit[2],
+    "hit-03.ogg",
+    "impactMetal_heavy_002.ogg",
+    "Impact Sounds",
+    "https://kenney.nl/assets/impact-sounds",
+    "b914c8f1eb7c0f34bb165d7c77f4be0351f6be0660c13c53e65424e262e2c093"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.hit[3],
+    "hit-04.ogg",
+    "impactMetal_heavy_003.ogg",
+    "Impact Sounds",
+    "https://kenney.nl/assets/impact-sounds",
+    "b0f2ba4dabde9a87eb9c188a19d31e0c2300fd321adeba08d3b9b8aa011d7037"
+  ),
+  downloadedSfxSource(
+    OUTPOST_AUDIO_ASSET_IDS.hit[4],
+    "hit-05.ogg",
+    "impactMetal_heavy_004.ogg",
+    "Impact Sounds",
+    "https://kenney.nl/assets/impact-sounds",
+    "6d65b463c0555dd5be16b8db6d2cbe23a94e07a4637779b8ad17d0db3e500a87"
+  )
+] as const;
 
 const OUTPOST_ANIMATED_ASSETS = {
   "asset.outpost.player": "player",
@@ -224,9 +365,7 @@ const animatorEntries = createAnimatorEntries();
 
 export const outpostGeneratedAudioAssets: AssetDefinition[] = [
   downloadedMusicAsset(OUTPOST_AUDIO_ASSET_IDS.ambience, "/assets/outpost/audio/magic-space.ogg"),
-  generatedAudioAsset(OUTPOST_AUDIO_ASSET_IDS.rifle, 620, 160, "combat", false),
-  generatedAudioAsset(OUTPOST_AUDIO_ASSET_IDS.enemyTelegraph, 240, 420, "combat", false),
-  generatedAudioAsset(OUTPOST_AUDIO_ASSET_IDS.hit, 90, 220, "combat", false)
+  ...OUTPOST_DOWNLOADED_SFX.map(downloadedSfxAsset)
 ];
 
 export const outpostFoundationDataEntries: DataPackEntry[] = [
@@ -432,21 +571,34 @@ function entry<TData>(type: string, id: string, data: TData): DataPackEntry<TDat
   return { type, id, data };
 }
 
-function generatedAudioAsset(
+function downloadedSfxSource(
   id: string,
-  frequency: number,
-  durationMs: number,
-  group: "match" | "combat",
-  loop: boolean
-): AssetDefinition {
+  runtimeFile: string,
+  sourceFile: string,
+  pack: string,
+  source: string,
+  sha256: string
+) {
+  return { id, runtimeFile, sourceFile, pack, source, sha256 };
+}
+
+function downloadedSfxAsset(source: (typeof OUTPOST_DOWNLOADED_SFX)[number]): AssetDefinition {
   return {
-    id,
+    id: source.id,
     type: "audio",
-    source: { type: "url", url: createToneWaveDataUrl(frequency, durationMs, loop) },
-    group,
+    source: { type: "url", url: `/assets/outpost/audio/${source.runtimeFile}` },
+    group: "combat",
     preload: true,
-    tags: ["outpost", "audio", group],
-    audio: { stream: false, instances: loop ? 2 : 16 }
+    tags: ["outpost", "audio", "combat", "cc0", "kenney"],
+    audio: { stream: false, instances: 16 },
+    metadata: {
+      title: source.sourceFile,
+      author: "Kenney",
+      pack: source.pack,
+      source: source.source,
+      license: "CC0-1.0",
+      sha256: source.sha256
+    }
   };
 }
 
@@ -467,48 +619,4 @@ function downloadedMusicAsset(id: string, runtimeUrl: string): AssetDefinition {
       sha256: "c87cf01d5ab620d7f4e1898bd125265006d92fe8d60a695f6b3cd21c2d6e1be9"
     }
   };
-}
-
-function createToneWaveDataUrl(frequency: number, durationMs: number, loop: boolean): string {
-  const sampleRate = 8_000;
-  const frameCount = Math.max(1, Math.round((durationMs / 1_000) * sampleRate));
-  const bytes = new Uint8Array(44 + frameCount * 2);
-  const view = new DataView(bytes.buffer);
-  writeAscii(view, 0, "RIFF");
-  view.setUint32(4, 36 + frameCount * 2, true);
-  writeAscii(view, 8, "WAVE");
-  writeAscii(view, 12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeAscii(view, 36, "data");
-  view.setUint32(40, frameCount * 2, true);
-  for (let frame = 0; frame < frameCount; frame += 1) {
-    const time = frame / sampleRate;
-    const progress = frame / frameCount;
-    const envelope = loop ? 0.24 : Math.max(0, Math.min(1, progress * 18, (1 - progress) * 7));
-    const signal =
-      Math.sin(time * frequency * Math.PI * 2) * 0.66 +
-      Math.sin(time * frequency * 2.03 * Math.PI * 2) * 0.18;
-    view.setInt16(44 + frame * 2, Math.round(signal * envelope * 32_767), true);
-  }
-  return `data:audio/wav;base64,${bytesToBase64(bytes)}`;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += 1) {
-    binary += String.fromCharCode(bytes[index]!);
-  }
-  return globalThis.btoa(binary);
-}
-
-function writeAscii(view: DataView, offset: number, value: string): void {
-  for (let index = 0; index < value.length; index += 1) {
-    view.setUint8(offset + index, value.charCodeAt(index));
-  }
 }

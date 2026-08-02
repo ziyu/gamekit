@@ -124,6 +124,17 @@ function handleDiscreteAction(
     });
     return;
   }
+  if (command.action === "rifle") {
+    if (command.fireSequence === undefined || command.fireHeld === undefined) {
+      options.combat.rejectPlayerAction(toCombatCommand(command), "missing-fire-sequence");
+      return;
+    }
+    player.input.aimX = command.aimX;
+    player.input.aimY = command.aimY;
+    player.input.fireSequence = command.fireSequence;
+    player.input.fireHeld = command.fireHeld;
+    return;
+  }
   if (command.action === "dash") {
     const result = options.combat.activatePlayerAction(toCombatCommand(command));
     if (result.status === "rejected") {

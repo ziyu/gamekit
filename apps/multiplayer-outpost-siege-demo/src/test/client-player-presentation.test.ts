@@ -106,6 +106,31 @@ describe("Outpost client player presentation", () => {
       expiredShots: 2
     });
   });
+
+  it("publishes a cloned current aim frame for renderer feedback", () => {
+    const presentation = createOutpostClientPlayerPresentation({
+      playerId: "player.ranger-1",
+      fireIntervalMs: 120
+    });
+    presentation.update({
+      ...frame(32, rifle()),
+      aimX: 920,
+      aimY: 510
+    });
+
+    const current = presentation.currentFrame();
+    expect(current).toMatchObject({
+      elapsed: 32,
+      active: true,
+      health: 100,
+      aim: { x: 920, y: 510 }
+    });
+    current.aim.x = 0;
+    expect(presentation.currentFrame().aim).toEqual({ x: 920, y: 510 });
+
+    presentation.reset();
+    expect(presentation.currentFrame()).toMatchObject({ active: false, aim: { x: 0, y: 0 } });
+  });
 });
 
 function rifle(): OutpostReplicatedWeaponState {
@@ -130,6 +155,8 @@ function frame(
     health: 100,
     fireHeld: input.fireHeld ?? false,
     fireSequence: input.fireSequence ?? 0,
+    aimX: 900,
+    aimY: 500,
     weapon
   };
 }

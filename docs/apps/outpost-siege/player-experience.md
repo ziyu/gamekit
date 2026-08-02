@@ -159,15 +159,49 @@ Outpost authority 与 client presentation history各自最多保留64条 cue；w
 - movement 与 aim。
 - Dash 的声明式 Physics transition。
 - rifle fire、reload、tactical preparing 的视觉/音频/UI anticipation。
+- Rifle projectile 的 kinematic trajectory 与 provisional spatial impact；它必须复用 authority 的 definition、
+  fixed tick、静态 layout 和 ray/shape sweep。
 
-不预测：
+客户端不提交：
 
-- 命中目标、damage、kill 和 status application。
+- authority target validation、damage、kill 和 status application。
 - 最终 ammo/cost commit。
 - build/interaction/revive success。
 - Shared Supply 与 objective。
 
 Authority confirmation 与 rejection 都使用稳定 correlation。客户端确认时只收敛对应 anticipation，不重复播放已经预演的 muzzle、音效或 camera impulse；拒绝时取消该 anticipation 及依赖它的后续预测链、恢复 Animator action channel、修正 HUD optimistic state，并播放轻量 deny feedback，不能完整播放 commit、impact 或 hit confirm。Anticipation 队列、消费历史和超时都必须有硬上限。
+
+Rifle 的 press、release 和 cancel 是手感关键边沿，必须在 Input Action 到达时立即走独立 reliable action lane，不能等待 movement/aim 的 fixed-step FIFO。持续移动、aim、held state仍可随预测输入复制；authority weapon以单调 `fireSequence` 合并两条 lane，只接受更新边沿，并拒绝旧 FIFO frame覆盖已经处理的 held状态。Outpost客户端预测输入最多领先2帧，authority每 source输入 backlog最多4帧，但这两个上限都不能成为 Rifle首发等待预算。
+
+Rifle 保留可见飞行时间，因此明确选择
+[`kinematic-data-buffer`](../../adr/0047-selective-network-prediction-and-projectile-strategies.md)，而不是
+render-only handoff。本地在下一次可绘制 frame 同时生成角色开火 pulse、音频、recoil，并用 provisional
+shot identity 启动同一 projectile definition 与 Physics sweep；可见飞行中的 Rifle 只能有一个 projectile
+render object；线状 spawn tracer 只能是短生命周期开火反馈，不能拥有第二条移动弹体轨迹，也不能复用 projectile 贴图伪造 muzzle。预测到墙、目标候选、expire 或其他空间终点
+时，本地弹体必须在该 tick 立即停止并播放可撤销 spatial impact；任何 frame 都不能让它继续画到已知 blocker
+后方。带 projectile correlation 的 authority miss、world/shield/health hit 或 kill cue 是表现层终止事实；即使
+finish record 晚一个网络快照到达，owner prediction 和 remote record render 也必须在 cue 到达的同一帧隐藏。
+
+Authority 为每次射击发布有界 fire/finish record，至少包含 correlation/generation、fire tick、position、
+velocity，以及完成后的 finish tick、hit position/normal 和 reason。Client 按 identity confirm/correct/reject：
+一致时不重播已预演反馈，分叉时只修正或撤销对应 prediction chain。Target hit confirmation、damage、ammo、
+kill 与 status 仍完全由 authority 提交；provisional target impact 不能点亮最终 hit confirm。Remote client 按
+authority record 和 remote timeline 重建，不使用 owner 的 local-forward prediction。
+
+Owner prediction 与 authority commit 不共享同一个绝对开火时刻：GAS preparing、20 Hz authority 排队和传输
+延迟会让 authority `fireTick` 合理地晚于本地 anticipation。客户端必须使用单调的本地预测时间线，不能在新
+snapshot 到达时重锚到更早的 authority elapsed；identity 匹配时按相同射击年龄比较 definition、lifetime、
+起点、方向、速度和 finish，合理的绝对 tick offset 不是弹道分叉。Authority record 到达后，owner 在同一个
+visual object 上改由该 record 提供权威空间事实，但继续按当前 local predicted shot age 求值；它不能回到较晚
+authority commit 所对应的过期弹龄。Observer 按 remote authority presentation time 观看同一 record，因此两端
+屏幕位置不要求逐帧相等。匹配 trajectory 的接管不启动 correction，真正的起点、方向、速度或 finish 分叉才
+复用同一 transition 做一次有界修正。Owner/observer 使用相同 generation + correlation renderer id、同一
+projectile render definition、scale 和材质；预测态不能额外染色。短命 remote record 按统一的100ms authority
+presentation delay 重建，它不按每条 record 的首次到达时间重新启动。已早于该 delayed tick 完成的 record不再
+重播，剩余漏帧由 tracer/impact cue 表达。
+
+如果未来把 Rifle 改成瞬时武器，应整体切换到 lag-compensated hitscan，并移除可见慢速 projectile；不能形成
+“表现是慢弹体、玩法是瞬时射线”的隐式混合。
 
 ## 统一表现帧
 

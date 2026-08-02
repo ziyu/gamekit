@@ -4,9 +4,10 @@ import type { ColyseusNativeStateUpdate } from "@gamekit/multiplayer-colyseus";
 import type { OutpostClientAuthoritySnapshot } from "../gameplay/client-shadow-runtime";
 import type { OutpostMatchAuthoritySnapshot } from "./match-authority";
 
-export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v7";
+export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v8";
 export const OUTPOST_COLYSEUS_SOURCE_ENDPOINT_ID = "outpost.colyseus-schema";
 const MAX_COMBAT_CUES = 64;
+const MAX_PROJECTILE_RECORDS = 128;
 
 export const OutpostColyseusParticipantState = schema(
   {
@@ -107,6 +108,40 @@ export const OutpostColyseusProjectileState = schema(
 
 export type OutpostColyseusProjectileState = SchemaType<typeof OutpostColyseusProjectileState>;
 
+export const OutpostColyseusProjectileRecordState = schema(
+  {
+    projectileId: "string",
+    correlationId: "string",
+    generation: "string",
+    definitionId: "string",
+    definitionVersion: "string",
+    fireTick: "uint32",
+    fixedDeltaMs: "float64",
+    firePositionX: "float64",
+    firePositionY: "float64",
+    fireVelocityX: "float64",
+    fireVelocityY: "float64",
+    expiresTick: "uint32",
+    hasFinish: "boolean",
+    finishTick: "uint32",
+    finishReason: "string",
+    finishPositionX: "float64",
+    finishPositionY: "float64",
+    hasFinishNormal: "boolean",
+    finishNormalX: "float64",
+    finishNormalY: "float64",
+    subjectActorId: "string",
+    subjectEntityId: "string",
+    subjectBodyId: "string",
+    subjectColliderId: "string"
+  },
+  "OutpostColyseusProjectileRecordState"
+);
+
+export type OutpostColyseusProjectileRecordState = SchemaType<
+  typeof OutpostColyseusProjectileRecordState
+>;
+
 export const OutpostColyseusCombatCueState = schema(
   {
     sequence: "float64",
@@ -150,6 +185,8 @@ export const OutpostColyseusState = schema(
     players: { map: OutpostColyseusPlayerState },
     combatActors: { map: OutpostColyseusCombatActorState },
     projectiles: { map: OutpostColyseusProjectileState },
+    projectileGeneration: "string",
+    projectileRecords: { map: OutpostColyseusProjectileRecordState },
     combatCueWatermark: "float64",
     combatCues: { map: OutpostColyseusCombatCueState },
     acceptedCommands: "uint32",
@@ -180,7 +217,8 @@ export function createOutpostColyseusState(
     elapsedMs: 0,
     timestamp,
     phase: "lobby",
-    countdownMsRemaining: 0
+    countdownMsRemaining: 0,
+    projectileGeneration: "outpost.unbound"
   });
 }
 
@@ -203,6 +241,7 @@ export function projectOutpostMatchToColyseusState(
   state.kills = snapshot.combat.kills;
   state.drops = snapshot.combat.drops;
   state.objectiveProgress = snapshot.combat.objectiveProgress;
+  state.projectileGeneration = snapshot.combat.projectileGeneration;
 
   const participantKeys = new Set<string>();
   for (const participant of snapshot.participants) {
@@ -388,6 +427,70 @@ export function projectOutpostMatchToColyseusState(
   }
   removeMissingKeys(state.projectiles, projectileKeys);
 
+  const projectileRecordKeys = new Set<string>();
+  for (const record of snapshot.combat.projectileRecords) {
+    const key = record.projectileId;
+    projectileRecordKeys.add(key);
+    const current = state.projectileRecords.get(key);
+    const finish = record.finish;
+    const subject = finish?.subject;
+    const next =
+      current ??
+      new OutpostColyseusProjectileRecordState({
+        projectileId: record.projectileId,
+        correlationId: record.correlationId,
+        generation: String(record.generation),
+        definitionId: record.definitionId,
+        definitionVersion: record.definitionVersion,
+        fireTick: record.fireTick,
+        fixedDeltaMs: record.fixedDeltaMs,
+        firePositionX: record.firePosition.x,
+        firePositionY: record.firePosition.y,
+        fireVelocityX: record.fireVelocity.x,
+        fireVelocityY: record.fireVelocity.y,
+        expiresTick: record.expiresTick,
+        hasFinish: finish !== undefined,
+        finishTick: finish?.tick ?? 0,
+        finishReason: finish?.reason ?? "",
+        finishPositionX: finish?.position.x ?? 0,
+        finishPositionY: finish?.position.y ?? 0,
+        hasFinishNormal: finish?.normal !== undefined,
+        finishNormalX: finish?.normal?.x ?? 0,
+        finishNormalY: finish?.normal?.y ?? 0,
+        subjectActorId: subject?.actorId ?? "",
+        subjectEntityId: subject?.entityId === undefined ? "" : String(subject.entityId),
+        subjectBodyId: subject?.bodyId ?? "",
+        subjectColliderId: subject?.colliderId ?? ""
+      });
+    next.correlationId = record.correlationId;
+    next.generation = String(record.generation);
+    next.definitionId = record.definitionId;
+    next.definitionVersion = record.definitionVersion;
+    next.fireTick = record.fireTick;
+    next.fixedDeltaMs = record.fixedDeltaMs;
+    next.firePositionX = record.firePosition.x;
+    next.firePositionY = record.firePosition.y;
+    next.fireVelocityX = record.fireVelocity.x;
+    next.fireVelocityY = record.fireVelocity.y;
+    next.expiresTick = record.expiresTick;
+    next.hasFinish = finish !== undefined;
+    next.finishTick = finish?.tick ?? 0;
+    next.finishReason = finish?.reason ?? "";
+    next.finishPositionX = finish?.position.x ?? 0;
+    next.finishPositionY = finish?.position.y ?? 0;
+    next.hasFinishNormal = finish?.normal !== undefined;
+    next.finishNormalX = finish?.normal?.x ?? 0;
+    next.finishNormalY = finish?.normal?.y ?? 0;
+    next.subjectActorId = subject?.actorId ?? "";
+    next.subjectEntityId = subject?.entityId === undefined ? "" : String(subject.entityId);
+    next.subjectBodyId = subject?.bodyId ?? "";
+    next.subjectColliderId = subject?.colliderId ?? "";
+    if (current === undefined) {
+      state.projectileRecords.set(key, next);
+    }
+  }
+  removeMissingKeys(state.projectileRecords, projectileRecordKeys);
+
   const combatCueKeys = new Set<string>();
   for (const cue of snapshot.combat.cues) {
     const key = String(cue.sequence);
@@ -460,6 +563,10 @@ export function readOutpostColyseusStateUpdate(
   const players = readCollection(value.players, readPlayer);
   const actors = readCollection(value.combatActors, readCombatActor);
   const projectiles = readCollection(value.projectiles, readProjectile);
+  const projectileRecords = readCollection(value.projectileRecords, readProjectileRecord)?.sort(
+    (left, right) =>
+      left.fireTick - right.fireTick || left.projectileId.localeCompare(right.projectileId)
+  );
   const combatCues = readCollection(value.combatCues, readCombatCue)?.sort(
     (left, right) => left.sequence - right.sequence
   );
@@ -481,6 +588,10 @@ export function readOutpostColyseusStateUpdate(
     players === undefined ||
     actors === undefined ||
     projectiles === undefined ||
+    !nonEmptyString(value.projectileGeneration) ||
+    projectileRecords === undefined ||
+    projectileRecords.length > MAX_PROJECTILE_RECORDS ||
+    projectileRecords.some((record) => String(record.generation) !== value.projectileGeneration) ||
     combatCues === undefined ||
     combatCues.length > MAX_COMBAT_CUES ||
     !combatCueSequenceValid ||
@@ -511,6 +622,7 @@ export function readOutpostColyseusStateUpdate(
       players,
       actors,
       projectiles,
+      projectileRecords,
       combatCues,
       inputAcksByPeerId
     ),
@@ -524,6 +636,8 @@ export function readOutpostColyseusStateUpdate(
       combat: {
         actors,
         projectiles,
+        projectileGeneration: value.projectileGeneration,
+        projectileRecords,
         cueWatermark: value.combatCueWatermark,
         cues: combatCues,
         acceptedCommands: value.acceptedCommands,
@@ -769,6 +883,92 @@ function readProjectile(
   };
 }
 
+function readProjectileRecord(
+  value: unknown
+): OutpostClientAuthoritySnapshot["combat"]["projectileRecords"][number] | undefined {
+  if (
+    !isRecord(value) ||
+    !nonEmptyString(value.projectileId) ||
+    !nonEmptyString(value.correlationId) ||
+    !nonEmptyString(value.generation) ||
+    !nonEmptyString(value.definitionId) ||
+    !nonEmptyString(value.definitionVersion) ||
+    !nonNegativeInteger(value.fireTick) ||
+    !positiveFinite(value.fixedDeltaMs) ||
+    !finiteNumber(value.firePositionX) ||
+    !finiteNumber(value.firePositionY) ||
+    !finiteNumber(value.fireVelocityX) ||
+    !finiteNumber(value.fireVelocityY) ||
+    !nonNegativeInteger(value.expiresTick) ||
+    value.expiresTick < value.fireTick ||
+    typeof value.hasFinish !== "boolean" ||
+    !nonNegativeInteger(value.finishTick) ||
+    typeof value.finishReason !== "string" ||
+    typeof value.hasFinishNormal !== "boolean" ||
+    !finiteNumber(value.finishPositionX) ||
+    !finiteNumber(value.finishPositionY) ||
+    !finiteNumber(value.finishNormalX) ||
+    !finiteNumber(value.finishNormalY) ||
+    typeof value.subjectActorId !== "string" ||
+    typeof value.subjectEntityId !== "string" ||
+    typeof value.subjectBodyId !== "string" ||
+    typeof value.subjectColliderId !== "string"
+  ) {
+    return undefined;
+  }
+  if (
+    value.hasFinish &&
+    (value.finishReason.length === 0 ||
+      value.finishTick < value.fireTick ||
+      value.finishTick > value.expiresTick)
+  ) {
+    return undefined;
+  }
+  const hasSubject =
+    value.subjectActorId.length > 0 ||
+    value.subjectEntityId.length > 0 ||
+    value.subjectBodyId.length > 0 ||
+    value.subjectColliderId.length > 0;
+  return {
+    projectileId: value.projectileId,
+    correlationId: value.correlationId,
+    generation: value.generation,
+    definitionId: value.definitionId,
+    definitionVersion: value.definitionVersion,
+    fireTick: value.fireTick,
+    fixedDeltaMs: value.fixedDeltaMs,
+    firePosition: { x: value.firePositionX, y: value.firePositionY },
+    fireVelocity: { x: value.fireVelocityX, y: value.fireVelocityY },
+    expiresTick: value.expiresTick,
+    ...(value.hasFinish
+      ? {
+          finish: {
+            tick: value.finishTick,
+            reason: value.finishReason,
+            position: { x: value.finishPositionX, y: value.finishPositionY },
+            ...(value.hasFinishNormal
+              ? { normal: { x: value.finishNormalX, y: value.finishNormalY } }
+              : {}),
+            ...(hasSubject
+              ? {
+                  subject: {
+                    ...(value.subjectActorId.length === 0 ? {} : { actorId: value.subjectActorId }),
+                    ...(value.subjectEntityId.length === 0
+                      ? {}
+                      : { entityId: value.subjectEntityId }),
+                    ...(value.subjectBodyId.length === 0 ? {} : { bodyId: value.subjectBodyId }),
+                    ...(value.subjectColliderId.length === 0
+                      ? {}
+                      : { colliderId: value.subjectColliderId })
+                  }
+                }
+              : {})
+          }
+        }
+      : {})
+  };
+}
+
 function readCombatCue(
   value: unknown
 ): OutpostClientAuthoritySnapshot["combat"]["cues"][number] | undefined {
@@ -904,6 +1104,7 @@ function estimateSnapshotBytes(
   players: OutpostClientAuthoritySnapshot["players"],
   actors: OutpostClientAuthoritySnapshot["combat"]["actors"],
   projectiles: OutpostClientAuthoritySnapshot["combat"]["projectiles"],
+  projectileRecords: OutpostClientAuthoritySnapshot["combat"]["projectileRecords"],
   combatCues: OutpostClientAuthoritySnapshot["combat"]["cues"],
   inputAcksByPeerId: OutpostClientAuthoritySnapshot["inputAcksByPeerId"]
 ): number {
@@ -948,6 +1149,20 @@ function estimateSnapshotBytes(
       estimateStringBytes(projectile.networkEntityId) +
       estimateStringBytes(projectile.renderKey);
   }
+  for (const record of projectileRecords) {
+    bytes +=
+      176 +
+      estimateStringBytes(record.projectileId) +
+      estimateStringBytes(record.correlationId) +
+      estimateStringBytes(String(record.generation)) +
+      estimateStringBytes(record.definitionId) +
+      estimateStringBytes(record.definitionVersion) +
+      estimateStringBytes(record.finish?.reason ?? "") +
+      estimateStringBytes(record.finish?.subject?.actorId ?? "") +
+      estimateStringBytes(String(record.finish?.subject?.entityId ?? "")) +
+      estimateStringBytes(record.finish?.subject?.bodyId ?? "") +
+      estimateStringBytes(record.finish?.subject?.colliderId ?? "");
+  }
   for (const cue of combatCues) {
     bytes +=
       176 +
@@ -987,6 +1202,10 @@ function nonNegativeInteger(value: unknown): value is number {
 
 function nonNegativeFinite(value: unknown): value is number {
   return finiteNumber(value) && value >= 0;
+}
+
+function positiveFinite(value: unknown): value is number {
+  return finiteNumber(value) && value > 0;
 }
 
 function finiteNumber(value: unknown): value is number {

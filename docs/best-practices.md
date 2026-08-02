@@ -67,6 +67,7 @@
 - Save/load、asset preload、data registration 和 renderer boot 应由 App Host 或 app profile 编排顺序，不藏在 GameRuntime 内部。
 - Multiplayer create/join/reconnect/leave 应由 App Host、lobby UI、server host 或测试夹具显式触发；GameModule 不隐式创建 socket、Colyseus Room、Nakama match 或 provider room。
 - 普通实时多人客户端应通过 standard Multiplayer GameModule 的 managed replication 配置声明 snapshot、remote track、predicted-state field 和 prediction policy。网络 callback 不直接写 Renderer，app render loop 不显式调用 playback、predict 或 reconcile，prediction 配置也不回调手写 number/vector/angle 插值或 correction offset；Core 统一推进 authority gate、input sampling/send、prediction-lead backpressure、remote presentation 和 local correction，app 只提供 deterministic transition 与最终批量 frame write。`inputRateHz` 默认同时定义 prediction step；若显式拆分两个频率，必须证明它与 authority ack 的 interval 语义一致。Fixed-step prediction 必须让 authority 每 step 消费并 ack 一个 sequence，客户端用 `maxPredictionLeadInputs` 限制领先量。Authority 使用 Physics solver 时，prediction transition 必须复用同一 backend/definition/fixed-step 语义，并用有界 checkpoint 避免对一致 solver state 重复 rewind；不要用线性位移近似 damping 和 collision，再依赖 correction smoothing 掩盖持续误差。
+- 以 `startTick`、`fireTick` 或其他事件起点重建的 predicted lifecycle，必须通过 `createMultiplayerTimeAlignedPresentationTransition(...)` 声明 absolute 或 relative-origin alignment。Core 先把 predicted/authority 采样到同一 lifecycle age，再只平滑 residual state divergence；app/domain 不维护私有 handoff entry map、offset lerp 或 cleanup。Combat kinematic projectile 优先使用 App Host 标准组合 helper。输入驱动物体继续使用 managed replay，远端对象继续使用 snapshot interpolation，相互作用刚体继续使用 Physics prediction island；不能用 lifecycle handoff 替代它们。
 - Headless 测试应能用 memory platform、memory renderer、memory save store、deterministic clock、fake asset loader 和 fake physics backend 启动主要组合路径。
 - Browser、Tauri、headless server 和 deterministic test 应优先复用同一个 GameAppDefinition。非视觉 profile 用协议兼容 fixture 满足完整 service graph，并把 production platform/backend/runtime factory 保留为显式注入点；不要为测试删掉 service 后维护第二套启动拓扑。
 
@@ -107,7 +108,14 @@
 - GameRuntime、Camera、Input、Physics、TCA、GAS、Save 等有顺序语义的模块必须覆盖顺序、幂等、stop/dispose 和 cleanup。
 - Multiplayer backend adapter 必须覆盖 provider facade 的 connect、create-or-join/leave、message routing、peer summary、disconnect、reconnect 降级、payload validation、dispose cleanup 和 diagnostics；provider 自己拥有的 room/matchmaker/state sync 逻辑不要在 GameKit core 中重写。
 - Multiplayer app/demo 集成测试不能只断言 peer count 或 presence；必须至少断言一条 lifecycle、input、snapshot、patch 或 command result 来自同一个 authority state，并验证非 authority snapshot/patch 不会被 client 应用。
-- Multiplayer 输入先区分 continuous state、fixed-step predicted control 和 discrete command：不逐 input rollback 的移动、瞄准、驾驶采用 latest-per-source coalescing、持有状态和明确 timeout；一个 sequence 对应一个 simulation step 的 predicted control 使用 per-source bounded FIFO、每 tick 消费一个、逐 step ack 和 client lead backpressure；交互、购买、一次性技能采用独立 bounded action FIFO。测试必须覆盖 burst、queue 上限、ack progression 和 client timer 长时漂移，app 不能绕过底层保护另建无界队列。
+- Multiplayer 输入先区分 continuous state、fixed-step predicted control 和 discrete command：不逐 input rollback 的移动、瞄准、驾驶采用 latest-per-source coalescing、持有状态和明确 timeout；一个 sequence 对应一个 simulation step 的 predicted control 使用 per-source bounded FIFO、每 tick 消费一个、逐 step ack 和 client lead backpressure；交互、购买、一次性技能采用独立 bounded action FIFO。直接决定玩家手感的 press/release/cancel不能因为也影响 held state就只塞进 fixed-step FIFO：用有界 reliable action lane立即交付边沿，以单调 control sequence让 authority合并稍后到达的 continuous frame并忽略旧状态，同时在本地下一可绘制 frame做可撤销 anticipation。
+- 即时表现不能冒充完整预测。只继承显示位置、保持原速度或 correction lerp 的 render-only handoff只解决 presentation continuity；如果对象会因 collision、bounce、hit、expire 或 spawn/despawn 改变轨迹，必须选择 lag-compensated hitscan、kinematic fire/finish record、predicted entity + prediction island 或 authority-only 中语义完整的一种。Client predicted spatial result可撤销，但 damage/cost/kill仍由authority提交。测试必须覆盖已知 blocker前不穿透、confirm/reject/correct、generation reset、history overflow、动态交互成员一致 rollback和dispose retained state；app不能在单个武器中另建无界队列、solver cache或半套collision预测。
+- Kinematic projectile 的 owner/observer 最终必须消费同一 authority timeline、record identity 和 render definition；预测提前量只能作为 authority 到达前的 provisional lead，并在同一 visual object 上有界收敛。Observer 可以使用声明的 remote presentation delay 从 authority record 重建短命弹体，但不能以每条 record 的“首次收到时间”重新启动局部播放时钟；超过 delayed authority tick 的 completed record 不再重播。不能给 owner prediction 施加不同 tint/scale 后让 remote 使用另一套外观。真正漏帧的短生命周期由 tracer/impact cue 表达。
+- Kinematic owner 的 authority adoption 必须区分 commit-time offset 与 spatial divergence。Shot-relative 匹配时用 owner 当前 shot age 采样 authority record，不能把较晚 authority `fireTick` 造成的沿轨迹距离差交给 correction lerp；测试必须直接断言接管前后单位时间位移保持 `speed × delta`，不能只断言对象没有倒退。只有起点、速度、方向或 finish 等真实空间事实分叉才允许 smoothing。
+- 修改 kinematic 或 solver-owned projectile prediction 时运行 `corepack pnpm bench:projectile-prediction:check`。
+  该基准必须真实运行 Physics query、fire/finish record churn、remote reconstruction、predicted-spawn matching，
+  以及完整 prediction-island checkpoint capture/restore/resimulation，并同时限制 blocker penetration、p95/max、
+  payload/history bytes、history/order hard limit 和 dispose retained state。
 - Multiplayer peer 离开或断线时，host/server presence 组合层必须调用 authority loop 的 peer release 入口，清掉该 peer 尚未消费的 action/input 和 sequence epoch。是否保留 actor、slot 或本局统计属于 gameplay policy，不能靠保留旧网络队列来实现。
 - 离线单机和多人模式应共享同一套 gameplay orchestration。测试应能用同一 input/action log 在 local authority 和 host/server authority fixture 中得到等价稳定 snapshot，避免维护两套规则实现。
 - Sandbox、demo 或 headless host 的集成测试应覆盖长链路：Data → Asset → App Host → GameRuntime → World → Physics → TCA/GAS → Renderer/Input/Camera → Snapshot/Timeline。
@@ -219,6 +227,7 @@
 
 - 性能判断必须有数据，先用 benchmark 或 profiler 记录基线。
 - 新增 adapter、renderer sync、TCA runner、asset loader 时应补最小 benchmark 或 profile 入口。
+- Microbenchmark 的计时区间只包含被命名的目标路径；大规模 fixture创建、随机数据生成、磁盘读取和一次性装配放在 warmup或采样区间之外。需要变化输入时优先原地推进已构造 fixture，并为对象上限、drop和 dispose retained state单独设确定性预算，避免把测试夹具分配与 GC 抖动误判成目标模块回归。
 - benchmark 的细微变化只作为趋势参考，不写死成易碎测试；已经稳定的热点模块可以在定时或手动 performance workflow 使用留有足够机器波动余量的粗粒度预算，观察数量级退化、无界队列和 retained heap 持续增长。常规 PR CI 只保留确定性的正确性门禁；性能检查不能代替 profiler，也不能因为共享 runner 噪声阻塞合并。
 - DevTools Performance 面板只展示 GameKit 级 frame/system/service/adapter 归因，不替代浏览器 profiler；需要 CPU flamegraph、layout、paint、GPU 信息时仍使用浏览器或引擎原生工具。
 - 默认只开启低成本 summary；深度 span、单帧详情、完整 payload 展开必须由用户显式开启或在测试夹具中启用。

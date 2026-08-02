@@ -13,6 +13,7 @@ import {
   OUTPOST_ARENA_PHYSICS_LAYOUT_ID,
   OUTPOST_AUDIO_ASSET_IDS,
   outpostContentPack,
+  outpostRuntimeFeedbackAssets,
   outpostRuntimeImageAssets,
   registerOutpostDataTypes
 } from "../content";
@@ -245,6 +246,73 @@ describe("Outpost content pipeline", () => {
     }
     const runtimeFile = readFileSync(join(APP_ROOT, "public", definition.source.url.slice(1)));
     expect(runtimeFile.subarray(0, 4).toString("ascii")).toBe("OggS");
+  });
+
+  it("ships licensed compressed variation banks for every combat sound", () => {
+    const registry = createOutpostDataRegistry();
+    const banks = [
+      {
+        ids: OUTPOST_AUDIO_ASSET_IDS.rifle,
+        runtimePrefix: "/assets/outpost/audio/rifle-",
+        pack: "Sci-fi Sounds"
+      },
+      {
+        ids: OUTPOST_AUDIO_ASSET_IDS.enemyTelegraph,
+        runtimePrefix: "/assets/outpost/audio/enemy-telegraph-",
+        pack: "Sci-fi Sounds"
+      },
+      {
+        ids: OUTPOST_AUDIO_ASSET_IDS.hit,
+        runtimePrefix: "/assets/outpost/audio/hit-",
+        pack: "Impact Sounds"
+      }
+    ] as const;
+
+    for (const bank of banks) {
+      expect(bank.ids).toHaveLength(5);
+      const runtimeUrls = new Set<string>();
+      for (const id of bank.ids) {
+        const definition = registry.get<AssetDefinition>("asset.definition", id).data;
+        expect(definition).toMatchObject({
+          type: "audio",
+          group: "combat",
+          metadata: {
+            author: "Kenney",
+            pack: bank.pack,
+            license: "CC0-1.0"
+          }
+        });
+        if (definition.source.type !== "url") {
+          throw new Error(`Outpost combat audio requires a runtime URL source: ${id}`);
+        }
+        expect(definition.source.url.startsWith(bank.runtimePrefix)).toBe(true);
+        runtimeUrls.add(definition.source.url);
+        const runtimeFile = readFileSync(join(APP_ROOT, "public", definition.source.url.slice(1)));
+        expect(runtimeFile.subarray(0, 4).toString("ascii")).toBe("OggS");
+      }
+      expect(runtimeUrls.size).toBe(5);
+    }
+  });
+
+  it("ships authored vector feedback assets through the combat preload group", () => {
+    const registry = createOutpostDataRegistry();
+    expect(outpostRuntimeFeedbackAssets).toHaveLength(4);
+
+    for (const asset of outpostRuntimeFeedbackAssets) {
+      const definition = registry.get<AssetDefinition>("asset.definition", asset.id).data;
+      expect(definition).toMatchObject({
+        type: "image",
+        source: { type: "url", url: asset.runtimeUrl },
+        group: "combat",
+        preload: true
+      });
+      const authoring = readFileSync(join(APP_ROOT, asset.authoringSource), "utf8");
+      const runtime = readFileSync(join(APP_ROOT, "public", asset.runtimeUrl.slice(1)));
+      expect(authoring.startsWith("<svg")).toBe(true);
+      expect(runtime.subarray(0, 4).toString("ascii")).toBe("RIFF");
+      expect(runtime.subarray(8, 12).toString("ascii")).toBe("WEBP");
+      expect(readWebpDimensions(runtime)).toEqual({ width: asset.width, height: asset.height });
+    }
   });
 
   it("derives every static render placement and collider from the same arena object", () => {

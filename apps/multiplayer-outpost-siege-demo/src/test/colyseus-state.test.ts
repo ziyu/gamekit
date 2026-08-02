@@ -18,6 +18,7 @@ describe("Outpost app-owned Colyseus state", () => {
     expect(state.players.has("player.ranger-1:0")).toBe(true);
     expect(state.combatActors.has("enemy.opening.1:0")).toBe(true);
     expect(state.projectiles.has("projectile.1:0")).toBe(true);
+    expect(state.projectileRecords.has("projectile.1")).toBe(true);
 
     snapshot.players[0]!.generation = 1;
     snapshot.players[0]!.x = 940;
@@ -78,6 +79,16 @@ describe("Outpost app-owned Colyseus state", () => {
             }
           ],
           projectiles: [{ objectId: "projectile.1", velocityX: 760 }],
+          projectileGeneration: "session-1",
+          projectileRecords: [
+            {
+              projectileId: "projectile.1",
+              correlationId: "player.ranger-1.rifle.7",
+              generation: "session-1",
+              definitionId: "combat.outpost.projectile.rifle",
+              fireTick: 18
+            }
+          ],
           cueWatermark: 1,
           cues: [
             {
@@ -101,6 +112,7 @@ describe("Outpost app-owned Colyseus state", () => {
     snapshot.players = [];
     snapshot.combat.actors = [];
     snapshot.combat.projectiles = [];
+    snapshot.combat.projectileRecords = [];
     snapshot.combat.cues = [];
     snapshot.inputAcksByPeerId = {};
     projectOutpostMatchToColyseusState(state, snapshot, 22);
@@ -108,6 +120,7 @@ describe("Outpost app-owned Colyseus state", () => {
     expect(state.players.size).toBe(0);
     expect(state.combatActors.size).toBe(0);
     expect(state.projectiles.size).toBe(0);
+    expect(state.projectileRecords.size).toBe(0);
     expect(state.combatCues.size).toBe(0);
     expect(state.inputAcksByPeerId.size).toBe(0);
   });
@@ -212,6 +225,21 @@ function createMatchSnapshot(): OutpostMatchAuthoritySnapshot {
           velocityX: 760,
           velocityY: 0,
           facing: 0
+        }
+      ],
+      projectileGeneration: "session-1",
+      projectileRecords: [
+        {
+          projectileId: "projectile.1",
+          correlationId: "player.ranger-1.rifle.7",
+          generation: "session-1",
+          definitionId: "combat.outpost.projectile.rifle",
+          definitionVersion: "outpost.rifle-projectile.v1",
+          fireTick: 18,
+          fixedDeltaMs: 1000 / 60,
+          firePosition: { x: 700, y: 500 },
+          fireVelocity: { x: 760, y: 0 },
+          expiresTick: 90
         }
       ],
       cueWatermark: 1,

@@ -1,6 +1,83 @@
 # Outpost Siege Player Experience Rebuild
 
-Status: Active.
+Status: Active — Rifle kinematic-data-buffer integrated and benchmarked; browser playtest remains.
+
+## Prediction Capability Gate
+
+2026-07-28 对 Rifle 穿墙后延迟爆炸的问题做了系统性复核。此前的 render-only predicted → authority
+handoff 只修复了两件事：输入后首帧能看到弹体，以及 authority spawn 到达时显示对象不向后跳。它没有在
+client 运行与 authority 相同的 projectile sweep/collision/lifecycle，因此不能被视为 projectile prediction，
+也不能作为 Slice 2 的最终验收结果。
+
+对 Unity Netcode for Entities、Photon Fusion、Unreal Networked Physics、Valve Source、Colyseus 与 Rapier 的
+官方资料复核后，长期方案记录为
+[ADR 0047](../adr/0047-selective-network-prediction-and-projectile-strategies.md)：按对象选择
+lag-compensated hitscan、kinematic data buffer、predicted entity + prediction island 或 authority-only，而不是
+默认全场 rollback，也不是继续修 render handoff。
+
+Outpost Rifle 当前选择 `kinematic-data-buffer`。进入下一轮实现前，GameKit 必须先具备并验证：
+
+- Combat projectile strategy 与有界 fire/finish spatial record；
+- owner 使用同一 definition、fixed tick、layout 和 Physics sweep 的 provisional simulation；
+- authority confirm/correct/reject 与 remote authority-timeline reconstruction；
+- Multiplayer prediction identity/generation/reset/overflow lifecycle；
+- 对应 conformance 与真实 prediction benchmark。
+
+在这些底层能力获得确认并实现前，不继续向 Outpost weapon handler 增加本地 raycast、wall clamp 或新的
+handoff 特判。现有 handoff 代码只能作为待替换的历史实现，不进入完成定义。
+
+2026-07-28 底层 `kinematic-data-buffer` 路径已按 ADR 0047 实现，并在 Sandbox 新增 Multiplayer Projectile
+Lab：三个真实 Memory Multiplayer peer、owner/authority 独立 Physics scene、可调 RTT、remote timeline 与
+layout divergence fault injection。2026-07-29 已完成人工正常路径、layout divergence 和 generation reset 验收，
+实现和验证证据记录在已关闭的
+[`kinematic-projectile-prediction.md`](kinematic-projectile-prediction.md)。
+
+2026-08-01 Outpost Rifle 已消费该底层能力并移除历史 render-only handoff：authority 从真实 Combat
+projectile spawn/despawn fact 生成最多128条 fire/finish record，保留 session generation、definition version、
+60 Hz fire/finish tick、空间终点、normal 与 subject；Colyseus Schema 升级为 `outpost.field-state.v8`，在现有
+Room state 中复制 records，不增加第二条 snapshot 或验证通道。Owner client 按最近 authority timeline 启动同一
+definition、arena layout 与 Rapier sweep，并以 correlation + generation 对齐 GAS 生成的 authority projectile id；
+player network generation 进入 record identity，避免同 session 重连后 shot sequence 归零造成冲突。Projectile
+renderer 直接从 record 生成，不再要求20 Hz entity snapshot 中必须看见弹体；remote record 按统一100ms
+delayed authority timeline 重建，已完成且早于该 presentation tick 的 record 不重新播放移动弹体，改由 bounded
+tracer/impact cue 表达。Owner record 与 provisional sweep 原位收敛。拒绝与超时取消对应
+prediction chain。现有四客户端 Room
+测试已覆盖 reliable Rifle press/release、authority fire/finish、Schema 观察客户端收到同一 record，以及 active
+projectile 在继续 leader-leave 流程前收敛为零；authority、client feedback 和 browser tests 分别覆盖真实 hit
+subject、已知 arena blocker 停止与 prediction→authority reconstruction。场景 material refs 同时收口到共享
+arena Physics scene config，authority、preview、movement prediction 与 projectile prediction 不再各自丢弃材质定义。
+同日曾把 projectile 表现重叠误归因于 spawn tracer，并移除 tracer 与 impact 的正常反馈；后续逐帧诊断证明
+根因是预测时间线被旧 snapshot 向后重锚、绝对 `fireTick` 把 GAS preparing/authority 排队误判为 correction，
+以及 prediction→authority 交接时销毁旧 renderer object 再创建新 object。现已恢复线状 tracer 与原 impact
+反馈，禁止使用 projectile 贴图伪造 muzzle；owner prediction 使用单调时间线，按相同射击年龄比较 trajectory，
+合理 fire tick offset 不触发 correction，真正分叉在同一个 correlation render identity 上有界收敛。
+后续真实逐帧复验发现 terminal hit cue 可能比 finish record 早一个20 Hz快照，导致 impact 与仍存活的预测弹
+短暂重叠；client feedback 现按 projectile correlation 在 terminal cue 到达时立即取消 owner prediction、隐藏
+remote record render，并以128条、2秒硬上限保存终止抑制状态，finish record 到达前不允许弹体重新出现。
+
+2026-08-02 再次双端对比确认 owner 与 observer 仍不是同一呈现：owner 在 match 后永久沿本地提前 tick 采样，
+observer 沿 authority tick 采样；remote 还会把已经 finish 的近期 record 从起点延迟重播。Owner projectile 同时
+使用额外 fill tint，而 remote 使用原 render definition，所以时间线和外观均分叉。该问题也暴露 Outpost 在
+app 层重复实现了 generation/match/expiry、单调时钟、shot-relative compare 和 correction lifecycle。
+
+本轮按 Core-first 修正：Multiplayer Core 新增 `createMultiplayerAuthorityTimeline(...)`，Outpost 实际复用既有
+`createMultiplayerPredictedSpawnRegistry(...)`；Combat Core 扩展 shot-relative reconciliation，并新增
+`createStandardCombatKinematicProjectilePresentationTransition(...)` 通过 Multiplayer Core 通用 time-aligned
+transition 统一 provisional finish、authority handoff 和有界
+correction。Outpost 只保留共享 arena/actor Physics proxy、内容定义和 renderer 写入。Owner/observer 现在使用
+相同 generation + correlation visual id、同一未染色 projectile definition；owner 使用 local shot age，observer
+使用 remote authority presentation time。两端位置不要求逐帧相等，但 match 后 owner 改由 authority record提供
+空间事实时不能回到较晚 commit 的过期弹龄。Observer 使用同一 record 与 trajectory，只在声明的 presentation
+delay 上观看；这不是第二条 projectile simulation。
+Observer 为覆盖20 Hz snapshot之间完成的短命弹体使用统一100ms remote delay；该 delay 只改变观看时刻，仍采样
+同一 authority record，不恢复按每条 record 首次到达重新计时的旧实现。
+
+2026-08-02 进一步诊断确认 Combat transition 只在 reconcile 比较中使用 shot-relative timeline，实际 authority
+sample 仍按绝对 tick 求值；随后把正常 fire-tick offset 作为位置差在100–260ms内衰减，直接导致接管阶段减速。
+底层现对 matched authority record 使用 `authorityTick + (authorityFireTick - predictedFireTick)`，保持与 owner
+相同 shot age；绝对模式保持原语义，真实空间分叉仍有界修正。Combat 测试锁定不同 fire tick、相同 trajectory
+接管时 correction 为0且位移保持原速度；Outpost client feedback 集成测试锁定接管后300ms位移仍为
+`760 × 0.3`。
 
 ## Current Increment
 
@@ -18,10 +95,29 @@ Status: Active.
 - 本地 cue history固定为32条、pending anticipation最多8条、authority timeout为1秒；拒绝/超时会取消相关 cue及其依赖预测链。客户端立即播放 muzzle pulse、Rifle SFX和 camera recoil，authority确认不重复播放，rejection只播放轻量 deny pulse。
 - Slice 5审计确认 Combat Core 的 `projectile_despawned` 缺少销毁前空间事实，app不能可靠生成 world impact。该缺口已按 [ADR 0046](../adr/0046-bounded-combat-projectile-lifecycle-facts.md) 补足：spawn/despawn改为有界公共 fact，despawn携带 final transform/velocity及可选 target/blocker impact，原始 query、candidate、payload、metadata和 hit memory不进入 EventBus。
 - 2026-07-28 完成 authority result cue基础闭环：Outpost从真实 Combat projectile lifecycle、hit result和 action rejection生成 `projectile-spawned/miss/world-impact/shield-hit/health-hit/kill-confirmed/action-rejected`，保留64条单调 sequence ring；client首次 active snapshot只建立基线，增量 cue去重消费并记录 dropped/reset diagnostics，本地历史64条，world effect并发上限48且按 duration/dispose回收。连续 projectile transform仍沿用 snapshot，不复制进 cue。
+- 2026-07-28 完成 Rifle 正式反馈资源和消费链：`PlayerPresentationFrame` 保留当前 world aim，authority shield/health/kill cue携带 source→target单位方向；独立 `client-combat-feedback` 消费同一 presentation frame/correlation，提供跟随瞄准的准星、local anticipation与remote authority tracer、miss/world/shield/health/kill impact、命中/击杀/拒绝准星反馈和本地受击方向。表现对象硬上限48，连同准星最多49个，pending local anticipation仍为8；dispose清空仍处于生命周期内的 renderer object和所属音频 owner。
+- Feedback authoring source使用可审查 SVG，内容构建确定性生成透明 lossless WebP；真实 Phaser浏览器曾发现直接加载 SVG 产物会显示实心方块，现已通过 SVG → raster buffer → WebP管线修正，并由内容测试锁定文件头和尺寸。
+- 真实双客户端诊断发现 movement/aim/rifle edge共用20Hz fixed-step FIFO时，客户端8帧 prediction lead会稳定形成7帧未确认输入，使本地 muzzle anticipation领先权威 projectile约350ms。先把 client lead从8收紧到2、authority per-source backlog从32收紧到4，将相同自动化路径的权威 ammo确认从约525ms降到277ms，但该方案仍容忍 fixed-step等待，不作为最终手感契约。
+- Rifle 已拆为即时边沿与持续状态两条 lane：press/release/cancel 通过既有 bounded reliable action 直接进入
+  authority player weapon，movement/aim/fireHeld 继续走 managed fixed-step prediction；weapon 用 32-bit 单调
+  `fireSequence` 合并两者，旧输入不能重复首发或在 release 后恢复 held。Room-owned 真实 Colyseus adapter
+  四客户端测试已锁定 valid Rifle press/release 分别进入 action FIFO、authority 同 tick 将 `shotSequence`
+  推进到 1 并扣除一发，release 后没有额外射击。这部分仍是有效的输入/authority 基线。
+- **Invalidated on 2026-07-28:** 本地以 760 world units/s 移动 render object，再以
+  `correlationId + projectileId` 让 authority object 继承当前显示位置的方案，只验证了即时出现、对象回收和不
+  倒退。它没有预测 collision/finish result，会让弹体穿过墙后等待 authority despawn，因此已被 ADR 0047
+  否定为最终方案；相关 memory Renderer handoff 测试和性能数字只保留为历史 presentation 证据，不计入
+  projectile prediction gate。
 
-验证证据：Rapier authority integration覆盖短 click、24 发持续射击、无伪 rejection、自动换弹、GAS commit、commit前 Rifle/Dash取消、commit后拒绝取消、full-action冲突和被拒 Dash不产生副作用；Room authority覆盖 reliable action统一入口、reload correlation与 Rifle action绕过拒绝；Schema测试覆盖 weapon/action feedback与 combat cue v7 round-trip；client presentation测试覆盖 held cadence、confirm/reject、依赖链取消、超时、首次基线、增量去重、断档/reset诊断、48个瞬时效果硬上限和回收，memory Renderer/Audio integration覆盖即时 muzzle/SFX、authority hit效果和重复 snapshot不重播。Combat契约测试覆盖 bounded spawn、impact/expire/custom cancel despawn、event policy关闭、unsubscribe和真实 Rapier sweep；事件开启的 300 projectile × 20轮 churn产生12,000条 lifecycle fact，p95 5.94ms、max 5.98ms、最大抽样 payload 292B，unsubscribe与 dispose retained均为0，15项预算通过。客户端满载基准每个 combat snapshot携带64条新 cue，同时 materialize 4 player + 200 enemy + 256 projectile：snapshot消费约1.23ms，Schema投影/解码约1.83ms，最大估算状态219,762B，0 dropped cue，dispose后0 entity/physics scene/cue retained，16项预算通过。真实浏览器双客户端已通过 v7 Schema进入 Wave 01，两端显示 `24 / 144 · RIFLE READY` 与3个 authority敌人，控制台均为0 error。
+验证证据：Rapier authority integration 覆盖 reliable Rifle 边沿即时首发、旧 fixed-input replay 去重、release
+后旧 held 不恢复、短 click、24 发持续射击、自动换弹、GAS commit、动作取消/拒绝和冲突；Room authority
+覆盖 bounded reliable Rifle press/release、payload validation、reload correlation 和四客户端真实 adapter 路径；
+Schema 与 client presentation 测试覆盖 cue round-trip、水位、去重、断档/reset、即时 muzzle/SFX、效果硬上限
+与 dispose。Combat lifecycle 基准在事件开启时通过原有 300 projectile × 20 轮预算，客户端满载 cue/
+presentation 基准也未发现无界留存。这些证据仍验证 authority、cue 与 presentation 基线，但**不验证本地
+projectile collision prediction**；原 handoff 的速度、不回退和 16 条并发预算已从 Slice 2 完成证据中撤销。
 
-尚未关闭 Slice 1/2/5：Gamepad物理设备验收、完整 tracer/crosshair/damage direction表现和真实多帧角色动画仍需后续增量。Authority result cue stream/watermark、impact/hit/kill/rejection基础反馈及v7真实双客户端复制已经闭环；当前 `PlayerPresentationFrame` 仍需继续合并其他 action channel，并把临时 projectile-texture pulse替换为正式 effect definition/资源。
+尚未关闭 Slice 1/2/4/5：Gamepad物理设备验收、真实多帧角色动画、reduced-motion/低特效策略和更细的材质命中差异仍需后续增量。Rifle 的 authority cue stream/watermark、准星/tracer/impact/hit/kill/rejection/damage direction、正式 effect definition/资源及v7真实双客户端复制已经形成可用基线；`PlayerPresentationFrame` 仍需继续合并 Dash、Tactical、Build 和 Interaction action channel。
 
 Gamepad 底层依赖已按 [ADR 0045](../adr/0045-web-gamepad-input-source-and-polling.md) 实现：Input Core、Web adapter、App Host polling lifecycle 和 Outpost semantic binding 已接通，未在 React/Phaser gameplay 中增加本地轮询。确定性测试与无手柄 Chromium 启动链已通过；物理手柄浏览器验收仍记录在 [`web-gamepad-input-source.md`](web-gamepad-input-source.md)，不再阻塞非实机玩家切片。
 
@@ -86,9 +182,13 @@ Gate：同一 control/action log 能在 local authority 与 Room authority产生
 - Held fire按 authority cadence提交 GAS rifle execution，不按 click次数射击。
 - Reload使用完整 prepare/commit/recover/cancel；ammo commit与 cooldown遵守 authority phase。
 - Projection加入 weapon state、action rejection 和 shot cue sequence。
-- 本地 muzzle/recoil anticipation与 authority commit/reject使用 correlation收敛。
+- 本地 muzzle/recoil anticipation 与 authority commit/reject 使用 correlation 收敛。
+- Rifle 使用 kinematic fire/finish record；owner 按同一 Physics sweep 预测 provisional spatial result，remote
+  按 authority timeline 重建。
 
-Gate：单人和两客户端覆盖持续射击、空仓、自动/手动换弹、commit前后取消、网络 burst、拒绝和 cue去重。
+Gate：单人和两客户端覆盖持续射击、空仓、自动/手动换弹、commit前后取消、网络 burst、拒绝和 cue去重；
+本地首帧出现弹体，静态 blocker 前零穿透，authority confirm/correct/reject 只收敛一次，generation/reset/
+history overflow 和 dispose 有界，并通过真实 owner sweep、record churn 与 remote reconstruction benchmark。
 
 ### Slice 3: Movement, Dash And Camera
 

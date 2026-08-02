@@ -36,6 +36,7 @@ export type OutpostAuthorityPlayerWeapon = {
   lastShotCorrelationId?: string | undefined;
   nextShotAt: number;
   lastFireSequence: number;
+  fireHeld: boolean;
   pendingFireSequence?: number | undefined;
   reloadSequence: number;
   reloadExecutionId?: string | undefined;
@@ -69,6 +70,7 @@ export function createOutpostAuthorityPlayerWeapon(
     shotSequence: 0,
     nextShotAt: 0,
     lastFireSequence: 0,
+    fireHeld: false,
     reloadSequence: 0,
     reloadCommitted: false,
     feedbackSequence: 0
@@ -80,10 +82,13 @@ export function updateOutpostAuthorityPlayerWeapon(
 ): void {
   const { weapon } = options;
   reconcileOutpostAuthorityPlayerWeapon(weapon, options.gas, options.elapsed);
-  const pressed = options.control.fireSequence !== weapon.lastFireSequence;
+  const pressed = isNewerFireSequence(options.control.fireSequence, weapon.lastFireSequence);
   if (pressed) {
     weapon.lastFireSequence = options.control.fireSequence;
     weapon.pendingFireSequence = options.control.fireSequence;
+    weapon.fireHeld = options.control.fireHeld;
+  } else if (options.control.fireSequence === weapon.lastFireSequence) {
+    weapon.fireHeld = options.control.fireHeld;
   }
 
   if (weapon.phase === "reloading") {
@@ -109,10 +114,7 @@ export function updateOutpostAuthorityPlayerWeapon(
   }
   if (weapon.magazine === 0) {
     weapon.phase = "empty";
-    if (
-      weapon.reserveAmmo > 0 &&
-      (options.control.fireHeld || weapon.pendingFireSequence !== undefined)
-    ) {
+    if (weapon.reserveAmmo > 0 && (weapon.fireHeld || weapon.pendingFireSequence !== undefined)) {
       delete weapon.pendingFireSequence;
       requestOutpostAuthorityPlayerReload({
         actorId: options.actorId,
@@ -128,7 +130,7 @@ export function updateOutpostAuthorityPlayerWeapon(
   }
   weapon.phase = "ready";
   if (
-    (!options.control.fireHeld && weapon.pendingFireSequence === undefined) ||
+    (!weapon.fireHeld && weapon.pendingFireSequence === undefined) ||
     options.elapsed < weapon.nextShotAt
   ) {
     return;
@@ -172,6 +174,11 @@ export function updateOutpostAuthorityPlayerWeapon(
   weapon.lastShotCorrelationId = id;
   weapon.nextShotAt = options.elapsed + weapon.definition.fireIntervalMs;
   delete weapon.pendingFireSequence;
+}
+
+function isNewerFireSequence(candidate: number, current: number): boolean {
+  const distance = (candidate - current) >>> 0;
+  return distance !== 0 && distance < 0x8000_0000;
 }
 
 export function requestOutpostAuthorityPlayerReload(options: {

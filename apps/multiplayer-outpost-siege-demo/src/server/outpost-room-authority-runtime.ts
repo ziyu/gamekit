@@ -86,6 +86,7 @@ export async function createOutpostRoomAuthorityRuntime(
       createRuntime(runtimeContext) {
         gameplay = createOutpostAuthorityGameplayRuntime({
           ...runtimeContext,
+          projectileGeneration: session.id,
           players: match.simulationPlayers,
           playerActions: match.drainPlayerActions,
           combatCommands: match.drainCombatCommands

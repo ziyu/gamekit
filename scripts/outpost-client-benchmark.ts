@@ -1,6 +1,15 @@
 import { performance } from "node:perf_hooks";
 
+import { createMemoryRenderer } from "../packages/test-utils/src/renderer/memory-renderer";
 import { createOutpostDataRegistry } from "../apps/multiplayer-outpost-siege-demo/src/content";
+import type { OutpostReplicatedCombatCue } from "../apps/multiplayer-outpost-siege-demo/src/domain";
+import {
+  createOutpostClientCombatPresentation,
+  createOutpostCombatFeedbackState,
+  disposeOutpostCombatFeedback,
+  startOutpostAnticipatedTracer,
+  syncOutpostCombatFeedback
+} from "../apps/multiplayer-outpost-siege-demo/src/presentation";
 import {
   createOutpostClientShadowRuntime,
   type OutpostClientAuthoritySnapshot
@@ -33,9 +42,12 @@ const FOUR_PLAYER_SNAPSHOTS = 10_000;
 const CHURN_SNAPSHOTS = 2_000;
 const COMBAT_WARMUP_SNAPSHOTS = 40;
 const COMBAT_SNAPSHOTS = 500;
+const COMBAT_SCHEMA_SNAPSHOTS = 1_500;
 const COMBAT_ENEMIES = 200;
 const COMBAT_PROJECTILES = 256;
 const COMBAT_CUES = 64;
+const COMBAT_FEEDBACK_WARMUP_FRAMES = 40;
+const COMBAT_FEEDBACK_FRAMES = 500;
 const FIXED_DELTA_MS = 1000 / 60;
 
 async function main(): Promise<void> {
@@ -105,19 +117,18 @@ async function main(): Promise<void> {
   const combatDurationMs = performance.now() - combatStartedAt;
   const maximumCombatEntities = world.count();
 
-  snapshot.combat.cueWatermark = 0;
-  snapshot.combat.cues = [];
+  const schemaSnapshot = createSnapshot();
   const schemaState = createOutpostColyseusState("benchmark.session", "benchmark.session.server");
   let maximumEstimatedSchemaStateBytes = 0;
   for (let tick = 0; tick < WARMUP_SNAPSHOTS; tick += 1) {
-    advanceSnapshot(snapshot, tick + 1, 4);
-    projectOutpostMatchToColyseusState(schemaState, snapshot, tick * 50);
+    advanceSnapshot(schemaSnapshot, tick + 1, 4);
+    projectOutpostMatchToColyseusState(schemaState, schemaSnapshot, tick * 50);
     readOutpostColyseusStateUpdate(schemaState);
   }
   const schemaStartedAt = performance.now();
   for (let tick = 0; tick < FOUR_PLAYER_SNAPSHOTS; tick += 1) {
-    advanceSnapshot(snapshot, tick + 1, 4);
-    projectOutpostMatchToColyseusState(schemaState, snapshot, tick * 50);
+    advanceSnapshot(schemaSnapshot, tick + 1, 4);
+    projectOutpostMatchToColyseusState(schemaState, schemaSnapshot, tick * 50);
     const update = readOutpostColyseusStateUpdate(schemaState);
     if (update === undefined) {
       throw new Error("Outpost client benchmark could not decode projected Schema state.");
@@ -129,15 +140,19 @@ async function main(): Promise<void> {
   }
   const schemaDurationMs = performance.now() - schemaStartedAt;
   let maximumCombatEstimatedSchemaStateBytes = 0;
+  advanceCombatSnapshot(schemaSnapshot, combatTickOffset + 1);
   for (let tick = 0; tick < COMBAT_WARMUP_SNAPSHOTS; tick += 1) {
-    advanceCombatSnapshot(snapshot, combatTickOffset + tick + 1);
-    projectOutpostMatchToColyseusState(schemaState, snapshot, tick * 50);
+    advanceCombatSchemaSnapshot(schemaSnapshot, combatTickOffset + tick + 1);
+    projectOutpostMatchToColyseusState(schemaState, schemaSnapshot, tick * 50);
     readOutpostColyseusStateUpdate(schemaState);
   }
   const combatSchemaStartedAt = performance.now();
-  for (let tick = 0; tick < COMBAT_SNAPSHOTS; tick += 1) {
-    advanceCombatSnapshot(snapshot, combatTickOffset + COMBAT_WARMUP_SNAPSHOTS + tick + 1);
-    projectOutpostMatchToColyseusState(schemaState, snapshot, tick * 50);
+  for (let tick = 0; tick < COMBAT_SCHEMA_SNAPSHOTS; tick += 1) {
+    advanceCombatSchemaSnapshot(
+      schemaSnapshot,
+      combatTickOffset + COMBAT_WARMUP_SNAPSHOTS + tick + 1
+    );
+    projectOutpostMatchToColyseusState(schemaState, schemaSnapshot, tick * 50);
     const update = readOutpostColyseusStateUpdate(schemaState);
     if (update === undefined) {
       throw new Error("Outpost combat benchmark could not decode projected Schema state.");
@@ -148,6 +163,7 @@ async function main(): Promise<void> {
     );
   }
   const combatSchemaDurationMs = performance.now() - combatSchemaStartedAt;
+  const combatFeedbackBenchmark = runCombatFeedbackBenchmark(physics.backend);
   advanceSnapshot(snapshot, combatTickOffset + COMBAT_WARMUP_SNAPSHOTS + COMBAT_SNAPSHOTS + 1, 4);
   applySnapshot(client, multiplayer.emit, snapshot);
 
@@ -182,8 +198,9 @@ async function main(): Promise<void> {
     ),
     microsecondsPerCombatSnapshot: round((combatDurationMs * 1_000) / COMBAT_SNAPSHOTS),
     microsecondsPerCombatSchemaProjectionAndDecode: round(
-      (combatSchemaDurationMs * 1_000) / COMBAT_SNAPSHOTS
+      (combatSchemaDurationMs * 1_000) / COMBAT_SCHEMA_SNAPSHOTS
     ),
+    ...combatFeedbackBenchmark,
     maximumEstimatedSchemaStateBytes,
     maximumCombatEstimatedSchemaStateBytes,
     maximumCombatEntities,
@@ -208,9 +225,11 @@ async function main(): Promise<void> {
           churnSnapshots: CHURN_SNAPSHOTS,
           playersPerSnapshot: 4,
           combatSnapshots: COMBAT_SNAPSHOTS,
+          combatSchemaSnapshots: COMBAT_SCHEMA_SNAPSHOTS,
           combatEnemies: COMBAT_ENEMIES,
           combatProjectiles: COMBAT_PROJECTILES,
-          combatCuesPerSnapshot: COMBAT_CUES
+          combatCuesPerSnapshot: COMBAT_CUES,
+          combatFeedbackFrames: COMBAT_FEEDBACK_FRAMES
         },
         result,
         ...(checkEnabled
@@ -232,6 +251,169 @@ async function main(): Promise<void> {
   }
 }
 
+function runCombatFeedbackBenchmark(
+  physicsBackend: PhysicsBackendAdapter
+): Pick<
+  OutpostClientBenchmarkResult,
+  | "microsecondsPerCombatFeedbackFrame"
+  | "maximumCombatFeedbackObjects"
+  | "maximumRecordProjectiles"
+  | "retainedCombatFeedbackObjectsAfterDispose"
+  | "retainedRecordProjectilesAfterDispose"
+> {
+  const renderer = createMemoryRenderer("outpost.client-benchmark.feedback-renderer");
+  const presentation = createOutpostClientCombatPresentation();
+  const predictionFrame = {
+    generation: "benchmark.session",
+    authorityElapsedMs: 0,
+    actors: [],
+    records: [] as OutpostClientAuthoritySnapshot["combat"]["projectileRecords"]
+  };
+  const options = {
+    dataRegistry: createOutpostDataRegistry(),
+    renderer,
+    physicsBackend,
+    listenerObjectId: "benchmark.player.1",
+    readProjectilePredictionFrame() {
+      return predictionFrame;
+    },
+    applyRenderTargetState() {}
+  };
+  const feedback = createOutpostCombatFeedbackState(options);
+  let nextCueSequence = 1;
+  let elapsed = 0;
+  let maximumCombatFeedbackObjects = 0;
+  let maximumRecordProjectiles = 0;
+  presentation.update({ active: true, cueWatermark: 0, cues: [] });
+
+  const advanceFeedbackFrame = () => {
+    const cues = createCombatFeedbackCues(nextCueSequence);
+    const localAnticipations = new Set<string>();
+    for (let index = 0; index < 4; index += 1) {
+      const cueIndex = index * 4;
+      const cue = cues[cueIndex];
+      if (cue === undefined) {
+        continue;
+      }
+      const correlationId = `benchmark.player.1.rifle.${cue.sequence}`;
+      const projectileId = `benchmark.execution.${cue.sequence}.projectile`;
+      startOutpostAnticipatedTracer(options, feedback, {
+        correlationId,
+        position: { x: 800, y: 500 },
+        aim: { x: 1_200, y: 500 },
+        elapsed
+      });
+      cues[cueIndex] = {
+        ...cue,
+        sourceObjectId: "benchmark.player.1",
+        projectileId,
+        correlationId
+      };
+      localAnticipations.add(correlationId);
+      const fireTick = Math.round(elapsed / FIXED_DELTA_MS);
+      predictionFrame.records.push({
+        projectileId,
+        correlationId,
+        generation: predictionFrame.generation,
+        definitionId: "combat.outpost.projectile.rifle",
+        definitionVersion: "outpost.rifle-projectile.v1",
+        fireTick,
+        fixedDeltaMs: FIXED_DELTA_MS,
+        firePosition: { x: 834, y: 500 },
+        fireVelocity: { x: 760, y: 0 },
+        expiresTick: fireTick + 72
+      });
+    }
+    if (predictionFrame.records.length > 128) {
+      predictionFrame.records.splice(0, predictionFrame.records.length - 128);
+    }
+    predictionFrame.authorityElapsedMs = elapsed;
+    const cueWatermark = nextCueSequence + cues.length - 1;
+    presentation.update({ active: true, cueWatermark, cues });
+    syncOutpostCombatFeedback(options, feedback, {
+      presentation,
+      playerFrame: {
+        elapsed,
+        active: true,
+        health: 100,
+        fireHeld: true,
+        fireSequence: cueWatermark,
+        aim: { x: 900 + (cueWatermark % 40), y: 500 + (cueWatermark % 20) }
+      },
+      elapsed,
+      localAnticipations
+    });
+    maximumCombatFeedbackObjects = Math.max(
+      maximumCombatFeedbackObjects,
+      renderer.objects().length
+    );
+    maximumRecordProjectiles = Math.max(maximumRecordProjectiles, feedback.recordProjectiles.size);
+    nextCueSequence += cues.length;
+    elapsed += 50;
+  };
+
+  for (let frame = 0; frame < COMBAT_FEEDBACK_WARMUP_FRAMES; frame += 1) {
+    advanceFeedbackFrame();
+  }
+  const startedAt = performance.now();
+  for (let frame = 0; frame < COMBAT_FEEDBACK_FRAMES; frame += 1) {
+    advanceFeedbackFrame();
+  }
+  const durationMs = performance.now() - startedAt;
+
+  disposeOutpostCombatFeedback(options, feedback);
+  return {
+    microsecondsPerCombatFeedbackFrame: round((durationMs * 1_000) / COMBAT_FEEDBACK_FRAMES),
+    maximumCombatFeedbackObjects,
+    maximumRecordProjectiles,
+    retainedCombatFeedbackObjectsAfterDispose: renderer.objects().length,
+    retainedRecordProjectilesAfterDispose: feedback.recordProjectiles.size
+  };
+}
+
+function createCombatFeedbackCues(firstSequence: number): OutpostReplicatedCombatCue[] {
+  return Array.from({ length: COMBAT_CUES }, (_, index) => {
+    const sequence = firstSequence + index;
+    const variant = index % 4;
+    const common = {
+      sequence,
+      at: sequence * 50,
+      position: { x: 700 + (index % 16) * 8, y: 460 + (index % 8) * 10 },
+      direction: { x: variant % 2 === 0 ? 1 : -1, y: 0 }
+    };
+    if (variant === 0) {
+      return {
+        ...common,
+        kind: "projectile-spawned",
+        sourceObjectId: `benchmark.enemy.${index}`
+      };
+    }
+    if (variant === 1) {
+      return {
+        ...common,
+        kind: "shield-hit",
+        sourceObjectId: "benchmark.player.1",
+        targetObjectId: `benchmark.enemy.${index}`,
+        amount: 8
+      };
+    }
+    if (variant === 2) {
+      return {
+        ...common,
+        kind: "health-hit",
+        sourceObjectId: `benchmark.enemy.${index}`,
+        targetObjectId: "benchmark.player.1",
+        amount: 12
+      };
+    }
+    return {
+      ...common,
+      kind: "world-impact",
+      sourceObjectId: "benchmark.player.1"
+    };
+  });
+}
+
 function createSnapshot(): OutpostMatchAuthoritySnapshot {
   return {
     phase: "running",
@@ -243,6 +425,8 @@ function createSnapshot(): OutpostMatchAuthoritySnapshot {
     combat: {
       actors: [],
       projectiles: [],
+      projectileGeneration: "benchmark.session",
+      projectileRecords: [],
       cueWatermark: 0,
       cues: [],
       acceptedCommands: 0,
@@ -274,6 +458,7 @@ function advanceSnapshot(
   snapshot.elapsedMs = tick * 50;
   snapshot.combat.actors = [];
   snapshot.combat.projectiles = [];
+  snapshot.combat.projectileRecords = [];
   snapshot.participants = Array.from({ length: playerCount }, (_, slot) => ({
     peerId: `benchmark.peer.${slot + 1}`,
     playerId: `benchmark.player.${slot + 1}`,
@@ -355,6 +540,21 @@ function advanceCombatSnapshot(snapshot: OutpostMatchAuthoritySnapshot, tick: nu
     velocityY: 0,
     facing: index % 2 === 0 ? 0 : Math.PI
   }));
+  const fireTick = Math.max(0, Math.round(snapshot.elapsedMs / FIXED_DELTA_MS) - 2);
+  snapshot.combat.projectileRecords = snapshot.combat.projectiles
+    .slice(0, 128)
+    .map((projectile, index) => ({
+      projectileId: `benchmark.projectile-record.${index}`,
+      correlationId: `benchmark.projectile-correlation.${index}`,
+      generation: snapshot.combat.projectileGeneration,
+      definitionId: "combat.outpost.projectile.rifle",
+      definitionVersion: "outpost.rifle-projectile.v1",
+      fireTick,
+      fixedDeltaMs: FIXED_DELTA_MS,
+      firePosition: { x: projectile.x, y: projectile.y },
+      fireVelocity: { x: projectile.velocityX, y: projectile.velocityY },
+      expiresTick: fireTick + 72
+    }));
   const firstCueSequence = snapshot.combat.cueWatermark + 1;
   snapshot.combat.cueWatermark += COMBAT_CUES;
   snapshot.combat.cues = Array.from({ length: COMBAT_CUES }, (_, index) => ({
@@ -372,6 +572,40 @@ function advanceCombatSnapshot(snapshot: OutpostMatchAuthoritySnapshot, tick: nu
     normal: { x: index % 2 === 0 ? -1 : 1, y: 0 },
     amount: 12
   }));
+}
+
+function advanceCombatSchemaSnapshot(snapshot: OutpostMatchAuthoritySnapshot, tick: number): void {
+  snapshot.tick = tick;
+  snapshot.elapsedMs = tick * 50;
+  for (const player of snapshot.players) {
+    player.x += 0.25;
+  }
+  for (const actor of snapshot.combat.actors) {
+    actor.x += actor.kind === "player" ? 0.25 : actor.velocityX >= 0 ? 0.35 : -0.35;
+  }
+  for (let index = 0; index < snapshot.combat.projectiles.length; index += 1) {
+    const projectile = snapshot.combat.projectiles[index];
+    if (projectile === undefined) {
+      continue;
+    }
+    projectile.x = 180 + ((index * 37 + tick * 5) % 1440);
+    projectile.y = 100 + ((index * 53 + tick * 3) % 800);
+  }
+  const firstCueSequence = snapshot.combat.cueWatermark + 1;
+  snapshot.combat.cueWatermark += snapshot.combat.cues.length;
+  for (let index = 0; index < snapshot.combat.cues.length; index += 1) {
+    const cue = snapshot.combat.cues[index];
+    if (cue === undefined) {
+      continue;
+    }
+    cue.sequence = firstCueSequence + index;
+    cue.at = snapshot.elapsedMs;
+    cue.correlationId = `benchmark.schema-combat.${tick}.${index}`;
+    if (cue.position !== undefined) {
+      cue.position.x = 180 + ((index * 37 + tick * 5) % 1440);
+      cue.position.y = 100 + ((index * 53 + tick * 3) % 800);
+    }
+  }
 }
 
 function applySnapshot(

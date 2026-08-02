@@ -65,6 +65,21 @@ Authority result 是最终空间与玩法事实。客户端收到 record/result 
 effect、ammo/cost、damage、kill 或 status。Remote proxy 不从“当前收到位置”向前猜，而是按 authority fire/
 finish record 和 remote presentation timeline 重建。
 
+Owner prediction 与 remote proxy 使用不同 presentation time domain。Authority record 可能因为 fixed authority
+tick、ability commit 和 transport 晚于 owner anticipation 建立；identity 与 shot-relative trajectory 匹配后，
+owner 必须以当前 predicted shot age 采样 authority record，而不是按 authority 的较晚绝对 `fireTick` 回到过去。
+该绝对 tick offset 只用于 diagnostics，不产生 position correction。Remote proxy 继续使用 remote authority
+presentation time。只有 fire position/velocity、definition、finish 等空间事实真正分叉时才执行有界 correction；
+不能用 correction smoothing 吸收正常的网络/commit 时间差，因为这会直接表现为投射物减速。
+
+这条规则不是 projectile 专用 lerp。Multiplayer Core 通过
+`createMultiplayerTimeAlignedPresentationTransition(...)` 提供通用 stable key/version、absolute 或
+relative-origin sampling、bounded entry、hold、residual correction 与 diagnostics lifecycle。门、移动平台、技能
+轨迹或其他以 start record 确定重建的对象可以复用同一 primitive；domain 只提供 sampler、事实 reconciliation 和
+declarative presentation fields。输入驱动预测仍走 authority state + unacknowledged input replay，远端对象仍走
+snapshot interpolation，动态刚体交互仍走 prediction-island checkpoint/resimulation，不能用一个 handoff helper
+冒充全部 netcode。
+
 ### Predicted entity 必须以 prediction island 为回滚单位
 
 `predicted-entity` 不能只回滚一个 subject body，却让它与留在未来状态的动态 body 碰撞。Multiplayer Core 管理
@@ -88,13 +103,16 @@ lifecycle。任何需要这些能力的对象必须选择 `kinematic-data-buffer
 ### 能力归属
 
 - Multiplayer Core 定义 provider-neutral tick/input history、prediction domain lifecycle、predicted-spawn identity
-  与 match result、bounded replay/reset/overflow diagnostics；不依赖 Physics 或 Combat。
+  与 match result、time-aligned lifecycle presentation、bounded replay/reset/overflow diagnostics；不依赖 Physics
+  或 Combat。
 - Physics Core 保留单主体 transition，并为需要 resimulation 的 backend 提供显式 capability、scene checkpoint/
   restore 与 prediction-island transition；不依赖 Multiplayer。
 - Combat 定义标准 projectile network strategy vocabulary、fire/finish spatial record、authority result 与 lifecycle
-  correlation；它不让 client 执行 authority target/effect validation。
-- App/Data 为 projectile definition 声明策略和预算，组合上述协议，并提供玩法特有的 target/history policy；不
-  拥有通用 rollback loop、solver cache 或逐武器网络状态机。
+  correlation，以及 record sampler 和事实 reconciliation；它不让 client 执行 authority target/effect validation，
+  也不拥有 Multiplayer handoff state machine。
+- App Host 提供 Combat record + Multiplayer time-aligned transition 的标准组合；App/Data 为 projectile definition
+  声明策略和预算，并提供玩法特有的 target/history policy，不拥有通用 rollback loop、solver cache、handoff
+  entry map 或逐武器网络状态机。
 - Backend adapter 只负责 transport/state mapping 或 Physics backend checkpoint；Colyseus/Rapier 类型不能进入
   gameplay 公共协议。
 

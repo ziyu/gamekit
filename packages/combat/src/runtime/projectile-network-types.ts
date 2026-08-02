@@ -103,11 +103,30 @@ export type CombatKinematicProjectileAdvanceResult = {
 
 export type CombatKinematicProjectileReconciliation = {
   status: "pending" | "confirmed" | "corrected";
+  timeline: "absolute" | "shot-relative";
+  fireTickError: number;
   firePositionError: number;
   fireVelocityError: number;
+  fireSpeedError: number;
+  fireDirectionErrorRadians: number;
   finishPositionError: number;
   finishTickError: number;
   reasonMatches: boolean;
+};
+
+export type CombatKinematicProjectileReconciliationOptions = {
+  /**
+   * Absolute compares authority ticks directly. Shot-relative compares each lifecycle from its
+   * own fire tick, which is required when an owner predicts before the authority commits.
+   */
+  timeline?: "absolute" | "shot-relative" | undefined;
+  epsilon?: number | undefined;
+  firePositionTolerance?: number | undefined;
+  fireVelocityTolerance?: number | undefined;
+  fireSpeedTolerance?: number | undefined;
+  fireDirectionToleranceRadians?: number | undefined;
+  finishPositionTolerance?: number | undefined;
+  finishTickTolerance?: number | undefined;
 };
 
 export type CombatKinematicProjectileRecordBufferDiagnostics = {

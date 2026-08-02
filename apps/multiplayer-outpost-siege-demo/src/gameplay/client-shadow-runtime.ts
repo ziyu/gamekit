@@ -6,6 +6,7 @@ import {
 } from "@gamekit/animator-core";
 import type { AnimationPlaybackAdapter } from "@gamekit/animator-core/playback";
 import type { GameAudio } from "@gamekit/audio-core";
+import type { CombatKinematicProjectileRecord } from "@gamekit/combat";
 import { defineGameModule } from "@gamekit/core";
 import type { DataRegistry } from "@gamekit/data";
 import { createEventBus, type EventBus } from "@gamekit/event-bus";
@@ -31,8 +32,7 @@ import {
   PhysicsVelocityComponent,
   type PhysicsBackendAdapter,
   type PhysicsBodyData,
-  type PhysicsColliderData,
-  type PhysicsSceneData
+  type PhysicsColliderData
 } from "@gamekit/physics-core";
 import type { RendererAdapter } from "@gamekit/renderer-core";
 import type { EntityId, GameWorld } from "@gamekit/world";
@@ -48,7 +48,7 @@ import {
   type OutpostReplicatedWeaponFeedback,
   type OutpostWeaponDefinition
 } from "../domain";
-import { OUTPOST_ARENA_PHYSICS_LAYOUT_ID, OUTPOST_ARENA_PHYSICS_SCENE_ID } from "../content";
+import { createOutpostArenaPhysicsSceneConfig, OUTPOST_ARENA_PHYSICS_LAYOUT_ID } from "../content";
 import {
   createOutpostIdentityRegistry,
   type OutpostIdentityRegistry
@@ -76,6 +76,7 @@ const MAX_PARTICIPANTS = 8;
 const MAX_PLAYERS = 4;
 const MAX_COMBAT_ACTORS = 1_024;
 const MAX_PROJECTILES = 2_048;
+const MAX_PROJECTILE_RECORDS = 128;
 const MAX_COMBAT_CUES = 64;
 
 export type OutpostClientMatchPhase = "lobby" | "countdown" | "running";
@@ -286,6 +287,8 @@ export function createOutpostClientShadowRuntime(
             health: actor?.health ?? 0,
             fireHeld: state.input.fireHeld,
             fireSequence: state.input.fireSequence,
+            aimX: state.input.aimX,
+            aimY: state.input.aimY,
             ...(actor?.weapon === undefined ? {} : { weapon: actor.weapon })
           };
         }
@@ -308,10 +311,22 @@ export function createOutpostClientShadowRuntime(
               animator: options.animationAdapter === undefined ? undefined : animator,
               audio: options.audio,
               camera: options.camera,
+              physicsBackend: options.physicsBackend,
               playerPresentation,
               combatPresentation,
               listenerObjectId: options.localPlayerId,
               applyRenderTargetState: options.applyRenderTargetState,
+              readProjectilePredictionFrame() {
+                const match = state.received;
+                return match === undefined
+                  ? undefined
+                  : {
+                      generation: match.combat.projectileGeneration,
+                      authorityElapsedMs: match.elapsedMs,
+                      actors: match.combat.actors,
+                      records: match.combat.projectileRecords
+                    };
+              },
               readObjectState(objectId) {
                 return (
                   state.presentedPlayers.get(objectId) ?? state.presentedCombatObjects.get(objectId)
@@ -488,7 +503,7 @@ function createClientReplicationModule(
         inputRateHz: OUTPOST_NETWORK_TIMING.tickRateHz,
         maxCatchUpSteps: 2,
         maxInFlightSends: 4,
-        maxPredictionLeadInputs: 8,
+        maxPredictionLeadInputs: 2,
         buffer: {
           cloneState: clonePredictedPlayerState,
           transition: physicsTransition,
@@ -921,10 +936,7 @@ function createOutpostPredictionTransitionFactory(
       .filter((collider) => collider.enabled)
       .map((collider) => collider.definition)
   };
-  const { materials: _materials, ...scene } = state.dataRegistry.getValue<PhysicsSceneData>(
-    "physics.scene",
-    OUTPOST_ARENA_PHYSICS_SCENE_ID
-  );
+  const scene = createOutpostArenaPhysicsSceneConfig(state.dataRegistry);
   const subjectBodyId = "outpost.client-prediction.player.body";
   const subjectColliderId = "outpost.client-prediction.player.collider";
   const subjectBody = toPredictionBodyDefinition(bodyData, subjectBodyId);
@@ -1264,6 +1276,9 @@ function readCombatState(value: unknown): OutpostReplicatedCombatState | undefin
     value.actors.length > MAX_COMBAT_ACTORS ||
     !Array.isArray(value.projectiles) ||
     value.projectiles.length > MAX_PROJECTILES ||
+    !nonEmptyString(value.projectileGeneration) ||
+    !Array.isArray(value.projectileRecords) ||
+    value.projectileRecords.length > MAX_PROJECTILE_RECORDS ||
     !nonNegativeInteger(value.cueWatermark) ||
     !Array.isArray(value.cues) ||
     value.cues.length > MAX_COMBAT_CUES ||
@@ -1279,6 +1294,7 @@ function readCombatState(value: unknown): OutpostReplicatedCombatState | undefin
   }
   const actors = value.actors.map(readCombatActor);
   const projectiles = value.projectiles.map(readCombatProjectile);
+  const projectileRecords = value.projectileRecords.map(readKinematicProjectileRecord);
   const cues = value.cues.map(readCombatCue).sort((left, right) => {
     if (left === undefined) {
       return 1;
@@ -1291,6 +1307,10 @@ function readCombatState(value: unknown): OutpostReplicatedCombatState | undefin
   if (
     actors.some((actor) => !actor) ||
     projectiles.some((projectile) => !projectile) ||
+    projectileRecords.some((record) => !record) ||
+    projectileRecords.some(
+      (record) => record !== undefined && String(record.generation) !== value.projectileGeneration
+    ) ||
     cues.some((cue) => !cue) ||
     cues.some((cue, index) => index > 0 && cue!.sequence <= cues[index - 1]!.sequence) ||
     (cues.at(-1)?.sequence ?? 0) > value.cueWatermark
@@ -1300,6 +1320,8 @@ function readCombatState(value: unknown): OutpostReplicatedCombatState | undefin
   return {
     actors: actors as OutpostReplicatedActor[],
     projectiles: projectiles as OutpostReplicatedProjectile[],
+    projectileGeneration: value.projectileGeneration,
+    projectileRecords: projectileRecords as CombatKinematicProjectileRecord[],
     cueWatermark: value.cueWatermark,
     cues: cues as OutpostReplicatedCombatCue[],
     acceptedCommands: value.acceptedCommands,
@@ -1488,6 +1510,79 @@ function readCombatProjectile(value: unknown): OutpostReplicatedProjectile | und
   };
 }
 
+function readKinematicProjectileRecord(
+  value: unknown
+): CombatKinematicProjectileRecord | undefined {
+  if (
+    !isRecord(value) ||
+    !nonEmptyString(value.projectileId) ||
+    !nonEmptyString(value.correlationId) ||
+    (!nonEmptyString(value.generation) && !nonNegativeInteger(value.generation)) ||
+    !nonEmptyString(value.definitionId) ||
+    !nonEmptyString(value.definitionVersion) ||
+    !nonNegativeInteger(value.fireTick) ||
+    !finite(value.fixedDeltaMs) ||
+    value.fixedDeltaMs <= 0 ||
+    !requiredVector(value.firePosition) ||
+    !requiredVector(value.fireVelocity) ||
+    !nonNegativeInteger(value.expiresTick) ||
+    value.expiresTick < value.fireTick
+  ) {
+    return undefined;
+  }
+  const finish =
+    value.finish === undefined ? undefined : readKinematicProjectileFinish(value.finish);
+  if (value.finish !== undefined && finish === undefined) {
+    return undefined;
+  }
+  return {
+    projectileId: value.projectileId,
+    correlationId: value.correlationId,
+    generation: value.generation,
+    definitionId: value.definitionId,
+    definitionVersion: value.definitionVersion,
+    fireTick: value.fireTick,
+    fixedDeltaMs: value.fixedDeltaMs,
+    firePosition: { ...value.firePosition },
+    fireVelocity: { ...value.fireVelocity },
+    expiresTick: value.expiresTick,
+    ...(finish === undefined ? {} : { finish })
+  };
+}
+
+function readKinematicProjectileFinish(
+  value: unknown
+): NonNullable<CombatKinematicProjectileRecord["finish"]> | undefined {
+  if (
+    !isRecord(value) ||
+    !nonNegativeInteger(value.tick) ||
+    !nonEmptyString(value.reason) ||
+    !requiredVector(value.position) ||
+    !optionalVector(value.normal)
+  ) {
+    return undefined;
+  }
+  const subject = value.subject;
+  if (
+    subject !== undefined &&
+    (!isRecord(subject) ||
+      !optionalNonEmptyString(subject.actorId) ||
+      (!optionalNonEmptyString(subject.entityId) &&
+        !(subject.entityId === undefined || nonNegativeInteger(subject.entityId))) ||
+      !optionalNonEmptyString(subject.bodyId) ||
+      !optionalNonEmptyString(subject.colliderId))
+  ) {
+    return undefined;
+  }
+  return {
+    tick: value.tick,
+    reason: value.reason,
+    position: { ...value.position },
+    ...(value.normal === undefined ? {} : { normal: { ...value.normal } }),
+    ...(subject === undefined ? {} : { subject: { ...subject } })
+  };
+}
+
 function readCombatCue(value: unknown): OutpostReplicatedCombatCue | undefined {
   if (
     !isRecord(value) ||
@@ -1549,6 +1644,25 @@ function cloneAuthoritySnapshot(
             })
       })),
       projectiles: snapshot.combat.projectiles.map((projectile) => ({ ...projectile })),
+      projectileRecords: snapshot.combat.projectileRecords.map((record) => ({
+        ...record,
+        firePosition: { ...record.firePosition },
+        fireVelocity: { ...record.fireVelocity },
+        ...(record.finish === undefined
+          ? {}
+          : {
+              finish: {
+                ...record.finish,
+                position: { ...record.finish.position },
+                ...(record.finish.normal === undefined
+                  ? {}
+                  : { normal: { ...record.finish.normal } }),
+                ...(record.finish.subject === undefined
+                  ? {}
+                  : { subject: { ...record.finish.subject } })
+              }
+            })
+      })),
       cues: snapshot.combat.cues.map((cue) => ({
         ...cue,
         ...(cue.position === undefined ? {} : { position: { ...cue.position } }),
@@ -1594,6 +1708,10 @@ function optionalNonNegativeFinite(value: unknown): value is number | undefined 
 
 function optionalVector(value: unknown): value is { x: number; y: number } | undefined {
   return value === undefined || (isRecord(value) && finite(value.x) && finite(value.y));
+}
+
+function requiredVector(value: unknown): value is { x: number; y: number } {
+  return isRecord(value) && finite(value.x) && finite(value.y);
 }
 
 function isCombatCueKind(value: unknown): value is OutpostReplicatedCombatCue["kind"] {

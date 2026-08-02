@@ -1,3 +1,3 @@
-import type { OutpostDiscreteCombatAbility } from "../types";
+import type { OutpostCombatAbility } from "../types";
 
-export type OutpostPlayerAction = "reload" | OutpostDiscreteCombatAbility;
+export type OutpostPlayerAction = "reload" | OutpostCombatAbility;

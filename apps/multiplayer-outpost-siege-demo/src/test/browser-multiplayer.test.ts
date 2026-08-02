@@ -124,16 +124,36 @@ describe("Outpost Browser multiplayer", () => {
       abilityPhaseEndsAt: 400
     };
     snapshot.combat.projectiles = [combatProjectile("projectile.1")];
+    snapshot.combat.projectileRecords = [
+      {
+        projectileId: "projectile.1.record",
+        correlationId: "remote.rifle.1",
+        generation: snapshot.combat.projectileGeneration,
+        definitionId: "combat.outpost.projectile.rifle",
+        definitionVersion: "outpost.rifle-projectile.v1",
+        fireTick: 0,
+        fixedDeltaMs: 1000 / 60,
+        firePosition: { x: 682, y: 500 },
+        fireVelocity: { x: 760, y: 0 },
+        expiresTick: 72
+      }
+    ];
     await sendSnapshot(server, snapshot);
     client.runtime.tick(16);
 
     expect(world.count()).toBe(3);
+    expect(audio.snapshot().spatial.listeners).toMatchObject([
+      {
+        id: "outpost.listener.player.ranger-1",
+        transform: { position: { x: 800, y: 500 } }
+      }
+    ]);
     expect(client.identity.snapshot()).toHaveLength(3);
     expect(renderer.objects().map((object) => object.id)).toEqual(
       expect.arrayContaining([
         "outpost.client.player.0.0",
         "outpost.client.enemy.enemy.opening.1.0",
-        "outpost.client.projectile.projectile.1.0"
+        projectileObjectId(snapshot.combat.projectileGeneration, "remote.rifle.1")
       ])
     );
     expect(client.animator.listControllers()).toHaveLength(2);
@@ -159,13 +179,21 @@ describe("Outpost Browser multiplayer", () => {
 
     snapshot.tick = 2;
     snapshot.elapsedMs = 100;
+    snapshot.players[0]!.x = 920;
     snapshot.combat.actors[0]!.tags = ["status.shocked", "team.enemies"];
     snapshot.combat.projectiles = [];
+    snapshot.combat.projectileRecords = [];
     await sendSnapshot(server, snapshot);
     client.runtime.tick(16);
 
     expect(world.count()).toBe(2);
     expect(client.identity.snapshot()).toHaveLength(2);
+    expect(audio.snapshot().spatial.listeners).toMatchObject([
+      {
+        id: "outpost.listener.player.ranger-1",
+        transform: { position: { x: 920, y: 500 } }
+      }
+    ]);
     expect(targetStates.get("outpost.client.enemy.enemy.opening.1.0")).toMatchObject({
       tint: 0x63fff2
     });
@@ -254,6 +282,75 @@ describe("Outpost Browser multiplayer", () => {
     await server.dispose();
   });
 
+  it("bounds prediction lead and preserves a short rifle edge while authority catches up", async () => {
+    const backend = createMemoryMultiplayerBackend({ id: "outpost.client-input-latency.test" });
+    const server = createMultiplayerRuntime({ id: "server", backend });
+    const multiplayer = createMultiplayerRuntime({ id: "client", backend });
+    await server.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "session.server", role: "server" }
+    });
+    await multiplayer.joinSession({
+      sessionId: "session-1",
+      localPeer: { id: "ranger-1", role: "client", playerId: "player.ranger-1" }
+    });
+    const receivedInputs: Array<{ fireHeld?: boolean; fireSequence?: number; sequence?: number }> =
+      [];
+    const unsubscribe = server.subscribe((message) => {
+      if (message.kind === "game.input") {
+        receivedInputs.push(
+          message.payload as { fireHeld?: boolean; fireSequence?: number; sequence?: number }
+        );
+      }
+    });
+    const client = createOutpostClientShadowRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world: createKootaWorld(),
+      multiplayer,
+      physicsBackend: createMemoryPhysicsBackend(),
+      localPlayerId: "player.ranger-1"
+    });
+    client.input.aimX = 900;
+    client.input.aimY = 500;
+    await client.runtime.start();
+    await sendSnapshot(server, {
+      ...authoritySnapshot(1, 1),
+      inputAcksByPeerId: { "ranger-1": 0 }
+    });
+
+    client.runtime.tick(0);
+    client.runtime.tick(50);
+    await waitFor(() => receivedInputs.length === 2);
+    client.input.fireSequence = 1;
+    client.runtime.tick(250);
+
+    expect(receivedInputs).toHaveLength(2);
+    expect(client.snapshot().replication).toMatchObject({
+      throttledInputs: expect.any(Number),
+      prediction: { pendingInputs: 2 }
+    });
+    expect(client.snapshot().replication?.throttledInputs).toBeGreaterThan(0);
+
+    await sendSnapshot(server, {
+      ...authoritySnapshot(2, 1),
+      inputAcksByPeerId: { "ranger-1": 1 }
+    });
+    client.runtime.tick(16);
+    await waitFor(() => receivedInputs.length === 3);
+    expect(receivedInputs[2]).toMatchObject({
+      sequence: 3,
+      fireHeld: false,
+      fireSequence: 1
+    });
+    expect(client.snapshot().replication?.prediction).toMatchObject({ pendingInputs: 2 });
+
+    unsubscribe();
+    await client.runtime.dispose();
+    await multiplayer.dispose();
+    await server.dispose();
+  });
+
   it("presents each authority combat cue once and bounds transient effects", async () => {
     const backend = createMemoryMultiplayerBackend({ id: "outpost.client-combat-cues.test" });
     const server = createMultiplayerRuntime({ id: "server", backend });
@@ -303,8 +400,8 @@ describe("Outpost Browser multiplayer", () => {
         .map((object) => object.id)
         .filter((objectId) => objectId.startsWith("outpost.combat-cue."));
     expect(combatEffectIds()).toHaveLength(48);
-    expect(combatEffectIds()).not.toContain("outpost.combat-cue.1");
-    expect(combatEffectIds()).toContain("outpost.combat-cue.50");
+    expect(combatEffectIds()).not.toContain("outpost.combat-cue.1.impact");
+    expect(combatEffectIds()).toContain("outpost.combat-cue.50.impact");
     expect(client.combatPresentation.snapshot()).toMatchObject({
       cueWatermark: 50,
       authorityCueWatermark: 50,
@@ -366,6 +463,8 @@ describe("Outpost Browser multiplayer", () => {
     snapshot.combat.actors = [playerCombatActor()];
     await client.runtime.start();
     await sendSnapshot(server, snapshot);
+    client.input.aimX = 920;
+    client.input.aimY = 500;
     client.runtime.tick(0);
     const playbackStartsBeforeFire = audioBackend
       .commands()
@@ -376,19 +475,50 @@ describe("Outpost Browser multiplayer", () => {
     client.runtime.tick(16);
 
     const muzzleId = "outpost.player-presentation.player.ranger-1.muzzle";
+    const crosshairId = "outpost.player-feedback.player.ranger-1.crosshair";
+    const tracerId = "outpost.player-feedback.tracer.player.ranger-1.rifle.1";
+    const predictedProjectileId = projectileObjectId(
+      snapshot.combat.projectileGeneration,
+      "player.ranger-1.rifle.1"
+    );
     expect(client.playerPresentation.snapshot()).toMatchObject({
       cueWatermark: 1,
       pendingAnticipations: 1,
       anticipatedShots: 1
     });
-    expect(renderer.objects().map((object) => object.id)).toContain(muzzleId);
-    expect(targetStates.get(muzzleId)).toMatchObject({ visible: true });
+    expect(renderer.objects().map((object) => object.id)).toEqual(
+      expect.arrayContaining([crosshairId, tracerId, predictedProjectileId])
+    );
+    expect(renderer.objects().map((object) => object.id)).not.toContain(muzzleId);
+    expect(targetStates.get(crosshairId)).toMatchObject({
+      visible: true,
+      transform: { position: { x: 920, y: 500 } }
+    });
     expect(audioBackend.commands().filter((command) => command.type === "start")).toHaveLength(
       playbackStartsBeforeFire + 1
     );
 
+    client.runtime.tick(32);
+    expect(targetStates.get(predictedProjectileId)).toMatchObject({
+      visible: true,
+      alpha: 1,
+      transform: { position: { x: expect.any(Number), y: 500 } }
+    });
+    expect(
+      (
+        targetStates.get(predictedProjectileId)?.transform as
+          | { position?: { x?: number } }
+          | undefined
+      )?.position?.x
+    ).toBeGreaterThan(834);
+    const predictedPositionBeforeAuthority = (
+      targetStates.get(predictedProjectileId)?.transform as
+        | { position?: { x?: number } }
+        | undefined
+    )?.position?.x;
+
     snapshot.tick = 2;
-    snapshot.elapsedMs = 16;
+    snapshot.elapsedMs = 48;
     snapshot.combat.actors[0] = {
       ...snapshot.combat.actors[0]!,
       weapon: {
@@ -398,6 +528,40 @@ describe("Outpost Browser multiplayer", () => {
         lastShotCorrelationId: "player.ranger-1.rifle.1"
       }
     };
+    snapshot.combat.cueWatermark = 1;
+    const authorityProjectileObjectId = "player.ranger-1.rifle.1.projectile";
+    snapshot.combat.projectiles = [
+      {
+        ...combatProjectile(authorityProjectileObjectId),
+        x: 850
+      }
+    ];
+    snapshot.combat.projectileRecords = [
+      {
+        projectileId: authorityProjectileObjectId,
+        correlationId: "player.ranger-1.rifle.1",
+        generation: snapshot.combat.projectileGeneration,
+        definitionId: "combat.outpost.projectile.rifle",
+        definitionVersion: "outpost.rifle-projectile.v1",
+        fireTick: 1,
+        fixedDeltaMs: 1000 / 60,
+        firePosition: { x: 834, y: 500 },
+        fireVelocity: { x: 760, y: 0 },
+        expiresTick: 73
+      }
+    ];
+    snapshot.combat.cues = [
+      {
+        sequence: 1,
+        kind: "projectile-spawned",
+        at: 48,
+        sourceObjectId: "player.ranger-1",
+        projectileId: authorityProjectileObjectId,
+        position: { x: 834, y: 500 },
+        direction: { x: 1, y: 0 },
+        correlationId: "player.ranger-1.rifle.1"
+      }
+    ];
     await sendSnapshot(server, snapshot);
     client.runtime.tick(16);
 
@@ -406,8 +570,52 @@ describe("Outpost Browser multiplayer", () => {
       pendingAnticipations: 0,
       confirmedShots: 1
     });
+    expect(renderer.objects().map((object) => object.id)).toContain(predictedProjectileId);
+    expect(renderer.objects().filter((object) => object.id === predictedProjectileId)).toHaveLength(
+      1
+    );
+    expect(targetStates.get(predictedProjectileId)).toMatchObject({
+      transform: { position: { x: expect.any(Number), y: 500 } }
+    });
+    const reconciledPosition = (
+      targetStates.get(predictedProjectileId)?.transform as
+        | { position?: { x?: number } }
+        | undefined
+    )?.position?.x;
+    expect(reconciledPosition).toBeGreaterThanOrEqual(predictedPositionBeforeAuthority ?? 0);
+
+    client.runtime.tick(16);
+    const reconstructedPosition = (
+      targetStates.get(predictedProjectileId)?.transform as
+        | { position?: { x?: number } }
+        | undefined
+    )?.position?.x;
+    expect(reconstructedPosition).toBeGreaterThan(reconciledPosition ?? 0);
+
+    snapshot.tick = 3;
+    snapshot.elapsedMs = 64;
+    snapshot.combat.cueWatermark = 2;
+    snapshot.combat.cues = [
+      {
+        sequence: 2,
+        kind: "health-hit",
+        at: 64,
+        sourceObjectId: "player.ranger-1",
+        targetObjectId: "enemy.raider-1",
+        projectileId: authorityProjectileObjectId,
+        position: { x: 875, y: 500 },
+        direction: { x: 1, y: 0 },
+        amount: 12,
+        correlationId: "player.ranger-1.rifle.1"
+      }
+    ];
+    await sendSnapshot(server, snapshot);
+    client.runtime.tick(16);
+
+    expect(renderer.objects().map((object) => object.id)).not.toContain(predictedProjectileId);
+    expect(renderer.objects().map((object) => object.id)).toContain("outpost.combat-cue.2.impact");
     expect(audioBackend.commands().filter((command) => command.type === "start")).toHaveLength(
-      playbackStartsBeforeFire + 1
+      playbackStartsBeforeFire + 2
     );
 
     await client.runtime.dispose();
@@ -566,6 +774,8 @@ function authoritySnapshot(tick: number, playerCount: number): OutpostClientAuth
     combat: {
       actors: [],
       projectiles: [],
+      projectileGeneration: "browser-test",
+      projectileRecords: [],
       cueWatermark: 0,
       cues: [],
       acceptedCommands: 0,
@@ -580,6 +790,10 @@ function authoritySnapshot(tick: number, playerCount: number): OutpostClientAuth
       Array.from({ length: playerCount }, (_, slot) => [`ranger-${slot + 1}`, tick])
     )
   };
+}
+
+function projectileObjectId(generation: string, correlationId: string): string {
+  return `outpost.combat-projectile.${generation}.${correlationId}`;
 }
 
 function combatActor(

@@ -616,6 +616,13 @@ function resolveCombatCoreHit(
     parentId: context.parentId ?? hit.ticketId
   });
   const position = hit.point ?? actorPosition(state, hit.targetActorId);
+  const sourcePosition = actorPosition(state, hit.sourceActorId);
+  const target = state.objectsByActorId.get(hit.targetActorId);
+  const targetPosition =
+    target === undefined
+      ? position
+      : requireTransform(state.options.world, target.entityId).position;
+  const direction = normalizedCueDirection(sourcePosition, targetPosition);
   const cueContext = {
     at: state.elapsedMs,
     sourceObjectId: combatObjectIdForActor(state, hit.sourceActorId),
@@ -623,6 +630,7 @@ function resolveCombatCoreHit(
     ...(hit.projectileId === undefined ? {} : { projectileId: hit.projectileId }),
     ...(position === undefined ? {} : { position }),
     ...(hit.normal === undefined ? {} : { normal: hit.normal }),
+    ...(direction === undefined ? {} : { direction }),
     correlationId: context.correlationId ?? hit.ticketId,
     parentId: context.parentId ?? hit.ticketId
   };
@@ -643,10 +651,7 @@ function resolveCombatCoreHit(
   if (damageResult.killed) {
     state.cueStream.append({ kind: "kill-confirmed", ...cueContext });
   }
-  const target = state.objectsByActorId.get(hit.targetActorId);
-  if (target !== undefined) {
-    const sourcePosition = actorPosition(state, hit.sourceActorId);
-    const targetPosition = requireTransform(state.options.world, target.entityId).position;
+  if (target !== undefined && targetPosition !== undefined) {
     if (sourcePosition !== undefined) {
       applyKnockback(
         state,
@@ -659,6 +664,19 @@ function resolveCombatCoreHit(
       );
     }
   }
+}
+
+function normalizedCueDirection(
+  source: { x: number; y: number } | undefined,
+  target: { x: number; y: number } | undefined
+): { x: number; y: number } | undefined {
+  if (source === undefined || target === undefined) {
+    return undefined;
+  }
+  const x = target.x - source.x;
+  const y = target.y - source.y;
+  const length = Math.hypot(x, y);
+  return length <= Number.EPSILON ? undefined : { x: x / length, y: y / length };
 }
 
 function actorPosition(state: CombatState, actorId: string): PhysicsVector | undefined {

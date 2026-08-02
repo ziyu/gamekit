@@ -130,11 +130,19 @@ Combat 定义 strategy vocabulary 和 projectile spatial record，不依赖 Mult
 `finishTick`、hit point/normal、finish reason 和公开 subject identity。Record 使用固定容量 ring、最大 lifetime
 和明确过期规则；fire 与 finish 各更新一次，不按 render frame 复制 transform。
 
-标准实现由三个窄入口组成：`createCombatKinematicProjectileRecordBuffer(...)` 管有界 fire/finish history，
+标准实现由四个窄入口组成：`createCombatKinematicProjectileRecordBuffer(...)` 管有界 fire/finish history，
 `createCombatKinematicProjectileRuntime(...)` 复用 Physics kinematic sweep 推进 owner/authority simulation，
 `sampleCombatKinematicProjectileRecord(...)` 按任意 presentation tick 重建 remote transform。
 `reconcileCombatKinematicProjectileRecords(...)` 只比较 fire/finish 空间事实并返回 pending/confirmed/corrected；
-它不应用 GAS effect 或修改 authority state。
+它可显式选择 absolute 或 shot-relative timeline，后者比较相对 fire age，而不把 owner anticipation 与 authority
+commit 的绝对 tick 偏移误判为弹道分叉。Combat 不再拥有通用 entry、时间对齐或 correction 状态机；App Host 的
+`createStandardCombatKinematicProjectilePresentationTransition(...)` 把上述 sampler/reconciliation 注入
+Multiplayer Core 的 `createMultiplayerTimeAlignedPresentationTransition(...)`。Shot-relative 模式以 owner 当前
+predicted shot age 采样匹配的 authority trajectory；authority commit 较晚产生的绝对 `fireTick` offset 只进入
+diagnostics，不能产生位置 correction 或改变弹体速度。只有起点、速度、方向或 finish 等真实空间事实分叉时才
+从当前 provisional sample 有界收敛，且在 authority finish 尚未到达时保留已经预测出的 provisional spatial
+finish。Absolute 模式继续按 authority tick 采样。标准组合不拥有 predicted-spawn identity，也不应用 GAS effect
+或修改 authority state。
 
 Client 的 predicted spatial result 始终是 provisional：可以即时停止弹体、播放可撤销 world impact，却不能
 提交 relationship/target validation、GAS effect、ammo/cost、damage、kill 或 status。Authority result 按稳定
@@ -307,3 +315,10 @@ Trace 默认只保存摘要和稳定 id，不保存完整 query payload 或每�
 - 为每个 projectile 声明最窄且语义完整的 network strategy。具有已知静态 blocker 的 owner prediction 必须在
   本地 sweep tick 停止，任何 frame 都不能把弹体画到 blocker 后方；远端默认从 authority record/state 重建，
   不预测其未知输入。
+- Owner 与 observer 必须从同一 authority record、generation/correlation visual identity 和 render definition
+  产生最终移动弹体。Owner 使用 local predicted shot age，observer 使用 remote authority presentation time；
+  两端屏幕位置不要求逐帧相等，但 authority 接管不能把 owner 拉回过期弹龄。匹配 trajectory 的绝对 fire-tick
+  offset 不进入 correction，真实空间分叉才通过 Combat presentation transition 有界收敛。Observer 可以在声明的
+  固定/adaptive remote presentation delay 上重建短命 record，但不能按“首次收到时间”逐弹重新启动一条本地
+  时钟。已经早于该 delayed authority tick 完成的 record 不得再次从 fire position 播放，漏帧反馈由 bounded
+  tracer/impact cue 表达。

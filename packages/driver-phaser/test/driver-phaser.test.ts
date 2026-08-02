@@ -163,6 +163,44 @@ describe("createPhaserAudioBackend", () => {
       state: { volume: 0.4, rate: 1.2, pan: 0.6, transitionMs: 25 }
     });
   });
+
+  it("mixes against an explicit listener instead of the implicit origin fallback", () => {
+    const native = createFakeAudioRuntime();
+    const audio = createGameAudio({
+      backend: createPhaserAudioBackend({ id: "phaser.audio", runtime: () => native.runtime }),
+      sfx: [
+        {
+          id: "event.spatial",
+          spatial: { minDistance: 0, maxDistance: 10, rolloff: "linear" },
+          layers: [
+            {
+              id: "main",
+              clips: [{ id: "main", asset: { assetId: "audio.spatial", type: "audio" } }]
+            }
+          ]
+        }
+      ]
+    });
+    audio.spatial.setListener({
+      id: "player.listener",
+      transform: { position: { x: 900, y: 500 } }
+    });
+    audio.spatial.setEmitter({
+      id: "enemy",
+      transform: { position: { x: 900, y: 500 } }
+    });
+
+    expect(audio.sfx.play("event.spatial", { emitterId: "enemy" }).status).toBe("playing");
+    expect(native.starts[0]).toMatchObject({ volume: 1, pan: 0 });
+
+    audio.spatial.setListener({
+      id: "player.listener",
+      transform: { position: { x: 895, y: 500 } }
+    });
+    expect(native.updates.at(-1)).toMatchObject({
+      state: { volume: 0.5, pan: 0.5 }
+    });
+  });
 });
 
 describe("Phaser audio runtime unlock", () => {

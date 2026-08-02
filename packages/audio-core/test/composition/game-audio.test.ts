@@ -63,6 +63,38 @@ describe("GameAudio composition", () => {
     ]);
   });
 
+  it("treats the origin listener as a fallback after an explicit listener is registered", () => {
+    const backend = createMemoryAudioBackend();
+    backend.capabilities.multipleListeners = false;
+    const audio = createGameAudio({ backend, ...baseCatalog() });
+
+    expect(audio.snapshot().spatial.listeners).toMatchObject([
+      { id: "main", transform: { position: { x: 0, y: 0 } } }
+    ]);
+
+    audio.spatial.setListener({
+      id: "player.listener",
+      transform: { position: { x: 900, y: 500 } }
+    });
+    audio.spatial.setEmitter({
+      id: "player.emitter",
+      transform: { position: { x: 900, y: 500 } }
+    });
+    expect(audio.sfx.play("sfx.spatial", { emitterId: "player.emitter" }).status).toBe("playing");
+
+    expect(audio.snapshot().spatial.listeners).toMatchObject([
+      { id: "player.listener", transform: { position: { x: 900, y: 500 } } }
+    ]);
+    expect(backend.instances()[0]?.listeners).toMatchObject([
+      { id: "player.listener", transform: { position: { x: 900, y: 500 } } }
+    ]);
+
+    expect(audio.spatial.removeListener("player.listener")).toBe(true);
+    expect(audio.snapshot().spatial.listeners).toMatchObject([
+      { id: "main", transform: { position: { x: 0, y: 0 } } }
+    ]);
+  });
+
   it("preserves borrowed backends and disposes owned backends", () => {
     const borrowed = createMemoryAudioBackend();
     const borrowedAudio = createGameAudio({

@@ -581,6 +581,7 @@ Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务�
 - Headless Host 是标准组合路径的测试入口。新增标准 service 或标准 game module helper 时，必须能在不启动浏览器/Tauri 的情况下测试生命周期和依赖顺序。
 - 多 profile app 应复用同一份 Definition/service graph，并用 headless/memory adapter 提供非视觉 service；正式 server 的 platform、physics、multiplayer 和 runtime owner 通过 profile 参数注入，不把 memory fixture 写死为生产 backend。
 - Authority app 使用 `game.modules(ctx)` 显式交错 standard/app modules 时，测试必须同时断言 module install order、system registration order、runtime handle unbind 和 cleanup reverse order。
+- 跨 Combat + Multiplayer 的 kinematic record presentation 使用 `createStandardCombatKinematicProjectilePresentationTransition(...)`；该 helper 只组合 Combat sampler/reconciliation 与 Multiplayer Core 的 time-aligned handoff，不创建第二个 Combat/Multiplayer runtime，也不拥有 renderer object。类似跨领域标准组合应留在 App Host，不能迫使两个 domain package 互相依赖。
 
 ### 模块使用
 

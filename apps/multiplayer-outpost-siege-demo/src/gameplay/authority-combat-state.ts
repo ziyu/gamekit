@@ -1,5 +1,10 @@
 import type { DataRegistry } from "@gamekit/data";
-import type { CombatHandle, CombatTraceStore } from "@gamekit/combat";
+import {
+  createCombatKinematicProjectileRecordBuffer,
+  type CombatHandle,
+  type CombatKinematicProjectileRecordBuffer,
+  type CombatTraceStore
+} from "@gamekit/combat";
 import type { EventBus } from "@gamekit/event-bus";
 import type { GasHandle, GasOperationContext } from "@gamekit/gas";
 import {
@@ -28,6 +33,7 @@ import type {
   OutpostAuthorityEnemySpawn
 } from "./authority-combat-types";
 import { createOutpostCombatCueStream, type OutpostCombatCueStream } from "./combat-cue-stream";
+import { OUTPOST_PROJECTILE_RECORD_LIMIT } from "./rifle-projectile-network";
 
 export const OUTPOST_COMBAT_PLAYER_DEFINITION_ID = "player.outpost.ranger";
 
@@ -41,6 +47,7 @@ export type CreateOutpostAuthorityCombatOptions = {
   combat: CombatHandle;
   combatTrace: CombatTraceStore;
   eventBus: EventBus;
+  projectileGeneration?: string | undefined;
   players(): ReadonlyMap<string, OutpostAuthorityCombatPlayer>;
   commands(): readonly OutpostAuthorityCombatCommand[];
   playerWeapon?(playerId: string): OutpostReplicatedWeaponState | undefined;
@@ -88,6 +95,9 @@ export type CombatState = {
     { actorId: string; correlationId?: string | undefined; parentId?: string | undefined }
   >;
   cueStream: OutpostCombatCueStream;
+  projectileGeneration: string;
+  projectileRecords: CombatKinematicProjectileRecordBuffer;
+  projectileRecordIdsByAuthorityId: Map<string, string>;
   elapsedMs: number;
   rememberCombatAim(actorId: string, point: PhysicsVector): void;
   initialWaveSpawned: boolean;
@@ -102,6 +112,7 @@ export type CombatState = {
 };
 
 export function createCombatState(options: CreateOutpostAuthorityCombatOptions): CombatState {
+  const projectileGeneration = options.projectileGeneration ?? "outpost.authority";
   return {
     options,
     objectsById: new Map(),
@@ -111,6 +122,12 @@ export function createCombatState(options: CreateOutpostAuthorityCombatOptions):
     knockbacksByObjectId: new Map(),
     pendingDeaths: new Map(),
     cueStream: createOutpostCombatCueStream(),
+    projectileGeneration,
+    projectileRecords: createCombatKinematicProjectileRecordBuffer({
+      generation: projectileGeneration,
+      capacity: OUTPOST_PROJECTILE_RECORD_LIMIT
+    }),
+    projectileRecordIdsByAuthorityId: new Map(),
     elapsedMs: 0,
     rememberCombatAim() {},
     initialWaveSpawned: false,
@@ -248,6 +265,8 @@ export function captureCombatSnapshot(state: CombatState): OutpostAuthorityComba
   return {
     actors,
     projectiles,
+    projectileGeneration: state.projectileGeneration,
+    projectileRecords: state.projectileRecords.list(),
     cueWatermark: cueStream.cueWatermark,
     cues: cueStream.cues,
     projectileCount: projectiles.length,

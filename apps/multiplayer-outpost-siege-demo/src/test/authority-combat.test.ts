@@ -87,6 +87,22 @@ describe("Outpost authority combat", () => {
     expect(
       authority.tcaTrace.list().some((trace) => trace.correlationId === "outpost.test.rifle.4")
     ).toBe(true);
+    const projectileRecords = authority.snapshot().combat.projectileRecords;
+    expect(projectileRecords).toHaveLength(4);
+    expect(projectileRecords.at(-1)).toMatchObject({
+      correlationId: "outpost.test.rifle.4",
+      generation: "outpost.authority",
+      definitionId: "combat.outpost.projectile.rifle",
+      definitionVersion: "outpost.rifle-projectile.v1",
+      fixedDeltaMs: FIXED_DELTA_MS,
+      finish: {
+        reason: "impact",
+        subject: { actorId: "enemy.test.raider.actor" }
+      }
+    });
+    expect(projectileRecords.at(-1)?.finish?.tick).toBeGreaterThan(
+      projectileRecords.at(-1)?.fireTick ?? 0
+    );
 
     authority.runtime.dispose();
     expect(world.count()).toBe(0);
@@ -348,6 +364,135 @@ describe("Outpost authority combat", () => {
     expect(world.count()).toBe(0);
   });
 
+  it("accepts a reliable rifle edge before fixed input and ignores its stale replay", () => {
+    const world = createKootaWorld();
+    const player = createPlayer();
+    const pendingPlayerActions: OutpostAuthorityPlayerActionCommand[] = [];
+    const authority = createOutpostAuthorityGameplayRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world,
+      physicsBackend,
+      eventBus: createEventBus(),
+      players: () => [player],
+      playerActions() {
+        return pendingPlayerActions.splice(0, pendingPlayerActions.length);
+      },
+      initialEnemies: []
+    });
+    authority.runtime.start();
+    tick(authority, 2);
+
+    pendingPlayerActions.push({
+      id: "reliable-rifle-1",
+      playerId: player.playerId,
+      action: "rifle",
+      aimX: 620,
+      aimY: 300,
+      fireSequence: 1,
+      fireHeld: true
+    });
+    tick(authority, 1);
+    expect(combatActor(authority, player.playerId).weapon).toMatchObject({
+      magazine: 23,
+      shotSequence: 1,
+      lastShotCorrelationId: `${player.playerId}.rifle.1`
+    });
+
+    pendingPlayerActions.push({
+      id: "reliable-rifle-1-release",
+      playerId: player.playerId,
+      action: "rifle",
+      aimX: 620,
+      aimY: 300,
+      fireSequence: 1,
+      fireHeld: false
+    });
+    player.input.fireSequence = 0;
+    player.input.fireHeld = true;
+    tick(authority, 10);
+    expect(combatActor(authority, player.playerId).weapon).toMatchObject({
+      magazine: 23,
+      shotSequence: 1
+    });
+
+    pendingPlayerActions.push({
+      id: "reliable-rifle-1-duplicate",
+      playerId: player.playerId,
+      action: "rifle",
+      aimX: 620,
+      aimY: 300,
+      fireSequence: 1,
+      fireHeld: false
+    });
+    tick(authority, 1);
+    expect(combatActor(authority, player.playerId).weapon).toMatchObject({
+      magazine: 23,
+      shotSequence: 1
+    });
+
+    authority.runtime.dispose();
+    expect(world.count()).toBe(0);
+  });
+
+  it("keeps projectile record identity unique when the same player rejoins", () => {
+    const world = createKootaWorld();
+    const player = createPlayer();
+    const pendingPlayerActions: OutpostAuthorityPlayerActionCommand[] = [];
+    let connected = true;
+    const authority = createOutpostAuthorityGameplayRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world,
+      physicsBackend,
+      eventBus: createEventBus(),
+      players: () => (connected ? [player] : []),
+      playerActions() {
+        return pendingPlayerActions.splice(0, pendingPlayerActions.length);
+      },
+      initialEnemies: []
+    });
+    authority.runtime.start();
+    tick(authority, 2);
+
+    fireReliableRifle(pendingPlayerActions, player.playerId, "first-join");
+    tickUntil(
+      authority,
+      () => authority.snapshot().combat.projectileRecords[0]?.finish !== undefined,
+      100
+    );
+    const firstRecord = authority.snapshot().combat.projectileRecords[0]!;
+
+    connected = false;
+    tick(authority, 1);
+    player.input.fireHeld = false;
+    player.input.fireSequence = 0;
+    connected = true;
+    tick(authority, 2);
+    expect(authority.snapshot().players[0]?.generation).toBe(1);
+
+    fireReliableRifle(pendingPlayerActions, player.playerId, "second-join");
+    tickUntil(
+      authority,
+      () =>
+        authority
+          .snapshot()
+          .combat.projectileRecords.filter(
+            (record) => record.correlationId === `${player.playerId}.rifle.1`
+          ).length === 2,
+      10
+    );
+    const records = authority
+      .snapshot()
+      .combat.projectileRecords.filter(
+        (record) => record.correlationId === `${player.playerId}.rifle.1`
+      );
+    expect(new Set(records.map((record) => record.projectileId)).size).toBe(2);
+    expect(firstRecord.projectileId).toContain("owner-generation:0");
+    expect(records.at(-1)?.projectileId).toContain("owner-generation:1");
+
+    authority.runtime.dispose();
+    expect(world.count()).toBe(0);
+  });
+
   it("projects bounded correlated combat cues from real authority outcomes", () => {
     const world = createKootaWorld();
     const pendingCommands: OutpostAuthorityCombatCommand[] = [];
@@ -400,6 +545,7 @@ describe("Outpost authority combat", () => {
           sourceObjectId: player.playerId,
           targetObjectId: "enemy.test.cue-target",
           correlationId: "outpost.test.cue-shot",
+          direction: { x: 1, y: 0 },
           amount: 12
         }),
         expect.objectContaining({
@@ -687,6 +833,31 @@ function createPlayer(): OutpostAuthorityPlayerState {
       fireSequence: 0
     }
   };
+}
+
+function fireReliableRifle(
+  pending: OutpostAuthorityPlayerActionCommand[],
+  playerId: string,
+  id: string
+): void {
+  pending.push({
+    id: `${id}-press`,
+    playerId,
+    action: "rifle",
+    aimX: 620,
+    aimY: 300,
+    fireSequence: 1,
+    fireHeld: true
+  });
+  pending.push({
+    id: `${id}-release`,
+    playerId,
+    action: "rifle",
+    aimX: 620,
+    aimY: 300,
+    fireSequence: 1,
+    fireHeld: false
+  });
 }
 
 function tick(

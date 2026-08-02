@@ -1,3 +1,4 @@
+import type { CombatKinematicProjectileRecord } from "@gamekit/combat";
 import type { OutpostReplicatedWeaponState } from "./player/weapon";
 
 export type OutpostReplicatedActor = {
@@ -69,6 +70,8 @@ export type OutpostReplicatedCombatCue = {
 export type OutpostReplicatedCombatState = {
   actors: OutpostReplicatedActor[];
   projectiles: OutpostReplicatedProjectile[];
+  projectileGeneration: string;
+  projectileRecords: CombatKinematicProjectileRecord[];
   cueWatermark: number;
   cues: OutpostReplicatedCombatCue[];
   acceptedCommands: number;

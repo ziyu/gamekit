@@ -1,6 +1,7 @@
 import { createColyseusMultiplayerBackend } from "@gamekit/multiplayer-colyseus";
 import { createGameKitColyseusServer } from "@gamekit/multiplayer-colyseus/server";
 import { createMultiplayerRuntime } from "@gamekit/multiplayer-core";
+import type { CombatKinematicProjectileRecord } from "@gamekit/combat";
 import { describe, expect, it } from "vitest";
 
 import { readOutpostClientAuthoritySnapshot } from "../gameplay";
@@ -289,6 +290,7 @@ describe("Outpost Room-owned authority", () => {
       })
     ];
     let replicatedPhase: string | undefined;
+    let replicatedRifleRecord: CombatKinematicProjectileRecord | undefined;
     const replicatedInputAcks: number[] = [];
     let envelopeSnapshots = 0;
     const unsubscribeEnvelope = clients[3]?.subscribe((message) => {
@@ -302,6 +304,9 @@ describe("Outpost Room-owned authority", () => {
         return;
       }
       replicatedPhase = snapshot.phase;
+      replicatedRifleRecord = snapshot.combat.projectileRecords.find(
+        (record) => record.correlationId === "player.ranger-4.rifle.1"
+      );
       const acknowledged = snapshot.inputAcksByPeerId["ranger-4"];
       if (acknowledged !== undefined && replicatedInputAcks.at(-1) !== acknowledged) {
         replicatedInputAcks.push(acknowledged);
@@ -507,6 +512,77 @@ describe("Outpost Room-owned authority", () => {
         kind: "rejected",
         action: "reload",
         correlationId: "outpost.test.reload-edge"
+      });
+
+      const acceptedActionsBeforeRifle =
+        requireRoom(room).authoritySnapshot().runtime?.match.authorityInput.acceptedActions ?? 0;
+      await clients[3]?.send({
+        channel: "reliable",
+        kind: "game.action",
+        targetPeerIds: ["outpost-four-client-session.server"],
+        correlationId: "outpost.test.reliable-rifle-press",
+        payload: {
+          type: "player-action",
+          action: "rifle",
+          aimX: 1_200,
+          aimY: 500,
+          fireSequence: 1,
+          fireHeld: true
+        }
+      });
+      await waitFor(
+        () =>
+          room
+            ?.authoritySnapshot()
+            .runtime?.combat?.actors.find((actor) => actor.id === "player.ranger-4")?.weapon
+            ?.shotSequence === 1
+      );
+      await clients[3]?.send({
+        channel: "reliable",
+        kind: "game.action",
+        targetPeerIds: ["outpost-four-client-session.server"],
+        correlationId: "outpost.test.reliable-rifle-release",
+        payload: {
+          type: "player-action",
+          action: "rifle",
+          aimX: 1_200,
+          aimY: 500,
+          fireSequence: 1,
+          fireHeld: false
+        }
+      });
+      await waitFor(
+        () =>
+          room?.authoritySnapshot().runtime?.match.authorityInput.acceptedActions ===
+          acceptedActionsBeforeRifle + 2
+      );
+      expect(
+        requireRoom(room)
+          .authoritySnapshot()
+          .runtime?.combat?.actors.find((actor) => actor.id === "player.ranger-4")?.weapon
+      ).toMatchObject({ magazine: 23, shotSequence: 1 });
+      await waitFor(
+        () =>
+          room
+            ?.authoritySnapshot()
+            .runtime?.combat?.projectileRecords.some(
+              (record) =>
+                record.correlationId === "player.ranger-4.rifle.1" && record.finish !== undefined
+            ) === true &&
+          replicatedRifleRecord?.finish !== undefined &&
+          room?.authoritySnapshot().runtime?.combat?.projectiles.length === 0
+      );
+      expect(replicatedRifleRecord).toMatchObject({
+        projectileId: expect.any(String),
+        correlationId: "player.ranger-4.rifle.1",
+        generation: "outpost-four-client-session",
+        definitionId: "combat.outpost.projectile.rifle",
+        definitionVersion: "outpost.rifle-projectile.v1",
+        fixedDeltaMs: 1000 / 60,
+        finish: {
+          reason: expect.stringMatching(/^(impact|expired|out-of-bounds)$/),
+          position: { x: expect.any(Number), y: expect.any(Number) }
+        }
       });
 
       await clients[3]?.send({

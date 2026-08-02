@@ -18,6 +18,7 @@ import type {
   CombatKinematicProjectileFireResult,
   CombatKinematicProjectileHitResolver,
   CombatKinematicProjectileReconciliation,
+  CombatKinematicProjectileReconciliationOptions,
   CombatKinematicProjectileRecord,
   CombatKinematicProjectileRuntimeDiagnostics,
   CombatKinematicProjectileSample
@@ -373,10 +374,42 @@ export function sampleCombatKinematicProjectileRecord(
 export function reconcileCombatKinematicProjectileRecords(
   predicted: CombatKinematicProjectileRecord,
   authoritative: CombatKinematicProjectileRecord,
-  epsilon = 0.001
+  epsilonOrOptions: number | CombatKinematicProjectileReconciliationOptions = 0.001
 ): CombatKinematicProjectileReconciliation {
+  const options =
+    typeof epsilonOrOptions === "number" ? { epsilon: epsilonOrOptions } : epsilonOrOptions;
+  const timeline = options.timeline ?? "absolute";
+  const epsilon = normalizeNonNegativeNumber(options.epsilon, 0.001);
+  const firePositionTolerance = normalizeNonNegativeNumber(options.firePositionTolerance, epsilon);
+  const fireVelocityTolerance = normalizeNonNegativeNumber(
+    options.fireVelocityTolerance,
+    options.fireSpeedTolerance !== undefined || options.fireDirectionToleranceRadians !== undefined
+      ? Number.POSITIVE_INFINITY
+      : epsilon
+  );
+  const fireSpeedTolerance = normalizeNonNegativeNumber(
+    options.fireSpeedTolerance,
+    Number.POSITIVE_INFINITY
+  );
+  const fireDirectionToleranceRadians = normalizeNonNegativeNumber(
+    options.fireDirectionToleranceRadians,
+    Number.POSITIVE_INFINITY
+  );
+  const finishPositionTolerance = normalizeNonNegativeNumber(
+    options.finishPositionTolerance,
+    epsilon
+  );
+  const finishTickTolerance = normalizeNonNegativeNumber(options.finishTickTolerance, 0);
+  const fireTickError = Math.abs(predicted.fireTick - authoritative.fireTick);
   const firePositionError = vectorDistance(predicted.firePosition, authoritative.firePosition);
   const fireVelocityError = vectorDistance(predicted.fireVelocity, authoritative.fireVelocity);
+  const predictedSpeed = vectorLength(predicted.fireVelocity);
+  const authoritySpeed = vectorLength(authoritative.fireVelocity);
+  const fireSpeedError = Math.abs(predictedSpeed - authoritySpeed);
+  const fireDirectionErrorRadians = vectorDirectionErrorRadians(
+    predicted.fireVelocity,
+    authoritative.fireVelocity
+  );
   const finishPositionError =
     predicted.finish === undefined || authoritative.finish === undefined
       ? predicted.finish === authoritative.finish
@@ -388,23 +421,39 @@ export function reconcileCombatKinematicProjectileRecords(
       ? predicted.finish === authoritative.finish
         ? 0
         : Number.POSITIVE_INFINITY
-      : Math.abs(predicted.finish.tick - authoritative.finish.tick);
+      : timeline === "shot-relative"
+        ? Math.abs(
+            predicted.finish.tick -
+              predicted.fireTick -
+              (authoritative.finish.tick - authoritative.fireTick)
+          )
+        : Math.abs(predicted.finish.tick - authoritative.finish.tick);
   const reasonMatches = predicted.finish?.reason === authoritative.finish?.reason;
+  const predictedLifetime = predicted.expiresTick - predicted.fireTick;
+  const authorityLifetime = authoritative.expiresTick - authoritative.fireTick;
   const fireMatches =
     predicted.correlationId === authoritative.correlationId &&
     predicted.generation === authoritative.generation &&
     predicted.definitionId === authoritative.definitionId &&
     predicted.definitionVersion === authoritative.definitionVersion &&
-    predicted.fireTick === authoritative.fireTick &&
+    (timeline === "shot-relative" || predicted.fireTick === authoritative.fireTick) &&
     predicted.fixedDeltaMs === authoritative.fixedDeltaMs &&
-    predicted.expiresTick === authoritative.expiresTick &&
-    firePositionError <= epsilon &&
-    fireVelocityError <= epsilon;
+    (timeline === "shot-relative"
+      ? predictedLifetime === authorityLifetime
+      : predicted.expiresTick === authoritative.expiresTick) &&
+    firePositionError <= firePositionTolerance &&
+    fireVelocityError <= fireVelocityTolerance &&
+    fireSpeedError <= fireSpeedTolerance &&
+    fireDirectionErrorRadians <= fireDirectionToleranceRadians;
   if (!fireMatches) {
     return {
       status: "corrected",
+      timeline,
+      fireTickError,
       firePositionError,
       fireVelocityError,
+      fireSpeedError,
+      fireDirectionErrorRadians,
       finishPositionError,
       finishTickError,
       reasonMatches
@@ -413,8 +462,12 @@ export function reconcileCombatKinematicProjectileRecords(
   if (authoritative.finish === undefined) {
     return {
       status: "pending",
+      timeline,
+      fireTickError,
       firePositionError,
       fireVelocityError,
+      fireSpeedError,
+      fireDirectionErrorRadians,
       finishPositionError,
       finishTickError,
       reasonMatches
@@ -422,17 +475,46 @@ export function reconcileCombatKinematicProjectileRecords(
   }
   const confirmed =
     predicted.finish !== undefined &&
-    finishPositionError <= epsilon &&
-    finishTickError === 0 &&
+    finishPositionError <= finishPositionTolerance &&
+    finishTickError <= finishTickTolerance &&
     reasonMatches;
   return {
     status: confirmed ? "confirmed" : "corrected",
+    timeline,
+    fireTickError,
     firePositionError,
     fireVelocityError,
+    fireSpeedError,
+    fireDirectionErrorRadians,
     finishPositionError,
     finishTickError,
     reasonMatches
   };
+}
+
+function vectorLength(vector: PhysicsVector): number {
+  return Math.hypot(vector.x, vector.y, vector.z ?? 0);
+}
+
+function vectorDirectionErrorRadians(left: PhysicsVector, right: PhysicsVector): number {
+  const leftLength = vectorLength(left);
+  const rightLength = vectorLength(right);
+  if (leftLength <= Number.EPSILON || rightLength <= Number.EPSILON) {
+    return leftLength <= Number.EPSILON && rightLength <= Number.EPSILON
+      ? 0
+      : Number.POSITIVE_INFINITY;
+  }
+  const dot =
+    (left.x * right.x + left.y * right.y + (left.z ?? 0) * (right.z ?? 0)) /
+    (leftLength * rightLength);
+  return Math.acos(Math.max(-1, Math.min(1, dot)));
+}
+
+function normalizeNonNegativeNumber(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(0, value);
 }
 
 function validDefinition(

@@ -23,9 +23,20 @@ export type OutpostPlayerPresentationSnapshot = {
   expiredShots: number;
 };
 
+export type OutpostPlayerPresentationFrame = {
+  elapsed: number;
+  active: boolean;
+  health: number;
+  fireHeld: boolean;
+  fireSequence: number;
+  aim: { x: number; y: number };
+  weapon?: OutpostReplicatedWeaponState | undefined;
+};
+
 export type OutpostClientPlayerPresentation = {
   update(frame: OutpostClientPlayerPresentationUpdate): void;
   cuesAfter(sequence: number): OutpostPlayerPresentationCue[];
+  currentFrame(): OutpostPlayerPresentationFrame;
   snapshot(): OutpostPlayerPresentationSnapshot;
   reset(): void;
 };
@@ -36,6 +47,8 @@ export type OutpostClientPlayerPresentationUpdate = {
   health: number;
   fireHeld: boolean;
   fireSequence: number;
+  aimX: number;
+  aimY: number;
   weapon?: OutpostReplicatedWeaponState | undefined;
 };
 
@@ -89,9 +102,11 @@ export function createOutpostClientPlayerPresentation(
   let confirmedShots = 0;
   let rejectedShots = 0;
   let expiredShots = 0;
+  let currentFrame = emptyPresentationFrame();
 
   return {
     update(frame) {
+      currentFrame = clonePresentationFrame(frame);
       const weapon = frame.weapon;
       if (!frame.active || frame.health <= 0 || weapon === undefined) {
         clearTransientState(frame.fireSequence);
@@ -144,6 +159,9 @@ export function createOutpostClientPlayerPresentation(
     cuesAfter(sequence) {
       return cues.filter((cue) => cue.sequence > sequence).map(cloneCue);
     },
+    currentFrame() {
+      return clonePresentationFrame(currentFrame);
+    },
     snapshot() {
       return {
         cueWatermark: cueSequence,
@@ -166,6 +184,7 @@ export function createOutpostClientPlayerPresentation(
       confirmedShots = 0;
       rejectedShots = 0;
       expiredShots = 0;
+      currentFrame = emptyPresentationFrame();
       cues.length = 0;
       pending.length = 0;
     }
@@ -299,6 +318,8 @@ export function createOutpostClientPlayerPresentationModule(options: {
         health: number;
         fireHeld: boolean;
         fireSequence: number;
+        aimX: number;
+        aimY: number;
         weapon?: OutpostReplicatedWeaponState | undefined;
       }
     | undefined;
@@ -316,6 +337,8 @@ export function createOutpostClientPlayerPresentationModule(options: {
             health: frame?.health ?? 0,
             fireHeld: frame?.fireHeld ?? false,
             fireSequence: frame?.fireSequence ?? 0,
+            aimX: frame?.aimX ?? 0,
+            aimY: frame?.aimY ?? 0,
             ...(frame?.weapon === undefined ? {} : { weapon: frame.weapon })
           });
         }
@@ -323,6 +346,32 @@ export function createOutpostClientPlayerPresentationModule(options: {
       return () => options.presentation.reset();
     }
   });
+}
+
+function emptyPresentationFrame(): OutpostPlayerPresentationFrame {
+  return {
+    elapsed: 0,
+    active: false,
+    health: 0,
+    fireHeld: false,
+    fireSequence: 0,
+    aim: { x: 0, y: 0 }
+  };
+}
+
+function clonePresentationFrame(
+  frame: OutpostClientPlayerPresentationUpdate | OutpostPlayerPresentationFrame
+): OutpostPlayerPresentationFrame {
+  const aim = "aim" in frame ? frame.aim : { x: frame.aimX, y: frame.aimY };
+  return {
+    elapsed: frame.elapsed,
+    active: frame.active,
+    health: frame.health,
+    fireHeld: frame.fireHeld,
+    fireSequence: frame.fireSequence,
+    aim: { x: aim.x, y: aim.y },
+    ...(frame.weapon === undefined ? {} : { weapon: frame.weapon })
+  };
 }
 
 function cloneCue(cue: OutpostPlayerPresentationCue): OutpostPlayerPresentationCue {

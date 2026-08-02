@@ -36,7 +36,6 @@ import {
   type PhysicsBodyData,
   type PhysicsColliderData,
   type PhysicsHandle,
-  type PhysicsSceneData,
   type PhysicsTraceStore
 } from "@gamekit/physics-core";
 import type { EntityId, GameWorld } from "@gamekit/world";
@@ -49,8 +48,8 @@ import {
 } from "@gamekit/tca";
 
 import {
+  createOutpostArenaPhysicsSceneConfig,
   OUTPOST_ARENA_PHYSICS_LAYOUT_ID,
-  OUTPOST_ARENA_PHYSICS_SCENE_ID,
   OUTPOST_NAVIGATION_BACKEND_ID,
   OUTPOST_NAVIGATION_LAYOUT_ID
 } from "../content";
@@ -163,6 +162,7 @@ export type CreateOutpostAuthorityGameplayRuntimeOptions = {
   playerActions?(): readonly OutpostAuthorityPlayerActionCommand[];
   combatCommands?(): readonly OutpostAuthorityCombatCommand[];
   initialEnemies?: readonly OutpostAuthorityEnemySpawn[] | undefined;
+  projectileGeneration?: string | undefined;
   seed?: string | undefined;
 };
 
@@ -220,6 +220,9 @@ export function createOutpostAuthorityGameplayRuntime(
     combat: combatCore,
     combatTrace,
     eventBus: options.eventBus,
+    ...(options.projectileGeneration === undefined
+      ? {}
+      : { projectileGeneration: options.projectileGeneration }),
     players: () => state.players,
     commands: options.combatCommands ?? (() => []),
     playerWeapon(playerId) {
@@ -591,11 +594,7 @@ function toColliderDefinition(data: PhysicsColliderData, id: string) {
 }
 
 function authorityPhysicsScene(dataRegistry: DataRegistry) {
-  const { materials: _materials, ...scene } = dataRegistry.getValue<PhysicsSceneData>(
-    "physics.scene",
-    OUTPOST_ARENA_PHYSICS_SCENE_ID
-  );
-  return scene;
+  return createOutpostArenaPhysicsSceneConfig(dataRegistry);
 }
 
 function definitionActorId(dataRegistry: DataRegistry): string {

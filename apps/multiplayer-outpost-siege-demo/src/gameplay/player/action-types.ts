@@ -6,6 +6,8 @@ export type OutpostAuthorityPlayerActionCommand = {
   action: OutpostPlayerAction;
   aimX: number;
   aimY: number;
+  fireSequence?: number | undefined;
+  fireHeld?: boolean | undefined;
   correlationId?: string | undefined;
   parentId?: string | undefined;
 };

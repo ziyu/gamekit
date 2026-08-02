@@ -15,5 +15,9 @@ export const OUTPOST_PRESENTATION_SIZE = Object.freeze({
   "render.outpost.raider": { width: 88, height: 88, depth: 18 },
   "render.outpost.overseer": { width: 144, height: 144, depth: 18 },
   "render.outpost.turret": { width: 88, height: 88, depth: 16 },
-  "render.outpost.projectile": { width: 26, height: 26, depth: 19 }
+  "render.outpost.projectile": { width: 26, height: 26, depth: 19 },
+  "render.outpost.feedback.crosshair": { width: 54, height: 54, depth: 40 },
+  "render.outpost.feedback.tracer": { width: 118, height: 15, depth: 30 },
+  "render.outpost.feedback.impact": { width: 58, height: 58, depth: 31 },
+  "render.outpost.feedback.damage-direction": { width: 62, height: 31, depth: 41 }
 });

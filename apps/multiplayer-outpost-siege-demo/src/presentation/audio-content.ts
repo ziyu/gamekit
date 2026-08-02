@@ -29,9 +29,16 @@ export const OUTPOST_AUDIO_CONFIG = {
       bus: "sfx",
       concurrency: ["outpost.rifle"],
       priority: 12,
-      pitch: { min: 0.96, max: 1.04 },
+      pitch: { min: 0.98, max: 1.02 },
       spatial: { minDistance: 80, maxDistance: 900, rolloff: "linear" },
-      layers: [{ id: "shot", clips: [clip("shot", OUTPOST_AUDIO_ASSET_IDS.rifle)] }]
+      layers: [
+        {
+          id: "shot",
+          clips: OUTPOST_AUDIO_ASSET_IDS.rifle.map((assetId, index) =>
+            clip(`shot-${index + 1}`, assetId)
+          )
+        }
+      ]
     },
     {
       id: OUTPOST_AUDIO_IDS.enemyTelegraph,
@@ -42,7 +49,9 @@ export const OUTPOST_AUDIO_CONFIG = {
       layers: [
         {
           id: "warning",
-          clips: [clip("warning", OUTPOST_AUDIO_ASSET_IDS.enemyTelegraph)]
+          clips: OUTPOST_AUDIO_ASSET_IDS.enemyTelegraph.map((assetId, index) =>
+            clip(`warning-${index + 1}`, assetId)
+          )
         }
       ]
     },
@@ -51,8 +60,16 @@ export const OUTPOST_AUDIO_CONFIG = {
       bus: "sfx",
       concurrency: ["outpost.hit"],
       priority: 10,
+      pitch: { min: 0.97, max: 1.03 },
       spatial: { minDistance: 60, maxDistance: 760, rolloff: "linear" },
-      layers: [{ id: "impact", clips: [clip("impact", OUTPOST_AUDIO_ASSET_IDS.hit)] }]
+      layers: [
+        {
+          id: "impact",
+          clips: OUTPOST_AUDIO_ASSET_IDS.hit.map((assetId, index) =>
+            clip(`impact-${index + 1}`, assetId)
+          )
+        }
+      ]
     }
   ],
   concurrency: [

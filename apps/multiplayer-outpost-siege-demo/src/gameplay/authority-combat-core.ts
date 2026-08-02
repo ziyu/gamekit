@@ -1,5 +1,6 @@
 import {
   createCombatModule,
+  sampleCombatKinematicProjectileRecord,
   type CombatDeliveryRejection,
   type CombatHitResult,
   type CombatProjectileDespawnFact,
@@ -9,6 +10,12 @@ import { PhysicsTransformComponent, type PhysicsVector } from "@gamekit/physics-
 
 import { OUTPOST_ARENA } from "../content";
 import { combatObjectIdForActor, type CombatState } from "./authority-combat-state";
+import {
+  OUTPOST_PROJECTILE_FIXED_DELTA_MS,
+  OUTPOST_RIFLE_PROJECTILE_DEFINITION_VERSION,
+  outpostProjectileTick,
+  outpostRifleProjectileFirePosition
+} from "./rifle-projectile-network";
 
 export type OutpostCombatCoreIntegration = {
   module: ReturnType<typeof createCombatModule>;
@@ -33,15 +40,36 @@ export function createOutpostCombatCoreIntegration(
   const offProjectileSpawned = state.options.eventBus.on<CombatProjectileSpawnFact>(
     "combat.projectile_spawned",
     (event) => {
+      const fact = event.payload;
+      const fireTick = outpostProjectileTick(fact.spawnedAt);
+      const projectileRecordId = authorityProjectileRecordId(state, fact);
+      state.projectileRecordIdsByAuthorityId.set(fact.projectileId, projectileRecordId);
+      state.projectileRecords.upsert({
+        projectileId: projectileRecordId,
+        correlationId: fact.correlationId ?? fact.projectileId,
+        generation: state.projectileGeneration,
+        definitionId: fact.definitionId,
+        definitionVersion: OUTPOST_RIFLE_PROJECTILE_DEFINITION_VERSION,
+        fireTick,
+        fixedDeltaMs: OUTPOST_PROJECTILE_FIXED_DELTA_MS,
+        firePosition: { ...fact.position },
+        fireVelocity: { ...fact.velocity },
+        expiresTick:
+          fireTick +
+          Math.max(
+            1,
+            Math.ceil((fact.expiresAt - fact.spawnedAt) / OUTPOST_PROJECTILE_FIXED_DELTA_MS)
+          )
+      });
       state.cueStream.append({
         kind: "projectile-spawned",
         at: state.elapsedMs,
-        projectileId: event.payload.projectileId,
-        sourceObjectId: combatObjectIdForActor(state, event.payload.sourceActorId),
-        position: event.payload.position,
-        direction: normalizeDirection(event.payload.velocity),
-        correlationId: event.correlationId ?? event.payload.correlationId,
-        parentId: event.parentId ?? event.payload.parentId
+        projectileId: fact.projectileId,
+        sourceObjectId: combatObjectIdForActor(state, fact.sourceActorId),
+        position: fact.position,
+        direction: normalizeDirection(fact.velocity),
+        correlationId: event.correlationId ?? fact.correlationId,
+        parentId: event.parentId ?? fact.parentId
       });
     }
   );
@@ -49,6 +77,50 @@ export function createOutpostCombatCoreIntegration(
     "combat.projectile_despawned",
     (event) => {
       const fact = event.payload;
+      const recordId = state.projectileRecordIdsByAuthorityId.get(fact.projectileId);
+      const record = recordId === undefined ? undefined : state.projectileRecords.get(recordId);
+      if (record !== undefined) {
+        const elapsedFinishTick = Math.max(
+          record.fireTick,
+          Math.min(record.expiresTick, outpostProjectileTick(state.elapsedMs))
+        );
+        const sampled = sampleCombatKinematicProjectileRecord(record, elapsedFinishTick);
+        const finishPosition = fact.impact?.point ?? fact.finalPosition ?? sampled.position;
+        const finishTick = resolveProjectileFinishTick(
+          record,
+          fact.reason,
+          finishPosition,
+          elapsedFinishTick
+        );
+        state.projectileRecords.upsert({
+          ...record,
+          finish: {
+            tick: finishTick,
+            reason: fact.impact === undefined ? fact.reason : "impact",
+            position: { ...finishPosition },
+            ...(fact.impact?.normal === undefined ? {} : { normal: { ...fact.impact.normal } }),
+            ...(fact.impact === undefined
+              ? {}
+              : {
+                  subject: {
+                    ...(fact.impact.subject.actorId === undefined
+                      ? {}
+                      : { actorId: fact.impact.subject.actorId }),
+                    ...(fact.impact.subject.entityId === undefined
+                      ? {}
+                      : { entityId: fact.impact.subject.entityId }),
+                    ...(fact.impact.subject.bodyId === undefined
+                      ? {}
+                      : { bodyId: fact.impact.subject.bodyId }),
+                    ...(fact.impact.subject.colliderId === undefined
+                      ? {}
+                      : { colliderId: fact.impact.subject.colliderId })
+                  }
+                })
+          }
+        });
+      }
+      state.projectileRecordIdsByAuthorityId.delete(fact.projectileId);
       const worldImpact = fact.impact?.disposition === "blocker";
       const miss = fact.reason === "expired" || fact.reason === "out-of-bounds";
       if (!worldImpact && !miss) {
@@ -137,7 +209,12 @@ export function createOutpostCombatCoreIntegration(
           if (aim === undefined) {
             return false;
           }
-          return { origin, position: origin, direction: normalizedDelta(origin, aim) };
+          const direction = normalizedDelta(origin, aim);
+          return {
+            origin,
+            position: outpostRifleProjectileFirePosition(origin, direction),
+            direction
+          };
         }
         return { origin, position: origin };
       },
@@ -161,8 +238,41 @@ export function createOutpostCombatCoreIntegration(
       offProjectileSpawned();
       offHit();
       aimByActorId.clear();
+      state.projectileRecordIdsByAuthorityId.clear();
+      state.projectileRecords.dispose();
     }
   };
+}
+
+function authorityProjectileRecordId(state: CombatState, fact: CombatProjectileSpawnFact): string {
+  const player = [...state.options.players().values()].find(
+    (candidate) => candidate.actorId === fact.sourceActorId
+  );
+  return player === undefined
+    ? fact.projectileId
+    : `${fact.projectileId}:owner-generation:${player.generation}`;
+}
+
+function resolveProjectileFinishTick(
+  record: Parameters<typeof sampleCombatKinematicProjectileRecord>[0],
+  reason: string,
+  position: PhysicsVector,
+  elapsedFinishTick: number
+): number {
+  if (reason === "expired") {
+    return record.expiresTick;
+  }
+  const speed = Math.hypot(record.fireVelocity.x, record.fireVelocity.y);
+  if (speed <= Number.EPSILON) {
+    return elapsedFinishTick;
+  }
+  const distance = Math.hypot(
+    position.x - record.firePosition.x,
+    position.y - record.firePosition.y
+  );
+  const distancePerTick = speed * (record.fixedDeltaMs / 1000);
+  const travelTicks = Math.max(1, Math.ceil(distance / distancePerTick));
+  return Math.max(record.fireTick, Math.min(record.expiresTick, record.fireTick + travelTicks));
 }
 
 function normalizeDirection(vector: PhysicsVector): PhysicsVector {

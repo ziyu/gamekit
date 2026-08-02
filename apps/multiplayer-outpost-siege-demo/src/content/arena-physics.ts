@@ -1,9 +1,11 @@
 import type {
   PhysicsLayoutColliderInstanceData,
   PhysicsLayoutData,
+  PhysicsMaterialDefinition,
+  PhysicsSceneConfig,
   PhysicsSceneData
 } from "@gamekit/physics-core";
-import type { DataRef } from "@gamekit/data";
+import type { DataRef, DataRegistry } from "@gamekit/data";
 import { OUTPOST_ARENA, outpostArenaDefinition } from "./arena-scene";
 
 export const OUTPOST_ARENA_PHYSICS_SCENE_ID = "scene.outpost.arena";
@@ -20,6 +22,20 @@ export const outpostArenaPhysicsScene = {
     { type: "physics.material", id: "material.outpost.arena" }
   ]
 } satisfies PhysicsSceneData;
+
+export function createOutpostArenaPhysicsSceneConfig(
+  dataRegistry: DataRegistry
+): PhysicsSceneConfig {
+  const scene = dataRegistry.getValue<PhysicsSceneData>(
+    "physics.scene",
+    OUTPOST_ARENA_PHYSICS_SCENE_ID
+  );
+  const materialDefinitions = (scene.materials ?? []).map((material) =>
+    dataRegistry.getValue<PhysicsMaterialDefinition>(material.type, material.id)
+  );
+  const { materials: _materials, ...config } = scene;
+  return { ...config, materialDefinitions };
+}
 
 export const outpostArenaPhysicsLayout = {
   id: OUTPOST_ARENA_PHYSICS_LAYOUT_ID,

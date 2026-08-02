@@ -1,4 +1,5 @@
 import type { EntityId } from "@gamekit/world";
+import type { CombatKinematicProjectileRecord } from "@gamekit/combat";
 
 import type {
   OutpostCombatAbility,
@@ -98,6 +99,8 @@ export type OutpostAuthorityCombatProjectileSnapshot = {
 export type OutpostAuthorityCombatSnapshot = {
   actors: OutpostAuthorityCombatActorSnapshot[];
   projectiles: OutpostAuthorityCombatProjectileSnapshot[];
+  projectileGeneration: string;
+  projectileRecords: CombatKinematicProjectileRecord[];
   cueWatermark: number;
   cues: OutpostReplicatedCombatCue[];
   projectileCount: number;

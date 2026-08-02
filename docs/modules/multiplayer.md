@@ -400,6 +400,25 @@ correlation + generation 匹配 local/authority id，返回 matched/unmatched/du
 pending、resolved、age 与内部 order index 设置独立硬上限。Registry 不比较 gameplay payload，也不决定
 correction；具体 domain 在 match 后解释 predicted/authority state。
 
+`createMultiplayerAuthorityTimeline(...)` 是 authority record/presentation 的标准单调时钟 helper。它把收到的
+provider-neutral authority time 锚定到本地 presentation time，允许向前校正，但拒绝 delayed snapshot 将已经
+显示的时间线向后移动；重复 anchor 不反复重锚。离散 simulation 使用整数 `tick()`，逐帧 record reconstruction
+使用 `sampleTick()`。它不估算 transport RTT，也不替代 Snapshot Playback 的 interpolation/jitter policy。
+
+`createMultiplayerTimeAlignedPresentationTransition(...)` 是 predicted lifecycle 接管 authority lifecycle 的标准
+有界 helper。Domain 只声明 stable key/version、predicted/authority deterministic sampler、事实 reconciliation、
+可选 hold policy 和 declarative presentation fields；Core 统一管理 absolute 或 relative-origin 时间对齐、entry
+capacity、residual correction smoothing、reset/remove/dispose 和 diagnostics。Relative-origin 模式先保持 predicted
+lifecycle age，再采样 authority；start/commit tick 偏移只作为 origin diagnostic，不能产生 correction。只有时间
+对齐后的 state divergence 才能进入平滑。它适用于 projectile fire record、移动平台/门的 start record、可重建的
+技能轨迹等事件起点对象，不代替输入 replay、remote snapshot interpolation 或 Physics island resimulation。
+
+App 组合 predicted projectile 时必须实际复用 predicted-spawn registry、authority timeline 和标准 time-aligned
+transition，再把 matched domain payload 交给 Combat/Physics sampler 或 transition。跨 Combat + Multiplayer 的
+常规 kinematic projectile 使用 App Host 标准 helper，不由 app 重写 alignment、entry map 或 correction。App 可以
+拥有内容定义、静态 layout、actor proxy 和 renderer 写入，但不能平行实现 generation、match、expiry、timeline
+rewind protection 或通用 correction lifecycle。
+
 一个 domain 必须显式限制 history tick、对象数、spawn 数、内存和 replay work。Binding/session/generation 改变
 时必须整体释放旧 domain；history overflow 或成员缺失时执行可观察的 hard correction/authority-only 降级，
 不能继续在不完整历史上重放。相互作用的 predicted dynamic object 必须进入同一 prediction island；只回滚

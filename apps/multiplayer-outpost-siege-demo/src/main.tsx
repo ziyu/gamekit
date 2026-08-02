@@ -302,10 +302,17 @@ async function boot(root: HTMLElement): Promise<void> {
     const playerAction = outpostPlayerActionForInputAction(event);
     const authorityPeerId = client.snapshot().authorityPeerId;
     if (playerAction && authorityPeerId && activeContext.multiplayer) {
-      void sendOutpostPlayerAction(activeContext.multiplayer, authorityPeerId, playerAction, {
-        x: client.input.aimX,
-        y: client.input.aimY
-      });
+      void sendOutpostPlayerAction(
+        activeContext.multiplayer,
+        authorityPeerId,
+        playerAction,
+        {
+          x: client.input.aimX,
+          y: client.input.aimY
+        },
+        playerAction === "rifle" ? client.input.fireSequence : undefined,
+        playerAction === "rifle" ? client.input.fireHeld : undefined
+      );
     }
   }
 }

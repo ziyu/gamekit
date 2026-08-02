@@ -19,13 +19,12 @@ import {
   type PhysicsHandle,
   type PhysicsInterpolationStore,
   type PhysicsInterpolationTransform,
-  type PhysicsSceneData,
   type PhysicsTraceStore
 } from "@gamekit/physics-core";
 import type { RendererAdapter } from "@gamekit/renderer-core";
 import type { EntityId, GameWorld } from "@gamekit/world";
 import { OUTPOST_PLAYER_TYPE, type OutpostPlayerDefinition } from "../domain";
-import { OUTPOST_ARENA_PHYSICS_LAYOUT_ID, OUTPOST_ARENA_PHYSICS_SCENE_ID } from "../content";
+import { createOutpostArenaPhysicsSceneConfig, OUTPOST_ARENA_PHYSICS_LAYOUT_ID } from "../content";
 import {
   createOutpostIdentityRegistry,
   type OutpostIdentityRegistry
@@ -434,11 +433,7 @@ function requirePlayerEntity(state: PreviewState): EntityId {
 }
 
 function statePhysicsScene(dataRegistry: DataRegistry) {
-  const { materials: _materials, ...scene } = dataRegistry.getValue<PhysicsSceneData>(
-    "physics.scene",
-    OUTPOST_ARENA_PHYSICS_SCENE_ID
-  );
-  return scene;
+  return createOutpostArenaPhysicsSceneConfig(dataRegistry);
 }
 
 function requireComponent<T>(value: T | undefined, label: string): T {
