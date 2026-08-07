@@ -6,6 +6,7 @@ export * from "./combat";
 export * from "./player-render-object";
 export * from "./player";
 export * from "./preview-presentation-module";
+export * from "./render-rotation";
 
 export type OutpostPresentationBinding = {
   gameplayObjectId: string;

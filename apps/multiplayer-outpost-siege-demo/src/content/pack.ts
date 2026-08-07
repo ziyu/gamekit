@@ -235,6 +235,7 @@ const bodies: Array<{ id: string; data: PhysicsBodyData }> = [
 const physicsScenes = [outpostArenaPhysicsScene];
 const physicsLayouts = [outpostArenaPhysicsLayout];
 const arenas: OutpostArenaDefinition[] = [outpostArenaDefinition];
+const UP_AUTHORED_FACING_OFFSET_RADIANS = Math.PI / 2;
 
 const renderObjects: OutpostRenderObjectDefinition[] = [
   renderObject("render.outpost.arena", "asset.outpost.arena", "arena"),
@@ -242,11 +243,21 @@ const renderObjects: OutpostRenderObjectDefinition[] = [
   renderObject("render.outpost.barricade", "asset.outpost.barricade", "architecture"),
   renderObject("render.outpost.cover", "asset.outpost.cover", "architecture"),
   renderObject("render.outpost.pylon", "asset.outpost.pylon", "architecture"),
-  renderObject("render.outpost.player", "asset.outpost.player", "actors"),
+  renderObject(
+    "render.outpost.player",
+    "asset.outpost.player",
+    "actors",
+    UP_AUTHORED_FACING_OFFSET_RADIANS
+  ),
   renderObject("render.outpost.raider", "asset.outpost.raider", "actors"),
   renderObject("render.outpost.overseer", "asset.outpost.overseer", "actors"),
   renderObject("render.outpost.turret", "asset.outpost.turret", "buildables"),
-  renderObject("render.outpost.projectile", "asset.outpost.projectile", "projectiles"),
+  renderObject(
+    "render.outpost.projectile",
+    "asset.outpost.projectile",
+    "projectiles",
+    UP_AUTHORED_FACING_OFFSET_RADIANS
+  ),
   renderObject("render.outpost.feedback.crosshair", OUTPOST_FEEDBACK_ASSET_IDS.crosshair, "ui"),
   renderObject("render.outpost.feedback.tracer", OUTPOST_FEEDBACK_ASSET_IDS.tracer, "effects"),
   renderObject("render.outpost.feedback.impact", OUTPOST_FEEDBACK_ASSET_IDS.impact, "effects"),
@@ -530,11 +541,17 @@ function staticBody(id: string, colliderId: string): { id: string; data: Physics
   };
 }
 
-function renderObject(id: string, assetId: string, layer: string): OutpostRenderObjectDefinition {
+function renderObject(
+  id: string,
+  assetId: string,
+  layer: string,
+  facingOffsetRadians?: number
+): OutpostRenderObjectDefinition {
   return {
     id,
     type: "sprite",
     assetRefs: { texture: { assetId, type: "image" } },
+    ...(facingOffsetRadians === undefined ? {} : { facingOffsetRadians }),
     layer,
     tags: ["outpost"]
   };

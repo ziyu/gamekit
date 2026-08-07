@@ -17,6 +17,7 @@ import {
 } from "../domain";
 import { OutpostGameplayObject, OutpostPresentation } from "../gameplay/components";
 import { OUTPOST_PRESENTATION_SIZE } from "../gameplay/constants";
+import { outpostFacingRotation, resolveOutpostFacingRotation } from "./render-rotation";
 
 export type OutpostRenderTargetState = {
   visible?: boolean;
@@ -101,7 +102,13 @@ export function createOutpostPreviewPresentationModule(options: {
               options.applyRenderTargetState(handle.native, {
                 transform: {
                   position: { x: renderTransform.position.x, y: renderTransform.position.y },
-                  rotation: { z: object.facing }
+                  rotation: {
+                    z: resolveOutpostFacingRotation(
+                      options.dataRegistry,
+                      presentation.renderKey,
+                      object.facing
+                    )
+                  }
                 }
               });
             }
@@ -179,7 +186,10 @@ function createRenderObjectDefinition(
     type: source.type,
     ...(source.layer === undefined ? {} : { layer: source.layer }),
     tags: [...(source.tags ?? [])],
-    transform: { position: { x, y }, rotation: { z: rotation } },
+    transform: {
+      position: { x, y },
+      rotation: { z: outpostFacingRotation(source, rotation) }
+    },
     props: {
       textureId: texture.assetId,
       ...size

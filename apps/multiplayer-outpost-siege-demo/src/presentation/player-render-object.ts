@@ -3,6 +3,7 @@ import type { RenderObjectDefinition } from "@gamekit/renderer-core";
 
 import { OUTPOST_RENDER_OBJECT_TYPE, type OutpostRenderObjectDefinition } from "../domain";
 import { OUTPOST_PRESENTATION_SIZE } from "../gameplay/constants";
+import { outpostFacingRotation } from "./render-rotation";
 
 export function createOutpostPlayerRenderObjectDefinition(
   registry: DataRegistry,
@@ -43,7 +44,10 @@ export function createOutpostDynamicRenderObjectDefinition(
     type: source.type,
     ...(source.layer === undefined ? {} : { layer: source.layer }),
     tags: [...(source.tags ?? []), ...tags],
-    transform: { position: { x, y }, rotation: { z: rotation } },
+    transform: {
+      position: { x, y },
+      rotation: { z: outpostFacingRotation(source, rotation) }
+    },
     props: { textureId: texture.assetId, ...size }
   };
 }

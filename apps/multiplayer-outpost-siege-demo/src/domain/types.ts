@@ -21,6 +21,7 @@ export type OutpostRenderObjectDefinition = {
   id: string;
   type: RenderObjectType;
   assetRefs: Record<string, AssetRef>;
+  facingOffsetRadians?: number | undefined;
   layer?: string | undefined;
   tags?: string[] | undefined;
 };

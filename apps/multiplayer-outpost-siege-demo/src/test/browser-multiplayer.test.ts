@@ -661,9 +661,9 @@ describe("Outpost Browser multiplayer", () => {
     await sendSnapshot(server, snapshot);
 
     client.runtime.tick(0);
-    expect(rotations.at(-1)).toBeCloseTo(degrees(170), 2);
+    expect(rotations.at(-1)).toBeCloseTo(degrees(260), 2);
     client.runtime.tick(25);
-    expect(rotations.at(-1)).toBeCloseTo(Math.PI, 2);
+    expect(rotations.at(-1)).toBeCloseTo(Math.PI * 1.5, 2);
 
     await client.runtime.dispose();
     await multiplayer.dispose();

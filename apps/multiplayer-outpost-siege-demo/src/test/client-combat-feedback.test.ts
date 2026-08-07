@@ -243,6 +243,9 @@ describe("Outpost client combat feedback", () => {
         | undefined
     )?.position;
     expect(beforeAuthority?.x).toBeGreaterThan(900);
+    expect(
+      renderer.objects().find((object) => object.id === visualObjectId)?.transform?.rotation?.z
+    ).toBeCloseTo(Math.PI / 2);
 
     predictionFrame.authorityElapsedMs = 50;
     predictionFrame.records = [
@@ -279,6 +282,17 @@ describe("Outpost client combat feedback", () => {
     expect(
       observerRenderer.objects().filter((object) => object.id === visualObjectId)
     ).toHaveLength(1);
+    expect(
+      (targetStates.get(visualObjectId)?.transform as { rotation?: { z?: number } } | undefined)
+        ?.rotation?.z
+    ).toBeCloseTo(Math.PI / 2);
+    expect(
+      (
+        observerTargetStates.get(visualObjectId)?.transform as
+          | { rotation?: { z?: number } }
+          | undefined
+      )?.rotation?.z
+    ).toBeCloseTo(Math.PI / 2);
     expect(
       renderer.objects().find((object) => object.id === visualObjectId)?.props
     ).not.toMatchObject({ tint: 0xfff1a8 });

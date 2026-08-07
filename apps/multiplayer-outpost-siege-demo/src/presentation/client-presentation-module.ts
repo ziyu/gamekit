@@ -15,6 +15,7 @@ import {
   type OutpostRenderTargetWriter
 } from "./preview-presentation-module";
 import { createOutpostDynamicRenderObjectDefinition } from "./player-render-object";
+import { resolveOutpostFacingRotation } from "./render-rotation";
 import {
   createOutpostCombatFeedbackState,
   cancelOutpostAnticipatedProjectile,
@@ -183,7 +184,13 @@ export function createOutpostClientPresentationModule(
                 options.applyRenderTargetState(handle.native, {
                   transform: {
                     position: { x: position.x, y: position.y },
-                    rotation: { z: facing },
+                    rotation: {
+                      z: resolveOutpostFacingRotation(
+                        options.dataRegistry,
+                        presentation.renderKey,
+                        facing
+                      )
+                    },
                     scale: { x: scale, y: scale }
                   },
                   props: { tint }

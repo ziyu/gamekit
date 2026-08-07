@@ -24,14 +24,18 @@ import {
   OUTPOST_WAVE_TYPE,
   OUTPOST_WEAPON_TYPE,
   type OutpostArenaDefinition,
-  type OutpostPlayerDefinition
+  type OutpostPlayerDefinition,
+  type OutpostRenderObjectDefinition
 } from "../domain";
 import {
   loadOutpostInitialAssetGroups,
   loadOutpostLazyAssetGroup,
   outpostProfileDefinition
 } from "../profiles";
-import { createOutpostArenaRenderObjectDefinitions } from "../presentation";
+import {
+  createOutpostArenaRenderObjectDefinitions,
+  createOutpostDynamicRenderObjectDefinition
+} from "../presentation";
 import { createDataRegistry } from "@gamekit/data";
 
 const APP_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -313,6 +317,51 @@ describe("Outpost content pipeline", () => {
       expect(runtime.subarray(8, 12).toString("ascii")).toBe("WEBP");
       expect(readWebpDimensions(runtime)).toEqual({ width: asset.width, height: asset.height });
     }
+  });
+
+  it("aligns up-authored player and projectile sprites with gameplay facing", () => {
+    const registry = createOutpostDataRegistry();
+    const player = registry.getValue<OutpostRenderObjectDefinition>(
+      OUTPOST_RENDER_OBJECT_TYPE,
+      "render.outpost.player"
+    );
+    const projectile = registry.getValue<OutpostRenderObjectDefinition>(
+      OUTPOST_RENDER_OBJECT_TYPE,
+      "render.outpost.projectile"
+    );
+
+    expect(player.facingOffsetRadians).toBeCloseTo(Math.PI / 2);
+    expect(projectile.facingOffsetRadians).toBeCloseTo(Math.PI / 2);
+    expect(
+      createOutpostDynamicRenderObjectDefinition(
+        registry,
+        player.id,
+        "player-facing-up",
+        100,
+        100,
+        -Math.PI / 2
+      ).transform?.rotation?.z
+    ).toBeCloseTo(0);
+    expect(
+      createOutpostDynamicRenderObjectDefinition(
+        registry,
+        projectile.id,
+        "projectile-facing-right",
+        100,
+        100,
+        0
+      ).transform?.rotation?.z
+    ).toBeCloseTo(Math.PI / 2);
+    expect(
+      createOutpostDynamicRenderObjectDefinition(
+        registry,
+        "render.outpost.feedback.crosshair",
+        "crosshair-unmodified",
+        100,
+        100,
+        0.25
+      ).transform?.rotation?.z
+    ).toBeCloseTo(0.25);
   });
 
   it("derives every static render placement and collider from the same arena object", () => {

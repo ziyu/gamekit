@@ -6,6 +6,7 @@ import type { RendererAdapter } from "@gamekit/renderer-core";
 
 import type { OutpostRenderTargetWriter } from "../preview-presentation-module";
 import { createOutpostDynamicRenderObjectDefinition } from "../player-render-object";
+import { resolveOutpostFacingRotation } from "../render-rotation";
 import { OUTPOST_AUDIO_IDS } from "../audio-content";
 import type { OutpostPlayerPresentationFrame } from "../player";
 import type {
@@ -570,7 +571,13 @@ function syncRecordProjectiles(
         alpha: 1,
         transform: {
           position: { ...sample.position },
-          rotation: { z: Math.atan2(record.fireVelocity.y, record.fireVelocity.x) },
+          rotation: {
+            z: resolveOutpostFacingRotation(
+              options.dataRegistry,
+              "render.outpost.projectile",
+              Math.atan2(record.fireVelocity.y, record.fireVelocity.x)
+            )
+          },
           scale: { x: 1, y: 1 }
         }
       });

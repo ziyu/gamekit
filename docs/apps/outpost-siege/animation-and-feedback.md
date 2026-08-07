@@ -34,6 +34,11 @@ Base locomotion 永远有可返回 stable state。Reaction 不能把 controller 
 
 俯视角色使用 8 向视觉方向。Gameplay facing 保持连续弧度，Animator mapping 量化到 8 个 sector：E、SE、S、SW、W、NW、N、NE。切换使用带滞回的扇区边界，避免 aim 在边界附近造成 sprite 抖动。
 
+Gameplay、Physics 与网络统一使用世界空间弧度（`atan2(y, x)`，零度朝右）。方向性贴图在
+`render.object` 数据中通过 `facingOffsetRadians` 声明素材默认朝向与世界零度的差值；该 offset 只在
+Presentation 写入 Renderer transform 时叠加，不能反向修改瞄准向量、权威 facing、投射物速度或复制状态。
+创建对象与逐帧 transform patch 必须调用同一个换算入口，避免首帧正确而后续更新恢复为错误朝向。
+
 每个基础角色至少提供：
 
 - idle：8 向，每向 4–6 帧。

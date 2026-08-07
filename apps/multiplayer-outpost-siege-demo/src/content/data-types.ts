@@ -205,7 +205,10 @@ export function createOutpostRenderObjectDataType(): DataTypeDefinition<OutpostR
                 "assetRefs"
               )
             ]
-          : [])
+          : []),
+        ...(document.data.facingOffsetRadians === undefined
+          ? []
+          : finite(document, document.data.facingOffsetRadians, "facingOffsetRadians"))
       ];
     }
   };
