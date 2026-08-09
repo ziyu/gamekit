@@ -99,8 +99,13 @@ corepack pnpm verify:release:gamekits
 
 - `GAMEKITS_RELEASE_VERSION`：覆盖 release version。
 - `GAMEKITS_RELEASE_WAVE`：`all`、`1`、`2` 或 `3`。
-- `GAMEKITS_RELEASE_PACKAGES`：逗号分隔 package slug。
+- `GAMEKITS_RELEASE_PACKAGES`：逗号分隔 package slug；验证脚本会自动补齐这些包的内部 workspace
+  依赖并按依赖优先顺序构建。
 - `GAMEKITS_RELEASE_DIR`：指定临时 release staging 目录。
+
+`GAMEKITS_RELEASE_WAVE=all` 会自动发现 `packages/` 下所有非私有包，不依赖手工维护的发布包总表。
+Wave 1/2/3 仍负责选择各自的 smoke 入口，但每个 wave 的 tarball 集合都会包含完整内部依赖闭包，避免
+干净环境把尚未发布的相邻包错误解析到 npm registry。
 
 提交发布相关改动前仍要跑仓库根目录验证：
 
