@@ -205,7 +205,7 @@ describe("Outpost Browser multiplayer", () => {
     expect(world.count()).toBe(0);
   });
 
-  it("presents replicated Dash and reload through the shared player Animator controller", async () => {
+  it("presents replicated Dash, reload, and Tactical through the shared player Animator controller", async () => {
     const backend = createMemoryMultiplayerBackend({ id: "outpost.client-animation.test" });
     const server = createMultiplayerRuntime({ id: "server", backend });
     const multiplayer = createMultiplayerRuntime({ id: "client", backend });
@@ -268,6 +268,24 @@ describe("Outpost Browser multiplayer", () => {
     expect(animationAdapter.frame(controllerId)?.layers[0]).toMatchObject({
       kind: "gameplay-phase",
       clipId: "animation.outpost.player.reload-preparing"
+    });
+
+    snapshot.tick = 3;
+    snapshot.elapsedMs = 900;
+    snapshot.combat.actors[0] = {
+      ...snapshot.combat.actors[0]!,
+      abilityExecutionId: "player.ranger-1:tactical:1",
+      abilityId: "ability.outpost.shock_field",
+      abilityPhase: "active",
+      abilityPhaseStartedAt: 860,
+      abilityPhaseEndsAt: 1_020
+    };
+    await sendSnapshot(server, snapshot);
+    client.runtime.tick(16);
+
+    expect(animationAdapter.frame(controllerId)?.layers[0]).toMatchObject({
+      kind: "gameplay-phase",
+      clipId: "animation.outpost.player.tactical-active"
     });
 
     await client.runtime.dispose();

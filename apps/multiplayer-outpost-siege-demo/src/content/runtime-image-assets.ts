@@ -110,7 +110,7 @@ export const outpostRuntimeImageAssets: readonly OutpostRuntimeImageAsset[] = [
     group: "combat",
     preload: true,
     spriteSheet: {
-      sourceColumns: 5,
+      sourceColumns: 6,
       sourceRows: 1,
       poseBounds: { width: 68, height: 110 },
       frames: [
@@ -126,7 +126,8 @@ export const outpostRuntimeImageAssets: readonly OutpostRuntimeImageAsset[] = [
         { sourceFrame: 4 },
         { sourceFrame: 4, flipX: true, offsetY: -1 },
         { sourceFrame: 0, rotateDegrees: 7 },
-        { sourceFrame: 4, rotateDegrees: 90 }
+        { sourceFrame: 4, rotateDegrees: 90 },
+        { sourceFrame: 5 }
       ]
     }
   },

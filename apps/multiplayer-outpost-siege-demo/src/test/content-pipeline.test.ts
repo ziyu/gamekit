@@ -244,9 +244,9 @@ describe("Outpost content pipeline", () => {
       frame: { width: 128, height: 128 },
       metadata: {
         referenceSource: "assets-src/outpost/combat/player.webp",
-        sourceColumns: 5,
+        sourceColumns: 6,
         sourceRows: 1,
-        runtimeFrameCount: 13
+        runtimeFrameCount: 14
       }
     });
     expect(playerAsset.animations).toEqual(
@@ -254,7 +254,8 @@ describe("Outpost content pipeline", () => {
         expect.objectContaining({ id: "outpost.player.idle", frames: [0, 1] }),
         expect.objectContaining({ id: "outpost.player.run", frames: [2, 3] }),
         expect.objectContaining({ id: "outpost.player.dash", frames: [9, 10] }),
-        expect.objectContaining({ id: "outpost.player.reload-preparing", frames: [6, 7] })
+        expect.objectContaining({ id: "outpost.player.reload-preparing", frames: [6, 7] }),
+        expect.objectContaining({ id: "outpost.player.tactical-active", frames: [13] })
       ])
     );
     expect(
@@ -307,6 +308,18 @@ describe("Outpost content pipeline", () => {
           phase: "recovering",
           layer: "base",
           clip: "reload-recovering"
+        },
+        {
+          abilityId: "ability.outpost.shock_field",
+          phase: "preparing",
+          layer: "base",
+          clip: "tactical-preparing"
+        },
+        {
+          abilityId: "ability.outpost.shock_field",
+          phase: "active",
+          layer: "base",
+          clip: "tactical-active"
         }
       ])
     );

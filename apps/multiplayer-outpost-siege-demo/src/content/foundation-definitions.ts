@@ -401,7 +401,11 @@ export function outpostSpriteAnimations(assetId: string): AssetAnimationManifest
       animation("outpost.player.reload-active", [7], 1, 0),
       animation("outpost.player.reload-recovering", [7, 8], 4, 0),
       animation("outpost.player.hit", [11], 1, 0),
-      animation("outpost.player.dead", [12], 1, 0)
+      animation("outpost.player.dead", [12], 1, 0),
+      animation("outpost.player.tactical-preparing", [0, 13], 6, 0),
+      animation("outpost.player.tactical-committed", [13], 1, 0),
+      animation("outpost.player.tactical-active", [13], 1, 0),
+      animation("outpost.player.tactical-recovering", [13, 0], 6, 0)
     ];
   }
   return [
@@ -549,6 +553,10 @@ function createPlayerClipDefinitions(assetId: string): AnimationClipDefinition[]
     clip("player", "reload-committed", assetId, 100, false),
     clip("player", "reload-active", assetId, 100, false),
     clip("player", "reload-recovering", assetId, 450, false),
+    clip("player", "tactical-preparing", assetId, 260, false),
+    clip("player", "tactical-committed", assetId, 1, false),
+    clip("player", "tactical-active", assetId, 160, false),
+    clip("player", "tactical-recovering", assetId, 260, false),
     clip("player", "hit", assetId, 180, false),
     clip("player", "dead", assetId, 1_000, true)
   ];
@@ -567,7 +575,8 @@ function createEnemyClipDefinitions(role: string, assetId: string): AnimationCli
 function playerPhaseMappings(): NonNullable<AnimatorBindingDefinition["phaseMappings"]> {
   return [
     ...abilityPhaseMappings("ability.outpost.rifle_fire", "rifle"),
-    ...abilityPhaseMappings("ability.outpost.rifle_reload", "reload")
+    ...abilityPhaseMappings("ability.outpost.rifle_reload", "reload"),
+    ...abilityPhaseMappings("ability.outpost.shock_field", "tactical")
   ];
 }
 
