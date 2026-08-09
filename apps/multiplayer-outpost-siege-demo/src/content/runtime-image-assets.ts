@@ -1,6 +1,7 @@
 export type OutpostRuntimeImageAsset = {
   id: string;
   authoringSource: string;
+  referenceSource?: string | undefined;
   runtimeUrl: string;
   runtimeFormat: "webp";
   width: number;
@@ -10,6 +11,22 @@ export type OutpostRuntimeImageAsset = {
   group: "boot" | "match" | "combat" | "boss";
   preload: boolean;
   lazy?: boolean;
+  spriteSheet?: OutpostRuntimeSpriteSheet | undefined;
+};
+
+export type OutpostRuntimeSpriteSheetFrame = {
+  sourceFrame: number;
+  flipX?: boolean | undefined;
+  rotateDegrees?: number | undefined;
+  offsetX?: number | undefined;
+  offsetY?: number | undefined;
+};
+
+export type OutpostRuntimeSpriteSheet = {
+  sourceColumns: number;
+  sourceRows: number;
+  poseBounds: { width: number; height: number };
+  frames: readonly OutpostRuntimeSpriteSheetFrame[];
 };
 
 export const outpostRuntimeImageAssets: readonly OutpostRuntimeImageAsset[] = [
@@ -82,7 +99,8 @@ export const outpostRuntimeImageAssets: readonly OutpostRuntimeImageAsset[] = [
   },
   {
     id: "asset.outpost.player",
-    authoringSource: "assets-src/outpost/combat/player.webp",
+    authoringSource: "assets-src/outpost/combat/player-actions.png",
+    referenceSource: "assets-src/outpost/combat/player.webp",
     runtimeUrl: "/assets/outpost/combat/player.webp",
     runtimeFormat: "webp",
     width: 128,
@@ -90,7 +108,27 @@ export const outpostRuntimeImageAssets: readonly OutpostRuntimeImageAsset[] = [
     fit: "contain",
     padding: 8,
     group: "combat",
-    preload: true
+    preload: true,
+    spriteSheet: {
+      sourceColumns: 5,
+      sourceRows: 1,
+      poseBounds: { width: 68, height: 110 },
+      frames: [
+        { sourceFrame: 0, offsetY: 1 },
+        { sourceFrame: 0 },
+        { sourceFrame: 1 },
+        { sourceFrame: 1, flipX: true },
+        { sourceFrame: 2 },
+        { sourceFrame: 2, offsetY: 2 },
+        { sourceFrame: 0 },
+        { sourceFrame: 3 },
+        { sourceFrame: 0 },
+        { sourceFrame: 4 },
+        { sourceFrame: 4, flipX: true, offsetY: -1 },
+        { sourceFrame: 0, rotateDegrees: 7 },
+        { sourceFrame: 4, rotateDegrees: 90 }
+      ]
+    }
   },
   {
     id: "asset.outpost.raider",

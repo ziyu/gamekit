@@ -22,7 +22,7 @@ const BUDGETS: Array<{
   { metric: "millisecondsPerContentBoot", maximum: 5 },
   { metric: "microsecondsPerIdentityRegistration", maximum: 20 },
   { metric: "microsecondsPerIdentityLookup", maximum: 5 },
-  { metric: "retainedDocuments", maximum: 128 },
+  { metric: "retainedDocuments", maximum: 160 },
   { metric: "retainedReferences", maximum: 256 },
   { metric: "retainedIdentities", maximum: 25_000 },
   { metric: "runtimeImageBytes", maximum: 384 * 1024 },

@@ -387,12 +387,29 @@ export function outpostSpriteAnimations(assetId: string): AssetAnimationManifest
   if (role === undefined) {
     return [];
   }
+  if (role === "player") {
+    return [
+      animation("outpost.player.idle", [0, 1], 2, -1),
+      animation("outpost.player.run", [2, 3], 8, -1),
+      animation("outpost.player.dash", [9, 10], 12, -1),
+      animation("outpost.player.rifle-preparing", [4], 1, 0),
+      animation("outpost.player.rifle-committed", [4, 5], 14, 0),
+      animation("outpost.player.rifle-active", [5], 1, 0),
+      animation("outpost.player.rifle-recovering", [5, 0], 18, 0),
+      animation("outpost.player.reload-preparing", [6, 7], 3, 0),
+      animation("outpost.player.reload-committed", [7], 1, 0),
+      animation("outpost.player.reload-active", [7], 1, 0),
+      animation("outpost.player.reload-recovering", [7, 8], 4, 0),
+      animation("outpost.player.hit", [11], 1, 0),
+      animation("outpost.player.dead", [12], 1, 0)
+    ];
+  }
   return [
-    animation(`outpost.${role}.idle`, -1),
-    animation(`outpost.${role}.run`, -1),
-    animation(`outpost.${role}.attack`, 0),
-    animation(`outpost.${role}.hit`, 0),
-    animation(`outpost.${role}.dead`, 0)
+    animation(`outpost.${role}.idle`, [0], 1, -1),
+    animation(`outpost.${role}.run`, [0], 1, -1),
+    animation(`outpost.${role}.attack`, [0], 1, 0),
+    animation(`outpost.${role}.hit`, [0], 1, 0),
+    animation(`outpost.${role}.dead`, [0], 1, 0)
   ];
 }
 
@@ -410,35 +427,99 @@ export function outpostAnimatorBindingIdForRenderKey(renderKey: string): string 
 }
 
 function createAnimatorEntries(): DataPackEntry[] {
-  const graphId = "animator.outpost.actor.graph";
-  const graph: AnimatorGraphDefinition = {
-    id: graphId,
+  const playerGraph = createAnimatorGraph("player", true);
+  const enemyGraph = createAnimatorGraph("enemy", false);
+  const entries: DataPackEntry[] = [
+    entry("animator.graph", playerGraph.id, playerGraph),
+    entry("animator.graph", enemyGraph.id, enemyGraph)
+  ];
+  for (const [assetId, role] of Object.entries(OUTPOST_ANIMATED_ASSETS)) {
+    const player = role === "player";
+    const clipDefinitions = player
+      ? createPlayerClipDefinitions(assetId)
+      : createEnemyClipDefinitions(role, assetId);
+    entries.push(
+      ...clipDefinitions.map((definition) => entry("animation.clip", definition.id, definition))
+    );
+    const bindingDefinition: AnimatorBindingDefinition = {
+      id: `animator.outpost.binding.${role}`,
+      graph: { type: "animator.graph", id: player ? playerGraph.id : enemyGraph.id },
+      clips: Object.fromEntries(
+        clipDefinitions.map((definition) => [
+          definition.id.split(".").at(-1)!,
+          { type: "animation.clip" as const, id: definition.id }
+        ])
+      ),
+      fallbackClip: "idle",
+      phaseMappings: player ? playerPhaseMappings() : enemyPhaseMappings()
+    };
+    entries.push(entry("animator.binding", bindingDefinition.id, bindingDefinition));
+  }
+  return entries;
+}
+
+function createAnimatorGraph(
+  role: "player" | "enemy",
+  supportsDash: boolean
+): AnimatorGraphDefinition {
+  const states = [
+    { id: "idle", clip: "idle", loop: true },
+    { id: "run", clip: "run", loop: true, speedParameter: "speed" },
+    ...(supportsDash ? [{ id: "dash", clip: "dash", loop: true }] : []),
+    { id: "dead", clip: "dead", loop: true }
+  ];
+  const locomotionStates = supportsDash ? ["idle", "run", "dash"] : ["idle", "run"];
+  return {
+    id: `animator.outpost.${role}.graph`,
     parameters: [
       { id: "speed", type: "number", default: 0 },
-      { id: "dead", type: "boolean", default: false }
+      { id: "dead", type: "boolean", default: false },
+      ...(supportsDash ? [{ id: "dashing", type: "boolean" as const, default: false }] : [])
     ],
     layers: [
       {
         id: "base",
         initialState: "idle",
-        states: [
-          { id: "idle", clip: "idle", loop: true },
-          { id: "run", clip: "run", loop: true, speedParameter: "speed" },
-          { id: "dead", clip: "dead", loop: true }
-        ],
+        states,
         transitions: [
-          {
-            from: "idle",
+          ...locomotionStates.map((from) => ({
+            from,
             to: "dead",
             priority: 100,
-            conditions: [{ parameter: "dead", operator: "==", value: true }]
-          },
-          {
-            from: "run",
-            to: "dead",
-            priority: 100,
-            conditions: [{ parameter: "dead", operator: "==", value: true }]
-          },
+            conditions: [{ parameter: "dead", operator: "==" as const, value: true }]
+          })),
+          ...(supportsDash
+            ? [
+                {
+                  from: "idle",
+                  to: "dash",
+                  priority: 50,
+                  conditions: [{ parameter: "dashing", operator: "==" as const, value: true }]
+                },
+                {
+                  from: "run",
+                  to: "dash",
+                  priority: 50,
+                  conditions: [{ parameter: "dashing", operator: "==" as const, value: true }]
+                },
+                {
+                  from: "dash",
+                  to: "run",
+                  conditions: [
+                    { parameter: "dashing", operator: "==" as const, value: false },
+                    { parameter: "speed", operator: ">" as const, value: 0.05 }
+                  ]
+                },
+                {
+                  from: "dash",
+                  to: "idle",
+                  conditions: [
+                    { parameter: "dashing", operator: "==" as const, value: false },
+                    { parameter: "speed", operator: "<=" as const, value: 0.05 }
+                  ]
+                }
+              ]
+            : []),
           {
             from: "idle",
             to: "run",
@@ -453,54 +534,61 @@ function createAnimatorEntries(): DataPackEntry[] {
       }
     ]
   };
-  const entries: DataPackEntry[] = [entry("animator.graph", graph.id, graph)];
-  for (const [assetId, role] of Object.entries(OUTPOST_ANIMATED_ASSETS)) {
-    const clipDefinitions = [
-      clip(role, "idle", assetId, 1_000, true),
-      clip(role, "run", assetId, 520, true),
-      clip(role, "attack", assetId, 900, false),
-      clip(role, "hit", assetId, 180, false),
-      clip(role, "dead", assetId, 1_000, true)
-    ];
-    entries.push(
-      ...clipDefinitions.map((definition) => entry("animation.clip", definition.id, definition))
-    );
-    const bindingDefinition: AnimatorBindingDefinition = {
-      id: `animator.outpost.binding.${role}`,
-      graph: { type: "animator.graph", id: graphId },
-      clips: Object.fromEntries(
-        clipDefinitions.map((definition) => [
-          definition.id.split(".").at(-1)!,
-          { type: "animation.clip" as const, id: definition.id }
-        ])
-      ),
-      fallbackClip: "idle",
-      phaseMappings: [
-        {
-          phase: "preparing",
-          layer: "base",
-          clip: "attack"
-        },
-        {
-          phase: "committed",
-          layer: "base",
-          clip: "attack"
-        },
-        {
-          phase: "active",
-          layer: "base",
-          clip: "attack"
-        },
-        {
-          phase: "recovering",
-          layer: "base",
-          clip: "attack"
-        }
-      ]
-    };
-    entries.push(entry("animator.binding", bindingDefinition.id, bindingDefinition));
-  }
-  return entries;
+}
+
+function createPlayerClipDefinitions(assetId: string): AnimationClipDefinition[] {
+  return [
+    clip("player", "idle", assetId, 1_000, true),
+    clip("player", "run", assetId, 250, true),
+    clip("player", "dash", assetId, 180, true),
+    clip("player", "rifle-preparing", assetId, 35, false),
+    clip("player", "rifle-committed", assetId, 35, false),
+    clip("player", "rifle-active", assetId, 45, false),
+    clip("player", "rifle-recovering", assetId, 40, false),
+    clip("player", "reload-preparing", assetId, 800, false),
+    clip("player", "reload-committed", assetId, 100, false),
+    clip("player", "reload-active", assetId, 100, false),
+    clip("player", "reload-recovering", assetId, 450, false),
+    clip("player", "hit", assetId, 180, false),
+    clip("player", "dead", assetId, 1_000, true)
+  ];
+}
+
+function createEnemyClipDefinitions(role: string, assetId: string): AnimationClipDefinition[] {
+  return [
+    clip(role, "idle", assetId, 1_000, true),
+    clip(role, "run", assetId, 520, true),
+    clip(role, "attack", assetId, 900, false),
+    clip(role, "hit", assetId, 180, false),
+    clip(role, "dead", assetId, 1_000, true)
+  ];
+}
+
+function playerPhaseMappings(): NonNullable<AnimatorBindingDefinition["phaseMappings"]> {
+  return [
+    ...abilityPhaseMappings("ability.outpost.rifle_fire", "rifle"),
+    ...abilityPhaseMappings("ability.outpost.rifle_reload", "reload")
+  ];
+}
+
+function enemyPhaseMappings(): NonNullable<AnimatorBindingDefinition["phaseMappings"]> {
+  return ["preparing", "committed", "active", "recovering"].map((phase) => ({
+    phase,
+    layer: "base",
+    clip: "attack"
+  }));
+}
+
+function abilityPhaseMappings(
+  abilityId: string,
+  clipPrefix: string
+): NonNullable<AnimatorBindingDefinition["phaseMappings"]> {
+  return ["preparing", "committed", "active", "recovering"].map((phase) => ({
+    abilityId,
+    phase,
+    layer: "base",
+    clip: `${clipPrefix}-${phase}`
+  }));
 }
 
 function clip(
@@ -519,8 +607,13 @@ function clip(
   };
 }
 
-function animation(id: string, repeat: number): AssetAnimationManifest {
-  return { id, frames: [0], frameRate: 1, repeat };
+function animation(
+  id: string,
+  frames: number[],
+  frameRate: number,
+  repeat: number
+): AssetAnimationManifest {
+  return { id, frames, frameRate, repeat };
 }
 
 function binding(

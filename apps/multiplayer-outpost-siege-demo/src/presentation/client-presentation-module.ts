@@ -60,6 +60,7 @@ export type CreateOutpostClientPresentationModuleOptions = {
         abilityPhaseEndsAt?: number | undefined;
         weaponShotSequence?: number | undefined;
         weaponLastShotCorrelationId?: string | undefined;
+        dashRemainingMs?: number | undefined;
       }
     | undefined;
 };
@@ -209,7 +210,10 @@ export function createOutpostClientPresentationModule(
               presented?.generation ?? 0,
               velocityX,
               velocityY,
-              dead
+              dead,
+              presentation.renderKey === "render.outpost.player"
+                ? (presented?.dashRemainingMs ?? 0) > 0
+                : undefined
             );
             syncAnimatorPhase(
               options.animator,
@@ -363,7 +367,8 @@ function syncAnimatorParameters(
   generation: number,
   velocityX: number,
   velocityY: number,
-  dead: boolean
+  dead: boolean,
+  dashing: boolean | undefined
 ): void {
   const controllerId = controllers.get(objectId);
   if (!animator || !controllerId) {
@@ -378,12 +383,16 @@ function syncAnimatorParameters(
     signatures.delete(objectId);
   }
   const speed = Math.min(1, Math.hypot(velocityX, velocityY) / 360);
-  const signature = `${speed.toFixed(3)}:${dead ? 1 : 0}`;
+  const signature = `${speed.toFixed(3)}:${dead ? 1 : 0}:${dashing === undefined ? "na" : dashing ? 1 : 0}`;
   if (signatures.get(objectId) === signature) {
     return;
   }
   signatures.set(objectId, signature);
-  animator.setParameters(controllerId, { speed, dead });
+  animator.setParameters(controllerId, {
+    speed,
+    dead,
+    ...(dashing === undefined ? {} : { dashing })
+  });
 }
 
 function syncAnimatorPhase(

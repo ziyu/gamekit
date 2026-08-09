@@ -205,6 +205,76 @@ describe("Outpost Browser multiplayer", () => {
     expect(world.count()).toBe(0);
   });
 
+  it("presents replicated Dash and reload through the shared player Animator controller", async () => {
+    const backend = createMemoryMultiplayerBackend({ id: "outpost.client-animation.test" });
+    const server = createMultiplayerRuntime({ id: "server", backend });
+    const multiplayer = createMultiplayerRuntime({ id: "client", backend });
+    await server.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "session.server", role: "server" }
+    });
+    await multiplayer.joinSession({
+      sessionId: "session-1",
+      localPeer: { id: "ranger-1", role: "client", playerId: "player.ranger-1" }
+    });
+    const animationAdapter = createMemoryAnimationPlaybackAdapter();
+    const client = createOutpostClientShadowRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world: createKootaWorld(),
+      multiplayer,
+      physicsBackend: createMemoryPhysicsBackend(),
+      localPlayerId: "player.ranger-1",
+      renderer: createMemoryRenderer("outpost.client-animation.renderer"),
+      animationAdapter
+    });
+    await client.runtime.start();
+    const controllerId = "outpost.animator.outpost.client.player.0.0";
+    const snapshot = authoritySnapshot(1, 1);
+    snapshot.players[0] = {
+      ...snapshot.players[0]!,
+      velocityX: 640,
+      dashSequence: 1,
+      dashRemainingMs: 180,
+      dashDirectionX: 1
+    };
+    snapshot.combat.actors = [playerCombatActor()];
+    await sendSnapshot(server, snapshot);
+    client.runtime.tick(16);
+
+    expect(animationAdapter.frame(controllerId)?.layers[0]).toMatchObject({
+      kind: "state",
+      clipId: "animation.outpost.player.dash"
+    });
+
+    snapshot.tick = 2;
+    snapshot.elapsedMs = 100;
+    snapshot.players[0] = {
+      ...snapshot.players[0]!,
+      velocityX: 0,
+      dashRemainingMs: 0
+    };
+    snapshot.combat.actors[0] = {
+      ...snapshot.combat.actors[0]!,
+      abilityExecutionId: "player.ranger-1:reload:1",
+      abilityId: "ability.outpost.rifle_reload",
+      abilityPhase: "preparing",
+      abilityPhaseStartedAt: 50,
+      abilityPhaseEndsAt: 850
+    };
+    await sendSnapshot(server, snapshot);
+    client.runtime.tick(16);
+
+    expect(animationAdapter.frame(controllerId)?.layers[0]).toMatchObject({
+      kind: "gameplay-phase",
+      clipId: "animation.outpost.player.reload-preparing"
+    });
+
+    await client.runtime.dispose();
+    await multiplayer.dispose();
+    await server.dispose();
+  });
+
   it("automatically samples, predicts, sends, and reconciles local input", async () => {
     const backend = createMemoryMultiplayerBackend({ id: "outpost.client-prediction.test" });
     const server = createMultiplayerRuntime({ id: "server", backend });

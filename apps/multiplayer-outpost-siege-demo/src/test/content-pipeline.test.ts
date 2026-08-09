@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAssetManager, type AssetDefinition } from "@gamekit/asset";
+import type { AnimatorBindingDefinition, AnimatorGraphDefinition } from "@gamekit/animator-core";
 import type { DataPack } from "@gamekit/data";
 import type { PhysicsLayoutData } from "@gamekit/physics-core";
 import { describe, expect, it } from "vitest";
@@ -205,7 +206,7 @@ describe("Outpost content pipeline", () => {
     const registry = createOutpostDataRegistry();
 
     for (const manifestAsset of outpostRuntimeImageAssets) {
-      expect(manifestAsset.authoringSource).toMatch(/\.webp$/);
+      expect(manifestAsset.authoringSource).toMatch(/\.(png|webp)$/);
       expect(manifestAsset.runtimeUrl).toMatch(/\.webp$/);
 
       const definition = registry.get<AssetDefinition>("asset.definition", manifestAsset.id).data;
@@ -218,17 +219,98 @@ describe("Outpost content pipeline", () => {
       });
 
       const authoringFile = readFileSync(join(APP_ROOT, manifestAsset.authoringSource));
-      expect(authoringFile.subarray(0, 4).toString("ascii")).toBe("RIFF");
-      expect(authoringFile.subarray(8, 12).toString("ascii")).toBe("WEBP");
+      if (manifestAsset.authoringSource.endsWith(".png")) {
+        expect(authoringFile.subarray(1, 4).toString("ascii")).toBe("PNG");
+      } else {
+        expect(authoringFile.subarray(0, 4).toString("ascii")).toBe("RIFF");
+        expect(authoringFile.subarray(8, 12).toString("ascii")).toBe("WEBP");
+      }
 
       const runtimeFile = readFileSync(join(APP_ROOT, "public", manifestAsset.runtimeUrl.slice(1)));
       expect(runtimeFile.subarray(0, 4).toString("ascii")).toBe("RIFF");
       expect(runtimeFile.subarray(8, 12).toString("ascii")).toBe("WEBP");
       expect(readWebpDimensions(runtimeFile)).toEqual({
-        width: manifestAsset.width,
+        width: manifestAsset.width * (manifestAsset.spriteSheet?.frames.length ?? 1),
         height: manifestAsset.height
       });
     }
+
+    const playerAsset = registry.get<AssetDefinition>(
+      "asset.definition",
+      "asset.outpost.player"
+    ).data;
+    expect(playerAsset).toMatchObject({
+      type: "spritesheet",
+      frame: { width: 128, height: 128 },
+      metadata: {
+        referenceSource: "assets-src/outpost/combat/player.webp",
+        sourceColumns: 5,
+        sourceRows: 1,
+        runtimeFrameCount: 13
+      }
+    });
+    expect(playerAsset.animations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "outpost.player.idle", frames: [0, 1] }),
+        expect.objectContaining({ id: "outpost.player.run", frames: [2, 3] }),
+        expect.objectContaining({ id: "outpost.player.dash", frames: [9, 10] }),
+        expect.objectContaining({ id: "outpost.player.reload-preparing", frames: [6, 7] })
+      ])
+    );
+    expect(
+      outpostRuntimeImageAssets.find((asset) => asset.id === "asset.outpost.player")?.spriteSheet
+        ?.poseBounds
+    ).toEqual({ width: 68, height: 110 });
+  });
+
+  it("maps player locomotion and gameplay phases to distinct authored clips", () => {
+    const registry = createOutpostDataRegistry();
+    const graph = registry.getValue<AnimatorGraphDefinition>(
+      "animator.graph",
+      "animator.outpost.player.graph"
+    );
+    const binding = registry.getValue<AnimatorBindingDefinition>(
+      "animator.binding",
+      "animator.outpost.binding.player"
+    );
+
+    expect(graph.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "speed", type: "number" }),
+        expect.objectContaining({ id: "dashing", type: "boolean" }),
+        expect.objectContaining({ id: "dead", type: "boolean" })
+      ])
+    );
+    expect(graph.layers[0]?.states).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "idle", clip: "idle" }),
+        expect.objectContaining({ id: "run", clip: "run" }),
+        expect.objectContaining({ id: "dash", clip: "dash" })
+      ])
+    );
+    expect(binding.phaseMappings).toEqual(
+      expect.arrayContaining([
+        {
+          abilityId: "ability.outpost.rifle_fire",
+          phase: "active",
+          layer: "base",
+          clip: "rifle-active"
+        },
+        {
+          abilityId: "ability.outpost.rifle_reload",
+          phase: "preparing",
+          layer: "base",
+          clip: "reload-preparing"
+        },
+        {
+          abilityId: "ability.outpost.rifle_reload",
+          phase: "recovering",
+          layer: "base",
+          clip: "reload-recovering"
+        }
+      ])
+    );
+    expect(binding.phaseMappings?.some((mapping) => mapping.abilityId === undefined)).toBe(false);
   });
 
   it("ships a licensed compressed music track instead of the generated audio fixture", () => {

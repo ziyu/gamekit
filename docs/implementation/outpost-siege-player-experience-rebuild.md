@@ -1,6 +1,6 @@
 # Outpost Siege Player Experience Rebuild
 
-Status: Active — Rifle kinematic-data-buffer integrated; Slice 3 movement/Dash/camera baseline is complete.
+Status: Active — Slice 3 movement/Dash/camera baseline is complete; Slice 4 character assets and Animator is in progress.
 
 ## Prediction Capability Gate
 
@@ -86,6 +86,13 @@ edge，reload 期间只接受新的 edge，不把 held 状态解释为新射击�
 本地弹体、held input 不重复射击，以及非空 reload 的新 edge 仍可按 authority 语义中断。
 
 ## Current Increment
+
+2026-08-09 已进入 Slice 4 的首个可见增量：
+
+- 玩家角色不再把单张 `frames: [0]` 图片伪装成所有动作。新的可审查 authoring pose strip保留现有装甲、武器与朝上基准，资产构建脚本按固定 source grid生成13帧、每帧128×128的透明WebP spritesheet；idle、run、fire、reload、dash、hit和death拥有独立帧序列。所有直立姿势在构建阶段归一到共享68×110不透明包围盒和中心锚点，不再因逐帧 `trim + fit` 造成移动/静止尺度跳变；hit倾斜与death横躺保留动作所需轮廓。方向目前继续复用既有连续 facing rotation，离散direction sheet仍未关闭。
+- 玩家与敌人的 Animator graph已拆开。玩家graph新增Dash state，直接读取同一 replicated/predicted `dashRemainingMs`；Rifle与Reload按 `abilityId + preparing/committed/active/recovering` 映射到独立clip，不再落入无条件通用 `attack`。敌人继续使用独立通用attack映射，不受玩家clip变化影响。
+- 内容测试锁定authoring/runtime格式、13帧sheet尺寸、manifest帧号、玩家graph参数与ability-specific phase mapping；浏览器多人测试直接锁定同一个玩家controller从Dash graph state切换到Reload gameplay phase。
+- 正式Outpost入口已用两个真实浏览器客户端复验资源加载、射击、Reload和Dash；Dash扣除25 stamina并进入1.5秒cooldown，Phaser/Animator无运行错误。该Slice尚未完成：后续仍需补tactical、downed/revive、visual socket、local anticipation与late-join/generation-reset的动作恢复，并完成全部动作的可辨识性gate。
 
 2026-08-07 已进入 Slice 3 的实现与自动验证：
 

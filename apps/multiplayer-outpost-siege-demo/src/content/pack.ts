@@ -508,9 +508,17 @@ function imageAsset(asset: OutpostRuntimeImageAsset): AssetDefinition {
     tags: ["outpost", asset.group],
     metadata: {
       authoringSource: asset.authoringSource,
+      ...(asset.referenceSource === undefined ? {} : { referenceSource: asset.referenceSource }),
       runtimeFormat: asset.runtimeFormat,
       width: asset.width,
-      height: asset.height
+      height: asset.height,
+      ...(asset.spriteSheet === undefined
+        ? {}
+        : {
+            sourceColumns: asset.spriteSheet.sourceColumns,
+            sourceRows: asset.spriteSheet.sourceRows,
+            runtimeFrameCount: asset.spriteSheet.frames.length
+          })
     }
   };
 }
