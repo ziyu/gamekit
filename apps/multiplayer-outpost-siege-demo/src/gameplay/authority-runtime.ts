@@ -49,13 +49,16 @@ import {
 
 import {
   createOutpostArenaPhysicsSceneConfig,
+  OUTPOST_PLAYER_STAMINA_MAX,
   OUTPOST_ARENA_PHYSICS_LAYOUT_ID,
   OUTPOST_NAVIGATION_BACKEND_ID,
   OUTPOST_NAVIGATION_LAYOUT_ID
 } from "../content";
 import {
   OUTPOST_PLAYER_TYPE,
+  OUTPOST_MOVEMENT_PROFILE_TYPE,
   OUTPOST_WEAPON_TYPE,
+  type OutpostMovementProfileDefinition,
   type OutpostPlayerDefinition,
   type OutpostWeaponDefinition
 } from "../domain";
@@ -87,8 +90,16 @@ import {
 } from "./player/weapon-runtime";
 import type { OutpostAuthorityPlayerActionCommand } from "./player/action-types";
 import { createOutpostAuthorityPlayerActionModule } from "./player/action-runtime";
+import {
+  acknowledgeOutpostDashSequence,
+  advanceOutpostMovement,
+  createOutpostMovementState,
+  startOutpostDash,
+  type OutpostMovementState
+} from "./player/movement-policy";
 
 const PLAYER_DEFINITION_ID = "player.outpost.ranger";
+const STAMINA_RECOVERY_STEP_MS = 100;
 
 export type OutpostAuthorityPlayerInput = {
   sequence: number;
@@ -98,6 +109,7 @@ export type OutpostAuthorityPlayerInput = {
   aimY: number;
   fireHeld: boolean;
   fireSequence: number;
+  dashSequence: number;
 };
 
 export type OutpostAuthorityPlayerState = {
@@ -119,6 +131,10 @@ export type OutpostAuthorityPlayerSnapshot = {
   velocityX: number;
   velocityY: number;
   facing: number;
+  dashSequence: number;
+  dashRemainingMs: number;
+  dashDirectionX: number;
+  dashDirectionY: number;
 };
 
 export type OutpostAuthorityGameplaySnapshot = {
@@ -173,6 +189,9 @@ type MaterializedPlayer = OutpostAuthorityCombatPlayer & {
   generation: number;
   input: OutpostAuthorityPlayerInput;
   weapon: OutpostAuthorityPlayerWeapon;
+  movement: OutpostMovementState;
+  staminaRecoveryAccumulatorMs: number;
+  dashSource?: string | undefined;
 };
 
 type AuthorityGameplayState = {
@@ -199,6 +218,14 @@ export function createOutpostAuthorityGameplayRuntime(
   const ai = createAiHandle({ id: "outpost.authority.ai" });
   const tca = createTcaHandle({ id: "outpost.authority.tca" });
   const tcaTrace = createTcaTraceStore({ limit: 180 });
+  const playerDefinition = options.dataRegistry.getValue<OutpostPlayerDefinition>(
+    OUTPOST_PLAYER_TYPE,
+    PLAYER_DEFINITION_ID
+  );
+  const movementProfile = options.dataRegistry.getValue<OutpostMovementProfileDefinition>(
+    OUTPOST_MOVEMENT_PROFILE_TYPE,
+    playerDefinition.movementProfile.id
+  );
   const state: AuthorityGameplayState = {
     dataRegistry: options.dataRegistry,
     world: options.world,
@@ -225,6 +252,41 @@ export function createOutpostAuthorityGameplayRuntime(
       : { projectileGeneration: options.projectileGeneration }),
     players: () => state.players,
     commands: options.combatCommands ?? (() => []),
+    resolvePlayerDash(player, command, accepted) {
+      const materialized = state.players.get(player.playerId);
+      const transform = state.world.get(player.entityId, PhysicsTransformComponent);
+      if (materialized === undefined || transform === undefined) {
+        return;
+      }
+      const dashSequence = command.dashSequence ?? (materialized.movement.dashSequence + 1) >>> 0;
+      acknowledgeOutpostDashSequence(materialized.movement, dashSequence);
+      if (!accepted) {
+        return;
+      }
+      startOutpostDash(
+        materialized.movement,
+        {
+          moveX: materialized.input.moveX,
+          moveY: materialized.input.moveY,
+          aimX: command.aimX,
+          aimY: command.aimY
+        },
+        movementProfile,
+        transform.position,
+        dashSequence
+      );
+      materialized.movement.dashRemainingMs = Math.max(
+        0,
+        materialized.movement.dashRemainingMs - Math.max(0, command.simulationStepMs ?? 0)
+      );
+      materialized.dashSource = command.id;
+      state.world.set(player.entityId, PhysicsVelocityComponent, {
+        linear: {
+          x: materialized.movement.velocityX,
+          y: materialized.movement.velocityY
+        }
+      });
+    },
     playerWeapon(playerId) {
       const weapon = state.players.get(playerId)?.weapon;
       return weapon === undefined ? undefined : captureOutpostPlayerWeaponSnapshot(weapon);
@@ -256,7 +318,7 @@ export function createOutpostAuthorityGameplayRuntime(
         dataRegistry: options.dataRegistry,
         layoutId: OUTPOST_ARENA_PHYSICS_LAYOUT_ID
       }),
-      createAuthorityPlayerModule(state),
+      createAuthorityPlayerModule(state, movementProfile),
       combat.enemyLifecycleModule,
       createNavigationModule({
         id: "outpost.authority.navigation",
@@ -360,7 +422,10 @@ export function createOutpostAuthorityGameplayRuntime(
   };
 }
 
-function createAuthorityPlayerModule(state: AuthorityGameplayState) {
+function createAuthorityPlayerModule(
+  state: AuthorityGameplayState,
+  movementProfile: OutpostMovementProfileDefinition
+) {
   const definition = state.dataRegistry.getValue<OutpostPlayerDefinition>(
     OUTPOST_PLAYER_TYPE,
     PLAYER_DEFINITION_ID
@@ -387,14 +452,14 @@ function createAuthorityPlayerModule(state: AuthorityGameplayState) {
     install(ctx) {
       ctx.systems.register({
         id: "outpost.authority.players.sync",
-        update() {
+        update({ delta }) {
           const desiredPlayers = normalizeDesiredPlayers(state.playerSource());
           removeMissingPlayers(state, desiredPlayers);
           for (const desired of desiredPlayers.values()) {
             const player =
               state.players.get(desired.playerId) ??
               materializePlayer(state, desired, bodyData, colliderData, weaponDefinition);
-            applyPlayerInput(state, player, desired, definition.moveSpeed);
+            applyPlayerInput(state, player, desired, movementProfile, delta);
           }
         }
       });
@@ -471,7 +536,9 @@ function materializePlayer(
     bodyId,
     colliderId,
     input: { ...player.input },
-    weapon: createOutpostAuthorityPlayerWeapon(weaponDefinition)
+    weapon: createOutpostAuthorityPlayerWeapon(weaponDefinition),
+    movement: createOutpostMovementState(),
+    staminaRecoveryAccumulatorMs: 0
   };
 
   try {
@@ -520,7 +587,8 @@ function applyPlayerInput(
   state: AuthorityGameplayState,
   player: MaterializedPlayer,
   desired: OutpostAuthorityPlayerState,
-  moveSpeed: number
+  movementProfile: OutpostMovementProfileDefinition,
+  deltaMs: number
 ): void {
   const world = state.world;
   player.input = { ...desired.input };
@@ -528,28 +596,72 @@ function applyPlayerInput(
     !state.gas.hasActor(player.actorId) ||
     (state.gas.getActor(player.actorId).attributes.current.health ?? 0) <= 0
   ) {
+    player.movement.dashRemainingMs = 0;
+    player.staminaRecoveryAccumulatorMs = 0;
     world.set(player.entityId, PhysicsVelocityComponent, { linear: { x: 0, y: 0 } });
     return;
   }
-  const length = Math.hypot(desired.input.moveX, desired.input.moveY);
-  const scale = length > 1 ? 1 / length : 1;
-  world.set(player.entityId, PhysicsVelocityComponent, {
-    linear: {
-      x: desired.input.moveX * scale * moveSpeed,
-      y: desired.input.moveY * scale * moveSpeed
-    }
-  });
   const transform = world.get(player.entityId, PhysicsTransformComponent);
-  if (!transform) {
+  const velocity = world.get(player.entityId, PhysicsVelocityComponent);
+  if (!transform || !velocity) {
     return;
   }
-  const aimX = desired.input.aimX - transform.position.x;
-  const aimY = desired.input.aimY - transform.position.y;
-  if (aimX !== 0 || aimY !== 0) {
-    world.set(player.entityId, OutpostGameplayObject, {
-      facing: Math.atan2(aimY, aimX)
-    });
+  player.movement.velocityX = velocity.linear.x;
+  player.movement.velocityY = velocity.linear.y;
+  const wasDashing = player.movement.dashRemainingMs > 0;
+  advanceOutpostMovement(player.movement, desired.input, movementProfile, {
+    deltaMs,
+    position: transform.position,
+    acceptDashInput: false
+  });
+  world.set(player.entityId, PhysicsVelocityComponent, {
+    linear: {
+      x: player.movement.velocityX,
+      y: player.movement.velocityY
+    }
+  });
+  world.set(player.entityId, OutpostGameplayObject, { facing: player.movement.facing });
+  if (wasDashing && player.movement.dashRemainingMs === 0 && player.dashSource !== undefined) {
+    if (state.gas.hasActor(player.actorId)) {
+      state.gas.removeTag(player.actorId, "state.dashing", player.dashSource);
+    }
+    delete player.dashSource;
   }
+  recoverPlayerStamina(state, player, movementProfile, deltaMs, wasDashing);
+}
+
+function recoverPlayerStamina(
+  state: AuthorityGameplayState,
+  player: MaterializedPlayer,
+  movementProfile: OutpostMovementProfileDefinition,
+  deltaMs: number,
+  wasDashing: boolean
+): void {
+  if (wasDashing || player.movement.dashRemainingMs > 0) {
+    player.staminaRecoveryAccumulatorMs = 0;
+    return;
+  }
+  const stamina = state.gas.getActor(player.actorId).attributes.current.stamina ?? 0;
+  if (stamina >= OUTPOST_PLAYER_STAMINA_MAX) {
+    player.staminaRecoveryAccumulatorMs = 0;
+    return;
+  }
+  player.staminaRecoveryAccumulatorMs += Math.max(0, deltaMs);
+  const recoverySteps = Math.floor(player.staminaRecoveryAccumulatorMs / STAMINA_RECOVERY_STEP_MS);
+  if (recoverySteps === 0) {
+    return;
+  }
+  const recoveredDurationMs = recoverySteps * STAMINA_RECOVERY_STEP_MS;
+  player.staminaRecoveryAccumulatorMs -= recoveredDurationMs;
+  state.gas.modifyAttribute(
+    player.actorId,
+    {
+      attribute: "stamina",
+      operation: "add",
+      value: (movementProfile.staminaRecoveryPerSecond * recoveredDurationMs) / 1000
+    },
+    "outpost.authority.stamina-recovery"
+  );
 }
 
 function capturePlayerSnapshot(
@@ -579,7 +691,11 @@ function capturePlayerSnapshot(
     y: transform.position.y,
     velocityX: velocity.linear.x,
     velocityY: velocity.linear.y,
-    facing: gameplay.facing
+    facing: gameplay.facing,
+    dashSequence: player.movement.dashSequence,
+    dashRemainingMs: player.movement.dashRemainingMs,
+    dashDirectionX: player.movement.dashDirectionX,
+    dashDirectionY: player.movement.dashDirectionY
   };
 }
 

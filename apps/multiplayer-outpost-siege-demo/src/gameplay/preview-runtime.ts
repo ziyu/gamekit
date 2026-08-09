@@ -23,7 +23,12 @@ import {
 } from "@gamekit/physics-core";
 import type { RendererAdapter } from "@gamekit/renderer-core";
 import type { EntityId, GameWorld } from "@gamekit/world";
-import { OUTPOST_PLAYER_TYPE, type OutpostPlayerDefinition } from "../domain";
+import {
+  OUTPOST_MOVEMENT_PROFILE_TYPE,
+  OUTPOST_PLAYER_TYPE,
+  type OutpostMovementProfileDefinition,
+  type OutpostPlayerDefinition
+} from "../domain";
 import { createOutpostArenaPhysicsSceneConfig, OUTPOST_ARENA_PHYSICS_LAYOUT_ID } from "../content";
 import {
   createOutpostIdentityRegistry,
@@ -40,6 +45,11 @@ import {
   createOutpostInputState,
   type OutpostInputState
 } from "./input";
+import {
+  advanceOutpostMovement,
+  createOutpostMovementState,
+  type OutpostMovementState
+} from "./player/movement-policy";
 
 const PLAYER_DEFINITION_ID = "player.outpost.ranger";
 export type OutpostCameraAdapter = {
@@ -102,6 +112,7 @@ type PreviewState = {
   input: OutpostInputState;
   identity: OutpostIdentityRegistry;
   playerEntity?: EntityId;
+  movement: OutpostMovementState;
   events: OutpostPreviewEvent[];
   eventSequence: number;
 };
@@ -121,6 +132,7 @@ export function createOutpostPreviewRuntime(
     world: options.world,
     input: createOutpostInputState(),
     identity: createOutpostIdentityRegistry(),
+    movement: createOutpostMovementState(),
     events: [],
     eventSequence: 0
   };
@@ -282,31 +294,35 @@ function createPreviewMovementModule(state: PreviewState) {
     OUTPOST_PLAYER_TYPE,
     PLAYER_DEFINITION_ID
   );
+  const movementProfile = state.dataRegistry.getValue<OutpostMovementProfileDefinition>(
+    OUTPOST_MOVEMENT_PROFILE_TYPE,
+    definition.movementProfile.id
+  );
   return defineGameModule<GameInstallContext>({
     id: "outpost.preview.movement",
     install(ctx) {
       ctx.systems.register({
         id: "outpost.preview.movement.apply",
-        update() {
+        update({ delta }) {
           const playerEntity = requirePlayerEntity(state);
-          const length = Math.hypot(state.input.moveX, state.input.moveY);
-          const scale = length > 1 ? 1 / length : 1;
+          const transform = ctx.world.get(playerEntity, PhysicsTransformComponent);
+          const velocity = ctx.world.get(playerEntity, PhysicsVelocityComponent);
+          if (!transform || !velocity) {
+            return;
+          }
+          state.movement.velocityX = velocity.linear.x;
+          state.movement.velocityY = velocity.linear.y;
+          advanceOutpostMovement(state.movement, state.input, movementProfile, {
+            deltaMs: delta,
+            position: transform.position
+          });
           ctx.world.set(playerEntity, PhysicsVelocityComponent, {
             linear: {
-              x: state.input.moveX * scale * definition.moveSpeed,
-              y: state.input.moveY * scale * definition.moveSpeed
+              x: state.movement.velocityX,
+              y: state.movement.velocityY
             }
           });
-          const transform = ctx.world.get(playerEntity, PhysicsTransformComponent);
-          if (transform) {
-            const aimX = state.input.aimX - transform.position.x;
-            const aimY = state.input.aimY - transform.position.y;
-            if (aimX !== 0 || aimY !== 0) {
-              ctx.world.set(playerEntity, OutpostGameplayObject, {
-                facing: Math.atan2(aimY, aimX)
-              });
-            }
-          }
+          ctx.world.set(playerEntity, OutpostGameplayObject, { facing: state.movement.facing });
         }
       });
     }

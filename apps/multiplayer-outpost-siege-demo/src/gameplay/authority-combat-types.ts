@@ -13,6 +13,8 @@ export type OutpostAuthorityCombatCommand = {
   ability: OutpostCombatAbility;
   aimX: number;
   aimY: number;
+  dashSequence?: number | undefined;
+  simulationStepMs?: number | undefined;
   correlationId?: string | undefined;
   parentId?: string | undefined;
 };

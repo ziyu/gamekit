@@ -4,7 +4,7 @@ import type { ColyseusNativeStateUpdate } from "@gamekit/multiplayer-colyseus";
 import type { OutpostClientAuthoritySnapshot } from "../gameplay/client-shadow-runtime";
 import type { OutpostMatchAuthoritySnapshot } from "./match-authority";
 
-export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v8";
+export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v10";
 export const OUTPOST_COLYSEUS_SOURCE_ENDPOINT_ID = "outpost.colyseus-schema";
 const MAX_COMBAT_CUES = 64;
 const MAX_PROJECTILE_RECORDS = 128;
@@ -34,7 +34,11 @@ export const OutpostColyseusPlayerState = schema(
     y: "float64",
     velocityX: "float64",
     velocityY: "float64",
-    facing: "float64"
+    facing: "float64",
+    dashSequence: "uint32",
+    dashRemainingMs: "float64",
+    dashDirectionX: "float64",
+    dashDirectionY: "float64"
   },
   "OutpostColyseusPlayerState"
 );
@@ -163,6 +167,7 @@ export const OutpostColyseusCombatCueState = schema(
     directionY: "float64",
     hasAmount: "boolean",
     amount: "float64",
+    ability: "string",
     reason: "string"
   },
   "OutpostColyseusCombatCueState"
@@ -285,7 +290,11 @@ export function projectOutpostMatchToColyseusState(
         y: player.y,
         velocityX: player.velocityX,
         velocityY: player.velocityY,
-        facing: player.facing
+        facing: player.facing,
+        dashSequence: player.dashSequence ?? 0,
+        dashRemainingMs: player.dashRemainingMs ?? 0,
+        dashDirectionX: player.dashDirectionX ?? 0,
+        dashDirectionY: player.dashDirectionY ?? 0
       });
     next.playerId = player.playerId;
     next.slot = player.slot;
@@ -294,6 +303,10 @@ export function projectOutpostMatchToColyseusState(
     next.velocityX = player.velocityX;
     next.velocityY = player.velocityY;
     next.facing = player.facing;
+    next.dashSequence = player.dashSequence ?? 0;
+    next.dashRemainingMs = player.dashRemainingMs ?? 0;
+    next.dashDirectionX = player.dashDirectionX ?? 0;
+    next.dashDirectionY = player.dashDirectionY ?? 0;
     if (current === undefined) {
       state.players.set(key, next);
     }
@@ -518,6 +531,7 @@ export function projectOutpostMatchToColyseusState(
         directionY: cue.direction?.y ?? 0,
         hasAmount: cue.amount !== undefined,
         amount: cue.amount ?? 0,
+        ability: cue.ability ?? "",
         reason: cue.reason ?? ""
       });
     next.kind = cue.kind;
@@ -538,6 +552,7 @@ export function projectOutpostMatchToColyseusState(
     next.directionY = cue.direction?.y ?? 0;
     next.hasAmount = cue.amount !== undefined;
     next.amount = cue.amount ?? 0;
+    next.ability = cue.ability ?? "";
     next.reason = cue.reason ?? "";
     if (current === undefined) {
       state.combatCues.set(key, next);
@@ -693,7 +708,12 @@ function readPlayer(value: unknown): OutpostClientAuthoritySnapshot["players"][n
     !finiteNumber(value.y) ||
     !finiteNumber(value.velocityX) ||
     !finiteNumber(value.velocityY) ||
-    !finiteNumber(value.facing)
+    !finiteNumber(value.facing) ||
+    !nonNegativeInteger(value.dashSequence) ||
+    !finiteNumber(value.dashRemainingMs) ||
+    value.dashRemainingMs < 0 ||
+    !finiteNumber(value.dashDirectionX) ||
+    !finiteNumber(value.dashDirectionY)
   ) {
     return undefined;
   }
@@ -707,7 +727,11 @@ function readPlayer(value: unknown): OutpostClientAuthoritySnapshot["players"][n
     y: value.y,
     velocityX: value.velocityX,
     velocityY: value.velocityY,
-    facing: value.facing
+    facing: value.facing,
+    dashSequence: value.dashSequence,
+    dashRemainingMs: value.dashRemainingMs,
+    dashDirectionX: value.dashDirectionX,
+    dashDirectionY: value.dashDirectionY
   };
 }
 
@@ -972,6 +996,7 @@ function readProjectileRecord(
 function readCombatCue(
   value: unknown
 ): OutpostClientAuthoritySnapshot["combat"]["cues"][number] | undefined {
+  const ability = isRecord(value) ? value.ability : undefined;
   if (
     !isRecord(value) ||
     !positiveInteger(value.sequence) ||
@@ -999,11 +1024,14 @@ function readCombatCue(
     typeof value.hasAmount !== "boolean" ||
     !finiteNumber(value.amount) ||
     (value.hasAmount && value.amount < 0) ||
+    typeof ability !== "string" ||
+    (ability.length > 0 && !isCombatAbility(ability)) ||
     typeof value.reason !== "string" ||
     value.reason.length > 256
   ) {
     return undefined;
   }
+  const combatAbility = isCombatAbility(ability) ? ability : undefined;
   return {
     sequence: value.sequence,
     kind: value.kind,
@@ -1017,6 +1045,7 @@ function readCombatCue(
     ...(value.hasNormal ? { normal: { x: value.normalX, y: value.normalY } } : {}),
     ...(value.hasDirection ? { direction: { x: value.directionX, y: value.directionY } } : {}),
     ...(value.hasAmount ? { amount: value.amount } : {}),
+    ...(combatAbility === undefined ? {} : { ability: combatAbility }),
     ...(value.reason.length === 0 ? {} : { reason: value.reason })
   };
 }
@@ -1119,7 +1148,7 @@ function estimateSnapshotBytes(
   }
   for (const player of players) {
     bytes +=
-      96 +
+      128 +
       estimateStringBytes(player.networkEntityId) +
       estimateStringBytes(player.archetypeId) +
       estimateStringBytes(player.playerId);
@@ -1172,6 +1201,7 @@ function estimateSnapshotBytes(
       estimateStringBytes(cue.sourceObjectId ?? "") +
       estimateStringBytes(cue.targetObjectId ?? "") +
       estimateStringBytes(cue.projectileId ?? "") +
+      estimateStringBytes(cue.ability ?? "") +
       estimateStringBytes(cue.reason ?? "");
   }
   for (const peerId of Object.keys(inputAcksByPeerId)) {
@@ -1227,6 +1257,14 @@ function isCombatCueKind(
     value === "health-hit" ||
     value === "kill-confirmed" ||
     value === "action-rejected"
+  );
+}
+
+function isCombatAbility(
+  value: unknown
+): value is OutpostClientAuthoritySnapshot["combat"]["cues"][number]["ability"] {
+  return (
+    value === "rifle" || value === "dash" || value === "shock-field" || value === "deploy-turret"
   );
 }
 

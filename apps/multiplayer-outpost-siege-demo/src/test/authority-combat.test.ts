@@ -551,7 +551,8 @@ describe("Outpost authority combat", () => {
         expect.objectContaining({
           kind: "action-rejected",
           sourceObjectId: player.playerId,
-          correlationId: "outpost.test.combat-cue-rejection"
+          correlationId: "outpost.test.combat-cue-rejection",
+          ability: "deploy-turret"
         })
       ])
     );
@@ -614,6 +615,12 @@ describe("Outpost authority combat", () => {
     tick(authority, 1);
     expect(combatActor(authority, player.playerId)).toMatchObject({ stamina: 75 });
     expect(combatActor(authority, player.playerId).tags).toContain("state.dashing");
+    expect(authority.snapshot().players[0]).toMatchObject({
+      dashSequence: 1,
+      dashDirectionX: 1,
+      dashDirectionY: 0
+    });
+    expect(authority.snapshot().players[0]!.velocityX).toBeGreaterThan(500);
 
     pendingCommands.push(command("dash-2", player.playerId, "dash", 500, 300));
     tick(authority, 1);
@@ -635,6 +642,112 @@ describe("Outpost authority combat", () => {
       authority.snapshot().combat.actors.filter((actor) => actor.kind === "buildable")
     ).toHaveLength(buildablesBefore);
     expect(authority.snapshot().combat.rejectedCommands).toBe(3);
+
+    authority.runtime.dispose();
+    expect(world.count()).toBe(0);
+  });
+
+  it("replicates Dash stamina cost, rejection reason, and authority recovery", () => {
+    const world = createKootaWorld();
+    const pendingCommands: OutpostAuthorityCombatCommand[] = [];
+    const player = createPlayer();
+    const authority = createOutpostAuthorityGameplayRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world,
+      physicsBackend,
+      eventBus: createEventBus(),
+      players: () => [player],
+      combatCommands() {
+        return pendingCommands.splice(0, pendingCommands.length);
+      }
+    });
+    authority.runtime.start();
+    tick(authority, 2);
+
+    pendingCommands.push(command("stamina-dash-1", player.playerId, "dash", 500, 300));
+    tick(authority, 1);
+    expect(combatActor(authority, player.playerId).stamina).toBe(75);
+
+    authority.gas.modifyAttribute(
+      player.playerId,
+      { attribute: "stamina", operation: "set", value: 0 },
+      "test.exhaust-stamina"
+    );
+    tick(authority, 95);
+    expect(combatActor(authority, player.playerId).stamina).toBeGreaterThan(0);
+    expect(combatActor(authority, player.playerId).stamina).toBeLessThan(25);
+
+    pendingCommands.push(command("stamina-dash-denied", player.playerId, "dash", 500, 300));
+    tick(authority, 1);
+    expect(authority.snapshot().combat.cues.at(-1)).toMatchObject({
+      kind: "action-rejected",
+      ability: "dash",
+      reason: "costs-unavailable",
+      correlationId: "outpost.test.stamina-dash-denied"
+    });
+
+    tick(authority, 60);
+    expect(combatActor(authority, player.playerId).stamina).toBeGreaterThanOrEqual(25);
+    pendingCommands.push(command("stamina-dash-recovered", player.playerId, "dash", 500, 300));
+    tick(authority, 1);
+    expect(authority.snapshot().combat.cues.at(-1)).not.toMatchObject({
+      correlationId: "outpost.test.stamina-dash-recovered",
+      kind: "action-rejected"
+    });
+
+    authority.runtime.dispose();
+    expect(world.count()).toBe(0);
+  });
+
+  it("confirms rejected Dash input and preserves the sequence across unrelated Rifle rejection", () => {
+    const world = createKootaWorld();
+    const pendingCommands: OutpostAuthorityCombatCommand[] = [];
+    const player = createPlayer();
+    const authority = createOutpostAuthorityGameplayRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world,
+      physicsBackend,
+      eventBus: createEventBus(),
+      players: () => [player],
+      combatCommands() {
+        return pendingCommands.splice(0, pendingCommands.length);
+      },
+      initialEnemies: []
+    });
+    authority.runtime.start();
+    tick(authority, 2);
+
+    pendingCommands.push({
+      ...command("dash-sequence-1", player.playerId, "dash", 500, 300),
+      dashSequence: 1
+    });
+    tick(authority, 1);
+    expect(authority.snapshot().players[0]).toMatchObject({ dashSequence: 1 });
+
+    pendingCommands.push({
+      ...command("dash-sequence-2-rejected", player.playerId, "dash", 500, 300),
+      dashSequence: 2
+    });
+    tick(authority, 1);
+    expect(authority.snapshot().players[0]).toMatchObject({ dashSequence: 2 });
+    expect(authority.snapshot().combat.rejectedCommands).toBe(1);
+
+    tick(authority, 95);
+    pendingCommands.push({
+      ...command("dash-sequence-3", player.playerId, "dash", 500, 300),
+      dashSequence: 3
+    });
+    tick(authority, 1);
+    expect(authority.snapshot().players[0]).toMatchObject({ dashSequence: 3 });
+    expect(authority.snapshot().players[0]!.velocityX).toBeGreaterThan(500);
+
+    pendingCommands.push(command("rifle-active", player.playerId, "rifle", 500, 300));
+    tick(authority, 1);
+    const rejectedBeforeRifle = authority.snapshot().combat.rejectedCommands;
+    pendingCommands.push(command("rifle-rejected", player.playerId, "rifle", 500, 300));
+    tick(authority, 1);
+    expect(authority.snapshot().combat.rejectedCommands).toBeGreaterThan(rejectedBeforeRifle);
+    expect(authority.snapshot().players[0]).toMatchObject({ dashSequence: 3 });
 
     authority.runtime.dispose();
     expect(world.count()).toBe(0);
@@ -830,7 +943,8 @@ function createPlayer(): OutpostAuthorityPlayerState {
       aimX: 450,
       aimY: 300,
       fireHeld: false,
-      fireSequence: 0
+      fireSequence: 0,
+      dashSequence: 0
     }
   };
 }

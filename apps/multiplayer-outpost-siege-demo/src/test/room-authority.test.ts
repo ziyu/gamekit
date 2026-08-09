@@ -473,6 +473,7 @@ describe("Outpost Room-owned authority", () => {
           action: "dash",
           aimX: 1_200,
           aimY: 500,
+          dashSequence: 1,
           playerId: "player.leader"
         }
       });
@@ -590,13 +591,24 @@ describe("Outpost Room-owned authority", () => {
         kind: "game.action",
         targetPeerIds: ["outpost-four-client-session.server"],
         correlationId: "outpost.test.cooldown-rejection",
-        payload: { type: "player-action", action: "dash", aimX: 1_200, aimY: 500 }
+        payload: {
+          type: "player-action",
+          action: "dash",
+          aimX: 1_200,
+          aimY: 500,
+          dashSequence: 2
+        }
       });
       await waitFor(
         () =>
           room?.authoritySnapshot().runtime?.combat?.rejectedCommands ===
           (combatAfterDash?.rejectedCommands ?? 0) + 1
       );
+      expect(
+        requireRoom(room)
+          .authoritySnapshot()
+          .runtime?.match.players.find((player) => player.playerId === "player.ranger-4")
+      ).toMatchObject({ dashSequence: 2 });
 
       const beforeLeaderLeave = requireRoom(room).authoritySnapshot();
       await clients[0]?.dispose();

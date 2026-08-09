@@ -149,7 +149,7 @@ Damage formula 使用 app-injected policy，禁止在 Combat/GAS Core 写死 shi
 
 ## 冲刺
 
-Dash 基线：180 ms active，2.5 秒 cooldown。
+Dash 基线：180 ms active，1.5 秒 cooldown，消耗 25 stamina。Stamina 由 authority 在非 Dash 状态按 movement profile 的每秒恢复速率恢复；客户端只显示复制值，不自行提交恢复或 cost commit。主 HUD 必须持续显示 stamina，Dash 槽必须显示消耗并把 authority cooldown 剩余秒数覆盖在 icon 上，低于 25 时显示明确锁定状态；authority 的 `costs-unavailable` 拒绝还必须带动作身份并触发短时 `LOW STAMINA` 提示，不能只把按钮变灰或重复 HUD 已显示的数值。
 
 - Preparing 仅做极短输入确认，commit 后写入 `state.dashing` 并给 Physics movement command。
 - 有移动输入时沿移动方向，无输入时沿 aim direction。

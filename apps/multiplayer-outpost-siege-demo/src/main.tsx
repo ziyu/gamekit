@@ -13,7 +13,8 @@ import {
   applyOutpostGamepadAimTarget,
   outpostPlayerActionForInputAction,
   OUTPOST_ACTION,
-  OUTPOST_VIEWPORT
+  OUTPOST_VIEWPORT,
+  setOutpostPointerViewportPosition
 } from "./gameplay";
 import { createOutpostBrowserProfile, type OutpostBrowserContext } from "./profiles";
 import {
@@ -287,6 +288,10 @@ async function boot(root: HTMLElement): Promise<void> {
       event.input.x !== undefined &&
       event.input.y !== undefined
     ) {
+      setOutpostPointerViewportPosition(client.input, {
+        x: event.input.x,
+        y: event.input.y
+      });
       const world = client.screenToWorld({ x: event.input.x, y: event.input.y });
       applyOutpostInputAction(client.input, {
         ...event,
@@ -295,6 +300,9 @@ async function boot(root: HTMLElement): Promise<void> {
       return;
     }
     applyOutpostInputAction(client.input, event);
+    if (event.actionId === OUTPOST_ACTION.dash && event.phase === "pressed") {
+      client.requestInputSample();
+    }
     const localPlayer = client.view()?.players.find((player) => player.playerId === localPlayerId);
     if (localPlayer) {
       applyOutpostGamepadAimTarget(client.input, localPlayer);
@@ -311,7 +319,8 @@ async function boot(root: HTMLElement): Promise<void> {
           y: client.input.aimY
         },
         playerAction === "rifle" ? client.input.fireSequence : undefined,
-        playerAction === "rifle" ? client.input.fireHeld : undefined
+        playerAction === "rifle" ? client.input.fireHeld : undefined,
+        playerAction === "dash" ? client.input.dashSequence : undefined
       );
     }
   }
@@ -338,7 +347,7 @@ function matchUiSignature(match: NonNullable<OutpostConnectionView["match"]>): s
         }:${actor.weapon?.shotSequence ?? "x"}`
     )
     .join("|");
-  return `${match.phase}:${countdown}:${elapsed}:${participants}:${actors}:${match.combat.kills}:${match.combat.rejectedCommands}`;
+  return `${match.phase}:${countdown}:${elapsed}:${participants}:${actors}:${match.combat.kills}:${match.combat.rejectedCommands}:${match.combat.cueWatermark}`;
 }
 
 function updateSessionUrl(sessionId: string): void {

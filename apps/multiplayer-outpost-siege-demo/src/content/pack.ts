@@ -32,6 +32,7 @@ import {
   OUTPOST_ARENA_TYPE,
   OUTPOST_BUILDABLE_TYPE,
   OUTPOST_ENEMY_TYPE,
+  OUTPOST_MOVEMENT_PROFILE_TYPE,
   OUTPOST_OBJECTIVE_TYPE,
   OUTPOST_PLAYER_TYPE,
   OUTPOST_RENDER_OBJECT_TYPE,
@@ -40,12 +41,16 @@ import {
   type OutpostBuildableDefinition,
   type OutpostArenaDefinition,
   type OutpostEnemyDefinition,
+  type OutpostMovementProfileDefinition,
   type OutpostObjectiveDefinition,
   type OutpostPlayerDefinition,
   type OutpostRenderObjectDefinition,
   type OutpostWaveDefinition,
   type OutpostWeaponDefinition
 } from "../domain";
+
+export const OUTPOST_PLAYER_STAMINA_MAX = 100;
+export const OUTPOST_DASH_STAMINA_COST = 25;
 
 const assets: AssetDefinition[] = [
   ...outpostRuntimeImageAssets.map(imageAsset),
@@ -56,7 +61,12 @@ const assets: AssetDefinition[] = [
 const attributes: GasAttributeDefinition[] = [
   { id: "health", min: 0, max: 1000, defaultValue: 100 },
   { id: "shield", min: 0, max: 1000, defaultValue: 50 },
-  { id: "stamina", min: 0, max: 100, defaultValue: 100 },
+  {
+    id: "stamina",
+    min: 0,
+    max: OUTPOST_PLAYER_STAMINA_MAX,
+    defaultValue: OUTPOST_PLAYER_STAMINA_MAX
+  },
   { id: "shared-resource", min: 0, max: 9999, defaultValue: 100 }
 ];
 
@@ -107,7 +117,7 @@ const abilities: GasAbilityDefinition[] = [
   {
     id: "ability.outpost.dash",
     cooldownMs: 1500,
-    costs: [{ attribute: "stamina", amount: 25 }]
+    costs: [{ attribute: "stamina", amount: OUTPOST_DASH_STAMINA_COST }]
   },
   {
     id: "ability.outpost.shock_field",
@@ -155,7 +165,12 @@ const cues = [
 const actors: GasActorDefinition[] = [
   {
     id: "actor.outpost.player",
-    attributes: { health: 100, shield: 50, stamina: 100, "shared-resource": 100 },
+    attributes: {
+      health: 100,
+      shield: 50,
+      stamina: OUTPOST_PLAYER_STAMINA_MAX,
+      "shared-resource": 100
+    },
     abilities: [
       "ability.outpost.rifle_fire",
       "ability.outpost.rifle_reload",
@@ -285,6 +300,22 @@ const weapons: OutpostWeaponDefinition[] = [
   }
 ];
 
+const movementProfiles: OutpostMovementProfileDefinition[] = [
+  {
+    id: "movement.outpost.ranger",
+    maxSpeed: 220,
+    acceleration: 2_100,
+    deceleration: 2_800,
+    staminaRecoveryPerSecond: 12,
+    dashSpeed: 640,
+    dashDurationMs: 180,
+    dashCollisionVelocityRatio: 0.45,
+    cameraLookaheadDistance: 48,
+    cameraLookaheadResponse: 8,
+    cameraDashImpulse: 22
+  }
+];
+
 const players: OutpostPlayerDefinition[] = [
   {
     id: "player.outpost.ranger",
@@ -292,7 +323,7 @@ const players: OutpostPlayerDefinition[] = [
     weapon: ref(OUTPOST_WEAPON_TYPE, "weapon.outpost.rifle"),
     physicsBody: ref("physics.body", "body.outpost.player"),
     renderObject: ref(OUTPOST_RENDER_OBJECT_TYPE, "render.outpost.player"),
-    moveSpeed: 220
+    movementProfile: ref(OUTPOST_MOVEMENT_PROFILE_TYPE, "movement.outpost.ranger")
   }
 ];
 
@@ -436,6 +467,7 @@ export const outpostContentPack: DataPack = {
     ...entries(OUTPOST_RENDER_OBJECT_TYPE, renderObjects),
     ...entries(OUTPOST_ARENA_TYPE, arenas),
     ...entries(OUTPOST_WEAPON_TYPE, weapons),
+    ...entries(OUTPOST_MOVEMENT_PROFILE_TYPE, movementProfiles),
     ...entries(OUTPOST_PLAYER_TYPE, players),
     ...entries(OUTPOST_ENEMY_TYPE, enemies),
     ...entries(OUTPOST_BUILDABLE_TYPE, buildables),

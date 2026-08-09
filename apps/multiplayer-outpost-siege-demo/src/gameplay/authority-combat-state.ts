@@ -50,6 +50,11 @@ export type CreateOutpostAuthorityCombatOptions = {
   projectileGeneration?: string | undefined;
   players(): ReadonlyMap<string, OutpostAuthorityCombatPlayer>;
   commands(): readonly OutpostAuthorityCombatCommand[];
+  resolvePlayerDash(
+    player: OutpostAuthorityCombatPlayer,
+    command: OutpostAuthorityCombatCommand,
+    accepted: boolean
+  ): void;
   playerWeapon?(playerId: string): OutpostReplicatedWeaponState | undefined;
   aiState?(actorId: string):
     | {
@@ -85,10 +90,6 @@ export type CombatState = {
   objectsById: Map<string, CombatObject>;
   objectsByActorId: Map<string, CombatObject>;
   objectsByEntityId: Map<EntityId, CombatObject>;
-  dashesByPlayerId: Map<
-    string,
-    { actorId: string; velocity: PhysicsVector; remainingMs: number; source: string }
-  >;
   knockbacksByObjectId: Map<string, { velocity: PhysicsVector; remainingMs: number }>;
   pendingDeaths: Map<
     string,
@@ -118,7 +119,6 @@ export function createCombatState(options: CreateOutpostAuthorityCombatOptions):
     objectsById: new Map(),
     objectsByActorId: new Map(),
     objectsByEntityId: new Map(),
-    dashesByPlayerId: new Map(),
     knockbacksByObjectId: new Map(),
     pendingDeaths: new Map(),
     cueStream: createOutpostCombatCueStream(),
@@ -292,6 +292,7 @@ export function rejectCommand(
     sourceObjectId: command.playerId,
     correlationId: command.correlationId ?? command.id,
     parentId: command.parentId ?? command.id,
+    ability: command.ability,
     reason
   });
   state.options.eventBus.emit(

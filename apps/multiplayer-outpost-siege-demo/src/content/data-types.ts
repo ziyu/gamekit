@@ -8,6 +8,7 @@ import {
   OUTPOST_ARENA_TYPE,
   OUTPOST_BUILDABLE_TYPE,
   OUTPOST_ENEMY_TYPE,
+  OUTPOST_MOVEMENT_PROFILE_TYPE,
   OUTPOST_OBJECTIVE_TYPE,
   OUTPOST_PLAYER_TYPE,
   OUTPOST_RENDER_OBJECT_TYPE,
@@ -16,6 +17,7 @@ import {
   type OutpostBuildableDefinition,
   type OutpostArenaDefinition,
   type OutpostEnemyDefinition,
+  type OutpostMovementProfileDefinition,
   type OutpostObjectiveDefinition,
   type OutpostPlayerDefinition,
   type OutpostRenderObjectDefinition,
@@ -25,6 +27,7 @@ import {
 
 export function createOutpostDataTypes(): Array<DataTypeDefinition<any>> {
   return [
+    createOutpostMovementProfileDataType(),
     createOutpostPlayerDataType(),
     createOutpostEnemyDataType(),
     createOutpostWeaponDataType(),
@@ -36,6 +39,42 @@ export function createOutpostDataTypes(): Array<DataTypeDefinition<any>> {
   ];
 }
 
+export function createOutpostMovementProfileDataType(): DataTypeDefinition<OutpostMovementProfileDefinition> {
+  return {
+    type: OUTPOST_MOVEMENT_PROFILE_TYPE,
+    getTags: () => ["outpost", "player", "movement"],
+    validate(document) {
+      return [
+        ...matchingId(document),
+        ...positive(document, document.data.maxSpeed, "maxSpeed"),
+        ...positive(document, document.data.acceleration, "acceleration"),
+        ...positive(document, document.data.deceleration, "deceleration"),
+        ...positive(document, document.data.staminaRecoveryPerSecond, "staminaRecoveryPerSecond"),
+        ...positive(document, document.data.dashSpeed, "dashSpeed"),
+        ...positive(document, document.data.dashDurationMs, "dashDurationMs"),
+        ...nonNegative(
+          document,
+          document.data.dashCollisionVelocityRatio,
+          "dashCollisionVelocityRatio"
+        ),
+        ...(document.data.dashCollisionVelocityRatio > 1
+          ? [
+              diagnostic(
+                document,
+                "outpost.movement_invalid_dash_collision_ratio",
+                "dashCollisionVelocityRatio must not exceed 1",
+                "dashCollisionVelocityRatio"
+              )
+            ]
+          : []),
+        ...nonNegative(document, document.data.cameraLookaheadDistance, "cameraLookaheadDistance"),
+        ...positive(document, document.data.cameraLookaheadResponse, "cameraLookaheadResponse"),
+        ...nonNegative(document, document.data.cameraDashImpulse, "cameraDashImpulse")
+      ];
+    }
+  };
+}
+
 export function createOutpostPlayerDataType(): DataTypeDefinition<OutpostPlayerDefinition> {
   return {
     type: OUTPOST_PLAYER_TYPE,
@@ -45,12 +84,13 @@ export function createOutpostPlayerDataType(): DataTypeDefinition<OutpostPlayerD
         dataRef(document.data.actor, "actor"),
         dataRef(document.data.weapon, "weapon"),
         dataRef(document.data.physicsBody, "physicsBody"),
-        dataRef(document.data.renderObject, "renderObject")
+        dataRef(document.data.renderObject, "renderObject"),
+        dataRef(document.data.movementProfile, "movementProfile")
       ];
     },
     indexes: [index("outpost.player.weapon", (document) => document.data.weapon.id)],
     validate(document) {
-      return [...matchingId(document), ...positive(document, document.data.moveSpeed, "moveSpeed")];
+      return matchingId(document);
     }
   };
 }

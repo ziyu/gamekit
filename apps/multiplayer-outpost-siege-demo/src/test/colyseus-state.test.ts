@@ -96,6 +96,7 @@ describe("Outpost app-owned Colyseus state", () => {
               kind: "health-hit",
               sourceObjectId: "player.ranger-1",
               targetObjectId: "enemy.opening.1",
+              ability: "rifle",
               amount: 12
             }
           ]
@@ -160,7 +161,11 @@ function createMatchSnapshot(): OutpostMatchAuthoritySnapshot {
         y: 500,
         velocityX: 2,
         velocityY: 0,
-        facing: 0
+        facing: 0,
+        dashSequence: 0,
+        dashRemainingMs: 0,
+        dashDirectionX: 0,
+        dashDirectionY: 0
       }
     ],
     combat: {
@@ -251,6 +256,7 @@ function createMatchSnapshot(): OutpostMatchAuthoritySnapshot {
           correlationId: "player.ranger-1.rifle.7",
           sourceObjectId: "player.ranger-1",
           targetObjectId: "enemy.opening.1",
+          ability: "rifle",
           projectileId: "projectile.1",
           position: { x: 680, y: 500 },
           normal: { x: -1, y: 0 },

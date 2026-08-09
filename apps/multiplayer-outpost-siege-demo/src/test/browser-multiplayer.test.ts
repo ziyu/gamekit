@@ -252,6 +252,7 @@ describe("Outpost Browser multiplayer", () => {
         moveY: 0,
         aimX: 900,
         aimY: 500,
+        dashSequence: 0,
         fireHeld: false,
         fireSequence: 0
       },
@@ -261,6 +262,7 @@ describe("Outpost Browser multiplayer", () => {
         moveY: 0,
         aimX: 900,
         aimY: 500,
+        dashSequence: 0,
         fireHeld: false,
         fireSequence: 0
       }
@@ -721,13 +723,186 @@ describe("Outpost Browser multiplayer", () => {
 
     const deltas = positions.slice(1).map((position, index) => position - positions[index]!);
     expect(positions).toHaveLength(19);
-    expect(Math.min(...deltas)).toBeGreaterThan(3.65);
-    expect(Math.max(...deltas)).toBeLessThan(3.68);
+    expect(deltas.every((delta) => delta > 0)).toBe(true);
+    expect(deltas.at(-1)).toBeGreaterThan(deltas[0]!);
+    expect(Math.max(...deltas)).toBeLessThan(3.7);
     expect(client.snapshot().replication?.prediction).toMatchObject({
-      corrections: 0,
       lastAcknowledgedSequence: 6
     });
 
+    await client.runtime.dispose();
+    await multiplayer.dispose();
+    await server.dispose();
+  });
+
+  it("scales pointer camera lookahead from the viewport center without moving the player", async () => {
+    const backend = createMemoryMultiplayerBackend({ id: "outpost.client-pointer-camera.test" });
+    const server = createMultiplayerRuntime({ id: "server", backend });
+    const multiplayer = createMultiplayerRuntime({ id: "client", backend });
+    await server.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "session.server", role: "server" }
+    });
+    await multiplayer.joinSession({
+      sessionId: "session-1",
+      localPeer: { id: "ranger-1", role: "client", playerId: "player.ranger-1" }
+    });
+    const positions: number[] = [];
+    const camera = createCameraController({ viewport: { width: 1280, height: 720 } });
+    const client = createOutpostClientShadowRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world: createKootaWorld(),
+      multiplayer,
+      physicsBackend: createMemoryPhysicsBackend(),
+      localPlayerId: "player.ranger-1",
+      renderer: createMemoryRenderer("outpost.client-pointer-camera.renderer"),
+      camera,
+      applyRenderTargetState(native, state) {
+        if ((native as { id: string }).id === "outpost.client.player.0.0") {
+          positions.push(state.transform?.position?.x ?? Number.NaN);
+        }
+      }
+    });
+    client.input.pointerViewportX = 641;
+    client.input.pointerViewportY = 360;
+    client.input.aimX = 801;
+    client.input.aimY = 500;
+    await client.runtime.start();
+    await sendSnapshot(server, authoritySnapshot(0, 1));
+    client.runtime.tick(16);
+
+    expect(camera.getState().x - 800).toBeGreaterThan(0);
+    expect(camera.getState().x - 800).toBeLessThan(0.1);
+    expect(positions.at(-1)).toBeCloseTo(800, 5);
+
+    client.input.pointerViewportX = 1_280;
+    client.runtime.tick(16);
+    expect(camera.getState().x - 800).toBeGreaterThan(5);
+    expect(positions.at(-1)).toBeCloseTo(800, 5);
+
+    await client.runtime.dispose();
+    await multiplayer.dispose();
+    await server.dispose();
+  });
+
+  it("does not predict a Dash that replicated GAS state already marks unavailable", async () => {
+    const backend = createMemoryMultiplayerBackend({ id: "outpost.client-dash.test" });
+    const server = createMultiplayerRuntime({ id: "server", backend });
+    const multiplayer = createMultiplayerRuntime({ id: "client", backend });
+    await server.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "session.server", role: "server" }
+    });
+    await multiplayer.joinSession({
+      sessionId: "session-1",
+      localPeer: { id: "ranger-1", role: "client", playerId: "player.ranger-1" }
+    });
+    const receivedInputs: Array<Record<string, unknown>> = [];
+    const unsubscribe = server.subscribe((message) => {
+      if (message.kind === "game.input") {
+        receivedInputs.push(message.payload as Record<string, unknown>);
+      }
+    });
+    const playerPositions: number[] = [];
+    const camera = createCameraController({ viewport: { width: 1280, height: 720 } });
+    const client = createOutpostClientShadowRuntime({
+      dataRegistry: createOutpostDataRegistry(),
+      world: createKootaWorld(),
+      multiplayer,
+      physicsBackend: createMemoryPhysicsBackend(),
+      localPlayerId: "player.ranger-1",
+      renderer: createMemoryRenderer("outpost.client-dash.renderer"),
+      camera,
+      applyRenderTargetState(native, state) {
+        if ((native as { id: string }).id !== "outpost.client.player.0.0") {
+          return;
+        }
+        const x = state.transform?.position?.x;
+        if (x !== undefined) {
+          playerPositions.push(x);
+        }
+      }
+    });
+    client.input.aimX = 1_200;
+    client.input.aimY = 500;
+    await client.runtime.start();
+    const initial = authoritySnapshot(0, 1);
+    initial.combat.actors.push({
+      objectId: "player.ranger-1",
+      networkEntityId: "player.ranger-1",
+      generation: 0,
+      kind: "player",
+      definitionId: "player.outpost.ranger",
+      renderKey: "render.outpost.player",
+      x: 800,
+      y: 500,
+      velocityX: 0,
+      velocityY: 0,
+      facing: 0,
+      health: 100,
+      shield: 50,
+      stamina: 100,
+      resource: 100,
+      tags: [],
+      cooldowns: { "ability.outpost.dash": 1_500 }
+    });
+    await sendSnapshot(server, initial);
+    client.runtime.tick(0);
+    await waitFor(() => receivedInputs.length === 1);
+
+    const inputsBeforeDash = receivedInputs.length;
+    client.input.dashSequence = 1;
+    client.requestInputSample();
+    client.runtime.tick(16);
+    await waitFor(() => receivedInputs.length > inputsBeforeDash);
+    expect(receivedInputs.at(-1)?.dashSequence).toBe(0);
+    expect(camera.getState().x).toBeCloseTo(800, 5);
+    client.runtime.tick(16);
+    expect(playerPositions.at(-1)).toBeCloseTo(800, 5);
+
+    const rejected = authoritySnapshot(1, 1);
+    rejected.players[0]!.dashSequence = 1;
+    rejected.inputAcksByPeerId["ranger-1"] = 2;
+    await sendSnapshot(server, rejected);
+    client.runtime.tick(50);
+    client.runtime.tick(50);
+    client.runtime.tick(50);
+
+    expect(playerPositions.at(-1)).toBeCloseTo(800, 1);
+    expect(client.snapshot().replication?.prediction).toMatchObject({
+      lastAcknowledgedSequence: 2
+    });
+    await waitFor(() => receivedInputs.length >= 4);
+
+    const ready = authoritySnapshot(2, 1);
+    ready.players[0]!.dashSequence = 1;
+    ready.inputAcksByPeerId["ranger-1"] = Number(receivedInputs.at(-1)?.sequence ?? 2);
+    ready.combat.actors.push({
+      ...initial.combat.actors[0]!,
+      cooldowns: {}
+    });
+    await sendSnapshot(server, ready);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    client.runtime.tick(0);
+    expect(client.snapshot().lastReceivedTick).toBe(2);
+
+    client.input.dashSequence = 2;
+    client.requestInputSample();
+    client.runtime.tick(16);
+    await waitFor(() => receivedInputs.some((input) => input.dashSequence === 2));
+    client.runtime.tick(16);
+    expect(playerPositions.at(-1)).toBeGreaterThan(800);
+
+    const inputsBeforeRepeatedDash = receivedInputs.length;
+    client.input.dashSequence = 3;
+    client.requestInputSample();
+    client.runtime.tick(16);
+    await waitFor(() => receivedInputs.length > inputsBeforeRepeatedDash);
+    expect(receivedInputs.at(-1)?.dashSequence).toBe(2);
+
+    unsubscribe();
     await client.runtime.dispose();
     await multiplayer.dispose();
     await server.dispose();
@@ -769,7 +944,11 @@ function authoritySnapshot(tick: number, playerCount: number): OutpostClientAuth
       y: 500,
       velocityX: slot,
       velocityY: 0,
-      facing: 0
+      facing: 0,
+      dashSequence: 0,
+      dashRemainingMs: 0,
+      dashDirectionX: 0,
+      dashDirectionY: 0
     })),
     combat: {
       actors: [],

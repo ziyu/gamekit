@@ -2,6 +2,7 @@ import type { DevToolsRuntime } from "@gamekit/devtools";
 import { DevToolsOverlay } from "@gamekit/devtools-ui";
 import type { UiRuntime } from "@gamekit/ui-core";
 import { useCallback } from "react";
+import { OUTPOST_DASH_STAMINA_COST, OUTPOST_PLAYER_STAMINA_MAX } from "../content";
 import { OutpostLobby, type OutpostConnectionView } from "./OutpostLobby";
 import { WeaponHud } from "./player/WeaponHud";
 
@@ -55,6 +56,9 @@ export function OutpostApp({
     (actor) => actor.kind === "player" && actor.objectId === connection.localPlayerId
   );
   const hostileCount = match?.combat.actors.filter((actor) => actor.kind === "enemy").length ?? 0;
+  const dashNeedsStamina =
+    localActor !== undefined && localActor.stamina < OUTPOST_DASH_STAMINA_COST;
+  const dashStaminaRejection = latestDashStaminaRejection(match, connection.localPlayerId);
   const participants =
     match?.participants.filter((participant) => participant.status === "active") ?? [];
 
@@ -118,30 +122,71 @@ export function OutpostApp({
             </div>
             <Meter label="HP" max={100} value={localActor?.health ?? 100} tone="health" />
             <Meter label="SH" max={50} value={localActor?.shield ?? 50} tone="shield" />
+            <Meter
+              label="STAMINA"
+              low={dashNeedsStamina}
+              max={OUTPOST_PLAYER_STAMINA_MAX}
+              value={localActor?.stamina ?? OUTPOST_PLAYER_STAMINA_MAX}
+              tone="stamina"
+            />
+            {dashNeedsStamina ? (
+              <strong className="outpost-vitals__dash-lock">DASH LOCKED</strong>
+            ) : null}
           </div>
         </section>
 
         <WeaponHud weapon={localActor?.weapon} elapsedMs={match?.elapsedMs ?? 0} />
 
         <section className="outpost-abilities" aria-label="Ability bar">
-          {abilities.map((ability) => (
-            <article
-              className={`outpost-ability ${abilityStateClass(
-                ability.abilityId,
-                localActor,
-                match?.elapsedMs ?? 0
-              )}`}
-              key={ability.label}
-            >
-              <kbd>{ability.key}</kbd>
-              <i>{ability.glyph}</i>
-              <div>
-                <strong>{ability.label}</strong>
-                <span>{abilityStatus(ability.abilityId, localActor, match?.elapsedMs ?? 0)}</span>
-              </div>
-            </article>
-          ))}
+          {abilities.map((ability) => {
+            const elapsedMs = match?.elapsedMs ?? 0;
+            const cooldownRemainingMs = abilityCooldownRemainingMs(
+              ability.abilityId,
+              localActor,
+              elapsedMs
+            );
+            return (
+              <article
+                className={`outpost-ability ${abilityStateClass(
+                  ability.abilityId,
+                  localActor,
+                  elapsedMs
+                )}`}
+                data-ability={ability.abilityId}
+                key={ability.label}
+              >
+                <kbd>{ability.key}</kbd>
+                <span className="outpost-ability__icon">
+                  <i aria-hidden="true">{ability.glyph}</i>
+                  {cooldownRemainingMs > 0 ? (
+                    <span
+                      aria-label={`${ability.label} cooldown ${formatCooldown(
+                        cooldownRemainingMs
+                      )} seconds`}
+                      className="outpost-ability__cooldown"
+                    >
+                      {formatCooldown(cooldownRemainingMs)}
+                    </span>
+                  ) : null}
+                </span>
+                <div>
+                  <strong>{ability.label}</strong>
+                  <span>{abilityStatus(ability.abilityId, localActor, elapsedMs)}</span>
+                </div>
+              </article>
+            );
+          })}
         </section>
+
+        {dashStaminaRejection ? (
+          <section
+            aria-live="assertive"
+            className="outpost-action-alert outpost-action-alert--stamina"
+            role="alert"
+          >
+            <strong>LOW STAMINA</strong>
+          </section>
+        ) : null}
 
         <div className="outpost-control-hint">
           <kbd>WASD</kbd>
@@ -178,11 +223,13 @@ export function OutpostApp({
 
 function Meter({
   label,
+  low = false,
   max,
   tone,
   value
 }: {
   label: string;
+  low?: boolean | undefined;
   max: number;
   tone: string;
   value: number;
@@ -190,7 +237,10 @@ function Meter({
   const rounded = Math.max(0, Math.round(value));
   const percentage = Math.max(0, Math.min(100, (value / max) * 100));
   return (
-    <div className={`outpost-meter outpost-meter--${tone}`}>
+    <div
+      aria-label={`${label} ${rounded} of ${max}`}
+      className={`outpost-meter outpost-meter--${tone}${low ? " is-low" : ""}`}
+    >
       <span>{label}</span>
       <div>
         <i style={{ width: `${percentage}%` }} />
@@ -208,12 +258,14 @@ function abilityStatus(
   if (!actor) {
     return "SYNCING";
   }
-  const remainingMs = Math.max(0, (actor.cooldowns[abilityId] ?? 0) - elapsedMs);
+  const remainingMs = abilityCooldownRemainingMs(abilityId, actor, elapsedMs);
   if (remainingMs > 0) {
-    return `${(remainingMs / 1000).toFixed(1)}S`;
+    return abilityId === "ability.outpost.dash" ? `${OUTPOST_DASH_STAMINA_COST} ST` : "COOLDOWN";
   }
-  if (abilityId === "ability.outpost.dash" && actor.stamina < 25) {
-    return "NO STAMINA";
+  if (abilityId === "ability.outpost.dash") {
+    return actor.stamina < OUTPOST_DASH_STAMINA_COST
+      ? "LOW STAMINA"
+      : `${OUTPOST_DASH_STAMINA_COST} ST · READY`;
   }
   if (abilityId === "ability.outpost.deploy_turret" && actor.resource < 25) {
     return "NEED 25";
@@ -221,11 +273,54 @@ function abilityStatus(
   return "READY";
 }
 
+function abilityCooldownRemainingMs(
+  abilityId: (typeof abilities)[number]["abilityId"],
+  actor: NonNullable<OutpostConnectionView["match"]>["combat"]["actors"][number] | undefined,
+  elapsedMs: number
+): number {
+  return Math.max(0, (actor?.cooldowns[abilityId] ?? 0) - elapsedMs);
+}
+
+function formatCooldown(remainingMs: number): string {
+  return (Math.ceil(Math.max(0, remainingMs) / 100) / 10).toFixed(1);
+}
+
 function abilityStateClass(
   abilityId: (typeof abilities)[number]["abilityId"],
   actor: NonNullable<OutpostConnectionView["match"]>["combat"]["actors"][number] | undefined,
   elapsedMs: number
 ): string {
-  const status = abilityStatus(abilityId, actor, elapsedMs);
-  return status === "READY" ? "is-ready" : status.endsWith("S") ? "is-cooldown" : "is-blocked";
+  if (!actor) {
+    return "is-blocked";
+  }
+  if (abilityCooldownRemainingMs(abilityId, actor, elapsedMs) > 0) {
+    return "is-cooldown";
+  }
+  if (
+    (abilityId === "ability.outpost.dash" && actor.stamina < OUTPOST_DASH_STAMINA_COST) ||
+    (abilityId === "ability.outpost.deploy_turret" && actor.resource < 25)
+  ) {
+    return "is-blocked";
+  }
+  return "is-ready";
+}
+
+function latestDashStaminaRejection(
+  match: OutpostConnectionView["match"],
+  localPlayerId: string | undefined
+) {
+  if (!match || !localPlayerId) {
+    return undefined;
+  }
+  return [...match.combat.cues].reverse().find((cue) => {
+    const ageMs = match.elapsedMs - cue.at;
+    return (
+      cue.kind === "action-rejected" &&
+      cue.sourceObjectId === localPlayerId &&
+      cue.ability === "dash" &&
+      cue.reason === "costs-unavailable" &&
+      ageMs >= 0 &&
+      ageMs <= 1800
+    );
+  });
 }

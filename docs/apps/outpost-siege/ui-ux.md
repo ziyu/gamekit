@@ -108,7 +108,7 @@ Roster 不显示延迟、input sequence 或 provider connection id；网络问�
 
 ### Local Status
 
-- Health 100 与 Shield 50，数值/条形兼具。
+- Health 100、Shield 50 与 Stamina 100，数值/条形兼具。Stamina 低于 Dash cost 时使用独立危险色，并直接标记 `DASH LOCKED`。
 - 当前 ammo `magazine / reserve`、reload phase。
 - 受控状态 icon 与剩余时间，只展示影响当前操作的公开状态。
 - 低生命、shield break、no ammo 使用不同反馈，不以持续全屏红色覆盖。
@@ -117,9 +117,9 @@ Roster 不显示延迟、input sequence 或 provider connection id；网络问�
 
 槽位：Rifle、Dash、Tactical、Deployable/Build。
 
-每个槽显示 icon、输入提示、cooldown/charge、当前 execution phase 和拒绝状态。Cooldown 使用 authority end time 显示；本地可以平滑倒计时，但 snapshot 更新时不重新从满值跳变。
+每个槽显示 icon、输入提示、cooldown/charge、当前 execution phase 和拒绝状态。Cooldown 使用 authority end time，并把剩余秒数直接覆盖在 icon 上；本地可以平滑倒计时，但 snapshot 更新时不重新从满值跳变。
 
-Ability 无法使用时展示最具体原因：downed、reloading conflict、cooldown、no resource、invalid target。按钮灰度之外必须有 icon/文本或按键触发后的短提示。
+Ability 无法使用时展示最具体原因：downed、reloading conflict、cooldown、no stamina、no resource、invalid target。按钮灰度之外必须有 icon/文本或按键触发后的短提示。Dash 槽常驻显示 stamina cost；stamina 条和槽位已提供数值时，authority 拒绝提示只显示简短的 `LOW STAMINA`，不重复要求值、当前值和拒绝标题。
 
 ### Supply / Build
 

@@ -47,6 +47,7 @@ export type OutpostMatchAction =
       aimY: number;
       fireSequence?: number;
       fireHeld?: boolean;
+      dashSequence?: number;
     };
 
 export type OutpostMatchInput = OutpostAuthorityPlayerInput;
@@ -219,6 +220,7 @@ export function createOutpostMatchAuthority(
       aimY: action.aimY,
       ...(action.fireSequence === undefined ? {} : { fireSequence: action.fireSequence }),
       ...(action.fireHeld === undefined ? {} : { fireHeld: action.fireHeld }),
+      ...(action.dashSequence === undefined ? {} : { dashSequence: action.dashSequence }),
       ...(message.correlationId === undefined ? {} : { correlationId: message.correlationId }),
       parentId: message.id
     });
@@ -556,7 +558,10 @@ function readMatchAction(payload: unknown): OutpostMatchAction | undefined {
     finiteNumber(payload.aimX) &&
     finiteNumber(payload.aimY) &&
     (payload.action !== "rifle" ||
-      (uint32(payload.fireSequence) && typeof payload.fireHeld === "boolean"))
+      (uint32(payload.fireSequence) && typeof payload.fireHeld === "boolean")) &&
+    (payload.action !== "dash" ||
+      payload.dashSequence === undefined ||
+      uint32(payload.dashSequence))
   ) {
     return {
       type: "player-action",
@@ -565,6 +570,9 @@ function readMatchAction(payload: unknown): OutpostMatchAction | undefined {
       aimY: payload.aimY,
       ...(payload.action === "rifle"
         ? { fireSequence: payload.fireSequence as number, fireHeld: payload.fireHeld as boolean }
+        : {}),
+      ...(payload.action === "dash" && uint32(payload.dashSequence)
+        ? { dashSequence: payload.dashSequence }
         : {})
     };
   }
@@ -589,7 +597,8 @@ function readMatchInput(payload: unknown): OutpostMatchInput | undefined {
     aimX: finiteNumber(payload.aimX) ? payload.aimX : OUTPOST_ARENA.width / 2,
     aimY: finiteNumber(payload.aimY) ? payload.aimY : OUTPOST_ARENA.height / 2,
     fireHeld: payload.fireHeld === true,
-    fireSequence: uint32(payload.fireSequence) ? payload.fireSequence : 0
+    fireSequence: uint32(payload.fireSequence) ? payload.fireSequence : 0,
+    dashSequence: uint32(payload.dashSequence) ? payload.dashSequence : 0
   };
 }
 
@@ -601,7 +610,8 @@ function idleInput(): OutpostMatchInput {
     aimX: OUTPOST_ARENA.width / 2,
     aimY: OUTPOST_ARENA.height / 2,
     fireHeld: false,
-    fireSequence: 0
+    fireSequence: 0,
+    dashSequence: 0
   };
 }
 

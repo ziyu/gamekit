@@ -11,6 +11,7 @@ import { defineGameModule } from "@gamekit/core";
 import type { DataRegistry } from "@gamekit/data";
 import { createEventBus, type EventBus } from "@gamekit/event-bus";
 import { createGame, type GameInstallContext, type GameRuntime } from "@gamekit/game-runtime";
+import { GAS_ABILITY_TYPE, type GasAbilityDefinition } from "@gamekit/gas";
 import {
   createMultiplayerModule,
   definePredictionAngleStateField,
@@ -39,7 +40,9 @@ import type { EntityId, GameWorld } from "@gamekit/world";
 
 import {
   OUTPOST_PLAYER_TYPE,
+  OUTPOST_MOVEMENT_PROFILE_TYPE,
   OUTPOST_WEAPON_TYPE,
+  type OutpostMovementProfileDefinition,
   type OutpostPlayerDefinition,
   type OutpostReplicatedCombatState,
   type OutpostReplicatedActor,
@@ -70,6 +73,7 @@ import {
   createOutpostInputState,
   type OutpostInputState
 } from "./input";
+import { advanceOutpostMovement } from "./player/movement-policy";
 
 const PLAYER_DEFINITION_ID = "player.outpost.ranger";
 const MAX_PARTICIPANTS = 8;
@@ -78,6 +82,7 @@ const MAX_COMBAT_ACTORS = 1_024;
 const MAX_PROJECTILES = 2_048;
 const MAX_PROJECTILE_RECORDS = 128;
 const MAX_COMBAT_CUES = 64;
+const DASH_ABILITY_ID = "ability.outpost.dash";
 
 export type OutpostClientMatchPhase = "lobby" | "countdown" | "running";
 
@@ -101,6 +106,10 @@ export type OutpostClientPlayerSnapshot = {
   velocityX: number;
   velocityY: number;
   facing: number;
+  dashSequence: number;
+  dashRemainingMs: number;
+  dashDirectionX: number;
+  dashDirectionY: number;
 };
 
 export type OutpostClientAuthoritySnapshot = {
@@ -135,6 +144,7 @@ export type OutpostClientShadowRuntime = {
   animator: AnimatorHandle;
   playerPresentation: OutpostClientPlayerPresentation;
   combatPresentation: OutpostClientCombatPresentation;
+  requestInputSample(): void;
   screenToWorld(point: PointLike): PointLike;
   view(): OutpostClientAuthoritySnapshot | undefined;
   snapshot(): OutpostClientShadowSnapshot;
@@ -196,6 +206,9 @@ type ClientShadowState = {
   >;
   received?: OutpostClientAuthoritySnapshot;
   lastAppliedTick: number;
+  lastDashInputSequence: number;
+  predictedDashSequence: number;
+  nextDashPredictionAtMs: number;
 };
 
 type OutpostPredictionInput = {
@@ -205,6 +218,7 @@ type OutpostPredictionInput = {
   aimY: number;
   fireHeld: boolean;
   fireSequence: number;
+  dashSequence: number;
 };
 
 type OutpostPredictedPlayerState = {
@@ -214,6 +228,10 @@ type OutpostPredictedPlayerState = {
   velocityX: number;
   velocityY: number;
   facing: number;
+  dashSequence: number;
+  dashRemainingMs: number;
+  dashDirectionX: number;
+  dashDirectionY: number;
 };
 
 type OutpostPresentedPlayerState = {
@@ -222,6 +240,10 @@ type OutpostPresentedPlayerState = {
   velocityY: number;
   facing: number;
   tags: readonly string[];
+  dashSequence: number;
+  dashRemainingMs: number;
+  dashDirectionX: number;
+  dashDirectionY: number;
   generation?: number | undefined;
   authorityElapsedMs?: number | undefined;
   targetActorId?: string | undefined;
@@ -266,7 +288,10 @@ export function createOutpostClientShadowRuntime(
     combatObjects: new Map(),
     presentedPlayers: new Map(),
     presentedCombatObjects: new Map(),
-    lastAppliedTick: -1
+    lastAppliedTick: -1,
+    lastDashInputSequence: 0,
+    predictedDashSequence: 0,
+    nextDashPredictionAtMs: 0
   };
   const animator = createAnimatorHandle({ id: "outpost.client.animator" });
   const runtime = createGame({
@@ -362,6 +387,9 @@ export function createOutpostClientShadowRuntime(
     animator,
     playerPresentation,
     combatPresentation,
+    requestInputSample() {
+      state.replication?.requestInputSample();
+    },
     screenToWorld(point) {
       return options.camera?.screenToWorld(point) ?? point;
     },
@@ -398,6 +426,10 @@ function createClientReplicationModule(
   const playerDefinition = state.dataRegistry.getValue<OutpostPlayerDefinition>(
     OUTPOST_PLAYER_TYPE,
     PLAYER_DEFINITION_ID
+  );
+  const dashAbility = state.dataRegistry.getValue<GasAbilityDefinition>(
+    GAS_ABILITY_TYPE,
+    DASH_ABILITY_ID
   );
   const predictedPosition = definePredictionVector2StateField<OutpostPredictedPlayerState>({
     readX: (predicted) => predicted.x,
@@ -517,14 +549,20 @@ function createClientReplicationModule(
             }
           })
         },
-        readInput() {
+        readInput({ snapshot, frame }) {
           return {
             moveX: state.input.moveX,
             moveY: state.input.moveY,
             aimX: state.input.aimX,
             aimY: state.input.aimY,
             fireHeld: state.input.fireHeld,
-            fireSequence: state.input.fireSequence
+            fireSequence: state.input.fireSequence,
+            dashSequence: resolvePredictedDashSequence(
+              state,
+              state.received ?? snapshot,
+              frame.elapsed ?? snapshot.elapsedMs,
+              dashAbility
+            )
           };
         },
         encodeInput({ input, predictionFrame }) {
@@ -730,7 +768,11 @@ function applyPresentedSnapshot(
         velocityX: player.velocityX,
         velocityY: player.velocityY,
         facing: player.facing,
-        tags: []
+        tags: [],
+        dashSequence: player.dashSequence,
+        dashRemainingMs: player.dashRemainingMs,
+        dashDirectionX: player.dashDirectionX,
+        dashDirectionY: player.dashDirectionY
       };
       state.presentedPlayers.set(player.playerId, target);
     }
@@ -740,6 +782,10 @@ function applyPresentedSnapshot(
       target.velocityX = predictedState.velocityX;
       target.velocityY = predictedState.velocityY;
       target.facing = predictedState.facing;
+      target.dashSequence = predictedState.dashSequence;
+      target.dashRemainingMs = predictedState.dashRemainingMs;
+      target.dashDirectionX = predictedState.dashDirectionX;
+      target.dashDirectionY = predictedState.dashDirectionY;
       applyPresentedActorSemantics(
         target,
         snapshot.combat.actors.find(
@@ -755,6 +801,10 @@ function applyPresentedSnapshot(
     target.velocityX = player.velocityX;
     target.velocityY = player.velocityY;
     target.facing = presented.angleRadians(playerFacingKey(player), player.facing);
+    target.dashSequence = player.dashSequence;
+    target.dashRemainingMs = player.dashRemainingMs;
+    target.dashDirectionX = player.dashDirectionX;
+    target.dashDirectionY = player.dashDirectionY;
     applyPresentedActorSemantics(
       target,
       snapshot.combat.actors.find(
@@ -816,7 +866,11 @@ function applyPresentedCombatObject(
       velocityX: object.velocityX,
       velocityY: object.velocityY,
       facing: object.facing,
-      tags
+      tags,
+      dashSequence: 0,
+      dashRemainingMs: 0,
+      dashDirectionX: 0,
+      dashDirectionY: 0
     };
     state.presentedCombatObjects.set(object.objectId, target);
   }
@@ -893,7 +947,11 @@ function predictedStateFromSnapshot(
     y: player.y,
     velocityX: player.velocityX,
     velocityY: player.velocityY,
-    facing: player.facing
+    facing: player.facing,
+    dashSequence: player.dashSequence,
+    dashRemainingMs: player.dashRemainingMs,
+    dashDirectionX: player.dashDirectionX,
+    dashDirectionY: player.dashDirectionY
   };
 }
 
@@ -903,10 +961,64 @@ function clonePredictedPlayerState(
   return { ...state };
 }
 
+function resolvePredictedDashSequence(
+  state: ClientShadowState,
+  snapshot: OutpostClientAuthoritySnapshot,
+  clientElapsedMs: number,
+  ability: GasAbilityDefinition
+): number {
+  const requestedSequence = state.input.dashSequence >>> 0;
+  if (requestedSequence === state.lastDashInputSequence) {
+    return state.predictedDashSequence;
+  }
+  state.lastDashInputSequence = requestedSequence;
+
+  const player = snapshot.players.find((candidate) => candidate.playerId === state.localPlayerId);
+  const actor = snapshot.combat.actors.find(
+    (candidate) => candidate.kind === "player" && candidate.objectId === state.localPlayerId
+  );
+  const costsAvailable = ability.costs?.every((cost) => {
+    switch (cost.attribute) {
+      case "health":
+        return actor !== undefined && actor.health >= cost.amount;
+      case "shield":
+        return actor !== undefined && actor.shield >= cost.amount;
+      case "stamina":
+        return actor !== undefined && actor.stamina >= cost.amount;
+      case "shared-resource":
+        return actor !== undefined && actor.resource >= cost.amount;
+      default:
+        return false;
+    }
+  });
+  const authorityCooldownEndsAt = actor?.cooldowns[ability.id] ?? 0;
+  const canPredict =
+    snapshot.phase === "running" &&
+    player !== undefined &&
+    actor !== undefined &&
+    actor.health > 0 &&
+    player.dashRemainingMs <= 0 &&
+    !actor.tags.includes("state.dashing") &&
+    authorityCooldownEndsAt <= snapshot.elapsedMs &&
+    costsAvailable !== false &&
+    clientElapsedMs >= state.nextDashPredictionAtMs;
+  if (!canPredict) {
+    return state.predictedDashSequence;
+  }
+
+  state.predictedDashSequence = requestedSequence;
+  state.nextDashPredictionAtMs = clientElapsedMs + Math.max(0, ability.cooldownMs ?? 0);
+  return state.predictedDashSequence;
+}
+
 function createOutpostPredictionTransitionFactory(
   state: ClientShadowState,
   player: OutpostPlayerDefinition
 ) {
+  const movementProfile = state.dataRegistry.getValue<OutpostMovementProfileDefinition>(
+    OUTPOST_MOVEMENT_PROFILE_TYPE,
+    player.movementProfile.id
+  );
   const bodyData = state.dataRegistry.getValue<PhysicsBodyData>(
     "physics.body",
     player.physicsBody.id
@@ -962,18 +1074,15 @@ function createOutpostPredictionTransitionFactory(
             linearVelocity: { x: predicted.velocityX, y: predicted.velocityY }
           };
         },
-        applyInput(predicted, input) {
-          const length = Math.hypot(input.moveX, input.moveY);
-          const scale = length > 1 ? 1 / length : 1;
-          const aimX = input.aimX - predicted.x;
-          const aimY = input.aimY - predicted.y;
-          if (aimX !== 0 || aimY !== 0) {
-            predicted.facing = Math.atan2(aimY, aimX);
-          }
+        applyInput(predicted, input, context) {
+          advanceOutpostMovement(predicted, input, movementProfile, {
+            deltaMs: context.stepMs,
+            position: { x: predicted.x, y: predicted.y }
+          });
           return {
             linearVelocity: {
-              x: input.moveX * scale * player.moveSpeed,
-              y: input.moveY * scale * player.moveSpeed
+              x: predicted.velocityX,
+              y: predicted.velocityY
             }
           };
         },
@@ -1097,6 +1206,19 @@ function createClientShadowCameraModule(
   camera: CameraController | undefined,
   cameraAdapter: OutpostClientCameraAdapter | undefined
 ) {
+  const playerDefinition = state.dataRegistry.getValue<OutpostPlayerDefinition>(
+    OUTPOST_PLAYER_TYPE,
+    PLAYER_DEFINITION_ID
+  );
+  const movementProfile = state.dataRegistry.getValue<OutpostMovementProfileDefinition>(
+    OUTPOST_MOVEMENT_PROFILE_TYPE,
+    playerDefinition.movementProfile.id
+  );
+  let lookaheadX = 0;
+  let lookaheadY = 0;
+  let impulseX = 0;
+  let impulseY = 0;
+  let lastDashSequence = 0;
   return defineGameModule<GameInstallContext>({
     id: "outpost.client.camera",
     install(ctx) {
@@ -1118,11 +1240,39 @@ function createClientShadowCameraModule(
             ? ctx.world.get(local.entityId, PhysicsTransformComponent)
             : undefined;
           const presented = state.presentedPlayers.get(state.localPlayerId);
+          const position = presented?.position ?? transform?.position;
+          if (position) {
+            const targetLookahead = resolveCameraLookaheadTarget(
+              state.input,
+              position,
+              camera.getState().viewport,
+              movementProfile.cameraLookaheadDistance,
+              presented?.facing ?? 0
+            );
+            const response =
+              1 - Math.exp(-movementProfile.cameraLookaheadResponse * (delta / 1_000));
+            lookaheadX += (targetLookahead.x - lookaheadX) * response;
+            lookaheadY += (targetLookahead.y - lookaheadY) * response;
+            if (
+              presented !== undefined &&
+              presented.dashRemainingMs > 0 &&
+              presented.dashSequence !== lastDashSequence
+            ) {
+              impulseX += presented.dashDirectionX * movementProfile.cameraDashImpulse;
+              impulseY += presented.dashDirectionY * movementProfile.cameraDashImpulse;
+            }
+            if (presented !== undefined) {
+              lastDashSequence = presented.dashSequence;
+            }
+          }
+          const impulseDecay = Math.exp(-12 * (delta / 1_000));
+          impulseX *= impulseDecay;
+          impulseY *= impulseDecay;
           camera.setState({
             mode: transform ? "follow" : "free",
             ...(local ? { targetEntity: local.entityId } : {}),
-            x: presented?.position.x ?? transform?.position.x ?? OUTPOST_ARENA.width / 2,
-            y: presented?.position.y ?? transform?.position.y ?? OUTPOST_ARENA.height / 2,
+            x: (position?.x ?? OUTPOST_ARENA.width / 2) + lookaheadX + impulseX,
+            y: (position?.y ?? OUTPOST_ARENA.height / 2) + lookaheadY + impulseY,
             bounds: { x: 0, y: 0, width: OUTPOST_ARENA.width, height: OUTPOST_ARENA.height }
           });
           cameraAdapter?.applyCameraState(camera.update(delta));
@@ -1130,6 +1280,40 @@ function createClientShadowCameraModule(
       });
     }
   });
+}
+
+function resolveCameraLookaheadTarget(
+  input: OutpostInputState,
+  position: PointLike,
+  viewport: { width: number; height: number },
+  maximumDistance: number,
+  fallbackFacing: number
+): PointLike {
+  if (input.aimMode === "pointer") {
+    if (input.pointerViewportX === undefined || input.pointerViewportY === undefined) {
+      return { x: 0, y: 0 };
+    }
+    const halfWidth = Math.max(1, viewport.width / 2);
+    const halfHeight = Math.max(1, viewport.height / 2);
+    const normalizedX = (input.pointerViewportX - halfWidth) / halfWidth;
+    const normalizedY = (input.pointerViewportY - halfHeight) / halfHeight;
+    const length = Math.hypot(normalizedX, normalizedY);
+    const scale = length > 1 ? 1 / length : 1;
+    return {
+      x: normalizedX * scale * maximumDistance,
+      y: normalizedY * scale * maximumDistance
+    };
+  }
+
+  const rawAimX = input.aimX - position.x;
+  const rawAimY = input.aimY - position.y;
+  const aimLength = Math.hypot(rawAimX, rawAimY);
+  return aimLength > 0
+    ? { x: (rawAimX / aimLength) * maximumDistance, y: (rawAimY / aimLength) * maximumDistance }
+    : {
+        x: Math.cos(fallbackFacing) * maximumDistance,
+        y: Math.sin(fallbackFacing) * maximumDistance
+      };
 }
 
 function createClientShadowInputResetModule(state: ClientShadowState) {
@@ -1265,7 +1449,11 @@ function readPlayer(value: unknown): OutpostClientPlayerSnapshot | undefined {
     y: value.y,
     velocityX: value.velocityX,
     velocityY: value.velocityY,
-    facing: value.facing
+    facing: value.facing,
+    dashSequence: nonNegativeInteger(value.dashSequence) ? value.dashSequence : 0,
+    dashRemainingMs: nonNegativeFinite(value.dashRemainingMs) ? value.dashRemainingMs : 0,
+    dashDirectionX: finite(value.dashDirectionX) ? value.dashDirectionX : 0,
+    dashDirectionY: finite(value.dashDirectionY) ? value.dashDirectionY : 0
   };
 }
 
@@ -1598,6 +1786,7 @@ function readCombatCue(value: unknown): OutpostReplicatedCombatCue | undefined {
     !optionalVector(value.normal) ||
     !optionalVector(value.direction) ||
     !optionalNonNegativeFinite(value.amount) ||
+    !optionalCombatAbility(value.ability) ||
     !optionalNonEmptyString(value.reason)
   ) {
     return undefined;
@@ -1615,8 +1804,19 @@ function readCombatCue(value: unknown): OutpostReplicatedCombatCue | undefined {
     ...(value.normal === undefined ? {} : { normal: { ...value.normal } }),
     ...(value.direction === undefined ? {} : { direction: { ...value.direction } }),
     ...(value.amount === undefined ? {} : { amount: value.amount }),
+    ...(value.ability === undefined ? {} : { ability: value.ability }),
     ...(value.reason === undefined ? {} : { reason: value.reason })
   };
+}
+
+function optionalCombatAbility(value: unknown): value is OutpostReplicatedCombatCue["ability"] {
+  return (
+    value === undefined ||
+    value === "rifle" ||
+    value === "dash" ||
+    value === "shock-field" ||
+    value === "deploy-turret"
+  );
 }
 
 function cloneAuthoritySnapshot(

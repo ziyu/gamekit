@@ -7,10 +7,19 @@ import {
   applyOutpostInputAction,
   configureOutpostInputRouter,
   createOutpostInputState,
-  outpostPlayerActionForInputAction
+  outpostPlayerActionForInputAction,
+  setOutpostPointerViewportPosition
 } from "../gameplay";
 
 describe("Outpost gamepad input", () => {
+  it("keeps pointer viewport position separate from world-space aim", () => {
+    const state = createOutpostInputState();
+    setOutpostPointerViewportPosition(state, { x: 641, y: 360 });
+
+    expect({ x: state.pointerViewportX, y: state.pointerViewportY }).toEqual({ x: 641, y: 360 });
+    expect({ x: state.aimX, y: state.aimY }).toEqual({ x: 0, y: 0 });
+  });
+
   it("combines analog movement across physical input sources without false release", () => {
     const router = createInputRouter();
     const state = createOutpostInputState();
@@ -158,6 +167,7 @@ describe("Outpost gamepad input", () => {
 
     router.handle(gamepadInput({ id: "reload", code: STANDARD_GAMEPAD_CONTROL.buttonWest }));
     router.handle(gamepadInput({ id: "dash", code: STANDARD_GAMEPAD_CONTROL.buttonSouth }));
+    expect(state.dashSequence).toBe(1);
     router.handle(gamepadInput({ id: "shock", code: STANDARD_GAMEPAD_CONTROL.leftBumper }));
     router.handle(gamepadInput({ id: "deploy", code: STANDARD_GAMEPAD_CONTROL.buttonNorth }));
     expect(actions).toEqual(["rifle", "rifle", "reload", "dash", "shock-field", "deploy-turret"]);

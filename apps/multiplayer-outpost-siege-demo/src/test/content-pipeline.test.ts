@@ -117,7 +117,10 @@ describe("Outpost content pipeline", () => {
               type: OUTPOST_RENDER_OBJECT_TYPE,
               id: "render.outpost.player"
             },
-            moveSpeed: 220
+            movementProfile: {
+              type: "outpost.movement-profile",
+              id: "movement.outpost.ranger"
+            }
           } satisfies OutpostPlayerDefinition
         }
       ]

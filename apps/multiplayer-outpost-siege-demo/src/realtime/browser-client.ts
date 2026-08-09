@@ -200,7 +200,8 @@ export async function sendOutpostPlayerAction(
   action: OutpostPlayerAction,
   aim: { x: number; y: number },
   fireSequence?: number,
-  fireHeld?: boolean
+  fireHeld?: boolean,
+  dashSequence?: number
 ): Promise<void> {
   await runtime.send({
     channel: "reliable",
@@ -213,7 +214,8 @@ export async function sendOutpostPlayerAction(
       aimX: aim.x,
       aimY: aim.y,
       ...(fireSequence === undefined ? {} : { fireSequence }),
-      ...(fireHeld === undefined ? {} : { fireHeld })
+      ...(fireHeld === undefined ? {} : { fireHeld }),
+      ...(dashSequence === undefined ? {} : { dashSequence })
     }
   });
 }

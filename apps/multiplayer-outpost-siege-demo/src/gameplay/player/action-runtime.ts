@@ -47,7 +47,7 @@ export function createOutpostAuthorityPlayerActionModule(
     install(ctx) {
       ctx.systems.register({
         id: "outpost.authority.players.actions.update",
-        update({ elapsed }) {
+        update({ delta, elapsed }) {
           const players = new Map(
             Array.from(options.players(), (player) => [player.playerId, player] as const)
           );
@@ -59,7 +59,7 @@ export function createOutpostAuthorityPlayerActionModule(
             if (player === undefined) {
               continue;
             }
-            handleDiscreteAction(options, player, command, elapsed);
+            handleDiscreteAction(options, player, command, elapsed, delta);
           }
           for (const player of players.values()) {
             if (!playerAvailable(options.gas, player)) {
@@ -85,7 +85,8 @@ function handleDiscreteAction(
   options: CreateOutpostAuthorityPlayerActionModuleOptions,
   player: OutpostAuthorityPlayerActionActor,
   command: OutpostAuthorityPlayerActionCommand,
-  elapsed: number
+  elapsed: number,
+  deltaMs: number
 ): void {
   const correlationId = command.correlationId ?? command.id;
   if (!playerAvailable(options.gas, player)) {
@@ -136,7 +137,7 @@ function handleDiscreteAction(
     return;
   }
   if (command.action === "dash") {
-    const result = options.combat.activatePlayerAction(toCombatCommand(command));
+    const result = options.combat.activatePlayerAction(toCombatCommand(command, deltaMs));
     if (result.status === "rejected") {
       return;
     }
@@ -166,7 +167,8 @@ function playerAvailable(gas: GasHandle, player: OutpostAuthorityPlayerActionAct
 }
 
 function toCombatCommand(
-  command: OutpostAuthorityPlayerActionCommand
+  command: OutpostAuthorityPlayerActionCommand,
+  simulationStepMs?: number
 ): OutpostAuthorityCombatCommand {
   if (command.action === "reload") {
     throw new Error("Reload must be handled by the Outpost weapon runtime.");
@@ -177,6 +179,8 @@ function toCombatCommand(
     ability: command.action,
     aimX: command.aimX,
     aimY: command.aimY,
+    ...(command.dashSequence === undefined ? {} : { dashSequence: command.dashSequence }),
+    ...(simulationStepMs === undefined ? {} : { simulationStepMs }),
     ...(command.correlationId === undefined ? {} : { correlationId: command.correlationId }),
     ...(command.parentId === undefined ? {} : { parentId: command.parentId })
   };

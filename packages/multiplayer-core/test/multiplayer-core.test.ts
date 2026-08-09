@@ -2590,6 +2590,7 @@ describe("createMultiplayerModule", () => {
       update(ctx?: { delta?: number; elapsed?: number; tick?: number }): void;
     }> = [];
     const presented: number[] = [];
+    let requestInputSample: (() => void) | undefined;
     const module = createMultiplayerModule<
       MultiplayerBridgeInstallContext,
       ClientSnapshot,
@@ -2629,6 +2630,9 @@ describe("createMultiplayerModule", () => {
           if (predictedState !== undefined) {
             presented.push(predictedState.x);
           }
+        },
+        expose(view) {
+          requestInputSample = view === undefined ? undefined : () => view.requestInputSample();
         }
       }
     });
@@ -2657,15 +2661,21 @@ describe("createMultiplayerModule", () => {
     }
     await waitFor(() => fake.sent.length === 2);
 
-    expect(presented).toHaveLength(6);
+    requestInputSample?.();
+    systems[0]?.update({ delta: 0, elapsed: 60, tick: 61 });
+    await waitFor(() => fake.sent.length === 3);
+
+    expect(presented).toHaveLength(7);
     expect(presented).toEqual([
       expect.closeTo(0),
       expect.closeTo(0.24),
       expect.closeTo(0.48),
       expect.closeTo(0.72),
       expect.closeTo(0.96),
-      expect.closeTo(1.2)
+      expect.closeTo(1.2),
+      expect.closeTo(2)
     ]);
+    expect(fake.sent[2]).toMatchObject({ sequence: 3, payload: { sequence: 3, dx: 1 } });
 
     dispose?.();
     await runtime.dispose();

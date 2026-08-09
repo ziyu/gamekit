@@ -34,7 +34,6 @@ import {
   materializeActorObject,
   nearestObject,
   normalizeVector,
-  normalizedAim,
   operationContext,
   OUTPOST_COMBAT_PLAYER_DEFINITION_ID,
   rejectCommand,
@@ -74,8 +73,6 @@ export type { CreateOutpostAuthorityCombatOptions } from "./authority-combat-sta
 const RIFLE_DEFINITION_ID = "weapon.outpost.rifle";
 const RAIDER_DEFINITION_ID = "enemy.outpost.raider";
 const TURRET_DEFINITION_ID = "buildable.outpost.turret";
-const DASH_SPEED = 640;
-const DASH_DURATION_MS = 180;
 const TURRET_RANGE = 360;
 const KNOCKBACK_DURATION_MS = 120;
 
@@ -144,6 +141,10 @@ export function createOutpostAuthorityCombat(
       return executeCombatCommand(state, command);
     },
     rejectPlayerAction(command, reason) {
+      const player = state.options.players().get(command.playerId);
+      if (command.ability === "dash" && player !== undefined) {
+        state.options.resolvePlayerDash(player, command, false);
+      }
       rejectCommand(state, command, reason);
       return { status: "rejected", reason };
     },
@@ -182,7 +183,6 @@ function createCombatPrePhysicsModule(state: CombatState, core: OutpostCombatCor
           for (const command of state.options.commands()) {
             executeCombatCommand(state, command);
           }
-          updateDashes(state, delta);
           updateKnockbacks(state, delta);
           updateTurrets(state);
         }
@@ -193,7 +193,6 @@ function createCombatPrePhysicsModule(state: CombatState, core: OutpostCombatCor
         for (const object of state.objectsById.values()) {
           removeCombatObject(state, object, false);
         }
-        state.dashesByPlayerId.clear();
         state.knockbacksByObjectId.clear();
         state.pendingDeaths.clear();
         state.cueStream.clear();
@@ -249,6 +248,9 @@ function executeCombatCommand(
     !state.options.gas.hasActor(player.actorId) ||
     actorHealth(state, player.actorId) <= 0
   ) {
+    if (command.ability === "dash" && player !== undefined) {
+      state.options.resolvePlayerDash(player, command, false);
+    }
     rejectCommand(state, command, "player-unavailable");
     return { status: "rejected", reason: "player-unavailable" };
   }
@@ -304,16 +306,15 @@ function executeDash(
     ...operationContext(command)
   });
   if (activation.status !== "activated") {
-    rejectCommand(state, command, activation.reason);
-    return { status: "rejected", reason: activation.reason };
+    const reason =
+      activation.reason === "ability costs cannot be paid"
+        ? "costs-unavailable"
+        : activation.reason;
+    state.options.resolvePlayerDash(player, command, false);
+    rejectCommand(state, command, reason);
+    return { status: "rejected", reason };
   }
-  const direction = normalizedAim(state.options.world, player.entityId, command.aimX, command.aimY);
-  state.dashesByPlayerId.set(player.playerId, {
-    actorId: player.actorId,
-    velocity: { x: direction.x * DASH_SPEED, y: direction.y * DASH_SPEED },
-    remainingMs: DASH_DURATION_MS,
-    source: command.id
-  });
+  state.options.resolvePlayerDash(player, command, true);
   state.options.gas.addTag(player.actorId, "state.dashing", command.id, operationContext(command));
   state.acceptedCommands += 1;
   return { status: "accepted" };
@@ -420,24 +421,6 @@ function ensureInitialEnemies(state: CombatState): void {
       position: { x: spawn.x, y: spawn.y },
       activationDelayMs: normalizeEnemyActivationDelay(spawn)
     });
-  }
-}
-
-function updateDashes(state: CombatState, deltaMs: number): void {
-  for (const [playerId, dash] of state.dashesByPlayerId) {
-    const player = state.options.players().get(playerId);
-    if (!player || !state.options.world.has(player.entityId)) {
-      state.dashesByPlayerId.delete(playerId);
-      continue;
-    }
-    state.options.world.set(player.entityId, PhysicsVelocityComponent, { linear: dash.velocity });
-    dash.remainingMs -= Math.max(0, deltaMs);
-    if (dash.remainingMs <= 0) {
-      if (state.options.gas.hasActor(dash.actorId)) {
-        state.options.gas.removeTag(dash.actorId, "state.dashing", dash.source);
-      }
-      state.dashesByPlayerId.delete(playerId);
-    }
   }
 }
 

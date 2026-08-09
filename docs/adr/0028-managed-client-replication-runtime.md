@@ -1,6 +1,6 @@
 # ADR 0028: Managed Client Replication Runtime
 
-Status: Accepted on 2026-07-15.
+Status: Accepted on 2026-07-15; immediate edge sampling amendment accepted on 2026-08-07.
 
 ## Context
 
@@ -17,6 +17,7 @@ Multiplayer Core 提供 managed client replication runtime，并由标准 Multip
 - Runtime 在 GameRuntime tick 内自动推进 snapshot playback 与 declared `Network*` track projector；游戏只配置 snapshot decoder、timeline、track declaration、snap/reset policy 和最终 `applyFrame` writer。
 - 启用 local prediction 后，Runtime 按配置频率读取当前 input state、分配 sequence、发送 `game.input`、推进 bounded prediction buffer，并在权威 snapshot 携带 ack 时自动 reconcile、replay 和 correction smoothing。标准字段表现通过 ADR 0029 的声明式 predicted-state fields 配置，不要求游戏回调手写插值或 correction offset。
 - Runtime 通过 `maxPredictionLeadInputs` 限制未确认 prediction input 数；达到上限时保留当前控制状态但暂停产生新的 simulation step/send，等 authority ack 释放窗口后再读取最新输入。该 backpressure 防止 client/authority timer 的微小漂移长期累积成 queue overflow、sequence gap 和周期性回拉，并通过 `throttledInputs` 暴露诊断。
+- 稳定 `inputRateHz` 仍是连续控制的默认采样节奏；Rifle press、Dash 等延迟敏感边沿可以在更新 app-owned input state 后调用 replication view 的 `requestInputSample()`，请求下一次 replication update 立即采样一次。Core只合并请求并复用同一 sequence、prediction buffer、send、ack、lead backpressure和失败恢复链路，不创建第二套 app-local predictor或发送循环；同一 update前的重复请求合并为一次，领先窗口已满时仍必须节流。
 - Local GameRuntime tick 只用于客户端 prediction frame，不默认写入 outgoing authority tick 字段。Transport send 失败时，Runtime 记录失败 sequence；下一份未确认该 sequence 的 authority snapshot 会自动从权威状态 reset prediction buffer，避免未真正发送的输入永久留在 replay history。Binding generation 会隔离旧 session 的异步失败回调。
 - 同一 `applyFrame` 同时暴露 remote presented tracks 与 local predicted state。Renderer 和 follow camera 必须消费这一帧的同一 transient state；权威 World、Physics、Save 和 provider state 不读取或保存 presented/predicted 值。
 - App Host standard multiplayer module 只透传 `clientReplication` 配置到 Multiplayer Core factory；App Host、backend adapter 和 app 不复制调度 runtime。
@@ -38,6 +39,7 @@ Positive consequences:
 - Authority gate、input sequence、snapshot ack、binding reset、bounded queue 和 diagnostics 在不同 app/backend 间保持一致。
 - 漏接 interpolation 或 reconciliation 不再是 demo 默认路径；直接把低频 authority transform 写入 Renderer 需要显式绕过标准 runtime。
 - Local prediction 和 remote playback 使用同一 GameRuntime frame，Camera 不会再跟随另一份离散时钟。
+- 延迟敏感输入边沿不必等待完整 fixed input interval，同时仍保留统一的 prediction/reconciliation 诊断与有界队列。
 
 Costs and constraints:
 

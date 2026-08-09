@@ -72,7 +72,7 @@ Weapon、Tactical Module、Deployable、Movement Profile 和 Presentation Profil
 - 当前输入设备类别。
 - input epoch 与 sequence。
 
-键鼠和手柄只在 Input binding 与 aim resolver 不同，之后共享同一控制合同。鼠标坐标必须通过 Camera Core 从 viewport 转为 world point；手柄右摇杆使用 dead zone、响应曲线和最近有效方向，不伪造鼠标坐标。
+键鼠和手柄只在 Input binding 与 aim resolver 不同，之后共享同一控制合同。鼠标坐标必须通过 Camera Core 从 viewport 转为 world point；手柄右摇杆使用 dead zone、响应曲线和最近有效方向，不伪造鼠标坐标。鼠标镜头 lookahead 使用独立保留的 viewport 坐标，以 viewport 中心为零点按距离渐进并设置硬上限；不能从归一化后的 world aim 方向直接施加满额偏移，也不能把镜头偏移写回玩家 transform、移动输入或 authority payload。
 
 Held fire 不依赖浏览器 click 次数或 key repeat。Authority 按 weapon cadence 从最新连续意图中生成合法 shot；网络 burst 不能补发超过配置上限的历史子弹。
 
@@ -137,7 +137,7 @@ semantic control/action
 
 ## Authority Projection
 
-玩家高频复制包含 stable identity/generation、transform、velocity、facing 和必要 movement mode。中低频公开状态包含：
+玩家高频复制包含 stable identity/generation、transform、velocity、facing，以及 `dashSequence`、剩余时间和方向等必要 movement mode。`dashSequence` 只在 reliable action 被 authority 接受或拒绝后推进；continuous input中的本地 edge不能提前冒充技能确认。中低频公开状态包含：
 
 - health、shield 与玩家可见 tag。
 - weapon magazine/reserve、reload phase、shot sequence 与最近接受射击的 correlation。
@@ -172,6 +172,10 @@ Outpost authority 与 client presentation history各自最多保留64条 cue；w
 Authority confirmation 与 rejection 都使用稳定 correlation。客户端确认时只收敛对应 anticipation，不重复播放已经预演的 muzzle、音效或 camera impulse；拒绝时取消该 anticipation 及依赖它的后续预测链、恢复 Animator action channel、修正 HUD optimistic state，并播放轻量 deny feedback，不能完整播放 commit、impact 或 hit confirm。Anticipation 队列、消费历史和超时都必须有硬上限。
 
 Rifle 的 press、release 和 cancel 是手感关键边沿，必须在 Input Action 到达时立即走独立 reliable action lane，不能等待 movement/aim 的 fixed-step FIFO。持续移动、aim、held state仍可随预测输入复制；authority weapon以单调 `fireSequence` 合并两条 lane，只接受更新边沿，并拒绝旧 FIFO frame覆盖已经处理的 held状态。Outpost客户端预测输入最多领先2帧，authority每 source输入 backlog最多4帧，但这两个上限都不能成为 Rifle首发等待预算。
+
+Dash edge 同时写入单调 `dashSequence` 并请求 managed replication 下一帧提前采样，以便本地 Physics transition立即启动；可靠 player action仍是 authority接受、GAS cost/cooldown和中断判定的唯一来源。Authority只有在该 action接受或拒绝后才把序号投影为已处理，避免 reliable action与unreliable input乱序时先回滚、下一 tick又启动。接受、拒绝和碰墙缩短都回到同一 movement state与一次有界表现收敛。
+
+Dash anticipation 必须先读取客户端最新收到、尚未经过 playback delay 的复制 GAS actor state，并检查 health、cost、cooldown、`state.dashing` 与权威 movement phase；本地已允许的 Dash 还要建立同 cooldown 时长的有界 gate，防止 authority snapshot 返回前的重复按键再次启动预测。Gate 只决定连续输入是否把新 `dashSequence` 交给 prediction transition，可靠 player action仍携带原始单调序号送往 authority；已知不可用的请求不能先产生位移再依赖 rejection 回滚。
 
 Rifle 保留可见飞行时间，因此明确选择
 [`kinematic-data-buffer`](../../adr/0047-selective-network-prediction-and-projectile-strategies.md)，而不是

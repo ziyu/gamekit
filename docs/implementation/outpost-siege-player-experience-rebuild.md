@@ -1,6 +1,6 @@
 # Outpost Siege Player Experience Rebuild
 
-Status: Active — Rifle kinematic-data-buffer integrated and benchmarked; browser playtest remains.
+Status: Active — Rifle kinematic-data-buffer integrated; Slice 3 movement/Dash/camera baseline is complete.
 
 ## Prediction Capability Gate
 
@@ -86,6 +86,16 @@ edge，reload 期间只接受新的 edge，不把 held 状态解释为新射击�
 本地弹体、held input 不重复射击，以及非空 reload 的新 edge 仍可按 authority 语义中断。
 
 ## Current Increment
+
+2026-08-07 已进入 Slice 3 的实现与自动验证：
+
+- `outpost.movement-profile` 现在独立数据化最大速度、加减速、Dash速度/时长/碰撞缩短阈值，以及镜头lookahead/impulse参数；Ranger通过DataRef组合该profile，不再把`moveSpeed`散落在authority、preview和client prediction。
+- `gameplay/player/movement-policy.ts` 成为authority、local preview与`createPhysicsBodyPredictionTransition(...)`共享的input-to-velocity状态转移；移动向量归一化、aim/facing分离、加减速、无输入Dash fallback和碰墙速度投影终止均只定义一次。
+- Dash velocity override已从`authority-combat.ts`/`CombatState.dashesByPlayerId`移除。Reliable player action先经过GAS cost/cooldown和action arbitration，接受后才启动player movement state并取消允许中断的Reload；普通locomotion在Dash剩余时间内不能覆盖速度，结束时统一移除`state.dashing`。
+- Input与Schema加入单调`dashSequence`、剩余时间和方向。Client使用Multiplayer Core新增的`requestInputSample()`在下一次replication update提前采样Dash edge，但仍复用同一个Physics predictor、sequence、ack、两帧lead窗口和reconciliation；authority只在可靠action接受/拒绝后确认Dash序号，continuous input不能提前伪造确认。Dash movement基线使用`outpost.field-state.v9`，本轮为拒绝 cue 增加动作身份后升级为`outpost.field-state.v10`。
+- Client camera从同一个local presented player state读取position/facing/Dash mode，按profile应用aim lookahead、指数响应和快速衰减的有界Dash impulse；没有建立camera专用transform或第二条预测时钟。
+- Dash rejection现在与acceptance一样确认单调`dashSequence`，避免persistent continuous input在每次reconcile后重放同一次已拒绝Dash；Rifle rejection不再错误推进Dash序号。Dash消耗25 stamina，authority按movement profile恢复并复制最终值；主HUD新增常驻体力条、Dash消耗/锁定状态、icon内authority cooldown倒计时和单行`LOW STAMINA`拒绝提示，`action-rejected` cue携带动作身份以避免把其他cost拒绝误报成Dash。
+- 自动验证已覆盖Core提前采样仍受原prediction cadence/lead约束、共享移动加减速/斜向归一化、Dash方向fallback/碰撞缩短/拒绝序号、authority Dash movement snapshot、四客户端Room链路、provider Schema round-trip与现有Rifle/Reload回归。Client anticipation只对最新复制GAS状态和本地cooldown gate均允许的Dash启动，已知cooldown/cost拒绝不再先位移再回滚。正式Outpost入口的双客户端浏览器复验确认：施法端同帧进入Dash与镜头响应，观察端收敛到同一authority位置，能力不重放且无回弹/双影；两端无运行错误。不同render cadence由time-based prediction测试覆盖，碰墙与拒绝路径由共享policy和browser integration测试覆盖，Slice 3基线据此关闭。
 
 2026-07-27 已完成 Rifle 纵切的第一段权威闭环：
 

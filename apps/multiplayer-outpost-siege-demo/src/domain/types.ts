@@ -7,6 +7,7 @@ export type OutpostCombatAbility = "rifle" | "dash" | "shock-field" | "deploy-tu
 export type OutpostDiscreteCombatAbility = Exclude<OutpostCombatAbility, "rifle">;
 
 export const OUTPOST_PLAYER_TYPE = "outpost.player";
+export const OUTPOST_MOVEMENT_PROFILE_TYPE = "outpost.movement-profile";
 export const OUTPOST_ENEMY_TYPE = "outpost.enemy";
 export const OUTPOST_WEAPON_TYPE = "outpost.weapon";
 export const OUTPOST_BUILDABLE_TYPE = "outpost.buildable";
@@ -50,7 +51,21 @@ export type OutpostPlayerDefinition = {
   weapon: DataRef<typeof OUTPOST_WEAPON_TYPE>;
   physicsBody: DataRef<"physics.body">;
   renderObject: DataRef<typeof OUTPOST_RENDER_OBJECT_TYPE>;
-  moveSpeed: number;
+  movementProfile: DataRef<typeof OUTPOST_MOVEMENT_PROFILE_TYPE>;
+};
+
+export type OutpostMovementProfileDefinition = {
+  id: string;
+  maxSpeed: number;
+  acceleration: number;
+  deceleration: number;
+  staminaRecoveryPerSecond: number;
+  dashSpeed: number;
+  dashDurationMs: number;
+  dashCollisionVelocityRatio: number;
+  cameraLookaheadDistance: number;
+  cameraLookaheadResponse: number;
+  cameraDashImpulse: number;
 };
 
 export type OutpostEnemyDefinition = {

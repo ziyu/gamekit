@@ -150,6 +150,11 @@ export type MultiplayerClientReplicationView<TSnapshot, TState> = {
   binding(): MultiplayerAuthorityBinding | undefined;
   authoritativeSnapshot(): TSnapshot | undefined;
   predictedState(): TState | undefined;
+  /**
+   * Requests one input sample on the next replication update without changing the configured
+   * steady-state input rate. Repeated requests before that update are coalesced.
+   */
+  requestInputSample(): void;
   diagnostics(): MultiplayerClientReplicationDiagnostics;
 };
 
@@ -367,6 +372,11 @@ export function createMultiplayerClientReplication<
     },
     predictedState() {
       return latestPredictedState;
+    },
+    requestInputSample() {
+      if (!disposed && predictionOptions !== undefined) {
+        inputReady = true;
+      }
     },
     diagnostics() {
       return {

@@ -1,5 +1,6 @@
 import type { CombatKinematicProjectileRecord } from "@gamekit/combat";
 import type { OutpostReplicatedWeaponState } from "./player/weapon";
+import type { OutpostCombatAbility } from "./types";
 
 export type OutpostReplicatedActor = {
   objectId: string;
@@ -64,6 +65,7 @@ export type OutpostReplicatedCombatCue = {
   normal?: { x: number; y: number } | undefined;
   direction?: { x: number; y: number } | undefined;
   amount?: number | undefined;
+  ability?: OutpostCombatAbility | undefined;
   reason?: string | undefined;
 };
 

@@ -34,12 +34,15 @@ export type OutpostInputState = {
   aimX: number;
   aimY: number;
   aimMode: "pointer" | "gamepad";
+  pointerViewportX?: number | undefined;
+  pointerViewportY?: number | undefined;
   aimStickX: number;
   aimStickY: number;
   lastAimStickX: number;
   lastAimStickY: number;
   fireHeld: boolean;
   fireSequence: number;
+  dashSequence: number;
   primaryRequested: boolean;
   dashRequested: boolean;
   shockFieldRequested: boolean;
@@ -74,6 +77,7 @@ export function createOutpostInputState(): OutpostInputState {
     lastAimStickY: 0,
     fireHeld: false,
     fireSequence: 0,
+    dashSequence: 0,
     primaryRequested: false,
     dashRequested: false,
     shockFieldRequested: false,
@@ -223,6 +227,9 @@ export function applyOutpostInputAction(state: OutpostInputState, event: InputAc
     case OUTPOST_ACTION.reload:
       return;
     case OUTPOST_ACTION.dash:
+      if (event.phase === "pressed") {
+        state.dashSequence = (state.dashSequence + 1) >>> 0;
+      }
       state.dashRequested ||= event.phase === "pressed";
       return;
     case OUTPOST_ACTION.shockField:
@@ -255,6 +262,14 @@ export function applyOutpostGamepadAimTarget(
   state.aimX = origin.x + (x / length) * distance;
   state.aimY = origin.y + (y / length) * distance;
   return true;
+}
+
+export function setOutpostPointerViewportPosition(
+  state: OutpostInputState,
+  point: { x: number; y: number }
+): void {
+  state.pointerViewportX = point.x;
+  state.pointerViewportY = point.y;
 }
 
 export function clearOutpostTransientInput(state: OutpostInputState): void {
