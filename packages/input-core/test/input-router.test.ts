@@ -169,6 +169,100 @@ describe("createInputRouter", () => {
       { actionId: "camera.pan_left", phase: "released", timestamp: 30 }
     ]);
   });
+
+  it("refreshes active analog values from moved input before the held tick", () => {
+    const router = createInputRouter();
+    router.registerAction({
+      id: "game.move_right",
+      name: "Move Right",
+      defaultBindings: [
+        { device: "gamepad", code: "Gamepad.Axis.LeftX.Positive", phase: "pressed" },
+        { device: "gamepad", code: "Gamepad.Axis.LeftX.Positive", phase: "held" },
+        { device: "gamepad", code: "Gamepad.Axis.LeftX.Positive", phase: "released" }
+      ]
+    });
+
+    router.handle(
+      input({
+        id: "axis-start",
+        device: "gamepad",
+        deviceId: "pad:0:1",
+        code: "Gamepad.Axis.LeftX.Positive",
+        value: 0.4
+      })
+    );
+    expect(
+      router.handle(
+        input({
+          id: "axis-change",
+          device: "gamepad",
+          deviceId: "pad:0:1",
+          code: "Gamepad.Axis.LeftX.Positive",
+          phase: "moved",
+          value: 0.8
+        })
+      )
+    ).toEqual([]);
+
+    expect(router.tick({ timestamp: 30 })[0]).toMatchObject({
+      phase: "held",
+      value: 0.8,
+      input: { value: 0.8 }
+    });
+  });
+
+  it("keeps identical controls from different gamepads isolated", () => {
+    const router = createInputRouter();
+    router.registerAction({
+      id: "game.fire",
+      name: "Fire",
+      defaultBindings: [
+        { device: "gamepad", code: "Gamepad.Trigger.Right", phase: "pressed" },
+        { device: "gamepad", code: "Gamepad.Trigger.Right", phase: "held" },
+        { device: "gamepad", code: "Gamepad.Trigger.Right", phase: "released" }
+      ]
+    });
+    router.handle(
+      input({
+        id: "pad-a-down",
+        device: "gamepad",
+        deviceId: "pad:0:1",
+        code: "Gamepad.Trigger.Right"
+      })
+    );
+    router.handle(
+      input({
+        id: "pad-b-down",
+        device: "gamepad",
+        deviceId: "pad:1:1",
+        code: "Gamepad.Trigger.Right"
+      })
+    );
+    router.handle(
+      input({
+        id: "pad-a-up",
+        device: "gamepad",
+        deviceId: "pad:0:1",
+        code: "Gamepad.Trigger.Right",
+        phase: "released"
+      })
+    );
+
+    expect(router.tick({ timestamp: 30 })).toHaveLength(1);
+  });
+
+  it("rejects non-finite normalized scalar values", () => {
+    const router = createInputRouter();
+    router.registerAction({
+      id: "game.move",
+      name: "Move",
+      defaultBindings: [{ device: "gamepad", code: "axis", phase: "pressed" }]
+    });
+
+    expect(() =>
+      router.handle(input({ device: "gamepad", code: "axis", value: Number.NaN }))
+    ).toThrowError(expect.objectContaining({ code: "input.invalid_value" }));
+  });
 });
 
 function input(patch: Partial<NormalizedInputEvent> = {}): NormalizedInputEvent {

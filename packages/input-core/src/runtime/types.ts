@@ -11,9 +11,11 @@ export type InputScopeId = string;
 export type NormalizedInputEvent = {
   id: string;
   device: InputDevice;
+  deviceId?: string;
   phase: InputPhase;
   code?: string;
   button?: string;
+  value?: number;
   pointerId?: string;
   x?: number;
   y?: number;
@@ -93,5 +95,6 @@ export type InputRouter = {
 export type InputSourceAdapter = {
   start(): void;
   stop(): void;
+  poll?(frame: InputFrame): void;
   destroy(): void;
 };

@@ -1,6 +1,12 @@
 import type { RenderNodePath, RenderObjectId } from "@gamekit/renderer-core";
 import type { PhaserRenderTargetState } from "./target-state";
 
+export type PhaserRenderStateWrite = {
+  objectId: RenderObjectId;
+  nodePath?: RenderNodePath | undefined;
+  state: PhaserRenderTargetState;
+};
+
 export type PhaserRendererOptions = {
   id?: string;
   debugTextureId?: string;
@@ -27,4 +33,5 @@ export type PhaserRendererNative<TScene = unknown, TObject = unknown> = Omit<
     state: PhaserRenderTargetState
   ): void;
   applyTargetState(target: TObject, state: PhaserRenderTargetState): void;
+  applyBatch(writes: PhaserRenderStateWrite[]): void;
 };

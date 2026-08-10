@@ -20,6 +20,7 @@
     "@gamekit/core": "workspace:*",
     "@gamekit/data": "workspace:*",
     "@gamekit/game-runtime": "workspace:*",
+    "@gamekit/save": "workspace:*",
     "@gamekit/world": "workspace:*"
   },
   "files": [

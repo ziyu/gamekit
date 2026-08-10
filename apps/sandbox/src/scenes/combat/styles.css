@@ -1,0 +1,579 @@
+[data-gamekit-theme="combat-range"] {
+  --range-bg: #070b0a;
+  --range-panel: rgba(13, 19, 17, 0.96);
+  --range-panel-raised: rgba(20, 29, 26, 0.98);
+  --range-line: rgba(196, 225, 213, 0.14);
+  --range-line-strong: rgba(196, 225, 213, 0.26);
+  --range-text: #eef4ef;
+  --range-muted: #8e9e97;
+  --range-cyan: #70ead2;
+  --range-amber: #f0ad52;
+  --range-danger: #ec6657;
+  --gk-surface-app: var(--range-bg);
+  --gk-surface-panel: var(--range-panel);
+  --gk-surface-raised: var(--range-panel-raised);
+  --gk-text-primary: var(--range-text);
+  --gk-text-secondary: #c3cec8;
+  --gk-text-muted: var(--range-muted);
+  --gk-border-subtle: var(--range-line);
+  --gk-border-strong: var(--range-line-strong);
+  --gk-accent-primary: var(--range-cyan);
+  --gk-accent-secondary: var(--range-amber);
+  --gk-danger: var(--range-danger);
+  --gk-focus-ring: var(--range-cyan);
+}
+
+.combat-range-ui,
+.combat-range {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.combat-range {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) minmax(180px, 26vh);
+  gap: 12px;
+  padding: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 72% 12%, rgba(240, 173, 82, 0.08), transparent 28%),
+    linear-gradient(115deg, rgba(112, 234, 210, 0.035), transparent 34%), #080c0b;
+  color: var(--range-text);
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.combat-range__header,
+.combat-range__stage-card,
+.combat-range__deck,
+.combat-range__roster,
+.combat-range__feedback {
+  border: 1px solid var(--range-line);
+  background: var(--range-panel);
+}
+
+.combat-range__header {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(300px, 1.1fr) auto;
+  align-items: center;
+  gap: 24px;
+  min-height: 86px;
+  padding: 14px 18px;
+}
+
+.combat-range__eyebrow,
+.combat-range__brief > span,
+.combat-range__stage-meta span,
+.combat-range__deck-heading span,
+.combat-range__footer-heading > span {
+  color: var(--range-cyan);
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.combat-range__identity h1 {
+  margin: 4px 0 0;
+  color: var(--range-text);
+  font-family: "Avenir Next Condensed", "DIN Condensed", sans-serif;
+  font-size: clamp(1.75rem, 3vw, 2.8rem);
+  font-weight: 900;
+  letter-spacing: -0.035em;
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+.combat-range__brief {
+  padding-left: 22px;
+  border-left: 2px solid var(--range-amber);
+}
+
+.combat-range__brief strong,
+.combat-range__brief small {
+  display: block;
+}
+
+.combat-range__brief strong {
+  margin-top: 4px;
+  font-family: "Avenir Next Condensed", "DIN Condensed", sans-serif;
+  font-size: 1.04rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.combat-range__brief small {
+  margin-top: 3px;
+  color: var(--range-muted);
+  font-size: 0.72rem;
+}
+
+.combat-range__status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 112px;
+  padding: 9px 11px;
+  border: 1px solid var(--range-line);
+  color: var(--range-muted);
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.combat-range__status > span {
+  width: 8px;
+  height: 8px;
+  background: var(--range-amber);
+}
+
+.combat-range__status--ready > span {
+  background: var(--range-cyan);
+  box-shadow: 0 0 16px rgba(112, 234, 210, 0.72);
+}
+
+.combat-range__workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 278px;
+  gap: 12px;
+  min-height: 0;
+}
+
+.combat-range__stage-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.combat-range__stage-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--range-line);
+}
+
+.combat-range__stage-meta > div:last-child {
+  text-align: right;
+}
+
+.combat-range__stage-meta strong {
+  display: block;
+  margin-top: 2px;
+  color: #d5ded8;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.combat-range__canvas-wrap {
+  position: relative;
+  min-height: 260px;
+  overflow: hidden;
+}
+
+.combat-range__canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+.combat-range__canvas-wrap canvas:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--range-cyan);
+}
+
+.combat-range__reticle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(112, 234, 210, 0.28);
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.combat-range__reticle::before,
+.combat-range__reticle::after {
+  position: absolute;
+  background: rgba(112, 234, 210, 0.28);
+  content: "";
+}
+
+.combat-range__reticle::before {
+  top: 8px;
+  left: -7px;
+  width: 30px;
+  height: 1px;
+}
+
+.combat-range__reticle::after {
+  top: -7px;
+  left: 8px;
+  width: 1px;
+  height: 30px;
+}
+
+.combat-range__arena-callout {
+  position: absolute;
+  padding: 4px 7px;
+  border: 1px solid rgba(112, 234, 210, 0.22);
+  background: rgba(5, 9, 8, 0.72);
+  color: var(--range-muted);
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.52rem;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
+.combat-range__arena-callout--area {
+  top: 20%;
+  left: 61%;
+}
+
+.combat-range__arena-callout--cover {
+  right: 46%;
+  bottom: 17%;
+  border-color: rgba(240, 173, 82, 0.32);
+}
+
+.combat-range__result {
+  min-height: 42px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--range-line);
+  background: linear-gradient(90deg, rgba(112, 234, 210, 0.08), transparent 65%);
+  color: #c8d6d0;
+  font-size: 0.78rem;
+}
+
+.combat-range__deck {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.combat-range__deck-heading,
+.combat-range__footer-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 13px;
+  border-bottom: 1px solid var(--range-line);
+}
+
+.combat-range__deck-heading strong {
+  color: #cbd6d0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.combat-range__actions {
+  grid-row: 3;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  min-height: 0;
+  overflow: auto;
+  background: var(--range-line);
+}
+
+.combat-range__actions button {
+  position: relative;
+  display: grid;
+  align-content: center;
+  min-height: 82px;
+  padding: 12px;
+  border: 0;
+  background: #101714;
+  color: var(--range-text);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background 130ms ease,
+    color 130ms ease;
+}
+
+.combat-range__actions button:hover:not(:disabled),
+.combat-range__actions button:focus-visible {
+  z-index: 1;
+  background: #183027;
+  color: #fff;
+  outline: 1px solid var(--range-cyan);
+  outline-offset: -1px;
+}
+
+.combat-range__actions button:disabled,
+.combat-range__reset:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+.combat-range__actions button > span {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  color: rgba(112, 234, 210, 0.42);
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.52rem;
+}
+
+.combat-range__actions button strong {
+  font-family: "Avenir Next Condensed", "DIN Condensed", sans-serif;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.combat-range__actions button small {
+  margin-top: 5px;
+  color: var(--range-muted);
+  font-size: 0.58rem;
+  text-transform: uppercase;
+}
+
+.combat-range__reset {
+  grid-row: 2;
+  min-height: 44px;
+  border: 0;
+  border-top: 1px solid var(--range-line);
+  background: rgba(240, 173, 82, 0.1);
+  color: var(--range-amber);
+  cursor: pointer;
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.63rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.combat-range__reset:hover:not(:disabled),
+.combat-range__reset:focus-visible {
+  background: rgba(240, 173, 82, 0.18);
+  outline: 1px solid var(--range-amber);
+  outline-offset: -1px;
+}
+
+.combat-range__footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.combat-range__roster,
+.combat-range__feedback {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.combat-range__footer-heading > div {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.combat-range__footer-heading strong {
+  color: var(--range-text);
+  font-family: "Avenir Next Condensed", "DIN Condensed", sans-serif;
+  font-size: 1.1rem;
+}
+
+.combat-range__footer-heading small {
+  color: var(--range-muted);
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.combat-range__actor-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  height: calc(100% - 47px);
+}
+
+.combat-range__actor {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-content: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border-right: 1px solid var(--range-line);
+}
+
+.combat-range__actor:last-child {
+  border-right: 0;
+}
+
+.combat-range__actor:nth-child(3n) {
+  border-right: 0;
+}
+
+.combat-range__actor > span {
+  overflow: hidden;
+  color: #c8d2cd;
+  font-size: 0.67rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.combat-range__actor > div {
+  grid-column: 1 / -1;
+  height: 4px;
+  overflow: hidden;
+  background: rgba(238, 244, 239, 0.09);
+}
+
+.combat-range__actor i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--range-amber);
+  transition: width 160ms ease;
+}
+
+.combat-range__actor:last-child i {
+  background: var(--range-cyan);
+}
+
+.combat-range__actor > strong {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--range-text);
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.66rem;
+}
+
+.combat-range__actor[data-downed="true"] {
+  opacity: 0.46;
+}
+
+.combat-range__feedback {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.combat-range__feedback ol {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  list-style: none;
+}
+
+.combat-range__feedback li {
+  position: relative;
+  padding-left: 13px;
+  color: #aebbb5;
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+.combat-range__feedback li::before {
+  position: absolute;
+  top: 0.45em;
+  left: 0;
+  width: 5px;
+  height: 5px;
+  background: var(--range-muted);
+  content: "";
+}
+
+.combat-range__feedback li[data-tone="impact"]::before {
+  background: var(--range-amber);
+}
+
+.combat-range__feedback li[data-tone="launch"]::before {
+  background: var(--range-cyan);
+}
+
+.combat-range__feedback li[data-tone="blocked"]::before {
+  background: var(--range-danger);
+}
+
+.combat-range__devtools {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+}
+
+@media (max-width: 1020px) {
+  .combat-range {
+    grid-template-rows: auto minmax(0, 1fr) 220px;
+  }
+
+  .combat-range__header {
+    grid-template-columns: minmax(220px, 1fr) auto;
+  }
+
+  .combat-range__brief {
+    display: none;
+  }
+
+  .combat-range__workspace {
+    grid-template-columns: minmax(0, 1fr) 230px;
+  }
+
+  .combat-range__footer {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .combat-range__feedback {
+    min-height: 150px;
+  }
+}
+
+@media (max-width: 760px) {
+  .combat-range {
+    display: block;
+    overflow: auto;
+  }
+
+  .combat-range__header {
+    grid-template-columns: 1fr;
+  }
+
+  .combat-range__status {
+    width: max-content;
+  }
+
+  .combat-range__workspace,
+  .combat-range__footer {
+    display: grid;
+    grid-template-columns: 1fr;
+    margin-top: 12px;
+  }
+
+  .combat-range__stage-card {
+    min-height: 520px;
+  }
+
+  .combat-range__deck {
+    min-height: 390px;
+  }
+
+  .combat-range__actor-list {
+    grid-template-columns: 1fr 1fr;
+    height: auto;
+  }
+
+  .combat-range__actor {
+    border-bottom: 1px solid var(--range-line);
+  }
+}

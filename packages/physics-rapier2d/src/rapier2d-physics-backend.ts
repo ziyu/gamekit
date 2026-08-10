@@ -15,11 +15,13 @@ import type {
   PhysicsCollisionFilter,
   PhysicsContactEvent,
   PhysicsContactKind,
+  PhysicsMaterialDefinition,
   PhysicsQueryOptions,
   PhysicsQuery,
   PhysicsQueryResult,
   PhysicsRotation,
   PhysicsScene,
+  PhysicsSceneCheckpoint,
   PhysicsSceneConfig,
   PhysicsShapeDefinition,
   PhysicsVector
@@ -56,6 +58,27 @@ type Rapier2dColliderRecord = {
   userData?: Record<string, unknown>;
 };
 
+type Rapier2dSceneCheckpointPayload = {
+  version: 1;
+  bytes: Uint8Array;
+  nextBodyId: number;
+  nextColliderId: number;
+  activeContactCount: number;
+  bodies: Array<{
+    id: PhysicsBodyId;
+    handle: number;
+    kind: PhysicsBodyKind;
+    userData?: Record<string, unknown> | undefined;
+  }>;
+  colliders: Array<{
+    id: PhysicsColliderId;
+    handle: number;
+    definition: PhysicsColliderDefinition;
+    enabled: boolean;
+    userData?: Record<string, unknown> | undefined;
+  }>;
+};
+
 let rapier2dInitPromise: Promise<void> | undefined;
 let rapier2dInitialized = false;
 
@@ -90,6 +113,11 @@ export function createRapier2dPhysicsBackend(
         sensors: true,
         queries: ["point", "raycast", "shape-cast", "overlap", "check", "bounds"],
         deterministic: false,
+        checkpoints: {
+          captureRestore: true,
+          fullScene: true,
+          deterministicReplay: true
+        },
         custom: {
           wasm: "compat",
           backend: "rapier2d",
@@ -135,8 +163,9 @@ function createRapier2dPhysicsScene(
 
   const sceneId = config.id ?? "physics.rapier.scene";
   const gravity = cloneVector2(config.gravity ?? { x: 0, y: -9.81 }, "scene.gravity");
-  const world = new RAPIER.World(gravity);
-  const eventQueue = new RAPIER.EventQueue(true);
+  let world = new RAPIER.World(gravity);
+  let eventQueue = new RAPIER.EventQueue(true);
+  const materials = createMaterialMap(config.materialDefinitions, sceneId);
   if (config.fixedDeltaMs !== undefined) {
     world.timestep = config.fixedDeltaMs / 1000;
   }
@@ -218,7 +247,7 @@ function createRapier2dPhysicsScene(
 
       const parent =
         definition.bodyId === undefined ? undefined : requireBody(bodies, definition.bodyId);
-      const desc = createColliderDesc(definition, options.groups);
+      const desc = createColliderDesc(definition, options.groups, materials, sceneId);
       const collider = world.createCollider(desc, parent?.body);
       colliders.set(id, {
         id,
@@ -292,6 +321,77 @@ function createRapier2dPhysicsScene(
         disposed
       };
     },
+    captureCheckpoint() {
+      assertActive();
+      const bytes = world.takeSnapshot();
+      const payload: Rapier2dSceneCheckpointPayload = {
+        version: 1,
+        bytes: bytes.slice(),
+        nextBodyId,
+        nextColliderId,
+        activeContactCount,
+        bodies: [...bodies.values()].map((record) => ({
+          id: record.id,
+          handle: record.body.handle,
+          kind: record.kind,
+          ...(record.userData === undefined ? {} : { userData: { ...record.userData } })
+        })),
+        colliders: [...colliders.values()].map((record) => ({
+          id: record.id,
+          handle: record.collider.handle,
+          definition: cloneColliderDefinition(record.definition),
+          enabled: record.enabled,
+          ...(record.userData === undefined ? {} : { userData: { ...record.userData } })
+        }))
+      };
+      return {
+        backend,
+        sceneId,
+        byteLength: bytes.byteLength,
+        payload
+      } satisfies PhysicsSceneCheckpoint;
+    },
+    restoreCheckpoint(checkpoint) {
+      assertActive();
+      const payload = requireRapier2dCheckpoint(checkpoint, backend, sceneId);
+      const restoredWorld = RAPIER.World.restoreSnapshot(payload.bytes.slice());
+      eventQueue.free();
+      world.free();
+      world = restoredWorld;
+      eventQueue = new RAPIER.EventQueue(true);
+      bodies.clear();
+      colliders.clear();
+      colliderHandles.clear();
+      for (const entry of payload.bodies) {
+        const body = world.getRigidBody(entry.handle);
+        if (body === null) {
+          throw invalidRestoredHandle("body", entry.id, entry.handle, sceneId);
+        }
+        bodies.set(entry.id, {
+          id: entry.id,
+          body,
+          kind: entry.kind,
+          ...(entry.userData === undefined ? {} : { userData: { ...entry.userData } })
+        });
+      }
+      for (const entry of payload.colliders) {
+        const collider = world.getCollider(entry.handle);
+        if (collider === null) {
+          throw invalidRestoredHandle("collider", entry.id, entry.handle, sceneId);
+        }
+        colliders.set(entry.id, {
+          id: entry.id,
+          collider,
+          definition: cloneColliderDefinition(entry.definition),
+          enabled: entry.enabled,
+          ...(entry.userData === undefined ? {} : { userData: { ...entry.userData } })
+        });
+        colliderHandles.set(entry.handle, entry.id);
+      }
+      nextBodyId = payload.nextBodyId;
+      nextColliderId = payload.nextColliderId;
+      activeContactCount = payload.activeContactCount;
+    },
     native() {
       return {
         rapier: RAPIER,
@@ -345,6 +445,9 @@ function createRapier2dPhysicsScene(
     if (definition.damping?.angular !== undefined) {
       desc.setAngularDamping(definition.damping.angular);
     }
+    if (definition.continuousCollisionDetection !== undefined) {
+      desc.setCcdEnabled(definition.continuousCollisionDetection);
+    }
     applyLockedAxesToDesc(desc, definition.lockedAxes);
     if (definition.userData !== undefined) {
       desc.setUserData({ ...definition.userData });
@@ -355,9 +458,12 @@ function createRapier2dPhysicsScene(
 
   function createColliderDesc(
     definition: PhysicsColliderDefinition,
-    groups: Rapier2dGroupMap | undefined
+    groups: Rapier2dGroupMap | undefined,
+    materialDefinitions: ReadonlyMap<string, PhysicsMaterialDefinition>,
+    ownerSceneId: string
   ): RAPIER.ColliderDesc {
     const desc = createShapeColliderDesc(definition.shape);
+    applyMaterialToColliderDesc(desc, definition, materialDefinitions, ownerSceneId);
     if (definition.sensor !== undefined) {
       desc.setSensor(definition.sensor);
     }
@@ -378,6 +484,121 @@ function createRapier2dPhysicsScene(
 
     return desc;
   }
+}
+
+function createMaterialMap(
+  definitions: readonly PhysicsMaterialDefinition[] | undefined,
+  sceneId: string
+): ReadonlyMap<string, PhysicsMaterialDefinition> {
+  const materials = new Map<string, PhysicsMaterialDefinition>();
+  for (const definition of definitions ?? []) {
+    if (materials.has(definition.id)) {
+      throw new GameError(
+        "physics.material_duplicate",
+        `Duplicate physics material in scene ${sceneId}: ${definition.id}`,
+        { sceneId, materialId: definition.id }
+      );
+    }
+    materials.set(definition.id, structuredClone(definition));
+  }
+  return materials;
+}
+
+function applyMaterialToColliderDesc(
+  desc: RAPIER.ColliderDesc,
+  definition: PhysicsColliderDefinition,
+  materials: ReadonlyMap<string, PhysicsMaterialDefinition>,
+  sceneId: string
+): void {
+  if (definition.material === undefined) {
+    return;
+  }
+  const material = materials.get(definition.material);
+  if (material === undefined) {
+    throw new GameError(
+      "physics.material_missing",
+      `Missing physics material in scene ${sceneId}: ${definition.material}`,
+      { sceneId, materialId: definition.material, colliderId: definition.id }
+    );
+  }
+  if (material.friction !== undefined) {
+    desc.setFriction(material.friction);
+  }
+  if (material.restitution !== undefined) {
+    desc.setRestitution(material.restitution);
+  }
+  if (material.density !== undefined) {
+    desc.setDensity(material.density);
+  }
+  if (material.combine?.friction !== undefined) {
+    desc.setFrictionCombineRule(toRapierCombineRule(material.combine.friction));
+  }
+  if (material.combine?.restitution !== undefined) {
+    desc.setRestitutionCombineRule(toRapierCombineRule(material.combine.restitution));
+  }
+}
+
+function toRapierCombineRule(
+  value: NonNullable<NonNullable<PhysicsMaterialDefinition["combine"]>["friction"]>
+): RAPIER.CoefficientCombineRule {
+  switch (value) {
+    case "min":
+      return RAPIER.CoefficientCombineRule.Min;
+    case "max":
+      return RAPIER.CoefficientCombineRule.Max;
+    case "multiply":
+      return RAPIER.CoefficientCombineRule.Multiply;
+    case "average":
+      return RAPIER.CoefficientCombineRule.Average;
+  }
+}
+
+function requireRapier2dCheckpoint(
+  checkpoint: PhysicsSceneCheckpoint,
+  backend: string,
+  sceneId: string
+): Rapier2dSceneCheckpointPayload {
+  if (checkpoint.backend !== backend || checkpoint.sceneId !== sceneId) {
+    throw new GameError(
+      "physics.checkpoint_scene_mismatch",
+      `Physics checkpoint does not belong to scene: ${sceneId}`,
+      {
+        checkpointBackend: checkpoint.backend,
+        checkpointSceneId: checkpoint.sceneId,
+        backend,
+        sceneId
+      }
+    );
+  }
+  const payload = checkpoint.payload as Partial<Rapier2dSceneCheckpointPayload> | undefined;
+  if (
+    payload?.version !== 1 ||
+    !(payload.bytes instanceof Uint8Array) ||
+    !Array.isArray(payload.bodies) ||
+    !Array.isArray(payload.colliders) ||
+    !Number.isSafeInteger(payload.nextBodyId) ||
+    !Number.isSafeInteger(payload.nextColliderId) ||
+    !Number.isSafeInteger(payload.activeContactCount)
+  ) {
+    throw new GameError(
+      "physics.checkpoint_invalid",
+      `Invalid Rapier 2D checkpoint for scene: ${sceneId}`
+    );
+  }
+  return payload as Rapier2dSceneCheckpointPayload;
+}
+
+function invalidRestoredHandle(
+  kind: "body" | "collider",
+  id: string,
+  handle: number,
+  sceneId: string
+): GameError {
+  return new GameError(
+    "physics.checkpoint_invalid_handle",
+    `Physics checkpoint restored without ${kind}: ${id}`,
+    { sceneId, kind, id, handle }
+  );
 }
 
 function requireBody(
@@ -691,8 +912,8 @@ function queryScene(
     );
     if (hit) {
       pushQueryResult(results, hit.collider, colliders, colliderHandles, {
-        point: cloneVector(hit.witness2),
-        normal: cloneVector(hit.normal2),
+        point: cloneVector(hit.witness1),
+        normal: cloneVector(hit.normal1),
         distance: hit.time_of_impact,
         ...(Number.isFinite(maxDistance) ? { fraction: hit.time_of_impact / maxDistance } : {})
       });

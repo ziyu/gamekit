@@ -249,7 +249,8 @@ export function createColyseusMultiplayerBackend(
             nativeStateSourceEndpointId,
             nativeStateSchemaVersion,
             nativeStateMaxBytes,
-            nativeStateListeners
+            nativeStateListeners,
+            options.nativeStateSync?.readRoomState
           );
           state.localPeer = toPeer(
             request.localPeer ?? ctx.localPeer,
@@ -258,6 +259,7 @@ export function createColyseusMultiplayerBackend(
           );
           state.session = createSessionSummary(sessionId, request, options, state.localPeer);
           state.phase = "in-session";
+          receiveInitialNativeState(state);
           return cloneSession(state.session);
         },
         async joinSession(request: JoinSessionRequest) {
@@ -287,7 +289,8 @@ export function createColyseusMultiplayerBackend(
             nativeStateSourceEndpointId,
             nativeStateSchemaVersion,
             nativeStateMaxBytes,
-            nativeStateListeners
+            nativeStateListeners,
+            options.nativeStateSync?.readRoomState
           );
           state.localPeer = toPeer(
             request.localPeer ?? ctx.localPeer,
@@ -301,6 +304,7 @@ export function createColyseusMultiplayerBackend(
             state.localPeer
           );
           state.phase = "in-session";
+          receiveInitialNativeState(state);
           return cloneSession(state.session);
         },
         async leaveSession(reason?: string) {
@@ -363,7 +367,8 @@ function attachRoom(
   nativeStateSourceEndpointId: string,
   nativeStateSchemaVersion: string,
   nativeStateMaxBytes: number,
-  nativeStateListeners: Set<ColyseusNativeStateListener>
+  nativeStateListeners: Set<ColyseusNativeStateListener>,
+  readRoomState: ((state: unknown) => ColyseusNativeStateUpdate<unknown> | undefined) | undefined
 ): void {
   state.room = room;
   state.messageUnsubscribe = room.onMessage(messageType, (message) => {
@@ -374,13 +379,20 @@ function attachRoom(
   });
   if (nativeStateSyncEnabled) {
     state.nativeStateHandler = (roomState) => {
-      const update = readNativeRoomState(
-        roomState,
-        nativeStateSourceEndpointId,
-        nativeStateSchemaVersion,
-        nativeStateMaxBytes
-      );
+      const update = readRoomState
+        ? readRoomState(roomState)
+        : readNativeRoomState(
+            roomState,
+            nativeStateSourceEndpointId,
+            nativeStateSchemaVersion,
+            nativeStateMaxBytes
+          );
       if (update) {
+        const stateBytes = resolveNativeStateBytes(update);
+        if (stateBytes === undefined || stateBytes > nativeStateMaxBytes) {
+          return;
+        }
+        update.stateBytes = stateBytes;
         if (update.stateVersion !== undefined) {
           if (update.stateVersion === state.lastNativeStateVersion) {
             return;
@@ -393,7 +405,6 @@ function attachRoom(
       }
     };
     room.onStateChange(state.nativeStateHandler);
-    state.nativeStateHandler(room.state);
   }
   state.leaveHandler = (_code, reason) => {
     setLastReason(state, reason);
@@ -411,6 +422,12 @@ function attachRoom(
     state.phase = state.session ? "in-session" : "connected";
   };
   room.onReconnect(state.reconnectHandler);
+}
+
+function receiveInitialNativeState(state: ColyseusConnectionState): void {
+  if (state.room && state.nativeStateHandler) {
+    state.nativeStateHandler(state.room.state);
+  }
 }
 
 async function detachRoom(state: ColyseusConnectionState, reason: string): Promise<void> {
@@ -532,8 +549,25 @@ function readNativeRoomState(
       stateVersion: state.updateCount,
       version: state.version,
       timestamp: state.timestamp,
+      stateBytes: state.stateBytes,
       state: JSON.parse(state.stateJson) as unknown
     };
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveNativeStateBytes(update: ColyseusNativeStateUpdate<unknown>): number | undefined {
+  if (update.stateBytes !== undefined) {
+    return Number.isSafeInteger(update.stateBytes) && update.stateBytes >= 0
+      ? update.stateBytes
+      : undefined;
+  }
+  try {
+    const serialized = JSON.stringify(update.state);
+    return typeof serialized === "string"
+      ? new TextEncoder().encode(serialized).byteLength
+      : undefined;
   } catch {
     return undefined;
   }

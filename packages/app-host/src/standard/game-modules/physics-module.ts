@@ -32,6 +32,9 @@ export function createStandardPhysicsModule<TContext>(
   if (options.handle !== undefined) {
     moduleOptions.handle = resolveStandardValue(ctx, options.handle);
   }
+  if (options.interpolationStore !== undefined) {
+    moduleOptions.interpolationStore = resolveStandardValue(ctx, options.interpolationStore);
+  }
 
   return createPhysicsModule(moduleOptions);
 }

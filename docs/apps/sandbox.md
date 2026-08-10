@@ -6,13 +6,53 @@
 
 ## 定位
 
-Sandbox 是 GameKit 的框架验证面，用来证明 App Host、Data、Asset、Renderer、Input、Camera、Physics、TCA、GAS、EventBus、World 和 GameRuntime 能在一个可观察、可交互的场景里协同工作。
+Sandbox 是 GameKit 的多场景框架验证面。每个场景围绕一组明确能力提供最小但真实的交互闭环，用来证明 App Host、Data、Asset、Renderer、Input、Camera、Physics、TCA、GAS、Combat、EventBus、World 和 GameRuntime 能在可观察、可交互的应用中协同工作。
 
 Sandbox 不是长期玩法仓库，也不是 DevTools 的替代品。它可以像一个小 demo 游戏一样运行，但其目标是解释框架能力，而不是沉淀一套真实游戏内容生产线。
 
 Sandbox 的演示设计必须优先易懂：基础概念应该像普通小型游戏一样直觉，机制可以足够复杂，用来承载框架模块协作。不要用架构隐喻替代游戏对象；玩家不应该先理解 GameKit 才能看懂场景。
 
-## 演示游戏：Tiny Camp
+## 多场景验证台
+
+Sandbox 外壳只负责场景发现、选择、懒加载、启动状态和错误边界，不持有 gameplay world、模块 handle 或第三方 runtime。场景通过独立入口装配自己的 App Host、profile、DataRegistry、World、GameRuntime、UI 和 dispose 生命周期；切换场景等价于退出当前小型应用并启动另一个应用，不能复用上一场景的可变运行态。
+
+这一结构用于隔离验证条件，避免为了测试一个模块而被另一个大型演示的业务状态干扰。它也约束后续扩展：
+
+- 一个场景只验证一组相互依赖、能形成闭环的能力，不把所有 package 强行塞入同一运行时。
+- 场景目录可以包含自己的 DataPack、组件、game module、表现和测试，但游戏特有概念不能上推到通用 package。
+- 场景必须通过 package 公共协议和标准 GameModule/App Host 装配能力，不能复制底层 runtime 或绕开 core。
+- 原始 trace、服务状态和性能细节进入 GameKit DevTools；场景 UI 只展示玩家或测试者完成操作所需的目标、状态和结果。
+- 场景清单采用懒加载，未选择的场景不进入当前页面的启动与执行路径。
+- 场景选择可由外壳导航和稳定的 `scene` URL 参数表达，便于自动化测试、问题复现和直接分享。
+
+## 场景：Projectile Combat Field
+
+Multiplayer Projectile 场景采用一个可玩的前线交火区，而不是把 Owner、Authority、Remote 画成三条抽象测试
+轨道。测试者控制一个本地 Owner 单位，从武器装具中选择不同弹丸，瞄准战场中的敌方单位并观察生命、掩体、
+命中和网络收敛结果。
+
+长期演示要求：
+
+- 战场包含可识别的射击单位、多个敌方目标、生命与护甲、静态掩体和明确的空间布局；不能用同质圆点代替
+  游戏对象。
+- 至少展示快速小半径步枪弹、慢速大体积能量弹、带爆炸范围的火箭、多弹丸散射武器，以及一类启用重力、
+  CCD、材质反弹和动态目标冲量的 solver-owned 刚体弹。每类弹丸使用自己的 Combat/Physics definition、速度、
+  寿命、伤害和表现，不只改变颜色。
+- Owner、Authority 和 Remote 继续运行真实 Multiplayer runtime；Sandbox 交互场默认使用 Memory backend，验证
+  runtime 组合与预测语义，不把它表述为生产 transport。主视图显示 Owner 的即时预测，Authority 与 Remote 以
+  辅助 ghost 表达，不把同一场战斗拆成三份互不相关的地图。
+- 目标伤害和击倒只由 Authority 命中事实结算；Owner 可以即时预测空间 impact，但不能提前提交伤害。
+- 网络故障注入应改变一个明确的空间事实，例如 Authority 独有的旧掩体，并产生一次可解释的有界 correction，
+  而不是随机移动无业务含义的测试墙。
+- 场景 UI 优先表达装具、目标、冷却、生命、命中和战斗结果；队列、sweep 和 reconciliation 作为紧凑诊断保留，
+  不能反客为主。
+
+该场景同时验证 `kinematic-data-buffer` 与 `predicted-entity`：前四类弹丸复用同一 Physics sweep 与有界
+fire/finish record；刚体弹则把弹丸和所有可推动目标放入同一 prediction island，在延迟 authority snapshot
+到达时恢复完整 Rapier checkpoint 并重演。场景必须显示回滚 tick、checkpoint bytes 和刚体 contact 数，伤害仍
+只由 Authority 接触事实结算。更复杂的制导或 constraint 不得以不完整的直线近似冒充。
+
+## 场景：Tiny Camp
 
 Sandbox 的主场景采用一个自动运行、可交互的放置式营地 demo：`Tiny Camp`。
 
@@ -377,6 +417,108 @@ Sandbox 必须有一套长期维护的长链路集成测试，用来证明 Tiny 
 
 长链路测试应尽量使用行为断言，不断言脆弱的时间点和完整数组顺序。必要时使用区间、存在性、单调增长、稳定 id、固定 seed 快照片段等方式，避免测试因为表现层微调而频繁失效。
 
+## 场景：Combat Proving Ground
+
+`Combat Proving Ground` 是 Combat package 的独立参考场景。它不是另一套战斗实现，而是只通过公开协议组合 Data、GAS、Physics、Combat、World 和 App Host，用一间可重复重置的训练场验证完整交付链。
+
+场景覆盖这些可观察行为：
+
+- melee：用短距离物理 overlap 选择敌对目标并应用 GAS effect。
+- hitscan：用即时物理 ray query 命中开放射线上的合法目标。
+- projectile：生成真实 world entity、Physics body/collider 和 Combat projectile 状态，由 tick 驱动飞行、命中和回收。
+- area：在同一区域放置多个敌方 actor 和一个友方 actor，用稳定候选选择一次命中多个合法目标，为每个目标应用 GAS Effect/Cue，同时证明 relationship policy 不误伤友军；场景表现必须同时显示范围、已锁定目标和逐目标命中反馈。
+- cover：让静态 Physics collider 阻断射线，验证命中候选与 blocker 的解释结果。
+- support：对友军 actor 定向应用恢复 effect，验证同一交付协议可承载非伤害效果。
+- reset：恢复 actor 属性并清理在途 projectile，使每种测试可从相同初始条件重新执行。
+
+训练场中的 actor、掩体和 projectile 都有可追踪的 world entity；属性和效果由 GAS 持有；delivery、projectile、physics body/collider、team policy 等引用来自场景 DataPack。玩家界面只呈现训练目标、操作入口、生命值、在途投射物和可理解的命中结果，完整 Combat/GAS/Physics trace 由 DevTools 提供。
+
+Combat 的公共职责、协议与 adapter 边界以 [`../modules/combat.md`](../modules/combat.md) 为准。训练场只拥有场景布局、测试对象、按钮文案和视觉表现等应用内容；任何可被其他游戏复用的交付、关系判定、物理查询、projectile 生命周期或 trace 能力都必须留在对应 core/package。
+
+## 场景：Audio Lab
+
+`Audio Lab` 是 Game Audio 的独立听觉验证场景。它通过独立 App Host 组合 Phaser Driver、AssetManager 和 GameAudio，直接使用 `audio.music`、`audio.sfx`、`audio.dialogue`、`audio.mix` 与 `audio.spatial` 公共领域 API，不允许直接调用 Phaser Sound 或创建平行的 Web Audio 播放器。
+
+场景必须让测试者能实际听见并观察以下差异：
+
+- Music：至少四首节奏与编排差异明确的循环曲目、长期音乐状态、pause/resume/stop、adaptive stem intensity，以及短/标准/长三档 crossfade 任意切曲。
+- SFX：sequence variation、layered event、UI Bus、scheduled start、并发抢占和有界 dedupe。
+- Dialogue：speaker、priority queue、replace/skip、subtitle key、marker 和自动 music ducking。
+- Mix：`master`、`music`、`sfx`、`dialogue` Bus 的 volume/mute，以及可切换的 Mix Snapshot。
+- Spatial：保留恒定增益左右声像与正前方距离衰减两个独立校准，再提供可拖动 Listener/Emitter 的二维组合场；二维场必须同时显示坐标、欧氏距离、方位角、pan、线性 gain 和 dB，明确标出 min/max distance，并使用独立连续测试音验证稳定 identity、持续 loop handle 和实时 transform 更新。
+- Lifecycle：浏览器用户手势 unlock、App Host tick、output suspend/resume、逻辑 playback instance、native playback count、事件与 diagnostics。
+
+测试台使用场景本地、确定性生成的短 WAV fixture，经 AssetManager 和 Phaser asset loader 进入同一个 Driver runtime。fixture 只用于离线验证资源加载、分类控制器和 Backend 执行链，不进入通用 package，也不替代真实游戏的音频内容生产。页面必须明确标注合成的 radio line，避免把测试音误认为正式对白资产。
+
+Audio Lab 的 UI 是低频测试控制台：每个按钮必须对应一个明确的公共 API 行为；当前 Music/Dialogue 状态、SFX 统计、Bus effective volume、Spatial pan/距离/衰减读数、逻辑/原生实例数和最近 lifecycle/diagnostic 必须同时可见。完整原始对象仍不得泄漏到 UI。
+
+Audio 的公共职责、领域 API 与 Backend 边界以 [`../modules/audio.md`](../modules/audio.md)、ADR 0034 和 ADR 0035 为准。Audio Lab 只拥有测试内容、合成 fixture、控制台交互和场景级装配。
+
+## 场景：Animator Lab
+
+`Animator Lab` 是 Animator Core 与真实 Renderer Driver 的独立表现验证场景。它通过独立 App Host 组合 DataRegistry、Asset、Phaser Driver、Renderer、标准 Animator GameModule 和 DevTools；测试者只通过 Animator Handle 修改语义参数、提交 one-shot 或同步 Gameplay Phase，不能直接调用 Phaser Animation 或在 UI 中维护平行动画状态机。
+
+场景使用一个含 `body` 与 `action` 两个 RenderNode 的复合 RenderObject，让不同 Animator layer 绑定到不同节点，并覆盖以下可观察行为：
+
+- Graph transition：连续修改 `speed` 参数，验证 idle、run、sprint 状态切换与 backend clip 映射。
+- Layer playback：locomotion 长期播放时，action one-shot 或 Gameplay Phase 在独立节点叠加，不覆盖基础移动层。
+- One-shot policy：单次 fire、三连请求的 `queue-one` 有界排队，以及高优先级 hit reaction 对低优先级动作的打断。
+- Marker：footstep、pulse、impact、phase lock/release 跨越播放时间点时进入场景 marker receiver，并由 Animator trace 保留可解释证据。
+- Gameplay Phase：按指定进度恢复 authority phase，验证 phase mapping、normalized time、seek frame、取消以及 graph 重新接管。
+- Reset/lifecycle：generation reset 清理 phase、one-shot queue、marker 视图与参数；场景退出时依次解绑 controller、销毁 RenderObject 并释放 Host/Driver runtime。
+
+场景本地使用确定性生成的 spritesheet fixture，经 `asset.definition` 和 Phaser asset loader 进入 Driver 持有的同一个 runtime。fixture、Signal Runner 造型、自动检查序列和控制面板都属于 Sandbox 内容，不进入 Animator 或 Renderer 公共包。主面板只展示完成验证所需的当前 layer、clip、marker 和有界 trace 摘要；完整 Driver、Asset、Renderer、GameRuntime 与 Animator 状态仍由标准 DevTools 数据源提供。
+
+Animator 的公共职责、层/one-shot/phase 协议与 Driver 边界以 [`../modules/animator.md`](../modules/animator.md) 为准。Animator Lab 的 headless 测试必须覆盖同一份 DataPack 的 graph、排队/打断、marker、phase seek 和 generation reset；浏览器 smoke test 另外证明真实 Phaser adapter 能把公共 playback frame 应用到两个 RenderNode。
+
+## 场景：AI Lab
+
+`AI Lab` 是 AI Core 的独立生态决策验证场景。它通过独立 App Host 组合 DataRegistry、World、GameRuntime、标准 AI GameModule、UI 和 DevTools，在一张微型生存地图里让多只小动物持续寻找食物、水源和休息处。测试者先看见普通游戏对象和行为结果，再按需展开选中个体的决策解释；页面不能要求用户先理解 Utility、Task 或 Scheduler 才能看懂场景。
+
+常态生态中的每只可见动物都对应一个真实 AI agent 和 World entity，不使用只为制造诊断数字而存在的假 background agent。容量压力模式额外生成的动物也必须完整进入相同 World、AI、Navigation 和 Physics 链路；地图可以固定抽样表现，但 UI 必须同时显示真实总量与表现样本数，不能把样本数冒充实际负载。动物的位置、饥饿、口渴、体力和健康，以及食物、水源和休息处的位置与存量，都属于 Sandbox 本地 World 组件。场景覆盖以下可观察行为：
+
+- 生存循环：动物持续代谢并根据需求在觅食、饮水、休息和探索之间选择；食物与水会被消耗并按各自速率再生，长期缺食或缺水会影响健康。
+- Perception 与 Utility：Sensor 只通过 AI World read model 读取个体需求和最近资源，形成 bounded memory；hunger、thirst、fatigue、resource access 和 contentment 进入数据驱动 consideration。选中动物时用普通语言解释当前选择，具体 score 和 fact 放在次级详情。
+- Task 与 Intent：寻路式移动、进食、饮水和休息全部由 task executor 输出标准 movement / interaction intent；executor 不直接改写位置、需求或资源。觅食、饮水和休息必须经过定向、移动、到达准备、持续执行和收尾，探索必须经过定向、移动和停留观察；成功路径不能在启动 tick 直接结束。Sandbox controller 在 authority tick 后统一结算 intent、代谢和资源再生。
+- Scheduler：所有动物共享固定 decision/sensor/path/trace tick budget；当前被观察的动物自动切到 `nimble`，上一只自动回到 `steady`，让对象选择本身成为动态 LOD 策略。当前 class、决策延迟、path rejection 与 trace drop 只进入折叠详情或 DevTools，不在主界面堆成能力控制台。受控预算压力只能从真实 task context 发起请求，不能生成与地图无关的假 agent；触发时主舞台必须显示鸟群、全体“重算”气泡和当前路线。
+- 容量压力：主场景提供可选测试上限，并从小规模开始自动倍增真实动物；压测动物使用明确的 background scheduler class，相同资源目标和有限 Wander 目标池共享 goal-keyed route field，不能为每个个体创建一次性目标和重复的全图搜索。AI 路径准入、Navigation 每 tick 处理量、pending/result/route/cache 容量统一在 app profile 配置；准入允许把可控突发先送入有界 Navigation 队列，后端仍按帧预算消费，queue-full 或结果丢失时 task 使用确定性退避而不是逐 tick 重试。
+- 每档先等待导航启动积压收敛，再采集真实 animation frame interval、完整 authority simulation 耗时、AI 调度延后、Sensor 延后和 path rejection；少量持续在途请求视为稳态，不要求队列绝对归零，预热超时与冷启动耗时必须单独报告，不能混入稳态 p95。稳定上限按可交互的 30 FPS 帧预算判定，frame p95 允许 36ms 的浏览器抖动窗口，同时要求 authority simulation p95 不超过 28ms，并检查调度延后和路径拒绝 QoS；达到所选上限时结果表达为“至少达到该上限”，未通过时保留上一档稳定数量。
+- 测试停止或完成后必须 unbind 压测 agent、despawn 对应 World entity 并恢复常态生态。压力状态机只在每档稳态采样的起止边界读取完整 runtime counters，观察册按低频 UI cadence 读取 presentation snapshot；不能在 authority frame 中复制 O(agent) 诊断状态并把复制成本混进真实帧率。行为日志和林地事件只记录常驻故事动物，trace retention 继续服从上层配置；地图最多投影固定数量的真实压测动物，动物节点保持稳定并只更新发生变化的表现属性，background 样本关闭纯装饰动画，避免 DOM reconciliation、layout 和 paint 遮蔽 AI/Navigation 容量。
+- 空间与共享事实：所有资源移动和探索 task 都必须进入 Navigation 的 request、poll、sample、release route lifecycle，不能按 Physics raycast 结果绕过寻路。AI Lab 使用覆盖整个林地的细粒度 Grid backend；Grid cell 从倒木、岩石所用的同一份 Sandbox obstacle blueprint 生成，并按 agent radius 扩张 collider footprint。地图对象开关同时更新 Physics collider 与 `navigation.updateObstacle()` 的 custom target，使 Navigation revision、route field、retained route 和最终路径真实失效/重算。主舞台投影 backend 返回的 route points；authority movement 在应用位移前再用同半径 Physics shape cast 阻止穿模。林地警戒通过只读 `AiSharedFactQueries` 注入并形成高优先级安全 Goal；动物必须经过定向、寻路、移动、藏好、等待和解除后的收尾过程，不能只降低探索分数或只改变诊断数字。
+- Checkpoint：测试者可以用“叶印”保存和恢复 AI checkpoint 与对应的 Sandbox World 状态，包括动物位置/需求、资源存量、障碍开关和共享警戒。AI 恢复必须经过 entity、actor 和 task state resolver；task state 中的 request/route handle 不能原样复用，而应清除 native/runtime identity 并从稳定目标重新申请路线。主舞台用位置残影和回溯波直接表达保存/恢复结果，resolver 数量只保留在诊断数据中。
+- 地图表达：主视野直接显示动物、资源余量、当前动作、真实直行/绕行路线、昼夜时间、警戒波、鸟群重规划、叶印残影与回溯效果；每只动物头顶持续显示当前行为气泡，并根据 task phase 区分觅食/进食、找水/喝水、找窝/休息、躲藏/等待、探索/观察、重算和收尾。右侧观察册展示选中个体的生存状态、行为阶段、连续进度、五个候选选择和近期林地事件。原始 memory、blackboard、task id、scheduler 与预算指标默认折叠，完整 trace 仍由标准 DevTools 提供。
+- 行为诊断：场景持续为每只动物保留最近 10 秒的有界行为历史，而不是从选中时才开始记录。选中动物后可以导出 JSON，内容至少包含定频位置/需求/goal/task/phase/progress/target 样本、标准 intent、AI trace、场景事件、当前 memory/blackboard、资源快照和 runtime summary；日志采样与 intent 保留必须限频并随时间窗口裁剪，不能形成无界开发期存储。
+- 自然干预：测试者可以补充食物、触发降雨、直接点击并移动物理遮挡、敲响或解除警铃、惊起鸟群、留下或恢复叶印、暂停、确定性单步和调整观察速度。干预只改变 Sandbox world/resource/collider/shared-fact/checkpoint state，不能绕开标准 AI 决策直接指定动物 goal。
+- Lifecycle：场景启动时创建 World entity 并绑定对应 agent；退出时先 unbind 全部动物、释放场景 entity，再由 App Host 释放 GameRuntime 和 AI module。
+
+动物物种、名字、林地布局、食物点、水塘、地洞、倒木、岩石、昼夜节奏和自然观察册视觉都属于 Sandbox 内容，不进入 AI Core。Headless 测试使用 `@gamekit/ai-core/testing` memory fixture 消费同一 DataPack、Sensor、input resolver 和 task executor，并组合正式 Grid Navigation backend 与 Memory Physics backend，验证可见动物与 agent 一一对应、移动与生存交互、全部行为的阶段序列、自动动态 LOD、共享警戒驱动躲藏、动态 obstacle revision、route 线段不进入扩张 collider、清障后最短路缩短、逐 tick 圆形体积不穿模、path/trace budget、压力动物真实 bind/unbind 与 World 清理、容量探顶状态机、AI 与 World checkpoint 恢复、选中前历史仍可导出、资源干预、选中个体解释和确定性单步；浏览器 smoke test 另外验证地图第一屏、常驻行为气泡、警戒群体行为、全体重算、真实 route 折线、可点击障碍后的路径变化、容量压力选项与实时结果、叶印残影/回溯、日志导出、自然干预和 console error。
+
+AI 的公共职责、Utility/Task/Scheduler/Trace 协议与应用边界以 [`../modules/ai.md`](../modules/ai.md)、ADR 0031 和 ADR 0044 为准。
+
+## 场景：Navigation Lab
+
+`Navigation Lab` 使用多张真实俯视游戏地形验证 Navigation Core 与不同 Backend。`Ashen Ford` 是紧凑的三通路基础场景，包含出发营地、守望城门、河流、石桥、狭窄山道、芦苇沼泽和可开关的传送石；`Blackglass Basin` 是 30 × 20 米的反应堆街区深入场景，由建筑占地、围墙、院落、狭窄室内通道、死路、中央防爆门、只适合轻型单位的高架通路、高成本冷却液区域和应急传送中继构成，起终点横跨街区对角线，路径必须围绕真实阻挡连续转向。玩家在两个场景中都选择斥候、补给车或重甲卫队，下达单体移动或队伍集结命令。技术 trace 和压力测试保留在次级 QA 区域，主画面首先表达“单位为什么选这条路、世界变化后路线发生了什么”。
+
+应急传送中继是离散 portal traversal，不是跨越建筑的连续直线。Graph、Grid 和 Recast 在同一个 sample API 中提供各自投影后的 entry/exit；共享移动 system 让单位先抵达 entry，再执行 Sandbox 的原子 relay 表现并从 exit 继续采样。场景行为矩阵必须验证 Rally Party 能实际越过中继，不能只验证 route request 返回 complete。
+
+每张地形的任务、出生点、目标点、交互地标、操作文案和表现布局只在自己的 scenario definition 中定义一次。该场景下的 Backend provider 负责提供 typed layout/source、`NavigationBackendFactory[]` 和场景语义障碍到 backend target 的映射，例如同一个“封锁主要通路”操作在 Graph 中可以映射到 edge，在 Grid/Navmesh 中可以映射到 area、tile set 或 custom target。共享 controller、移动 system、UI 和测试只消费 scenario definition 与公开 Navigation Handle，不 import Graph node、navmesh polygon、grid tile 或 native runtime。
+
+场景和 Backend 是两个独立选择维度。切换任意一项都先释放当前 GameRuntime/Navigation runtime，再用同一 GameAppDefinition、同一场景 controller API 和同一 UI 重建 App Host 会话；两个维度都进入共同的 scenario × backend 行为测试矩阵。Graph、0.5 m Traversal Grid 和 Recast NavMesh 通过对应 provider/definition 接入，不复制 controller、UI 或会话 lifecycle；需要异步初始化的 Backend 在 provider preparation 边界完成 boot，不能侵入共享 gameplay API。
+
+场景地图必须直接表达 Navigation 结果，而不是只展示表格：
+
+- Path：显示出发地、目的地、完整移动路线、cost、cache hit/miss 和沿路线移动的单个游戏单位。
+- Party Rally / Shared Route Field：队伍集结是 Backend-neutral 的玩法命令。Graph、Grid 和 Recast 都让多个队员共享一个 goal-keyed field，其中 Recast 使用保持 portal 方向和 area cost 的 polygon field；只支持 point path 的其他 Backend 为每个队员提交并保留独立路线，不能把多次 path query 伪装成共享 field。主画面显示队伍和实际路线，只有真实 field 才在 Route Overlay 中显示共享采样方向。
+- Agent Profile：Pathfinder、Supply Wagon、Iron Guard 分别对应不同半径、高度、坡度、area 与 cost 约束；狭窄/高架通路、主要道路和高成本危险区域必须产生可见的选路差异。
+- Dynamic topology：测试者通过封锁主要通路、改变危险区域 cost/blocked 状态、启用场景 shortcut 和触发全域 lockdown 改变游戏世界，同时观察 revision、dependency invalidation、旧 route stale 与重新规划结果。深入场景必须覆盖“主要通路关闭后改道、第二通路失效后 unreachable、shortcut 恢复可达、全域封锁再次 unreachable”的组合链路。
+- Request lifecycle：提供 queue burst、cancel-before-submit、max-cost failure、unreachable lockdown、repeat/cache 和显式 route release 操作。
+- Capacity：次级 QA 区域可以启动 100 到 20,000 个循环移动单位共享同一个 route field，并显示 field planning、agent spawn、每 tick sampling/steering 的 average、p95、peak 和 4 ms navigation slice 判定。Canvas 只抽样绘制固定数量的单位 marker，避免把渲染成本错误计入 Navigation 结果；可复现的 Graph/Grid/Recast headless sweep 由仓库 benchmark 负责。
+- Projection / Sampling / Progress：地图点击可以设置 start、goal 或 projection probe；agent 移动只消费 `sampleRoute()`，暂停移动后由 progress tracker 显示 stuck，不能由场景复制另一套寻路算法。
+- Backend Debug Draw：提供独立的 Topology、Area Cost 和 Constraints 图层选项。Graph provider 将最终语义节点、边和 portal 投影为通用点/折线，Grid provider 将实际可走 cell 和 portal 投影为通用多边形/折线，NavMesh provider 将最终 polygon boundary/portal 投影为通用多边形/折线；共享 canvas 只消费场景级调试几何，不 import graph node、grid cell、native poly ref 或 WASM 类型。候选 visibility、voxel、contour 等生成中间数据只能进入独立高级诊断层。Constraints 图层必须结合当前 Agent Profile、桥梁/山道/沼泽状态和 portal enabled 状态表现可用、受限与阻断数据。
+- Observability：场景低频显示 pending/queued/submitted、retained result/route、cache、backend route field、revision 和最近 Navigation trace；完整诊断仍进入 DevTools。
+
+Navigation Lab 的地形和玩法语义属于 Sandbox。对于需要比较相同自由空间的场景，Sandbox 维护唯一的 app-owned terrain/placement source：canvas 从它绘制墙体、建筑和可走地面；Graph provider 消费落在真实地形上的少量语义 waypoint/route 标注；Grid provider 把同一份 1 米可走 tile 细分为 0.5 米 cell；NavMesh provider 从同一 source 生成 Recast triangle input。Graph authored node/edge、Grid cell/region 和 NavMesh bake/native data 分别只存在于对应 provider/adapter；调试几何和行为测试必须能反向验证到同一 terrain source，禁止分别维护互不相关的展示背景和寻路 topology。任何 Backend-specific authoring 或 Recast native 数据都不能进入共享 controller、Navigation Core 或 UI 协议。Navigation 的长期职责和使用约束以 [`../modules/navigation.md`](../modules/navigation.md)、ADR 0036、ADR 0037、ADR 0038 和 ADR 0039 为准。
+
 ## 设计约束
 
 - Sandbox 可以使用复杂本地数据和本地组件，但不能把演示专用概念上推到核心包。
@@ -394,6 +536,7 @@ Sandbox 必须有一套长期维护的长链路集成测试，用来证明 Tiny 
 - Sandbox app shell 负责把 App Host、Driver、Renderer、Input、UI、Save 和标准 GameModule helper 组装起来；Sandbox game module 不直接 import Phaser、Koota、DOM 或 React internal。
 - Sandbox 长链路测试应优先覆盖“模块是否协作”：内容引用、资源加载、自动循环、TCA/GAS 链路、选择/镜头、save/load、diagnostics/timeline。
 - 浏览器手动验收关注第一屏信息层级、game viewport scope、camera 坐标转换、可点击对象、Save/Load 本地恢复和 console error；不要以视觉花活替代协议验证。
+- Audio Lab 手动验收必须使用真实浏览器输出设备，依次检查 unlock、Music crossfade/intensity、SFX variation/layer/concurrency、Dialogue ducking/queue、Bus mute/volume、恒定增益 pan sweep、带数值读数的距离衰减，以及二维场中 Listener/Emitter 的拖动、四向 preset、左右声像和远近衰减联动；Memory Backend 测试不能替代该听觉验收。
 
 ### 模块使用
 

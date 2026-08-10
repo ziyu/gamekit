@@ -25,6 +25,11 @@ DevTools 负责可解释性、可观察性和调试工作台。GameKit 越依赖
 - `@gamekit/physics-core`
 - `@gamekit/tca`
 - `@gamekit/gas`
+- `@gamekit/combat`
+- `@gamekit/navigation-core`
+- `@gamekit/ai-core`
+- `@gamekit/animator-core`
+- `@gamekit/audio-core`
 - `@gamekit/multiplayer-core`
 - `@gamekit/save`
 
@@ -33,7 +38,7 @@ DevTools 是 App Service / tooling，不是 GameModule，不进入 gameplay loop
 ## 设计目标
 
 - 提供统一 DevToolsRuntime，用于注册数据源、面板、trace buffer、profiler 和 debug commands。
-- 汇总 EventBus、TCA、GAS、Physics、Renderer、Asset、Save、App Host、World snapshot 和 GameRuntime system profiler。
+- 汇总 EventBus、TCA、GAS、Combat、Navigation、AI、Animator、Audio、Physics、Renderer、Asset、Save、App Host、World snapshot 和 GameRuntime system profiler。
 - 通过 trace correlation 展示“输入 → 事件 → 规则 → 能力 → 状态 → 表现 → 存档/诊断”的链路。
 - 支持 headless 测试和 DevTools UI package 两种使用方式。
 - 支持低开销默认模式和显式开启的深度采样模式。
@@ -108,6 +113,8 @@ DevToolsRuntime 应支持：
 
 DevToolsRuntime 不应该在 `snapshot()` 中做昂贵全量计算。复杂关联和索引应在 trace 进入时增量维护，或在 UI 明确请求详情时懒加载。
 
+`createDevToolsCorrelationSource(...)` 是跨模块显式关联的标准增量入口。它把 trace 写入 DevToolsRuntime 的 ring buffer，并维护独立有界的 recent correlation summary；每条 summary 只保存计数、kind 分布、首末时间、最后 trace 和少量 root id，不复制完整 payload。直接使用该底层 source 时，组合层在 `dispose()` 前仍需注销对应 DataSource；使用 App Host 的 gameplay correlation helper 时，registration 与 source 由返回对象的单一 `dispose()` 统一管理。
+
 ## 快速集成
 
 普通游戏不应该手写一大组 DevTools data source、panel 和 UI launcher。App Host 必须提供标准 preset，让游戏可以从一行配置开始：
@@ -129,7 +136,7 @@ const profile = createStandardAppProfile({
 });
 ```
 
-`devtools: true` 等价于启用标准 preset。标准 preset 由 App Host 自动注册已经存在的标准服务数据源，例如 Host、Platform、Drivers、Data、Assets、Renderer、Input、Multiplayer、GameRuntime、UI 和 Save。缺失的服务不会生成空数据源。
+`devtools: true` 等价于启用标准 preset。标准 preset 由 App Host 自动注册已经存在的标准服务数据源，例如 Host、Platform、Drivers、Data、Assets、Audio、Renderer、Input、Multiplayer、GameRuntime、UI 和 Save；标准 Combat、Navigation、AI、Animator GameModule 使用 core handle 装配时，也暴露同一 handle 的有界 snapshot。缺失的服务或未装配的模块不会生成空数据源，未绑定 handle 只报告 `bound: false`，不能触发 gameplay 行为。
 
 在标准 Web bootstrap 中，`devtools: true` 还表示“开发环境启用 DevTools 可视入口”：当应用安装并挂载 `@gamekit/devtools-ui` 且存在 `ui` service 时，页面应自动出现 DevTools launcher，并可以显示标准 pinned widgets。点击 launcher 打开完整 DevTools shell；DevTools shell 读取 `services.devtools` snapshot 和 UI Runtime panel metadata，不要求普通游戏手写入口。
 
@@ -527,6 +534,8 @@ input.action
 
 Correlation 优先使用显式 `correlationId`。没有显式 id 时，可以按时间窗口、actorId、entityId、event id、rule id、ability id 做弱关联，但 UI 必须标记为 inferred，不能把推断当成确定因果。
 
+TCA、GAS、Physics、Combat 等 domain trace store，以及 Navigation、AI、Animator trace 和 Audio diagnostic，可以通过可选 entry observer 接入 correlation source；通用映射位于 App Host 组合层，domain package 不直接依赖 DevTools。通用映射默认只暴露白名单摘要，任意 details/payload 必须由应用显式 summarize 并按需 redact；observer、映射或 redaction 失败只能产生 diagnostic，不能反向中断 domain runtime。Multiplayer message 派生的低频 EventBus fact 应继承 message correlation，并以 message id 作为 parent。Physics 只携带 app 明确提供的 correlation，不自行推断 ability/damage 关系。
+
 ## Performance Profiler
 
 Performance Profiler 用于回答 GameKit 层面的“慢在哪里”，而不是做完整 JavaScript CPU profiler。它关注 frame、GameRuntime system、App Host service lifecycle、physics step/query、renderer sync、asset loading、driver boot 和 UI/DevTools 自身刷新成本。
@@ -790,6 +799,7 @@ Sandbox 专用 Tiny Camp 概念不进入 DevTools Core。
 ## 性能与内存
 
 - trace buffer 必须有上限。
+- correlation summary、每条 correlation 的 root id 和 domain trace store 必须分别有上限；不能因为 runtime trace ring 已有上限就保留无界 correlation index。
 - profiler buffer 必须有上限，默认保留 rolling window summary。
 - profiler 默认聚合，深度 span 采样显式开启。
 - DevTools UI 默认消费 summary，detail 懒加载。
@@ -836,15 +846,18 @@ DevTools diagnostic 至少包含：
 - 标准浏览器应用若安装并挂载 `@gamekit/devtools-ui`，`devtools: true` 应自动出现 DevTools launcher 并能打开 shell。
 - 只有业务专属状态需要通过 app profile 追加自定义 data source、panel definitions 和 debug commands。
 - 各模块通过稳定 snapshot、trace store 或 diagnostics 接入 DevTools，不把私有 runtime、native handle 或第三方库对象交给 DevTools Core。
+- 使用 App Host gameplay correlation helper 时只释放 helper，不重复注册或分别释放其 DataSource/source；自定义 summary 必须小、可序列化，并通过 redaction policy 删除 secret、token 和完整业务 payload。
 - Performance profiler 通过 App Host/test harness 或 runtime wrapper 接入，不能改变 system 执行顺序、错误传播或 gameplay 结果。
 - 普通游戏优先使用标准 profiler preset；只有业务热点需要自定义 span 或 budget。
 - DevTools UI 通过 `@gamekit/devtools-ui` mount，focus 必须进入 `devtools` 或 `ui` input scope。
 - Headless 测试应能不启动 React、浏览器或 Phaser，只用 DevToolsRuntime 验证 data source、trace correlation 和 profiler。
+- 修改 correlation ingest/index/snapshot 时运行 `corepack pnpm bench:diagnostics:check`，同时检查每条 trace 成本、snapshot 成本和 retained 上限。
 
 ### 模块使用
 
 - 游戏和工具日常通过 DevToolsRuntime snapshot、trace timeline、inspector detail 和 debug command 观察系统，不直接读取模块私有字段。
 - Trace entry 只记录小而可解释的事实，完整详情通过 data source 查询。
+- Trace observer、summary mapper、redactor 和 diagnostic reporter 的失败都不能改变正式玩法结果；测试必须覆盖 observer 自身与错误回调同时抛错的路径。
 - Debug command 必须显式、可审计、可诊断；不要把正式 gameplay 逻辑依赖 debug command。
 - DevTools 打开与关闭不应改变正式玩法结果。需要 pause、step、spawn、修改属性时，应作为明确 debug/editor command 执行。
 - 面板状态，例如 filter、selected trace、pinned entity、paused live update，是 UI state，不进入 GameRuntime 或普通 Save payload。

@@ -10,6 +10,19 @@
 - 业务代码通过 `@gamekit/world` 访问 ECS。
 - Sandbox 只依赖 GameKit 的公共接口。
 
+## Core 语义唯一来源
+
+实现任何 adapter、driver、backend 或 app 组合前，先列出它触及的领域概念，并定位对应 core/facade 的公共创建函数、类型、生命周期和 conformance。已有 core 概念必须由 core runtime 推进，具体包不能只实现一个同形接口就宣称完成复用。
+
+Code review 至少检查：
+
+- 是否直接调用对应 core 的 runtime/factory/helper，而不是在具体包复制 phase、session、snapshot、sequence、dispose 或错误语义。
+- 第三方对象是否只存在于 adapter/driver/native boundary，并通过 core 类型对外投影。
+- Core 缺少的能力究竟是通用协议缺口，还是 provider 专属能力；前者先修正 core 并补 conformance，后者保留 typed native path。
+- 集成测试是否从 core facade 观察结果，而不只读取 adapter 私有 snapshot 或第三方对象。仅断言两个对象字段相同，不能证明它们由同一 core runtime 驱动。
+
+允许 adapter 维护 provider id、native handle、连接索引和映射缓存；这些是实现状态，不得演化为与 core 同名的第二套业务状态机。
+
 ## Adapter 隔离
 
 第三方库不得成为业务边界。引入库时必须回答：
@@ -75,11 +88,15 @@ Runtime、EventBus、Physics、TCA、GAS、Asset、Save 和 DevTools 都必须�
 
 ## 模块拆分
 
-不要把一个模块所有代码写在 `index.ts`。
+不要把一个模块所有代码写在 `index.ts`，也不要把其他 package 的目录外观复制成当前模块的架构。
 
-拆分优先级：
+拆分顺序：
 
-1. 公共类型单独放置。
-2. 创建函数和运行时实现单独放置。
-3. adapter 私有类型单独放置。
-4. 示例 app 的数据、模块、UI 渲染分开。
+1. 先列出模块自己的领域职责、变化轴和内部依赖方向。
+2. 按领域行为拆分状态机、策略和只读模型；类型与拥有其语义的行为放在一起。
+3. 把公共 contract、第三方 port、composition root、observability 和 testing boundary 分开。
+4. 只有确有共享语义时才提取跨领域 primitive；不能用 `types.ts`、`helpers.ts`、`utils.ts` 或大型 `runtime` 掩盖未完成的边界设计。
+5. Root、backend/adapter 和 testing 面向不同消费者时使用 subpath export，避免扩大默认公共 API。
+6. 测试按领域边界组织，契约测试、策略测试和具体 adapter/backend 测试分开。
+
+包内架构的共同约束见 `docs/architecture.md`；具体长期结构写入对应模块文档。

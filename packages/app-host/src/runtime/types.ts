@@ -1,4 +1,5 @@
 import type { AssetManager } from "@gamekit/asset";
+import type { GameAudio } from "@gamekit/audio-core";
 import type { DataRegistry } from "@gamekit/data";
 import type { DevToolsRuntime } from "@gamekit/devtools";
 import type { DriverRegistry } from "@gamekit/driver-core";
@@ -120,6 +121,7 @@ export type AppServiceRegistry = {
   drivers?: DriverRegistry;
   data?: DataRegistry;
   assets?: AssetManager;
+  audio?: GameAudio;
   renderer?: RendererAdapter;
   input?: InputRouter;
   multiplayer?: MultiplayerRuntime;
@@ -164,6 +166,7 @@ export type AppStandardServiceId =
   | "drivers"
   | "data"
   | "assets"
+  | "audio"
   | "renderer"
   | "input"
   | "multiplayer"

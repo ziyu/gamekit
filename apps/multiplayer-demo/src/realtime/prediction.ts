@@ -1,6 +1,7 @@
 import {
   createMultiplayerPredictionBuffer,
-  interpolateVector2,
+  definePredictionStatePresentation,
+  definePredictionVector2StateField,
   type MultiplayerPredictionBuffer,
   type MultiplayerPredictionDiagnostics,
   type NetworkVector2
@@ -61,6 +62,23 @@ const CORRECTION_SMOOTHING_MS = 100;
 const MAX_SMOOTHED_CORRECTION_DISTANCE = 48;
 
 export function createRealtimeArenaPlayerPrediction(): RealtimeArenaPlayerPrediction {
+  const predictedPosition = definePredictionVector2StateField<RealtimeArenaPredictedPlayer>({
+    readX: (state) => state.position.x,
+    readY: (state) => state.position.y,
+    write(state, x, y) {
+      state.position.x = x;
+      state.position.y = y;
+    }
+  });
+  const presentation = definePredictionStatePresentation({
+    fields: [predictedPosition],
+    correction: {
+      measure: predictedPosition,
+      smooth: [predictedPosition],
+      durationMs: CORRECTION_SMOOTHING_MS,
+      maxMagnitude: MAX_SMOOTHED_CORRECTION_DISTANCE
+    }
+  });
   let context: PredictionContext | undefined;
   let buffer:
     | MultiplayerPredictionBuffer<RealtimeArenaPredictedPlayer, RealtimeInputFrame>
@@ -90,33 +108,8 @@ export function createRealtimeArenaPlayerPrediction(): RealtimeArenaPlayerPredic
         applyInput(state, input) {
           return applyPredictionInput(state, input, context);
         },
-        presentState(fromState, toState, presentation) {
-          toState.position = interpolateVector2(
-            fromState.position,
-            toState.position,
-            presentation.alpha
-          );
-          return toState;
-        },
-        predictionStepMs: REALTIME_ARENA_TICK_MS,
-        measureCorrection(previous, next) {
-          return distance(previous.position, next.position);
-        },
-        correctionSmoothing: {
-          durationMs: CORRECTION_SMOOTHING_MS,
-          maxMagnitude: MAX_SMOOTHED_CORRECTION_DISTANCE,
-          apply(target, correction) {
-            target.position.x +=
-              (correction.previousPresentedState.position.x -
-                correction.initialTargetState.position.x) *
-              correction.remainingAlpha;
-            target.position.y +=
-              (correction.previousPresentedState.position.y -
-                correction.initialTargetState.position.y) *
-              correction.remainingAlpha;
-            return target;
-          }
-        }
+        presentation,
+        predictionStepMs: REALTIME_ARENA_TICK_MS
       });
     }
     return buffer;

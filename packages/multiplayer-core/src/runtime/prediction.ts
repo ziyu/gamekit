@@ -1,3 +1,8 @@
+import {
+  createMultiplayerPredictionStatePresentation,
+  type MultiplayerPredictionStatePresentationOptions
+} from "./prediction-state";
+
 export type MultiplayerPredictionFrame<TInput> = {
   sequence: number;
   input: TInput;
@@ -9,6 +14,7 @@ export type MultiplayerPredictionApplyContext<TInput> = {
   sequence: number;
   input: TInput;
   replay: boolean;
+  stepMs: number;
   tick?: number;
   timestamp?: number;
 };
@@ -18,6 +24,15 @@ export type MultiplayerPredictionApplyInput<TState, TInput> = (
   input: TInput,
   context: MultiplayerPredictionApplyContext<TInput>
 ) => TState;
+
+export type MultiplayerPredictionTransition<TState, TInput> = {
+  apply: MultiplayerPredictionApplyInput<TState, TInput>;
+  diagnostics?(): object;
+  dispose?(): void;
+};
+
+export type MultiplayerPredictionTransitionFactory<TState, TInput> =
+  () => MultiplayerPredictionTransition<TState, TInput>;
 
 export type MultiplayerPredictionMeasureCorrection<TState> = (
   previousPredicted: TState,
@@ -60,17 +75,26 @@ export type MultiplayerPredictionCorrectionSmoothingOptions<TState> = {
   apply: MultiplayerPredictionApplyCorrection<TState>;
 };
 
-export type MultiplayerPredictionBufferOptions<TState, TInput> = {
+type MultiplayerPredictionBufferBaseOptions<TState, TInput> = {
   initialState: TState;
   cloneState(state: TState): TState;
-  applyInput: MultiplayerPredictionApplyInput<TState, TInput>;
-  measureCorrection?: MultiplayerPredictionMeasureCorrection<TState>;
-  presentState?: MultiplayerPredictionPresentState<TState, TInput>;
-  correctionSmoothing?: MultiplayerPredictionCorrectionSmoothingOptions<TState>;
+  applyInput?: MultiplayerPredictionApplyInput<TState, TInput>;
+  transition?: MultiplayerPredictionTransitionFactory<TState, TInput>;
   correctionEpsilon?: number;
   predictionStepMs?: number;
   maxInputs?: number;
 };
+
+export type MultiplayerPredictionBufferOptions<TState, TInput> =
+  MultiplayerPredictionBufferBaseOptions<TState, TInput> & {
+    presentation?: MultiplayerPredictionStatePresentationOptions<TState>;
+    /** @deprecated Prefer declarative prediction state fields for standard game integration. */
+    presentState?: MultiplayerPredictionPresentState<TState, TInput>;
+    /** @deprecated Prefer a declarative prediction correction measure field. */
+    measureCorrection?: MultiplayerPredictionMeasureCorrection<TState>;
+    /** @deprecated Prefer declarative prediction correction smoothing fields. */
+    correctionSmoothing?: MultiplayerPredictionCorrectionSmoothingOptions<TState>;
+  };
 
 export type MultiplayerPredictionResetOptions = {
   lastAcknowledgedSequence?: number;
@@ -123,6 +147,7 @@ export type MultiplayerPredictionDiagnostics = {
   lastRejectedReason?: "invalid-sequence" | "stale-sequence";
   lastCorrectionMagnitude?: number;
   maxCorrectionMagnitude: number;
+  transition?: object;
 };
 
 export type MultiplayerPredictionBuffer<TState, TInput> = {
@@ -133,8 +158,10 @@ export type MultiplayerPredictionBuffer<TState, TInput> = {
     options: MultiplayerPredictionReconcileOptions<TState>
   ): MultiplayerPredictionReconcileResult<TState>;
   reset(state: TState, options?: MultiplayerPredictionResetOptions): void;
+  pendingInputCount(): number;
   pendingInputs(): Array<MultiplayerPredictionFrame<TInput>>;
   diagnostics(): MultiplayerPredictionDiagnostics;
+  dispose(): void;
 };
 
 const DEFAULT_MAX_INPUTS = 240;
@@ -144,6 +171,34 @@ const DEFAULT_PREDICTION_STEP_MS = 50;
 export function createMultiplayerPredictionBuffer<TState, TInput>(
   options: MultiplayerPredictionBufferOptions<TState, TInput>
 ): MultiplayerPredictionBuffer<TState, TInput> {
+  if ((options.applyInput === undefined) === (options.transition === undefined)) {
+    throw new Error("Prediction requires exactly one applyInput callback or transition.");
+  }
+  if (
+    options.presentation !== undefined &&
+    (options.presentState !== undefined ||
+      options.measureCorrection !== undefined ||
+      options.correctionSmoothing !== undefined)
+  ) {
+    throw new Error(
+      "Declarative prediction presentation cannot be combined with custom presentation callbacks."
+    );
+  }
+  const transition = options.transition?.();
+  const statePresentation =
+    options.presentation === undefined
+      ? undefined
+      : createMultiplayerPredictionStatePresentation(options.presentation);
+  const applyInput = transition?.apply ?? options.applyInput!;
+  const correctionSmoothing =
+    statePresentation?.correction === undefined
+      ? options.correctionSmoothing
+      : {
+          durationMs: statePresentation.correction.durationMs,
+          ...(statePresentation.correction.maxMagnitude === undefined
+            ? {}
+            : { maxMagnitude: statePresentation.correction.maxMagnitude })
+        };
   const maxInputs = Math.max(1, Math.floor(options.maxInputs ?? DEFAULT_MAX_INPUTS));
   const correctionEpsilon = normalizeNonNegativeNumber(
     options.correctionEpsilon,
@@ -154,11 +209,11 @@ export function createMultiplayerPredictionBuffer<TState, TInput>(
     DEFAULT_PREDICTION_STEP_MS
   );
   const correctionSmoothingDurationMs = normalizeNonNegativeNumber(
-    options.correctionSmoothing?.durationMs,
+    correctionSmoothing?.durationMs,
     0
   );
   const correctionSmoothingMaxMagnitude = normalizeNonNegativeNumber(
-    options.correctionSmoothing?.maxMagnitude,
+    correctionSmoothing?.maxMagnitude,
     Number.POSITIVE_INFINITY
   );
   const pending: Array<MultiplayerPredictionFrame<TInput>> = [];
@@ -227,17 +282,21 @@ export function createMultiplayerPredictionBuffer<TState, TInput>(
     frame: MultiplayerPredictionFrame<TInput>,
     replay: boolean
   ): TState {
-    return options.applyInput(state, frame.input, {
+    return applyInput(state, frame.input, {
       sequence: frame.sequence,
       input: frame.input,
       replay,
+      stepMs: predictionStepMs,
       ...(frame.tick === undefined ? {} : { tick: frame.tick }),
       ...(frame.timestamp === undefined ? {} : { timestamp: frame.timestamp })
     });
   }
 
   function measureCorrection(previousPredicted: TState, nextPredicted: TState): number {
-    const measured = options.measureCorrection?.(previousPredicted, nextPredicted) ?? 0;
+    const measured =
+      statePresentation?.measureCorrection(previousPredicted, nextPredicted) ??
+      options.measureCorrection?.(previousPredicted, nextPredicted) ??
+      0;
     return Number.isFinite(measured) ? Math.max(0, measured) : 0;
   }
 
@@ -269,7 +328,7 @@ export function createMultiplayerPredictionBuffer<TState, TInput>(
       return;
     }
     if (
-      options.correctionSmoothing === undefined ||
+      correctionSmoothing === undefined ||
       correctionSmoothingDurationMs <= 0 ||
       magnitude > correctionSmoothingMaxMagnitude ||
       !hasPresentedFrame
@@ -288,11 +347,16 @@ export function createMultiplayerPredictionBuffer<TState, TInput>(
   }
 
   function projectPresentedState(frameDeltaMs: number, timestamp: number | undefined): TState {
+    const alpha = Math.min(1, presentationElapsedMs / predictionStepMs);
+    if (statePresentation !== undefined) {
+      const fromState = options.cloneState(presentationFromState);
+      const targetState = options.cloneState(currentState);
+      return statePresentation.present(fromState, targetState, targetState, alpha);
+    }
     if (options.presentState === undefined) {
       return options.cloneState(currentState);
     }
 
-    const alpha = Math.min(1, presentationElapsedMs / predictionStepMs);
     return options.presentState(
       options.cloneState(presentationFromState),
       options.cloneState(currentState),
@@ -312,7 +376,7 @@ export function createMultiplayerPredictionBuffer<TState, TInput>(
     frameDeltaMs: number,
     advanceElapsed = true
   ): TState {
-    const smoothing = options.correctionSmoothing;
+    const smoothing = correctionSmoothing;
     if (
       smoothing === undefined ||
       correctionSmoothingPreviousPresented === undefined ||
@@ -332,7 +396,7 @@ export function createMultiplayerPredictionBuffer<TState, TInput>(
         ? 1
         : correctionSmoothingElapsedMs / correctionSmoothingDurationMs;
     diagnostics.correctionSmoothingElapsedMs = correctionSmoothingElapsedMs;
-    const presented = smoothing.apply(options.cloneState(target), {
+    const correctionContext = {
       alpha,
       remainingAlpha: 1 - alpha,
       elapsedMs: correctionSmoothingElapsedMs,
@@ -340,7 +404,16 @@ export function createMultiplayerPredictionBuffer<TState, TInput>(
       correctionMagnitude: correctionSmoothingMagnitude,
       previousPresentedState: options.cloneState(correctionSmoothingPreviousPresented),
       initialTargetState: options.cloneState(correctionSmoothingInitialTarget)
-    });
+    };
+    const presented =
+      statePresentation === undefined
+        ? options.correctionSmoothing!.apply(options.cloneState(target), correctionContext)
+        : statePresentation.applyCorrection(
+            options.cloneState(target),
+            correctionContext.previousPresentedState,
+            correctionContext.initialTargetState,
+            correctionContext.remainingAlpha
+          );
     if (advanceElapsed && alpha >= 1) {
       clearCorrectionSmoothing(false);
     }
@@ -515,9 +588,19 @@ export function createMultiplayerPredictionBuffer<TState, TInput>(
     pendingInputs() {
       return pending.slice(pendingStart);
     },
+    pendingInputCount() {
+      return pendingCount();
+    },
     diagnostics() {
       refreshPendingDiagnostics();
-      return { ...diagnostics };
+      const transitionDiagnostics = transition?.diagnostics?.();
+      return {
+        ...diagnostics,
+        ...(transitionDiagnostics === undefined ? {} : { transition: transitionDiagnostics })
+      };
+    },
+    dispose() {
+      transition?.dispose?.();
     }
   };
 }

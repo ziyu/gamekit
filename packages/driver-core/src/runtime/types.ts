@@ -24,6 +24,7 @@ export type DriverCapabilities = {
   input?: boolean;
   assets?: boolean;
   camera?: boolean;
+  animation?: boolean;
   audio?: boolean;
   particles?: boolean;
   physics?: boolean;
@@ -36,6 +37,8 @@ export type DriverAdapterMap = {
   inputSource?: unknown;
   assetLoader?: unknown;
   camera?: unknown;
+  animation?: unknown;
+  audio?: unknown;
   custom?: Record<string, unknown>;
 };
 

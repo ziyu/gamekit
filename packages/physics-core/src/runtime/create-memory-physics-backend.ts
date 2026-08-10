@@ -18,6 +18,7 @@ import type {
   PhysicsQueryResult,
   PhysicsScene,
   PhysicsSceneConfig,
+  PhysicsSceneCheckpoint,
   PhysicsSceneSnapshot,
   PhysicsShapeDefinition,
   PhysicsVector
@@ -48,6 +49,15 @@ type MemoryColliderRecord = {
   state: PhysicsColliderState;
 };
 
+type MemoryPhysicsSceneCheckpointPayload = {
+  version: 1;
+  nextBodyId: number;
+  nextColliderId: number;
+  bodies: Array<[PhysicsBodyId, MemoryBodyRecord]>;
+  colliders: Array<[PhysicsColliderId, MemoryColliderRecord]>;
+  activePairs: string[];
+};
+
 export type MemoryPhysicsBackendOptions = {
   id?: string;
   dimension?: "2d" | "3d";
@@ -74,6 +84,11 @@ export function createMemoryPhysicsBackend(
         sensors: true,
         queries: ["point", "raycast", "shape-cast", "overlap", "check", "bounds"],
         deterministic: true,
+        checkpoints: {
+          captureRestore: true,
+          fullScene: true,
+          deterministicReplay: true
+        },
         custom: {
           queryModes: "any,closest,all",
           querySorting: "distance",
@@ -258,6 +273,47 @@ function createMemoryPhysicsScene(
         disposed
       };
     },
+    captureCheckpoint() {
+      assertActive();
+      const payload: MemoryPhysicsSceneCheckpointPayload = {
+        version: 1,
+        nextBodyId,
+        nextColliderId,
+        bodies: [...bodies].map(([id, record]) => [
+          id,
+          { state: cloneBodyState(record.state), gravityScale: record.gravityScale }
+        ]),
+        colliders: [...colliders].map(([id, record]) => [
+          id,
+          { state: cloneColliderState(record.state) }
+        ]),
+        activePairs: [...activePairs]
+      };
+      return {
+        backend,
+        sceneId,
+        byteLength: JSON.stringify(payload).length,
+        payload
+      } satisfies PhysicsSceneCheckpoint;
+    },
+    restoreCheckpoint(checkpoint) {
+      assertActive();
+      const payload = requireMemoryCheckpoint(checkpoint, backend, sceneId);
+      bodies.clear();
+      colliders.clear();
+      for (const [id, record] of payload.bodies) {
+        bodies.set(id, {
+          state: cloneBodyState(record.state),
+          gravityScale: record.gravityScale
+        });
+      }
+      for (const [id, record] of payload.colliders) {
+        colliders.set(id, { state: cloneColliderState(record.state) });
+      }
+      nextBodyId = payload.nextBodyId;
+      nextColliderId = payload.nextColliderId;
+      activePairs = new Set(payload.activePairs);
+    },
     native() {
       return this.snapshot();
     },
@@ -289,6 +345,40 @@ function createMemoryPhysicsScene(
       sensor
     };
   }
+}
+
+function requireMemoryCheckpoint(
+  checkpoint: PhysicsSceneCheckpoint,
+  backend: string,
+  sceneId: string
+): MemoryPhysicsSceneCheckpointPayload {
+  if (checkpoint.backend !== backend || checkpoint.sceneId !== sceneId) {
+    throw new GameError(
+      "physics.checkpoint_scene_mismatch",
+      `Physics checkpoint does not belong to scene: ${sceneId}`,
+      {
+        checkpointBackend: checkpoint.backend,
+        checkpointSceneId: checkpoint.sceneId,
+        backend,
+        sceneId
+      }
+    );
+  }
+  const payload = checkpoint.payload as Partial<MemoryPhysicsSceneCheckpointPayload> | undefined;
+  if (
+    payload?.version !== 1 ||
+    !Array.isArray(payload.bodies) ||
+    !Array.isArray(payload.colliders) ||
+    !Array.isArray(payload.activePairs) ||
+    !Number.isSafeInteger(payload.nextBodyId) ||
+    !Number.isSafeInteger(payload.nextColliderId)
+  ) {
+    throw new GameError(
+      "physics.checkpoint_invalid",
+      `Invalid memory physics checkpoint for scene: ${sceneId}`
+    );
+  }
+  return payload as MemoryPhysicsSceneCheckpointPayload;
 }
 
 function createBodyState(id: PhysicsBodyId, definition: PhysicsBodyDefinition): PhysicsBodyState {

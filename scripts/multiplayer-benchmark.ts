@@ -1,12 +1,17 @@
 import { performance } from "node:perf_hooks";
+import { createEventBus } from "../packages/event-bus/src";
 import {
   createMultiplayerAuthorityBindingStore,
   createMultiplayerAuthorityHostLoop,
   createMultiplayerAuthorityReceiver,
+  createMultiplayerClientReplication,
   createMultiplayerLocalAuthorityLoop,
+  createMultiplayerModule,
   createMultiplayerPredictionBuffer,
   createSnapshotPlayback,
   createSnapshotPresentationProjector,
+  definePredictionStatePresentation,
+  definePredictionVector2StateField,
   defineSnapshotVector2Track,
   MULTIPLAYER_ACTION_KIND,
   MULTIPLAYER_INPUT_KIND,
@@ -80,11 +85,14 @@ const suites: BenchmarkSuite[] = [
   runEnvelopeNormalizationBenchmark(),
   runAuthorityReceiverBenchmark(),
   runHostAuthorityLoopBenchmark(),
+  runStagedAuthorityFrameBenchmark(),
   runHostActionQueueBenchmark(),
+  runModuleCommandQueueBenchmark(),
   runLatestInputCoalescingBenchmark(),
   runLocalAuthorityLoopBenchmark(),
   runPredictionReconciliationBenchmark(),
   runPredictionPresentationBenchmark(),
+  runManagedClientReplicationBenchmark(),
   runSnapshotPlaybackBenchmark(),
   runPresentationProjectionBenchmark()
 ];
@@ -286,6 +294,79 @@ function runHostAuthorityLoopBenchmark(): BenchmarkSuite {
   };
 }
 
+function runStagedAuthorityFrameBenchmark(): BenchmarkSuite {
+  const cases = [8, 32].map((clients) => {
+    const ticks = 5_000;
+    const runtime = createBenchmarkRuntime(clients);
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: SESSION_ID,
+      mode: "server-authoritative",
+      status: "bound",
+      authorityEndpoint: {
+        kind: "server",
+        id: AUTHORITY_PEER_ID,
+        peerId: AUTHORITY_PEER_ID
+      },
+      authorityPeerId: AUTHORITY_PEER_ID
+    });
+    let checksum = 0;
+    const loop = createMultiplayerAuthorityHostLoop<never, BenchmarkInput, BenchmarkPayload>({
+      runtime,
+      binding,
+      readInput(payload) {
+        return isBenchmarkInput(payload) ? payload : undefined;
+      },
+      inputSequence(input) {
+        return input.sequence;
+      },
+      inputSequenceKey(input) {
+        return input.playerId;
+      },
+      inputQueueMode: "latest",
+      handleInput(ctx) {
+        checksum += ctx.payload.dx + ctx.payload.dy;
+      },
+      captureSnapshot(ctx) {
+        return { tick: ctx.tick, x: checksum };
+      }
+    });
+
+    for (let tick = 0; tick < 200; tick += 1) {
+      emitClientInputs(runtime, clients, tick);
+      loop.beginTick(TICK_MS);
+      checksum += tick & 1;
+      void loop.commitTick();
+    }
+    const before = loop.diagnostics();
+
+    const start = performance.now();
+    for (let tick = 0; tick < ticks; tick += 1) {
+      emitClientInputs(runtime, clients, tick + 200);
+      loop.beginTick(TICK_MS);
+      checksum += tick & 1;
+      void loop.commitTick();
+    }
+    const durationMs = performance.now() - start;
+    const diagnostics = loop.diagnostics();
+    loop.dispose();
+
+    return {
+      clients,
+      ticks,
+      inputs: ticks * clients,
+      committedTicks: diagnostics.committedTicks - before.committedTicks,
+      durationMs: round(durationMs),
+      msPerTick: round(durationMs / ticks),
+      checksum
+    };
+  });
+
+  return {
+    suite: "authority-staged-frame",
+    cases
+  };
+}
+
 function runLatestInputCoalescingBenchmark(): BenchmarkSuite {
   const cases = [8, 32].map((clients) => {
     const ticks = 5_000;
@@ -433,6 +514,61 @@ function runHostActionQueueBenchmark(): BenchmarkSuite {
   };
 }
 
+function runModuleCommandQueueBenchmark(): BenchmarkSuite {
+  const cases = [8, 32].map((clients) => {
+    const ticks = 5_000;
+    const runtime = createBenchmarkRuntime(clients);
+    const eventBus = createEventBus({ clock: () => 0 });
+    let commandSystem: { update(): void } | undefined;
+    let checksum = 0;
+    createMultiplayerModule({
+      runtime,
+      commandQueue: {
+        capacity: clients * 4,
+        maxPerTick: clients
+      },
+      handleCommand({ message }) {
+        checksum += (message.payload as BenchmarkAction).command;
+      }
+    }).install({
+      eventBus,
+      systems: {
+        register(system) {
+          commandSystem = system;
+        }
+      }
+    });
+
+    for (let tick = 0; tick < 200; tick += 1) {
+      emitModuleCommands(runtime, clients, tick);
+      commandSystem?.update();
+    }
+
+    const start = performance.now();
+    for (let tick = 0; tick < ticks; tick += 1) {
+      emitModuleCommands(runtime, clients, tick + 200);
+      commandSystem?.update();
+    }
+    const durationMs = performance.now() - start;
+    const commands = ticks * clients;
+
+    return {
+      clients,
+      ticks,
+      commands,
+      durationMs: round(durationMs),
+      microsecondsPerCommand: round((durationMs * 1000) / commands),
+      msPerTick: round(durationMs / ticks),
+      checksum
+    };
+  });
+
+  return {
+    suite: "module-command-queue",
+    cases
+  };
+}
+
 function runLocalAuthorityLoopBenchmark(): BenchmarkSuite {
   const cases = [100_000, 500_000].map((inputs) => {
     let checksum = 0;
@@ -568,6 +704,14 @@ function runPredictionPresentationBenchmark(): BenchmarkSuite {
   const cases = [60, 120].map((presentationFps) => {
     const frames = 500_000;
     const frameDeltaMs = 1000 / presentationFps;
+    const position = definePredictionVector2StateField<BenchmarkPredictionState>({
+      readX: (state) => state.x,
+      readY: (state) => state.y,
+      write(state, x, y) {
+        state.x = x;
+        state.y = y;
+      }
+    });
     const prediction = createMultiplayerPredictionBuffer<BenchmarkPredictionState, BenchmarkInput>({
       initialState: { x: 0, y: 0 },
       predictionStepMs: TICK_MS,
@@ -579,27 +723,15 @@ function runPredictionPresentationBenchmark(): BenchmarkSuite {
         state.y += input.dy;
         return state;
       },
-      presentState(fromState, toState, context) {
-        toState.x = fromState.x + (toState.x - fromState.x) * context.alpha;
-        toState.y = fromState.y + (toState.y - fromState.y) * context.alpha;
-        return toState;
-      },
-      measureCorrection(previous, next) {
-        return Math.hypot(previous.x - next.x, previous.y - next.y);
-      },
-      correctionSmoothing: {
-        durationMs: 100,
-        maxMagnitude: 10,
-        apply(target, context) {
-          target.x +=
-            (context.previousPresentedState.x - context.initialTargetState.x) *
-            context.remainingAlpha;
-          target.y +=
-            (context.previousPresentedState.y - context.initialTargetState.y) *
-            context.remainingAlpha;
-          return target;
+      presentation: definePredictionStatePresentation({
+        fields: [position],
+        correction: {
+          measure: position,
+          smooth: [position],
+          durationMs: 100,
+          maxMagnitude: 10
         }
-      }
+      })
     });
     let sequence = 0;
     let timestamp = 0;
@@ -653,6 +785,101 @@ function runPredictionPresentationBenchmark(): BenchmarkSuite {
 
   return {
     suite: "prediction-presentation",
+    cases
+  };
+}
+
+function runManagedClientReplicationBenchmark(): BenchmarkSuite {
+  const cases = [4, 128].map((entityCount) => {
+    const runtime = createBenchmarkRuntime();
+    const positions = Array.from({ length: entityCount }, (_, index) => ({
+      x: index * 2,
+      y: index * 3
+    }));
+    const frames = 30_000;
+    let snapshotTick = 0;
+    let checksum = 0;
+    const replication = createMultiplayerClientReplication({
+      runtime,
+      installContext: {},
+      options: {
+        playback: {
+          interpolationDelayMs: TICK_MS,
+          timeSource: "tick",
+          readTime(entry) {
+            return entry.tick === undefined ? undefined : entry.tick * TICK_MS;
+          }
+        },
+        tracks: [
+          defineSnapshotVector2Track<BenchmarkSnapshot>({
+            selectInto(snapshot, writer) {
+              for (let index = 0; index < snapshot.positions.length; index += 1) {
+                const position = snapshot.positions[index];
+                if (position !== undefined) {
+                  writer.add(index, position);
+                }
+              }
+            }
+          })
+        ],
+        readSnapshot(payload) {
+          return payload as BenchmarkSnapshot;
+        },
+        toBufferEntry({ snapshot }) {
+          return { snapshot, tick: snapshot.tick };
+        },
+        applyFrame({ presented }) {
+          const last = presented.vector2(entityCount - 1, { x: 0, y: 0 });
+          checksum += last.x + last.y;
+        }
+      }
+    });
+
+    const start = performance.now();
+    for (let frame = 0; frame < frames; frame += 1) {
+      if (frame % 3 === 0) {
+        snapshotTick += 1;
+        for (let index = 0; index < positions.length; index += 1) {
+          const position = positions[index];
+          if (position !== undefined) {
+            position.x += 0.25;
+            position.y += 0.125;
+          }
+        }
+        runtime.emit({
+          id: `managed-snapshot-${snapshotTick}`,
+          sessionId: SESSION_ID,
+          channel: RELIABLE_CHANNEL,
+          kind: MULTIPLAYER_SNAPSHOT_KIND,
+          sourcePeerId: AUTHORITY_PEER_ID,
+          tick: snapshotTick,
+          timestamp: snapshotTick * TICK_MS,
+          payload: {
+            tick: snapshotTick,
+            positions: positions.map((position) => ({ ...position }))
+          }
+        });
+      }
+      replication.update({ delta: 1000 / 60, elapsed: frame * (1000 / 60), tick: frame });
+    }
+    const durationMs = performance.now() - start;
+    const diagnostics = replication.diagnostics();
+    replication.dispose();
+
+    return {
+      entityCount,
+      frames,
+      snapshots: snapshotTick,
+      durationMs: round(durationMs),
+      microsecondsPerFrame: round((durationMs * 1000) / frames),
+      acceptedSnapshots: diagnostics.appliedSnapshots,
+      rejectedSnapshots: diagnostics.rejectedSnapshots,
+      checksum: round(checksum)
+    };
+  });
+
+  return {
+    suite: "managed-client-replication",
     cases
   };
 }
@@ -925,6 +1152,21 @@ function emitClientActions(
         payload: { command: actionIndex + 1 }
       });
     }
+  }
+}
+
+function emitModuleCommands(runtime: BenchmarkRuntime, clients: number, tick: number): void {
+  for (let clientIndex = 0; clientIndex < clients; clientIndex += 1) {
+    runtime.emit({
+      id: `command-${tick}-${clientIndex}`,
+      sessionId: SESSION_ID,
+      channel: RELIABLE_CHANNEL,
+      kind: "game.command",
+      sourcePeerId: `client-${clientIndex}`,
+      tick,
+      timestamp: tick,
+      payload: { command: clientIndex + 1 }
+    });
   }
 }
 

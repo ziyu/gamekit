@@ -4,6 +4,7 @@ import {
   PhysicsBodyComponent,
   PhysicsColliderComponent,
   PhysicsTransformComponent,
+  createPhysicsBodyPredictionTransition,
   createPhysicsModule,
   checkCollision,
   checkOverlap,
@@ -24,6 +25,108 @@ beforeAll(async () => {
 });
 
 describe("Rapier 2D physics backend", () => {
+  it("keeps speculative contact solving aligned with continuous authority stepping", () => {
+    const sceneConfig = { gravity: { x: 0, y: 0 } } as const;
+    const wallBody = {
+      id: "prediction.wall.body",
+      kind: "static",
+      position: { x: 2, y: 0 }
+    } as const;
+    const wallCollider = {
+      id: "prediction.wall.collider",
+      bodyId: wallBody.id,
+      shape: { type: "box", width: 1, height: 6 }
+    } as const;
+    const playerBody = {
+      id: "prediction.player.body",
+      kind: "dynamic",
+      position: { x: 0, y: 0 },
+      lockedAxes: ["rotation"]
+    } as const;
+    const playerCollider = {
+      id: "prediction.player.collider",
+      bodyId: playerBody.id,
+      shape: { type: "circle", radius: 0.5 }
+    } as const;
+    const authority = backend.createScene(sceneConfig);
+    authority.createBody(wallBody);
+    authority.createCollider(wallCollider);
+    authority.createBody(playerBody);
+    authority.createCollider(playerCollider);
+    const transition = createPhysicsBodyPredictionTransition<
+      { x: number; y: number; velocityX: number; velocityY: number },
+      { velocityX: number; velocityY: number }
+    >({
+      backend,
+      scene: sceneConfig,
+      fixedDeltaMs: 1000 / 60,
+      environment: { bodies: [wallBody], colliders: [wallCollider] },
+      subject: {
+        body: playerBody,
+        colliders: [playerCollider],
+        readState(state) {
+          return {
+            position: { x: state.x, y: state.y },
+            linearVelocity: { x: state.velocityX, y: state.velocityY }
+          };
+        },
+        applyInput(_state, input) {
+          return { linearVelocity: { x: input.velocityX, y: input.velocityY } };
+        },
+        writeState(_state, body) {
+          return {
+            x: body.position.x,
+            y: body.position.y,
+            velocityX: body.linearVelocity.x,
+            velocityY: body.linearVelocity.y
+          };
+        }
+      }
+    });
+    let predicted = { x: 0, y: 0, velocityX: 0, velocityY: 0 };
+    const input = { velocityX: 6, velocityY: 2 };
+
+    for (let sequence = 1; sequence <= 12; sequence += 1) {
+      const beforePrediction = { ...predicted };
+      authority.updateBody(playerBody.id, {
+        linearVelocity: { x: input.velocityX, y: input.velocityY }
+      });
+      for (let subStep = 0; subStep < 3; subStep += 1) {
+        authority.step(1000 / 60);
+      }
+      predicted = transition.apply(predicted, input, {
+        sequence,
+        input,
+        replay: false,
+        stepMs: 50
+      });
+      const replayed = transition.apply(beforePrediction, input, {
+        sequence,
+        input,
+        replay: true,
+        stepMs: 50
+      });
+      const authoritative = authority.getBodyState(playerBody.id);
+      expect(authoritative).toBeDefined();
+      expect(predicted.x).toBeCloseTo(authoritative!.position.x, 6);
+      expect(predicted.y).toBeCloseTo(authoritative!.position.y, 6);
+      expect(predicted.velocityX).toBeCloseTo(authoritative!.linearVelocity.x, 6);
+      expect(predicted.velocityY).toBeCloseTo(authoritative!.linearVelocity.y, 6);
+      expect(replayed).toEqual(predicted);
+      predicted = replayed;
+    }
+
+    expect(predicted.x).toBeLessThan(1.1);
+    expect(predicted.y).toBeGreaterThan(0.3);
+    expect(transition.diagnostics()).toMatchObject({
+      cachedReplays: 12,
+      replayCacheMisses: 0,
+      cachedFrames: 12
+    });
+    transition.dispose();
+    authority.dispose();
+  });
+
   it("steps bodies, emits collision events, and supports point and overlap queries", () => {
     const scene = backend.createScene({ gravity: { x: 0, y: 0 } });
     const bodyA = scene.createBody({

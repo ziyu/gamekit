@@ -7,9 +7,18 @@ MVP 阶段已经关闭，历史阶段文档只作为归档证据保留。常态�
 ## Active Workflows
 
 - `multiplayer-package-planning.md`
+- `multiplayer-outpost-siege-demo.md`：Outpost Siege 全框架综合验证应用工作流。
+- `outpost-siege-player-experience-rebuild.md`：Outpost 玩家操作、角色、战斗与表现重构。
+- `web-gamepad-input-source.md`：待确认的 Web Gamepad 底层输入能力工作流。
+
+## Closed Workflows
+
+- `physics-projectile-prediction-island.md`
+- `kinematic-projectile-prediction.md`
 - `multiplayer-first-usable-version.md`
 - `multiplayer-demo-validation.md`
 - `multiplayer-realtime-game-demo.md`
+- `multiplayer-colyseus-native-lane.md`
 
 ## 职责边界
 

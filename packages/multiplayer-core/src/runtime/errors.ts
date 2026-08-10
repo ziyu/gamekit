@@ -10,7 +10,8 @@ export const multiplayerErrorCodes = {
   duplicateSession: "MULTIPLAYER_DUPLICATE_SESSION",
   missingSessionTarget: "MULTIPLAYER_MISSING_SESSION_TARGET",
   closedConnection: "MULTIPLAYER_CLOSED_CONNECTION",
-  closedBinding: "MULTIPLAYER_CLOSED_BINDING"
+  closedBinding: "MULTIPLAYER_CLOSED_BINDING",
+  authorityFrameState: "MULTIPLAYER_AUTHORITY_FRAME_STATE"
 } as const;
 
 export type MultiplayerErrorCode =

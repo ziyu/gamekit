@@ -1,0 +1,47 @@
+{
+  "name": "@gamekit/ai-core",
+  "version": "0.1.0-alpha.5",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-library-package.mjs",
+    "test": "vitest run --root ../.. --config vitest.config.ts packages/ai-core/test --passWithNoTests",
+    "lint": "oxlint ."
+  },
+  "dependencies": {
+    "@gamekit/core": "workspace:*",
+    "@gamekit/data": "workspace:*",
+    "@gamekit/event-bus": "workspace:*",
+    "@gamekit/game-runtime": "workspace:*",
+    "@gamekit/navigation-core": "workspace:*",
+    "@gamekit/physics-core": "workspace:*",
+    "@gamekit/save": "workspace:*",
+    "@gamekit/world": "workspace:*"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "gamekitBuild": {
+    "bundleDts": false,
+    "entries": [
+      "src/index.ts",
+      "src/testing/index.ts"
+    ]
+  }
+}

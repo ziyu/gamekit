@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 type PackageManifest = {
   name: string;
   version: string;
+  private?: boolean;
   type?: string;
   main?: string;
   types?: string;
@@ -58,6 +59,7 @@ const wave1PackageSlugs = [
   "world-koota",
   "game-runtime",
   "data",
+  "save",
   "tca",
   "gas",
   "multiplayer-core",
@@ -80,7 +82,6 @@ const wave2PackageSlugs = [
   "devtools",
   "ui-core",
   "asset",
-  "save",
   "platform-web",
   "input-dom",
   "renderer-phaser",
@@ -93,7 +94,7 @@ const wave3SupportPackageSlugs = ["core", "devtools", "ui-core"];
 
 const wave3PackageSlugs = ["react-ui", "devtools-ui"];
 
-const allPackageSlugs = unique([...wave1PackageSlugs, ...wave2PackageSlugs, ...wave3PackageSlugs]);
+const allPackageSlugs = discoverPublishablePackageSlugs();
 
 const releaseWave = process.env.GAMEKITS_RELEASE_WAVE ?? "1";
 const installOffline = process.env.GAMEKITS_RELEASE_OFFLINE === "1";
@@ -528,34 +529,105 @@ function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+function readWorkspacePackageManifest(slug: string): PackageManifest {
+  const manifestPath = join(root, "packages", slug, "package.json");
+  if (!existsSync(manifestPath)) {
+    throw new Error(`Unknown GameKit package: ${slug}`);
+  }
+
+  return JSON.parse(readFileSync(manifestPath, "utf8")) as PackageManifest;
+}
+
+function discoverPublishablePackageSlugs(): string[] {
+  return readdirSync(join(root, "packages"))
+    .filter((slug) => {
+      const manifestPath = join(root, "packages", slug, "package.json");
+      if (!existsSync(manifestPath)) {
+        return false;
+      }
+
+      return (JSON.parse(readFileSync(manifestPath, "utf8")) as PackageManifest).private !== true;
+    })
+    .sort();
+}
+
+function workspaceDependencySlugs(manifest: PackageManifest): string[] {
+  return unique(
+    [
+      ...Object.keys(manifest.dependencies ?? {}),
+      ...Object.keys(manifest.peerDependencies ?? {}),
+      ...Object.keys(manifest.optionalDependencies ?? {}),
+      ...Object.keys(manifest.optionalPeerDependencies ?? {})
+    ]
+      .filter((name) => name.startsWith("@gamekit/"))
+      .map((name) => name.slice("@gamekit/".length))
+  );
+}
+
+function resolveWorkspacePackageClosure(packageSlugs: string[]): string[] {
+  const resolved: string[] = [];
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+
+  const visit = (slug: string): void => {
+    if (visited.has(slug)) {
+      return;
+    }
+    if (visiting.has(slug)) {
+      throw new Error(`Circular GameKit package dependency detected at ${slug}`);
+    }
+
+    const manifest = readWorkspacePackageManifest(slug);
+    if (manifest.private === true) {
+      throw new Error(`Cannot include private GameKit package in release verification: ${slug}`);
+    }
+
+    visiting.add(slug);
+    for (const dependencySlug of workspaceDependencySlugs(manifest)) {
+      visit(dependencySlug);
+    }
+    visiting.delete(slug);
+    visited.add(slug);
+    resolved.push(slug);
+  };
+
+  for (const slug of unique(packageSlugs)) {
+    visit(slug);
+  }
+
+  return resolved;
+}
+
 function resolvePackageSlugs(): string[] {
   const explicitPackages = process.env.GAMEKITS_RELEASE_PACKAGES;
   if (explicitPackages) {
-    return unique(
-      explicitPackages
-        .split(",")
-        .map((slug) => slug.trim())
-        .filter(Boolean)
+    return resolveWorkspacePackageClosure(
+      unique(
+        explicitPackages
+          .split(",")
+          .map((slug) => slug.trim())
+          .filter(Boolean)
+      )
     );
   }
 
   if (releaseWave === "2") {
-    return unique([...wave2SupportPackageSlugs, ...wave2PackageSlugs]);
+    return resolveWorkspacePackageClosure([...wave2SupportPackageSlugs, ...wave2PackageSlugs]);
   }
 
   if (releaseWave === "3") {
-    return unique([...wave3SupportPackageSlugs, ...wave3PackageSlugs]);
+    return resolveWorkspacePackageClosure([...wave3SupportPackageSlugs, ...wave3PackageSlugs]);
   }
 
   if (releaseWave === "all") {
-    return allPackageSlugs;
+    return resolveWorkspacePackageClosure(allPackageSlugs);
   }
 
   if (releaseWave !== "1") {
     throw new Error(`Unknown GAMEKITS_RELEASE_WAVE: ${releaseWave}`);
   }
 
-  return wave1PackageSlugs;
+  return resolveWorkspacePackageClosure(wave1PackageSlugs);
 }
 
 function resolveSmokeSource(): string {

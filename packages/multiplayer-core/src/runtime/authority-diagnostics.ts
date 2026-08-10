@@ -42,12 +42,18 @@ export type MultiplayerAuthorityDiagnostics = {
   rejectedActions: number;
   queuedActions: number;
   maxQueuedActions: number;
+  actionQueueCapacity: number;
+  overflowedActions: number;
   receivedInputs: number;
   acceptedInputs: number;
   rejectedInputs: number;
   coalescedInputs: number;
   queuedInputs: number;
   maxQueuedInputs: number;
+  inputQueueCapacity: number;
+  overflowedInputs: number;
+  committedTicks: number;
+  activeTick?: number;
   sentSnapshots: number;
   receivedSnapshots: number;
   appliedSnapshots: number;
@@ -103,12 +109,18 @@ export function createMultiplayerAuthorityDiagnostics(
     rejectedActions: loop?.rejectedActions ?? 0,
     queuedActions: loop?.queuedActions ?? 0,
     maxQueuedActions: loop?.maxQueuedActions ?? 0,
+    actionQueueCapacity: loop?.actionQueueCapacity ?? 0,
+    overflowedActions: loop?.overflowedActions ?? 0,
     receivedInputs: loop?.receivedInputs ?? 0,
     acceptedInputs: loop?.acceptedInputs ?? 0,
     rejectedInputs: loop?.rejectedInputs ?? 0,
     coalescedInputs: loop?.coalescedInputs ?? 0,
     queuedInputs: loop?.queuedInputs ?? 0,
     maxQueuedInputs: loop?.maxQueuedInputs ?? 0,
+    inputQueueCapacity: loop?.inputQueueCapacity ?? 0,
+    overflowedInputs: loop?.overflowedInputs ?? 0,
+    committedTicks: loop?.committedTicks ?? 0,
+    ...(loop?.activeTick === undefined ? {} : { activeTick: loop.activeTick }),
     sentSnapshots: loop?.sentSnapshots ?? 0,
     receivedSnapshots: receiver?.receivedSnapshots ?? 0,
     appliedSnapshots: receiver?.appliedSnapshots ?? 0,

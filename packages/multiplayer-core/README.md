@@ -67,6 +67,7 @@ const loop = createMultiplayerAuthorityHostLoop({
   binding: hostBinding,
   maxActionsPerSourcePerTick: 4,
   maxQueuedActionsPerSource: 16,
+  maxQueuedActions: 256,
   readInput: decodeInput,
   inputSequence: (input) => input.sequence,
   inputSequenceKey: (input) => input.playerId,
@@ -83,9 +84,21 @@ const loop = createMultiplayerAuthorityHostLoop({
 });
 ```
 
-Discrete `game.action` commands use a per-source bounded FIFO. The host loop defaults to at most 8 actions from one source per authority tick and 32 queued actions per source; apps can tighten those limits with `maxActionsPerSourcePerTick` and `maxQueuedActionsPerSource`. Overflow is rejected as `action-queue-full`, while diagnostics report `queuedActions` and `maxQueuedActions`.
+Discrete `game.action` commands use a per-source bounded FIFO backed by a room-wide bounded queue. The host loop defaults to at most 8 actions from one source per authority tick, 32 queued actions per source and 1,024 queued actions for the room; apps can tighten those limits with `maxActionsPerSourcePerTick`, `maxQueuedActionsPerSource` and `maxQueuedActions`. Overflow is rejected as `action-queue-full`, while diagnostics report queue capacity, current/peak depth and overflow count.
 
-Choose `game.input` queue semantics from the input model. Discrete input samples that must all execute use the default `fifo` mode; `maxInputsPerSourcePerTick: 1` prevents a burst from advancing one player multiple simulation steps inside one authority tick, and `maxQueuedInputsPerSource` bounds hostile or jittery senders. Continuously sampled movement, aim or steering state uses `inputQueueMode: "latest"`: a newer state replaces an older unconsumed state from the same source, queue depth stays bounded by active sources, and diagnostics report `queuedInputs`, `maxQueuedInputs` and `coalescedInputs`. The simulation may hold the last applied state until a newer state or game-owned timeout replaces it. Its acknowledgement advances only after that latest state has been adopted by an authoritative simulation tick; superseded samples need not execute individually.
+Choose `game.input` queue semantics from the input model. Discrete input samples that must all execute use the default `fifo` mode; `maxInputsPerSourcePerTick: 1` prevents a burst from advancing one player multiple simulation steps inside one authority tick, while `maxQueuedInputsPerSource` and `maxQueuedInputs` bound hostile or jittery senders. Continuously sampled movement, aim or steering state uses `inputQueueMode: "latest"`: a newer state replaces an older unconsumed state from the same source, queue depth stays bounded by active sources, and diagnostics report capacity, current/peak depth, overflow and coalescing. The simulation may hold the last applied state until a newer state or game-owned timeout replaces it. Its acknowledgement advances only after that latest state has been adopted by an authoritative simulation tick; superseded samples need not execute individually.
+
+Room-owned or modular server simulation can split the authority frame around app systems:
+
+```ts
+loop.beginTick(50); // validate and consume action/latest input
+runAiSystems();
+stepPhysics();
+resolveCombat();
+await loop.commitTick(); // capture and publish the completed authority state
+```
+
+`beginTick()` rejects re-entry while a frame is active. `commitTick()` rejects when no frame is active, captures the snapshot once, serializes provider publication and advances committed-frame diagnostics. The compatibility `tick(deltaMs)` method performs begin + commit for simulations that still fit inside the loop callback.
 
 When presence reports that a peer left or disconnected, the host composition layer must call `loop.releasePeer(peerId)`. The loop then discards that peer's queued actions and inputs and forgets its input sequence keys, so a restored peer can start a fresh input stream without executing pre-disconnect work or being rejected against an old sequence. Player actor, slot and round-stat retention remain game-owned policy.
 
@@ -181,31 +194,36 @@ Games should reset snapshot playback when the authority binding, session, snapsh
 Local player prediction is modeled separately from remote interpolation. `createMultiplayerPredictionBuffer()` keeps a bounded input log, applies local inputs immediately, drops inputs acknowledged by the authoritative snapshot, rewinds to the authoritative state and replays still-pending inputs:
 
 ```ts
+const positionField = definePredictionVector2StateField<PredictedPlayer>({
+  readX: (state) => state.position.x,
+  readY: (state) => state.position.y,
+  write(state, x, y) {
+    state.position.x = x;
+    state.position.y = y;
+  }
+});
+const facingField = definePredictionAngleStateField<PredictedPlayer>({
+  read: (state) => state.facing,
+  write(state, facing) {
+    state.facing = facing;
+  }
+});
 const prediction = createMultiplayerPredictionBuffer({
   initialState: readPlayerPredictionState(snapshot),
   cloneState: (state) => ({ ...state, position: { ...state.position } }),
-  applyInput(state, input) {
-    return movePredictedPlayer(state, input);
-  },
-  presentState(fromState, toState, { alpha }) {
-    return interpolatePredictedPlayer(fromState, toState, alpha);
+  applyInput(state, input, { stepMs }) {
+    return movePredictedPlayer(state, input, stepMs);
   },
   predictionStepMs: 50,
-  measureCorrection(previous, next) {
-    return distance(previous.position, next.position);
-  },
-  correctionSmoothing: {
-    durationMs: 100,
-    maxMagnitude: 48,
-    apply(target, { previousPresentedState, initialTargetState, remainingAlpha }) {
-      return applyPredictionCorrectionOffset(
-        target,
-        previousPresentedState,
-        initialTargetState,
-        remainingAlpha
-      );
+  presentation: definePredictionStatePresentation({
+    fields: [positionField, facingField],
+    correction: {
+      measure: positionField,
+      smooth: [positionField],
+      durationMs: 100,
+      maxMagnitude: 48
     }
-  }
+  })
 });
 
 prediction.predict({ sequence: input.sequence, input, timestamp: input.clientTime });
@@ -220,7 +238,9 @@ const renderState = prediction.present({
 });
 ```
 
-Core owns the input queue, ack handling, replay, bounded fixed-step presentation clock, correction smoothing lifecycle and diagnostics. A predicted command computes the next fixed-step simulation endpoint immediately, while `present()` samples between the previous and current endpoint over `predictionStepMs`; it must not extrapolate again from an endpoint that already represents the end of the step. Reconciliation updates prediction state immediately. Small render corrections are represented as an offset from the corrected moving target and decay over the configured duration, so later prediction steps continue moving at their normal rate. Corrections above `maxMagnitude`, hard resets and teleports still snap. `present()` always works on cloned state, so render sampling never advances authoritative or rollback state. The game still owns deterministic input replay, collision, movement rules, interpolation of its state shape and final render writes.
+`positionField` and `facingField` are created once with `definePredictionVector2StateField()` and `definePredictionAngleStateField()`. They only map typed state reads/writes; Core chooses the interpolation primitive and applies correction offsets. Core owns the input queue, ack handling, replay, bounded fixed-step presentation clock, declared-field interpolation, correction smoothing lifecycle and diagnostics. Managed replication also bounds unacknowledged prediction lead with `maxPredictionLeadInputs` (default `8`); when the window is full it pauses new prediction/send steps, reports `throttledInputs`, and resumes from the latest sampled control state after an authority ack. A predicted command computes the next fixed-step simulation endpoint immediately, while `present()` samples between the previous and current endpoint over `predictionStepMs`; it must not extrapolate again from an endpoint that already represents the end of the step. Reconciliation updates prediction state immediately. Small render corrections decay as offsets from the corrected moving target, while corrections above `maxMagnitude`, hard resets and teleports snap. A transition may expose read-only diagnostics, which are nested under prediction diagnostics. The game still owns deterministic input replay, collision, movement rules and final render writes. The callback-based presentation options remain deprecated escape hatches for custom netcode.
+
+Managed replication normally subscribes to normalized Runtime envelopes. A provider-native mapping can instead configure `snapshotSource`; this source exclusively replaces the default subscription, while Core continues to own authority gating, playback, prediction and reconciliation. The optional `current()` returns the latest full normalized snapshot, allowing Core to recover an initial provider callback that arrived before the Runtime authority binding was ready. Source messages use `sequence` for monotonic provider state versions and `tick` for gameplay simulation time, so multiple provider revisions in one tick remain legal. Ordinary Runtime envelope transport sequence is not interpreted as provider state version. Authority binding or session changes reset the source ordering watermark together with playback and prediction state.
 
 ## Peer / Player Binding
 
@@ -288,7 +308,7 @@ corepack pnpm bench:multiplayer:check
 corepack pnpm bench:multiplayer:stability
 ```
 
-The suite covers envelope normalization, authority receiver source gates, host/local authority loops, latest-input coalescing, prediction reconciliation and render-time presentation, snapshot playback and presentation projection. The regular command remains a profiling trend signal. `bench:multiplayer:check` applies deliberately broad CI ceilings that catch order-of-magnitude regressions, while the stability command simulates 30 minutes of bounded prediction/playback/direct-write activity and checks retained heap after GC.
+The suite covers envelope normalization, authority receiver source gates, host/local and staged authority loops, bounded module commands, latest-input coalescing, prediction reconciliation and render-time presentation, snapshot playback and presentation projection. The regular command remains a profiling trend signal. `bench:multiplayer:check` applies deliberately broad CI ceilings that catch order-of-magnitude regressions, while the stability command simulates 30 minutes of bounded prediction/playback/direct-write activity and checks retained heap after GC.
 
 ## App Host Integration
 
@@ -303,6 +323,12 @@ const profile = createStandardAppProfile({
     createRuntime,
     standardModules: {
       multiplayer: {
+        commandQueue: {
+          capacity: 256,
+          maxPerTick: 32,
+          maxAgeMs: 1_000,
+          overflowPolicy: "reject-newest"
+        },
         handleCommand({ message }) {
           handleGameCommand(message);
         }
@@ -312,7 +338,7 @@ const profile = createStandardAppProfile({
 });
 ```
 
-App Host owns connection lifecycle and service disposal. The GameModule bridge only handles normalized messages at the GameRuntime tick boundary; it does not create rooms or sockets.
+App Host owns connection lifecycle and service disposal. The GameModule bridge only handles normalized messages at the GameRuntime tick boundary; it does not create rooms or sockets. Its command queue is bounded and emits `multiplayer.command.overflow` / `multiplayer.command.expired` facts; `onDiagnostics` can expose a redacted queue summary to DevTools.
 
 The GameModule implementation is owned by `@gamekit/multiplayer-core` and exposed as `createMultiplayerModule()`. App Host only resolves the standard service/profile dependencies before calling that factory. `createMultiplayerBridgeModule()` remains as a compatibility alias.
 

@@ -85,6 +85,8 @@ export type DriverAdapterMap = {
   inputSource?: InputSource;
   assetLoader?: AssetLoaderAdapter;
   camera?: RendererCameraAdapter;
+  animation?: AnimationPlaybackAdapter;
+  audio?: AudioBackend;
   physics?: unknown;
   uiOverlay?: unknown;
   custom?: Record<string, unknown>;
@@ -125,6 +127,7 @@ Phaser Driver 统一持有：
 - camera manager
 - physics systems / Matter plugin / Arcade physics world
 - tween / animation / particle runtime objects
+- sound manager / decoded audio cache / native playback channels
 
 Phaser Driver 可以暴露：
 
@@ -132,18 +135,22 @@ Phaser Driver 可以暴露：
 - AssetLoaderAdapter：把 AssetDefinition 加载到 Phaser texture/cache。
 - InputSource：把 Phaser input 归一化为 NormalizedInputEvent。
 - RendererCameraAdapter：把 CameraState 同步到 Phaser camera。
+- AnimationPlaybackAdapter：把 Animator Core playback frame 映射到 Phaser AnimationManager / Sprite。
+- AudioBackend：把 Audio Core 已编译的 PlaybackInstance、实例控制、bus、listener/emitter 和 parameter 映射到 Phaser sound manager 或其他 driver-owned audio runtime；一个逻辑实例可以持有多个 native playback channels。Backend 不解释 Music、SFX 或 Dialogue 的领域策略。
 - PhysicsBackendAdapter：把 Phaser Arcade / Matter Physics 绑定为 Physics module 可用的 backend adapter。
 - Typed native bridge：供 app presentation、Editor 后端专属面板或 DevTools renderer plugin 直接访问 Phaser Scene、GameObject、texture/cache 等对象。
 
 边界：
 
 - `@gamekit/driver-phaser` 是默认直接依赖 `phaser` 的包。
-- Phaser asset、input、camera、physics adapter 是 `@gamekit/driver-phaser` 的内部 adapter / module，不作为长期独立 package 暴露。
+- Phaser asset、input、camera、animation、audio backend、physics adapter 是 `@gamekit/driver-phaser` 的内部 adapter / module，不作为长期独立 package 暴露。
 - `@gamekit/renderer-phaser` 只把 RenderObject 协议映射到 Driver 提供的 Phaser Scene runtime，不创建 `Phaser.Game`，也不从 renderer 内部派生 input、camera、physics 或 asset 能力。
-- `@gamekit/renderer-core`、`@gamekit/input-core`、`@gamekit/camera-core`、`@gamekit/physics-core`、`@gamekit/asset` 不依赖 Phaser。
+- `@gamekit/renderer-core`、`@gamekit/input-core`、`@gamekit/camera-core`、`@gamekit/physics-core`、`@gamekit/animator-core`、`@gamekit/audio-core`、`@gamekit/asset` 不依赖 Phaser。
 - CameraController 和 CameraRig 仍属于 GameModule toolkit；Phaser Driver 只提供 camera sync adapter。
 - Physics scene 仍通过 GameModule helper 跟随 GameRuntime lifecycle；Phaser Driver 只提供绑定 Phaser Scene 的 physics backend adapter。
 - Phaser 原生类型只出现在 `@gamekit/driver-phaser`、`@gamekit/renderer-phaser` 或显式选择 Phaser 的 app/tooling 代码中，不进入 renderer-core、Data、Save 或可复用 gameplay module。
+
+Phaser Driver 的 render options 可以选择 pixel ratio、antialias、round pixels 和 mipmap filter。Factory 创建时统一补全并校验配置，boot、resize 和 diagnostic snapshot 复用同一份 resolved render options，不能根据某个 app 当前使用的字段维护平行默认值。Canvas CSS size、CameraState、Input event 和 RenderObject/world transform 始终使用 logical viewport/world units；Driver 内部才把 backing store 与 native zoom 放大到 profile pixel ratio，并把 pointer coordinate 归一化回来。Camera sync 优先使用 Phaser native center operation，不能把 Camera Core 的 world-view top-left 直接写成 raw `scrollX/scrollY`，因为 native camera viewport 和 zoom 会改变 Phaser scroll property 的实际语义。
 
 ## Three.js Driver
 
@@ -224,6 +231,7 @@ Driver snapshot 应能说明：
 - active external runtime 状态。
 - exposed adapter map。
 - viewport size / render surface 状态。
+- logical viewport、backing-store pixel ratio 和低频 native camera summary；不暴露 native handle。
 - loaded asset / texture / cache 摘要。
 - input source 状态。
 - camera sync 状态。
@@ -249,6 +257,7 @@ Driver diagnostic 是低频应用事实，进入 App Host diagnostics 或 DevToo
 - Driver 是外部 runtime owner：负责 boot、resize、pause/resume、dispose、diagnostics 和 adapter 暴露；Adapter 是协议映射者，不重新创建 runtime。
 - Profile 必须显式选择标准服务使用哪个 driver adapter。多 Driver 并存时不要靠默认顺序或包名猜测。
 - 新增 Three、Pixi、Godot bridge 等 Driver 时，先复用现有 Renderer/Input/Asset/Camera/Physics 协议，不够用再通过 ADR 调整协议。
+- Driver 调整 render density 时必须把 backing store、camera、input/picking 和 resize 作为一个坐标契约测试；profile 对 pixel ratio 设置设备上限，默认值保持 1 以避免让所有应用承担额外 fill-rate。
 - 测试 Driver 时优先使用 fake runtime/driver harness 验证 lifecycle、adapter mapping 和 native handle boundary，浏览器或真实 canvas 只用于少量端到端验证。
 
 ### 模块使用

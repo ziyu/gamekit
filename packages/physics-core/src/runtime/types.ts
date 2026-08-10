@@ -42,6 +42,7 @@ export type PhysicsBodyDefinition = {
     linear?: number;
     angular?: number;
   };
+  continuousCollisionDetection?: boolean;
   lockedAxes?: string[];
   userData?: Record<string, unknown>;
 };
@@ -107,6 +108,20 @@ export type PhysicsSceneConfig = {
   dimension?: PhysicsDimension;
   gravity?: PhysicsVector;
   fixedDeltaMs?: number;
+  materialDefinitions?: readonly PhysicsMaterialDefinition[];
+};
+
+export type PhysicsSceneCheckpoint = {
+  backend: string;
+  sceneId: PhysicsSceneId;
+  byteLength: number;
+  payload: unknown;
+};
+
+export type PhysicsCheckpointCapability = {
+  captureRestore: boolean;
+  fullScene: boolean;
+  deterministicReplay: boolean;
 };
 
 export type PhysicsBackendCapabilities = {
@@ -116,6 +131,7 @@ export type PhysicsBackendCapabilities = {
   sensors: boolean;
   queries: Array<PhysicsQuery["type"]>;
   deterministic?: boolean;
+  checkpoints?: PhysicsCheckpointCapability;
   custom?: Record<string, boolean | string | number>;
 };
 
@@ -136,6 +152,54 @@ export type PhysicsBodyState = {
   rotation?: PhysicsRotation;
   angularVelocity?: PhysicsRotation;
   userData?: Record<string, unknown>;
+};
+
+export type PhysicsInterpolationTransform = {
+  position: PhysicsVector;
+  rotation?: PhysicsRotation;
+};
+
+export type ReadonlyPhysicsRotation =
+  | number
+  | Readonly<PhysicsVector>
+  | Readonly<PhysicsQuaternion>;
+
+export type ReadonlyPhysicsInterpolationTransform = {
+  readonly position: Readonly<PhysicsVector>;
+  readonly rotation?: ReadonlyPhysicsRotation;
+};
+
+export type PhysicsTransformInterpolator = (
+  previous: ReadonlyPhysicsInterpolationTransform,
+  current: ReadonlyPhysicsInterpolationTransform,
+  alpha: number,
+  target?: PhysicsInterpolationTransform
+) => PhysicsInterpolationTransform;
+
+export type PhysicsInterpolationResetPredicate = (
+  bodyId: PhysicsBodyId,
+  previous: ReadonlyPhysicsInterpolationTransform,
+  current: ReadonlyPhysicsInterpolationTransform
+) => boolean;
+
+export type PhysicsInterpolationPolicy = {
+  interpolate?: PhysicsTransformInterpolator;
+  shouldResetHistory?: PhysicsInterpolationResetPredicate;
+};
+
+export type PhysicsInterpolationSnapshot = {
+  alpha: number;
+  fixedDeltaMs: number;
+  trackedBodyCount: number;
+};
+
+export type PhysicsInterpolationStore = {
+  sample(
+    bodyId: PhysicsBodyId,
+    target?: PhysicsInterpolationTransform
+  ): PhysicsInterpolationTransform | undefined;
+  snapshot(): PhysicsInterpolationSnapshot;
+  isBound(): boolean;
 };
 
 export type PhysicsColliderState = {
@@ -303,6 +367,8 @@ export type PhysicsScene<TNative = unknown> = {
   getColliderState(id: PhysicsColliderId): PhysicsColliderState | undefined;
   query(query: PhysicsQuery): PhysicsQueryResult[];
   snapshot(): PhysicsSceneSnapshot;
+  captureCheckpoint?(): PhysicsSceneCheckpoint;
+  restoreCheckpoint?(checkpoint: PhysicsSceneCheckpoint): void;
   native?(): TNative;
   dispose(): void;
 };
@@ -342,7 +408,47 @@ export type PhysicsQueries = {
 };
 
 export type PhysicsHandle = PhysicsQueries & {
+  captureCheckpoint(): PhysicsRuntimeCheckpoint;
+  restoreCheckpoint(
+    checkpoint: PhysicsRuntimeCheckpoint,
+    options?: PhysicsCheckpointRestoreOptions
+  ): void;
   isBound(): boolean;
+};
+
+export type PhysicsEntityCheckpoint = {
+  entityId: EntityId;
+  body?: {
+    definition: PhysicsBodyDefinition;
+    enabled: boolean;
+    syncFromWorld: boolean;
+    syncVelocityFromWorld: boolean;
+    syncToWorld: boolean;
+    state?: PhysicsCheckpointBodyState;
+  };
+  collider?: {
+    definition: PhysicsColliderDefinition;
+    enabled: boolean;
+  };
+  transform?: {
+    position: PhysicsVector;
+    rotation?: PhysicsRotation;
+  };
+  velocity?: {
+    linear: PhysicsVector;
+    angular?: PhysicsRotation;
+  };
+};
+
+export type PhysicsCheckpointBodyState = Omit<PhysicsBodyState, "id">;
+
+export type PhysicsRuntimeCheckpoint = {
+  accumulator: number;
+  entities: PhysicsEntityCheckpoint[];
+};
+
+export type PhysicsCheckpointRestoreOptions = {
+  resolveEntityId?(savedEntityId: EntityId): EntityId | undefined;
 };
 
 export type PhysicsBodyData = PhysicsBodyDefinition & {
@@ -358,6 +464,31 @@ export type PhysicsSceneData = PhysicsSceneConfig & {
   materials?: Array<DataRef<"physics.material">>;
 };
 
+export type PhysicsLayoutColliderInstanceData = {
+  id: string;
+  collider: DataRef<"physics.collider">;
+  overrides?: Partial<Omit<PhysicsColliderDefinition, "id" | "bodyId">>;
+  enabled?: boolean;
+};
+
+export type PhysicsLayoutBodyInstanceData = {
+  id: string;
+  body: DataRef<"physics.body">;
+  position?: PhysicsVector;
+  rotation?: PhysicsRotation;
+  overrides?: Partial<Omit<PhysicsBodyDefinition, "id" | "position" | "rotation">>;
+  colliders?: PhysicsLayoutColliderInstanceData[];
+  enabled?: boolean;
+};
+
+export type PhysicsLayoutData = {
+  id: string;
+  scene?: DataRef<"physics.scene">;
+  bounds?: PhysicsBounds;
+  bodies: PhysicsLayoutBodyInstanceData[];
+  tags?: string[];
+};
+
 export type PhysicsTraceKind = "step" | "contact" | "query" | "diagnostic";
 
 export type PhysicsTraceEntry = {
@@ -369,6 +500,8 @@ export type PhysicsTraceEntry = {
   bodyId?: PhysicsBodyId;
   colliderId?: PhysicsColliderId;
   entityId?: EntityId;
+  correlationId?: string;
+  parentId?: string;
   payload?: Record<string, unknown>;
 };
 

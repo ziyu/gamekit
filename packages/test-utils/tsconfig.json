@@ -6,7 +6,11 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../ai-core" },
+    { "path": "../animator-core" },
+    { "path": "../audio-core" },
     { "path": "../event-bus" },
+    { "path": "../navigation-core" },
     { "path": "../platform-core" },
     { "path": "../renderer-core" },
     { "path": "../world" }

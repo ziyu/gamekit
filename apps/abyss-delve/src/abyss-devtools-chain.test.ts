@@ -1,3 +1,4 @@
+import { createGameplayDevToolsCorrelation } from "@gamekit/app-host";
 import { createDevToolsRuntime } from "@gamekit/devtools";
 import { createInputRouter, type NormalizedInputEvent } from "@gamekit/input-core";
 import { createMemorySaveStore, createSaveManager } from "@gamekit/save";
@@ -17,9 +18,17 @@ import { renderAbyssDevToolsPanel } from "./ui/devtools/AbyssDevToolsPanel";
 
 describe("Abyss Delve DevTools chain", () => {
   it("explains input to ability to loot to reward to save through DevTools", async () => {
-    const harness = createAbyssTestHarness();
-    const devtools = createDevToolsRuntime({
-      clock: () => harness.abyss.runtime.clock.snapshot().elapsed
+    let now = 0;
+    const devtools = createDevToolsRuntime({ clock: () => now++ });
+    const gameplayCorrelation = createGameplayDevToolsCorrelation({
+      devtools,
+      id: "abyss.gameplay-correlation",
+      gasTraceLimit: 80,
+      tcaTraceLimit: 80
+    });
+    const harness = createAbyssTestHarness({
+      gasTraceStore: gameplayCorrelation.gasTraceStore,
+      tcaTraceStore: gameplayCorrelation.tcaTraceStore
     });
     const bridge = createAbyssDevToolsTraceBridge(() => devtools);
     const panel = createAbyssDevToolsPanel();
@@ -95,6 +104,8 @@ describe("Abyss Delve DevTools chain", () => {
     expect(traceLabels.some((label) => label.includes("picked"))).toBe(true);
     expect(traceLabels.some((label) => label.includes("selected"))).toBe(true);
     expect(traceLabels).toContain("checkpoint saved");
+    expect(devtools.snapshot().traces.some((trace) => trace.source === "gamekit.gas")).toBe(true);
+    expect(devtools.snapshot().traces.some((trace) => trace.source === "gamekit.tca")).toBe(true);
     expect(save.envelope.payload.sections["abyss.run_checkpoint"]?.data).toMatchObject({
       selectedRewardIds: [reward.id],
       gold: harness.abyss.snapshot().player.gold
@@ -119,6 +130,10 @@ describe("Abyss Delve DevTools chain", () => {
     expect(html).toContain("Reward");
     expect(html).toContain("Save");
     expect(html).toContain("checkpoint saved");
+
+    await harness.abyss.runtime.dispose();
+    gameplayCorrelation.dispose();
+    devtools.dispose();
   });
 });
 

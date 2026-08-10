@@ -2,7 +2,13 @@ import type { RenderNodeDefinition, RenderObjectDefinition } from "@gamekit/rend
 import type { PhaserRenderRecord } from "./object-registry";
 import { applyObjectDefinition } from "./target-state";
 
-export const SUPPORTED_OBJECT_TYPES = ["debug.square", "sprite", "container"] as const;
+export const SUPPORTED_OBJECT_TYPES = [
+  "debug.square",
+  "sprite",
+  "animated-sprite",
+  "particle-emitter",
+  "container"
+] as const;
 
 export function ensureDebugTexture(scene: any, debugTextureId: string): void {
   if (scene.textures.exists(debugTextureId)) {
@@ -77,6 +83,10 @@ function createPhaserObject(
   }
 
   const textureId = resolveTexture(scene, definition, debugTextureId);
+  if (definition.type === "particle-emitter") {
+    const config = isRecord(definition.props?.config) ? { ...definition.props.config } : {};
+    return scene.add.particles(x, y, textureId, config);
+  }
   return scene.add.sprite(x, y, textureId);
 }
 
@@ -92,4 +102,8 @@ function resolveTexture(
   }
 
   return debugTextureId;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

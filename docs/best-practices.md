@@ -23,6 +23,11 @@
 - Input：`docs/modules/input.md`
 - Camera：`docs/modules/camera.md`
 - Physics：`docs/modules/physics.md`
+- Combat：`docs/modules/combat.md`
+- AI：`docs/modules/ai.md`
+- Navigation：`docs/modules/navigation.md`
+- Animator：`docs/modules/animator.md`
+- Audio：`docs/modules/audio.md`
 - TCA：`docs/modules/tca.md`
 - GAS：`docs/modules/gas.md`
 - Multiplayer：`docs/modules/multiplayer.md`
@@ -40,6 +45,7 @@
 - 第三方库进入 Driver、Adapter、app/profile 或 app-specific presentation/tooling 层，不进入核心 facade、DataType、可复用 GameModule 公共 API 或 gameplay 包。
 - Driver 持有跨多个协议的外部 runtime，例如 Phaser Game 或 Three renderer/scene；Adapter 只把单个 GameKit 协议映射到 Driver 暴露的 runtime slice。
 - Multiplayer backend adapter 应优先接入成熟多人方案，例如 Colyseus、Nakama、PartyKit 或平台联机 SDK，并持有网络 SDK、room、matchmaker、state sync 或平台联机 runtime；App Host 管理连接 lifecycle，GameModule bridge 只消费归一化 session/message/authority 事实。
+- Adapter/Driver 集成已有 core 领域时，测试入口和生产组合都应经过 core facade/factory；不要用结构类型兼容的手写对象替代 core runtime。Provider 侧可以维护 native handle、连接索引和映射状态，但 core phase/session/snapshot/error 必须由对应 core 实现产出。
 - 具体 app presentation、Editor 后端专属面板和 DevTools renderer plugin 可以通过 typed native handle 使用底层 renderer API；这些依赖不能进入 Data、Save、core facade 或可复用 gameplay module。
 - GameRuntime 只负责模块安装、clock、system tick 和 lifecycle，不直接拥有 Platform、Driver、Renderer、Input、Camera、Physics backend provider、Data、Asset、UI、Save store 或 multiplayer connection。
 
@@ -47,6 +53,7 @@
 
 - EventBus 只承载低频事实。高频 position、camera target、physics contact manifold、render patch、held input、UI hover 等状态留在对应 runtime state 或 system 内。
 - Renderer、Input、Camera、Physics、UI、TCA、GAS、Save 和 Multiplayer 都需要 trace/diagnostic 入口，但诊断不能反向成为业务逻辑依赖。
+- 跨模块 trace 优先在 entry 产生时增量映射，并传播显式 correlation/parent；不要每帧轮询、复制和按时间猜测多个完整 trace buffer。
 
 ## 生命周期
 
@@ -55,9 +62,14 @@
 - App Host 统一推进 App Service lifecycle：boot、start、stop、dispose、snapshot。底层服务对象不需要为了 Host 继承私有基类，生命周期通过 binding 描述。
 - GameModule 的订阅、system、trace store、controller runtime 和 cleanup 跟随 GameRuntime lifecycle；`stop()` 停 tick，`dispose()` 释放订阅和长期句柄。
 - Driver 先 boot，再派生 renderer/asset/input/camera/physics adapter；adapter 不单独创建同一套外部 runtime。
+- 主动采样的 Input source 由 App Host Input service 每帧调用可选 `poll(frame)`，并严格发生在 Router held tick 之前。Adapter 不创建私有 RAF/timer；事件型 source 继续只使用 start/stop/destroy。
+- App Host 的 service factory 构造不等于 service boot；`game.createRuntime` 和 GameModule `install()` 可能在 Driver `boot()` 前执行。依赖 renderer/asset/input/camera native runtime 的 GameModule 不应在 `install()` 中立即创建 RenderObject 或读取 native handle，应在 Host start 后的首个 tick、显式 start hook 或可验证的 boot gate 中幂等物化，并在 GameRuntime dispose 时先于 Driver 释放。
 - Save/load、asset preload、data registration 和 renderer boot 应由 App Host 或 app profile 编排顺序，不藏在 GameRuntime 内部。
 - Multiplayer create/join/reconnect/leave 应由 App Host、lobby UI、server host 或测试夹具显式触发；GameModule 不隐式创建 socket、Colyseus Room、Nakama match 或 provider room。
+- 普通实时多人客户端应通过 standard Multiplayer GameModule 的 managed replication 配置声明 snapshot、remote track、predicted-state field 和 prediction policy。网络 callback 不直接写 Renderer，app render loop 不显式调用 playback、predict 或 reconcile，prediction 配置也不回调手写 number/vector/angle 插值或 correction offset；Core 统一推进 authority gate、input sampling/send、prediction-lead backpressure、remote presentation 和 local correction，app 只提供 deterministic transition 与最终批量 frame write。`inputRateHz` 默认同时定义 prediction step；若显式拆分两个频率，必须证明它与 authority ack 的 interval 语义一致。Fixed-step prediction 必须让 authority 每 step 消费并 ack 一个 sequence，客户端用 `maxPredictionLeadInputs` 限制领先量。Authority 使用 Physics solver 时，prediction transition 必须复用同一 backend/definition/fixed-step 语义，并用有界 checkpoint 避免对一致 solver state 重复 rewind；不要用线性位移近似 damping 和 collision，再依赖 correction smoothing 掩盖持续误差。
+- 以 `startTick`、`fireTick` 或其他事件起点重建的 predicted lifecycle，必须通过 `createMultiplayerTimeAlignedPresentationTransition(...)` 声明 absolute 或 relative-origin alignment。Core 先把 predicted/authority 采样到同一 lifecycle age，再只平滑 residual state divergence；app/domain 不维护私有 handoff entry map、offset lerp 或 cleanup。Combat kinematic projectile 优先使用 App Host 标准组合 helper。输入驱动物体继续使用 managed replay，远端对象继续使用 snapshot interpolation，相互作用刚体继续使用 Physics prediction island；不能用 lifecycle handoff 替代它们。
 - Headless 测试应能用 memory platform、memory renderer、memory save store、deterministic clock、fake asset loader 和 fake physics backend 启动主要组合路径。
+- Browser、Tauri、headless server 和 deterministic test 应优先复用同一个 GameAppDefinition。非视觉 profile 用协议兼容 fixture 满足完整 service graph，并把 production platform/backend/runtime factory 保留为显式注入点；不要为测试删掉 service 后维护第二套启动拓扑。
 
 ## 数据驱动
 
@@ -71,6 +83,7 @@
 - DataType 设计应给游戏开发者自由度。框架只要求稳定 `type + id`、可校验、可引用、可诊断，不强迫所有项目套固定 hero/monster/building 模板。
 - DataPack 是数据集合，不是内容包系统。真实 Content Package 未来可以包含 DataPack、资源 payload、脚本、localization、地图、patch 和权限声明。
 - Runtime state 不写回 DataRegistry。Data 是定义和来源追踪，World/Physics/GAS/TCA/Save 承载运行时状态。
+- 跨 GAS 与 Combat 的普通攻击链使用 `combat.ability-delivery` + Combat module bridge：GAS phase/effect Cue 表达表现语义，Combat fact/World state 提供空间上下文。不要让 app 为每个技能手写 committed 订阅，也不要在 Combat 再建一套同义 Cue registry；projectile lifecycle event只白名单投影稳定 identity、初始/最终 transform和可选 impact，不能广播完整 runtime/query state，且必须同时有吞吐、payload大小、unsubscribe和 retained-state预算。详细协议见 `docs/modules/gas.md`、`docs/modules/combat.md`、ADR 0032 和 ADR 0046。
 - 引用关系通过 DataRef / AssetRef / 自定义 references 提取进入 reference graph，错误必须能定位 source pack、entry type、entry id、field path 和 target key。
 - 游戏内容文件应优先按真实业务概念组织，同一个业务文件可以混合内置 DataType 和用户自定义 DataType。
 
@@ -90,11 +103,19 @@
 ## 测试策略
 
 - Facade 要有契约测试；Adapter 先跑 facade conformance，再补底层库专属行为测试。
+- Adapter 集成测试应同时断言 core facade snapshot 与 provider 行为；只验证第三方对象或 adapter 私有 snapshot 会漏掉平行状态机、生命周期漂移和消息通道不一致。
 - 数据驱动模块必须覆盖 duplicate、unknown type、missing reference、schema/path error、trace/diagnostic。
 - GameRuntime、Camera、Input、Physics、TCA、GAS、Save 等有顺序语义的模块必须覆盖顺序、幂等、stop/dispose 和 cleanup。
 - Multiplayer backend adapter 必须覆盖 provider facade 的 connect、create-or-join/leave、message routing、peer summary、disconnect、reconnect 降级、payload validation、dispose cleanup 和 diagnostics；provider 自己拥有的 room/matchmaker/state sync 逻辑不要在 GameKit core 中重写。
 - Multiplayer app/demo 集成测试不能只断言 peer count 或 presence；必须至少断言一条 lifecycle、input、snapshot、patch 或 command result 来自同一个 authority state，并验证非 authority snapshot/patch 不会被 client 应用。
-- Multiplayer 输入先区分 continuous state 和 discrete command：移动、瞄准、驾驶采用 latest-per-source coalescing、持有状态和明确 timeout；交互、购买、一次性技能采用 authority loop 提供的 per-source bounded FIFO/action，并配置每 tick 消费与积压上限。生产频率与消费频率相同的 continuous input 不能进入逐条 FIFO，否则 jitter 会永久转化为远端表现延迟；app 也不能绕过底层保护另建无界 action 队列。
+- Multiplayer 输入先区分 continuous state、fixed-step predicted control 和 discrete command：不逐 input rollback 的移动、瞄准、驾驶采用 latest-per-source coalescing、持有状态和明确 timeout；一个 sequence 对应一个 simulation step 的 predicted control 使用 per-source bounded FIFO、每 tick 消费一个、逐 step ack 和 client lead backpressure；交互、购买、一次性技能采用独立 bounded action FIFO。直接决定玩家手感的 press/release/cancel不能因为也影响 held state就只塞进 fixed-step FIFO：用有界 reliable action lane立即交付边沿，以单调 control sequence让 authority合并稍后到达的 continuous frame并忽略旧状态，同时在本地下一可绘制 frame做可撤销 anticipation。
+- 即时表现不能冒充完整预测。只继承显示位置、保持原速度或 correction lerp 的 render-only handoff只解决 presentation continuity；如果对象会因 collision、bounce、hit、expire 或 spawn/despawn 改变轨迹，必须选择 lag-compensated hitscan、kinematic fire/finish record、predicted entity + prediction island 或 authority-only 中语义完整的一种。Client predicted spatial result可撤销，但 damage/cost/kill仍由authority提交。测试必须覆盖已知 blocker前不穿透、confirm/reject/correct、generation reset、history overflow、动态交互成员一致 rollback和dispose retained state；app不能在单个武器中另建无界队列、solver cache或半套collision预测。
+- Kinematic projectile 的 owner/observer 最终必须消费同一 authority timeline、record identity 和 render definition；预测提前量只能作为 authority 到达前的 provisional lead，并在同一 visual object 上有界收敛。Observer 可以使用声明的 remote presentation delay 从 authority record 重建短命弹体，但不能以每条 record 的“首次收到时间”重新启动局部播放时钟；超过 delayed authority tick 的 completed record 不再重播。不能给 owner prediction 施加不同 tint/scale 后让 remote 使用另一套外观。真正漏帧的短生命周期由 tracer/impact cue 表达。
+- Kinematic owner 的 authority adoption 必须区分 commit-time offset 与 spatial divergence。Shot-relative 匹配时用 owner 当前 shot age 采样 authority record，不能把较晚 authority `fireTick` 造成的沿轨迹距离差交给 correction lerp；测试必须直接断言接管前后单位时间位移保持 `speed × delta`，不能只断言对象没有倒退。只有起点、速度、方向或 finish 等真实空间事实分叉才允许 smoothing。
+- 修改 kinematic 或 solver-owned projectile prediction 时运行 `corepack pnpm bench:projectile-prediction:check`。
+  该基准必须真实运行 Physics query、fire/finish record churn、remote reconstruction、predicted-spawn matching，
+  以及完整 prediction-island checkpoint capture/restore/resimulation，并同时限制 blocker penetration、p95/max、
+  payload/history bytes、history/order hard limit 和 dispose retained state。
 - Multiplayer peer 离开或断线时，host/server presence 组合层必须调用 authority loop 的 peer release 入口，清掉该 peer 尚未消费的 action/input 和 sequence epoch。是否保留 actor、slot 或本局统计属于 gameplay policy，不能靠保留旧网络队列来实现。
 - 离线单机和多人模式应共享同一套 gameplay orchestration。测试应能用同一 input/action log 在 local authority 和 host/server authority fixture 中得到等价稳定 snapshot，避免维护两套规则实现。
 - Sandbox、demo 或 headless host 的集成测试应覆盖长链路：Data → Asset → App Host → GameRuntime → World → Physics → TCA/GAS → Renderer/Input/Camera → Snapshot/Timeline。
@@ -206,13 +227,19 @@
 
 - 性能判断必须有数据，先用 benchmark 或 profiler 记录基线。
 - 新增 adapter、renderer sync、TCA runner、asset loader 时应补最小 benchmark 或 profile 入口。
+- Microbenchmark 的计时区间只包含被命名的目标路径；大规模 fixture创建、随机数据生成、磁盘读取和一次性装配放在 warmup或采样区间之外。需要变化输入时优先原地推进已构造 fixture，并为对象上限、drop和 dispose retained state单独设确定性预算，避免把测试夹具分配与 GC 抖动误判成目标模块回归。
 - benchmark 的细微变化只作为趋势参考，不写死成易碎测试；已经稳定的热点模块可以在定时或手动 performance workflow 使用留有足够机器波动余量的粗粒度预算，观察数量级退化、无界队列和 retained heap 持续增长。常规 PR CI 只保留确定性的正确性门禁；性能检查不能代替 profiler，也不能因为共享 runner 噪声阻塞合并。
 - DevTools Performance 面板只展示 GameKit 级 frame/system/service/adapter 归因，不替代浏览器 profiler；需要 CPU flamegraph、layout、paint、GPU 信息时仍使用浏览器或引擎原生工具。
 - 默认只开启低成本 summary；深度 span、单帧详情、完整 payload 展开必须由用户显式开启或在测试夹具中启用。
+- Trace ring、domain trace store、correlation summary 和每条 correlation 的 detail/root collection 必须分别有界，并用 benchmark 同时验证吞吐、snapshot 和 retained size。
+- Trace observer、跨模块 mapper、redactor 和 diagnostic reporter 属于旁路诊断，任何一层失败都不能改变 gameplay 结果；默认 trace payload 使用白名单摘要，完整业务 payload 和敏感字段只有在显式 opt-in、脱敏且单独预算后才能进入工具链。
 - 每个热点模块都应定义自己的预算语义，例如 runtime tick、render sync、asset load group、service boot、UI refresh；预算超限只产生诊断，不改变 gameplay。
 - profiler disabled 时，高频路径不能留下明显对象分配、数组复制或 React state 更新。
+- Fixed-step simulation 与高刷新率 presentation 之间使用模块提供的 opt-in transient interpolation store；Renderer 和 follow camera 复用同一采样时刻，权威 World/Save/multiplayer state 不读取或保存插值结果。游戏尺度、teleport 判定和表现曲线通过组合层 policy 注入，core 不写死阈值；热点 sampling API 应允许复用 caller-owned target，并建立 tracking、sampling 和 dispose retained-state 粗粒度预算。
+- 高密度 canvas 的 logical viewport、backing store、camera 和 input 必须由同一个 Driver 成套归一化。App profile 对 pixel ratio 设置上限，并同时测 fill-rate、纹理尺寸和交互坐标；不能只提高 backing resolution 后用肉眼判断。
 - Performance UI 刷新必须节流，不能跟随 gameplay tick 每帧重渲染。
 - 发现慢点后先确认归因维度：system 慢、adapter 慢、asset IO 慢、UI 刷新慢、DevTools 自身慢，避免用错误层级修问题。
+- 游戏 HUD 只承载玩家决策所需的状态、目标和操作反馈；service graph、adapter 状态、trace、entity count、资源诊断等框架证据统一进入 DevTools，不在游戏界面复制常驻监控面板。DevTools 展开或聚焦时必须通过 UI/Input Scope 阻断 gameplay 输入。
 
 ## Sandbox
 

@@ -10,7 +10,8 @@ import {
   Position,
   createAbyssRuntime,
   type AbyssCameraAdapter,
-  type AbyssRuntime
+  type AbyssRuntime,
+  type CreateAbyssRuntimeOptions
 } from "../game";
 
 export type AbyssTestHarness = {
@@ -24,7 +25,9 @@ export type AbyssTestHarness = {
   pickupFirstLoot(): void;
 };
 
-export function createAbyssTestHarness(): AbyssTestHarness {
+export function createAbyssTestHarness(
+  options: Pick<CreateAbyssRuntimeOptions, "gasTraceStore" | "tcaTraceStore"> = {}
+): AbyssTestHarness {
   const cameraStates: CameraState2D[] = [];
   const cameraAdapter: AbyssCameraAdapter = {
     applyCameraState(state) {
@@ -44,7 +47,8 @@ export function createAbyssTestHarness(): AbyssTestHarness {
       }
     }),
     cameraAdapter,
-    world: createKootaWorld()
+    world: createKootaWorld(),
+    ...options
   });
   abyss.runtime.start();
 

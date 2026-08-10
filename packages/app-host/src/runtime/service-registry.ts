@@ -1,5 +1,6 @@
 import {
   ASSET_SERVICE,
+  AUDIO_SERVICE,
   DATA_SERVICE,
   DEVTOOLS_SERVICE,
   DRIVER_SERVICE,
@@ -121,6 +122,9 @@ function assignStandardService(
   if (standard === "assets") {
     registry.assets = binding.service as never;
   }
+  if (standard === "audio") {
+    registry.audio = binding.service as never;
+  }
   if (standard === "renderer") {
     registry.renderer = binding.service as never;
   }
@@ -160,6 +164,9 @@ function standardFromKey(key: AppServiceKey<unknown>): AppStandardServiceId | un
   }
   if (key.id === ASSET_SERVICE.id) {
     return "assets";
+  }
+  if (key.id === AUDIO_SERVICE.id) {
+    return "audio";
   }
   if (key.id === RENDERER_SERVICE.id) {
     return "renderer";

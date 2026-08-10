@@ -25,6 +25,7 @@
     "@colyseus/schema": "^4.0.27",
     "@colyseus/sdk": "^0.17.43",
     "@colyseus/ws-transport": "^0.17.13",
+    "@gamekit/core": "workspace:*",
     "@gamekit/multiplayer-core": "workspace:*",
     "express": "^5.2.1"
   },

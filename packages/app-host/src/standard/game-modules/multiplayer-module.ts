@@ -27,11 +27,17 @@ export function createStandardMultiplayerModule<TContext>(
   if (options.commandKinds !== undefined) {
     moduleOptions.commandKinds = options.commandKinds;
   }
+  if (options.commandQueue !== undefined) {
+    moduleOptions.commandQueue = options.commandQueue;
+  }
   if (options.authority !== undefined) {
     moduleOptions.authority = options.authority;
   }
   if (options.presentation !== undefined) {
     moduleOptions.presentation = resolveStandardValue(ctx, options.presentation);
+  }
+  if (options.clientReplication !== undefined) {
+    moduleOptions.clientReplication = resolveStandardValue(ctx, options.clientReplication);
   }
 
   return createMultiplayerModule<GameInstallContext>(moduleOptions);

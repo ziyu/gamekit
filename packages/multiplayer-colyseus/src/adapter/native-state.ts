@@ -56,6 +56,7 @@ export type ColyseusNativeStateUpdate<TState = unknown> = {
   stateVersion?: number;
   version?: string;
   timestamp?: number;
+  stateBytes?: number;
 };
 
 export type ColyseusNativeStateListener = (update: ColyseusNativeStateUpdate<unknown>) => void;
@@ -213,7 +214,15 @@ export function createColyseusNativeStateBridge<TProviderState, TViewState = TPr
       return decision;
     }
 
-    const stateBytes = measureStateBytes(state, options.measureStateBytes);
+    const stateBytes = update.stateBytes ?? measureStateBytes(state, options.measureStateBytes);
+    if (!Number.isSafeInteger(stateBytes) || stateBytes < 0) {
+      const decision = deny(
+        "invalid-native-state-size",
+        "Colyseus native state byte size must be a non-negative safe integer."
+      );
+      reject(update, decision.code, decision.reason);
+      return decision;
+    }
     if (stateBytes > maxStateBytes) {
       const decision = deny(
         "native-state-too-large",

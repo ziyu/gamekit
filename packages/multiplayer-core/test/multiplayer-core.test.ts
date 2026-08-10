@@ -16,6 +16,13 @@ import {
   createSnapshotPresentationProjector,
   createSnapshotPlayback,
   createUniqueMultiplayerDisplayName,
+  definePredictionAngleStateField,
+  definePredictionQuaternionStateField,
+  definePredictionScalarStateField,
+  definePredictionStatePresentation,
+  definePredictionStepStateField,
+  definePredictionVector2StateField,
+  definePredictionVector3StateField,
   defineSnapshotVector2Track,
   interpolateAngleRadians,
   interpolateNumber,
@@ -34,6 +41,7 @@ import {
   type MultiplayerBackendAdapter,
   type MultiplayerBackendConnection,
   type MultiplayerBackendListener,
+  type MultiplayerBridgeInstallContext,
   type MultiplayerMessageEnvelope,
   type MultiplayerPeer,
   type MultiplayerSession,
@@ -385,6 +393,96 @@ describe("multiplayer authority helpers", () => {
     expect(fake.sent).toEqual([]);
   });
 
+  it("splits authority ingress from simulation commit without publishing partial state", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "staged-authority-host",
+      backend: fake.backend,
+      clock: () => 200
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "server", role: "server" }
+    });
+    const binding = createMultiplayerAuthorityBindingStore({
+      sessionId: "session-1",
+      mode: "server-authoritative",
+      authorityPeerId: "server"
+    });
+    const order: string[] = [];
+    const state = { x: 0 };
+    const published: Array<{ tick: number; x: number }> = [];
+    const loop = createMultiplayerAuthorityHostLoop<
+      never,
+      InputPayload,
+      { tick: number; x: number }
+    >({
+      runtime,
+      binding,
+      readInput,
+      inputSequence: (input) => input.sequence,
+      handleInput({ payload }) {
+        order.push("input");
+        state.x += payload.dx;
+      },
+      tick() {
+        order.push("ingress");
+      },
+      captureSnapshot({ tick }) {
+        order.push("capture");
+        return { tick, x: state.x };
+      },
+      publishSnapshot(snapshot) {
+        order.push("publish");
+        published.push(snapshot);
+      }
+    });
+
+    fake.emit(messageFrom("client", MULTIPLAYER_INPUT_KIND, { sequence: 1, dx: 2 }));
+    const frame = loop.beginTick(50);
+    expect(frame).toMatchObject({ tick: 1, deltaMs: 50 });
+    expect(order).toEqual(["input", "ingress"]);
+    expect(published).toEqual([]);
+    expect(loop.diagnostics()).toMatchObject({ activeTick: 1, committedTicks: 0 });
+
+    order.push("physics");
+    state.x += 10;
+    await loop.commitTick();
+
+    expect(order).toEqual(["input", "ingress", "physics", "capture", "publish"]);
+    expect(published).toEqual([{ tick: 1, x: 12 }]);
+    expect(loop.diagnostics()).toMatchObject({ tick: 1, committedTicks: 1, sentSnapshots: 1 });
+    expect(loop.diagnostics().activeTick).toBeUndefined();
+  });
+
+  it("rejects invalid staged authority lifecycle transitions and keeps legacy ticks disposable", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({ id: "staged-errors", backend: fake.backend });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "server", role: "server" }
+    });
+    const loop = createMultiplayerAuthorityHostLoop<never, never, { tick: number }>({
+      runtime,
+      binding: createMultiplayerAuthorityBindingStore({
+        sessionId: "session-1",
+        mode: "server-authoritative",
+        authorityPeerId: "server"
+      }),
+      captureSnapshot: ({ tick }) => ({ tick })
+    });
+
+    expectMultiplayerError(() => loop.commitTick(), multiplayerErrorCodes.authorityFrameState);
+    loop.beginTick(50);
+    expectMultiplayerError(() => loop.beginTick(50), multiplayerErrorCodes.authorityFrameState);
+    await loop.commitTick();
+    loop.dispose();
+    expect(() => loop.tick(50)).not.toThrow();
+    expectMultiplayerError(() => loop.beginTick(50), multiplayerErrorCodes.disposed);
+  });
+
   it("bounds discrete action queues and consumption per source", async () => {
     const fake = createFakeBackend();
     const runtime = createMultiplayerRuntime({
@@ -479,6 +577,7 @@ describe("multiplayer authority helpers", () => {
     expect(loop.diagnostics()).toMatchObject({
       receivedActions: 33,
       rejectedActions: 1,
+      overflowedActions: 1,
       queuedActions: 32,
       maxQueuedActions: 32,
       lastRejected: { code: "action-queue-full" }
@@ -488,6 +587,46 @@ describe("multiplayer authority helpers", () => {
     expect(loop.diagnostics()).toMatchObject({
       acceptedActions: 8,
       queuedActions: 24
+    });
+  });
+
+  it("enforces room-wide authority queue capacities across distinct sources", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({ id: "room-bounded-host", backend: fake.backend });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "host-authoritative",
+      localPeer: { id: "host", role: "host" }
+    });
+    const loop = createMultiplayerAuthorityHostLoop<ActionPayload, InputPayload, { tick: number }>({
+      runtime,
+      binding: createMultiplayerAuthorityBindingStore({
+        sessionId: "session-1",
+        mode: "host-authoritative",
+        authorityPeerId: "host"
+      }),
+      readAction,
+      readInput,
+      inputSequence: (input) => input.sequence,
+      maxQueuedActions: 2,
+      maxQueuedActionsPerSource: 2,
+      maxQueuedInputs: 2,
+      maxQueuedInputsPerSource: 2,
+      captureSnapshot: ({ tick }) => ({ tick })
+    });
+
+    for (const peerId of ["client-a", "client-b", "client-c"]) {
+      fake.emit(messageFrom(peerId, MULTIPLAYER_ACTION_KIND, { type: "start" }));
+      fake.emit(messageFrom(peerId, MULTIPLAYER_INPUT_KIND, { sequence: 1, dx: 1 }));
+    }
+
+    expect(loop.diagnostics()).toMatchObject({
+      actionQueueCapacity: 2,
+      queuedActions: 2,
+      overflowedActions: 1,
+      inputQueueCapacity: 2,
+      queuedInputs: 2,
+      overflowedInputs: 1
     });
   });
 
@@ -770,12 +909,17 @@ describe("multiplayer authority helpers", () => {
         rejectedActions: 1,
         queuedActions: 1,
         maxQueuedActions: 2,
+        actionQueueCapacity: 32,
+        overflowedActions: 1,
         receivedInputs: 3,
         acceptedInputs: 2,
         rejectedInputs: 1,
         coalescedInputs: 0,
         queuedInputs: 1,
         maxQueuedInputs: 2,
+        inputQueueCapacity: 32,
+        overflowedInputs: 1,
+        committedTicks: 4,
         sentSnapshots: 4,
         rejectedMessages: 2,
         lastRejected: { code: "stale-input", reason: "Input was stale." },
@@ -1020,6 +1164,202 @@ describe("multiplayer prediction helpers", () => {
       correctionSmoothingActive: false,
       correctionSmoothingElapsedMs: 0
     });
+  });
+
+  it("presents declared prediction fields and correction offsets without game interpolation", () => {
+    type State = { x: number; y: number; facing: number; velocity: number };
+    type Input = { dx: number; facing: number };
+    const position = definePredictionVector2StateField<State>({
+      readX: (state) => state.x,
+      readY: (state) => state.y,
+      write(state, x, y) {
+        state.x = x;
+        state.y = y;
+      }
+    });
+    const facing = definePredictionAngleStateField<State>({
+      read: (state) => state.facing,
+      write(state, value) {
+        state.facing = value;
+      }
+    });
+    const degrees = (value: number) => (value * Math.PI) / 180;
+    const prediction = createMultiplayerPredictionBuffer<State, Input>({
+      initialState: { x: 0, y: 0, facing: degrees(170), velocity: 0 },
+      predictionStepMs: 50,
+      cloneState: (state) => ({ ...state }),
+      applyInput(state, input, context) {
+        expect(context.stepMs).toBe(50);
+        state.x += input.dx;
+        state.velocity = input.dx / (context.stepMs / 1000);
+        state.facing = input.facing;
+        return state;
+      },
+      presentation: definePredictionStatePresentation({
+        fields: [position, facing],
+        correction: {
+          measure: position,
+          smooth: [position],
+          durationMs: 100,
+          maxMagnitude: 10
+        }
+      })
+    });
+
+    prediction.predict({ sequence: 1, input: { dx: 10, facing: degrees(-170) }, timestamp: 50 });
+    expect(prediction.present({ deltaMs: 25, timestamp: 75 })).toMatchObject({
+      x: 5,
+      y: 0,
+      velocity: 200
+    });
+    expect(prediction.present({ deltaMs: 0, timestamp: 75 }).facing).toBeCloseTo(Math.PI);
+
+    prediction.reconcile({
+      authoritativeState: { x: 8, y: 0, facing: degrees(-170), velocity: 200 },
+      acknowledgedSequence: 1,
+      timestamp: 75
+    });
+
+    expect(prediction.state().x).toBe(8);
+    expect(prediction.present({ deltaMs: 25, timestamp: 100 }).x).toBeCloseTo(5.75);
+    expect(prediction.diagnostics()).toMatchObject({
+      corrections: 1,
+      smoothedCorrections: 1,
+      correctionSmoothingActive: true
+    });
+  });
+
+  it("supports scalar, vector3, quaternion, and step prediction fields", () => {
+    type State = {
+      scalar: number;
+      position: { x: number; y: number; z: number };
+      rotation: { x: number; y: number; z: number; w: number };
+      mode: "idle" | "moving";
+    };
+    const scalar = definePredictionScalarStateField<State>({
+      read: (state) => state.scalar,
+      write(state, value) {
+        state.scalar = value;
+      }
+    });
+    const position = definePredictionVector3StateField<State>({
+      readX: (state) => state.position.x,
+      readY: (state) => state.position.y,
+      readZ: (state) => state.position.z,
+      write(state, x, y, z) {
+        state.position = { x, y, z };
+      },
+      snapDistance: 5
+    });
+    const rotation = definePredictionQuaternionStateField<State>({
+      readX: (state) => state.rotation.x,
+      readY: (state) => state.rotation.y,
+      readZ: (state) => state.rotation.z,
+      readW: (state) => state.rotation.w,
+      write(state, value) {
+        state.rotation = value;
+      }
+    });
+    const mode = definePredictionStepStateField<State, State["mode"]>({
+      read: (state) => state.mode,
+      write(state, value) {
+        state.mode = value;
+      }
+    });
+    const prediction = createMultiplayerPredictionBuffer<State, State>({
+      initialState: {
+        scalar: 0,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        mode: "idle"
+      },
+      predictionStepMs: 50,
+      cloneState(state) {
+        return {
+          ...state,
+          position: { ...state.position },
+          rotation: { ...state.rotation }
+        };
+      },
+      applyInput(_state, input) {
+        return {
+          ...input,
+          position: { ...input.position },
+          rotation: { ...input.rotation }
+        };
+      },
+      presentation: definePredictionStatePresentation({
+        fields: [scalar, position, rotation, mode]
+      })
+    });
+
+    prediction.predict({
+      sequence: 1,
+      timestamp: 50,
+      input: {
+        scalar: 10,
+        position: { x: 10, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 1, w: 0 },
+        mode: "moving"
+      }
+    });
+    const presented = prediction.present({ deltaMs: 25, timestamp: 75 });
+
+    expect(presented.scalar).toBe(5);
+    expect(presented.position).toEqual({ x: 10, y: 0, z: 0 });
+    expect(presented.rotation.z).toBeCloseTo(Math.SQRT1_2);
+    expect(presented.rotation.w).toBeCloseTo(Math.SQRT1_2);
+    expect(presented.mode).toBe("idle");
+  });
+
+  it("rejects ambiguous declarative and custom prediction presentation", () => {
+    expect(() =>
+      createMultiplayerPredictionBuffer<number, number>({
+        initialState: 0,
+        cloneState: (state) => state,
+        applyInput: (state, input) => state + input,
+        presentation: definePredictionStatePresentation({ fields: [] }),
+        presentState: (_from, to) => to
+      })
+    ).toThrow(/cannot be combined/);
+  });
+
+  it("owns reusable prediction transition lifecycle", () => {
+    let created = 0;
+    let disposed = 0;
+    const prediction = createMultiplayerPredictionBuffer<number, number>({
+      initialState: 0,
+      cloneState: (state) => state,
+      transition() {
+        created += 1;
+        return {
+          apply: (state, input) => state + input,
+          dispose() {
+            disposed += 1;
+          }
+        };
+      }
+    });
+
+    expect(prediction.predict({ sequence: 1, input: 2 }).state).toBe(2);
+    expect(created).toBe(1);
+    prediction.dispose();
+    expect(disposed).toBe(1);
+
+    expect(() =>
+      createMultiplayerPredictionBuffer<number, number>({
+        initialState: 0,
+        cloneState: (state) => state,
+        applyInput: (state) => state,
+        transition: () => ({ apply: (state) => state })
+      })
+    ).toThrow(/exactly one/);
+    expect(() =>
+      createMultiplayerPredictionBuffer<number, number>({
+        initialState: 0,
+        cloneState: (state) => state
+      })
+    ).toThrow(/exactly one/);
   });
 
   it("rejects stale input and bounds the pending input queue", () => {
@@ -1642,8 +1982,14 @@ describe("createMultiplayerModule", () => {
     const eventBus = createEventBus({ clock: () => 10 });
     const systems: Array<{ id: string; update(): void }> = [];
     const handled: MultiplayerMessageEnvelope[] = [];
-    const events: string[] = [];
-    eventBus.onAny((event) => events.push(event.type));
+    const events: Array<{ type: string; correlationId?: string; parentId?: string }> = [];
+    eventBus.onAny((event) =>
+      events.push({
+        type: event.type,
+        ...(event.correlationId === undefined ? {} : { correlationId: event.correlationId }),
+        ...(event.parentId === undefined ? {} : { parentId: event.parentId })
+      })
+    );
 
     const module = createMultiplayerModule({
       runtime,
@@ -1671,6 +2017,7 @@ describe("createMultiplayerModule", () => {
       channel: "reliable",
       kind: "game.command",
       sourcePeerId: "client",
+      correlationId: "combat-1",
       timestamp: 0,
       payload: { action: "move" }
     });
@@ -1678,7 +2025,108 @@ describe("createMultiplayerModule", () => {
     expect(handled).toEqual([]);
     systems[0]?.update();
     expect(handled.map((message) => message.id)).toEqual(["command-1"]);
-    expect(events).toEqual(["multiplayer.command.accepted"]);
+    expect(events).toEqual([
+      {
+        type: "multiplayer.command.accepted",
+        correlationId: "combat-1",
+        parentId: "command-1"
+      }
+    ]);
+  });
+
+  it("bounds and expires standard module commands with observable diagnostics", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "bounded-module-runtime",
+      backend: fake.backend
+    });
+    const eventBus = createEventBus({ clock: () => 10 });
+    const systems: Array<{ id: string; update(): void }> = [];
+    const handled: string[] = [];
+    const facts: string[] = [];
+    const diagnostics: Array<{
+      queued: number;
+      handled: number;
+      overflowed: number;
+      expired: number;
+    }> = [];
+    let now = 0;
+    eventBus.onAny((event) => facts.push(event.type));
+
+    createMultiplayerModule({
+      runtime,
+      commandQueue: {
+        capacity: 2,
+        maxPerTick: 1,
+        maxAgeMs: 50,
+        clock: () => now,
+        onDiagnostics(snapshot) {
+          diagnostics.push(snapshot);
+        }
+      },
+      handleCommand({ message }) {
+        handled.push(message.id);
+      }
+    }).install({
+      eventBus,
+      systems: { register: (system) => systems.push(system) }
+    });
+    await runtime.createSession({ id: "session-1", localPeer: { id: "host" } });
+
+    for (const id of ["command-1", "command-2", "command-3"]) {
+      fake.emit({
+        id,
+        sessionId: "session-1",
+        channel: "reliable",
+        kind: "game.command",
+        sourcePeerId: "client",
+        timestamp: 0,
+        payload: { action: "move" }
+      });
+    }
+
+    expect(diagnostics.at(-1)).toMatchObject({ queued: 2, overflowed: 1 });
+    systems[0]?.update();
+    expect(handled).toEqual(["command-1"]);
+    expect(diagnostics.at(-1)).toMatchObject({ queued: 1, handled: 1 });
+
+    now = 100;
+    systems[0]?.update();
+    expect(handled).toEqual(["command-1"]);
+    expect(diagnostics.at(-1)).toMatchObject({ queued: 0, overflowed: 1, expired: 1 });
+    expect(facts).toContain("multiplayer.command.overflow");
+    expect(facts).toContain("multiplayer.command.expired");
+  });
+
+  it("can drop the oldest standard module command on overflow", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({ id: "drop-oldest-runtime", backend: fake.backend });
+    const systems: Array<{ id: string; update(): void }> = [];
+    const handled: string[] = [];
+    createMultiplayerModule({
+      runtime,
+      commandQueue: { capacity: 2, overflowPolicy: "drop-oldest" },
+      handleCommand: ({ message }) => handled.push(message.id)
+    }).install({
+      eventBus: createEventBus(),
+      systems: { register: (system) => systems.push(system) }
+    });
+    await runtime.createSession({ id: "session-1", localPeer: { id: "host" } });
+
+    for (const id of ["command-1", "command-2", "command-3"]) {
+      fake.emit({
+        id,
+        sessionId: "session-1",
+        channel: "reliable",
+        kind: "game.command",
+        sourcePeerId: "client",
+        timestamp: 0,
+        payload: {}
+      });
+    }
+    systems[0]?.update();
+
+    expect(handled).toEqual(["command-2", "command-3"]);
   });
 
   it("emits rejected command facts when authority denies a command", async () => {
@@ -1815,6 +2263,423 @@ describe("createMultiplayerModule", () => {
       { status: "exact", tick: 2, position: { x: 100, y: 0 } }
     ]);
   });
+
+  it("automatically owns client snapshot playback, input prediction, and reconciliation", async () => {
+    type ClientSnapshot = { tick: number; x: number; acknowledgedSequence: number };
+    type ClientInput = { dx: number };
+    type PredictedState = { x: number };
+
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "managed-client-runtime",
+      backend: fake.backend,
+      clock: () => 100
+    });
+    const systems: Array<{
+      id: string;
+      update(ctx?: { delta?: number; elapsed?: number; tick?: number }): void;
+    }> = [];
+    const authoritativeTicks: number[] = [];
+    const presented: Array<{ remoteX: number; predictedX?: number }> = [];
+    let exposed = false;
+    let readReplicationDiagnostics:
+      | (() => {
+          failedInputs: number;
+          throttledInputs: number;
+          prediction?: { pendingInputs: number; resets: number };
+        })
+      | undefined;
+
+    const module = createMultiplayerModule<
+      MultiplayerBridgeInstallContext,
+      ClientSnapshot,
+      ClientInput,
+      PredictedState
+    >({
+      runtime,
+      clientReplication: {
+        authority: { resolveAuthorityPeerId: () => "server" },
+        playback: {
+          interpolationDelayMs: 50,
+          timeSource: "tick",
+          readTime(entry) {
+            return entry.tick === undefined ? undefined : entry.tick * 50;
+          }
+        },
+        tracks: [
+          defineSnapshotVector2Track<ClientSnapshot>({
+            selectInto(snapshot, writer) {
+              writer.add("remote", { x: snapshot.x, y: 0 });
+            }
+          })
+        ],
+        readSnapshot(payload) {
+          return isRecord(payload) &&
+            typeof payload.tick === "number" &&
+            typeof payload.x === "number" &&
+            typeof payload.acknowledgedSequence === "number"
+            ? (payload as ClientSnapshot)
+            : undefined;
+        },
+        applyAuthoritative({ snapshot }) {
+          authoritativeTicks.push(snapshot.tick);
+        },
+        prediction: {
+          inputRateHz: 20,
+          maxPredictionLeadInputs: 2,
+          buffer: {
+            cloneState: (state) => ({ ...state }),
+            applyInput(state, input) {
+              state.x += input.dx;
+              return state;
+            },
+            presentState(from, to, context) {
+              from.x += (to.x - from.x) * context.alpha;
+              return from;
+            },
+            measureCorrection: (previous, next) => Math.abs(previous.x - next.x),
+            predictionStepMs: 50
+          },
+          readInput() {
+            return { dx: 1 };
+          },
+          encodeInput({ input, predictionFrame }) {
+            return { sequence: predictionFrame.sequence, dx: input.dx };
+          },
+          readAuthoritativeState({ snapshot }) {
+            return { x: snapshot.x };
+          },
+          readAcknowledgedSequence({ snapshot }) {
+            return snapshot.acknowledgedSequence;
+          }
+        },
+        applyFrame({ presented: tracks, predictedState }) {
+          presented.push({
+            remoteX: tracks.vector2("remote", { x: -1, y: 0 }).x,
+            ...(predictedState === undefined ? {} : { predictedX: predictedState.x })
+          });
+        },
+        expose(view) {
+          exposed = view !== undefined;
+          readReplicationDiagnostics = view === undefined ? undefined : () => view.diagnostics();
+        }
+      }
+    });
+
+    const dispose = module.install({
+      eventBus: createEventBus(),
+      systems: { register: (system) => systems.push(system) }
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "client", role: "client", playerId: "player.client" }
+    });
+    expect(exposed).toBe(true);
+    expect(systems.map((system) => system.id)).toEqual([
+      "gamekit.multiplayer.bridge.client-replication"
+    ]);
+
+    fake.emit(
+      messageFrom(
+        "stranger",
+        MULTIPLAYER_SNAPSHOT_KIND,
+        {
+          tick: 0,
+          x: 500,
+          acknowledgedSequence: 0
+        },
+        { tick: 0 }
+      )
+    );
+    fake.emit(
+      messageFrom(
+        "server",
+        MULTIPLAYER_SNAPSHOT_KIND,
+        {
+          tick: 0,
+          x: 0,
+          acknowledgedSequence: 0
+        },
+        { tick: 0 }
+      )
+    );
+    systems[0]?.update({ delta: 0, elapsed: 0, tick: 0 });
+    systems[0]?.update({ delta: 25, elapsed: 25, tick: 1 });
+    await waitFor(() => fake.sent.length === 1);
+
+    expect(authoritativeTicks).toEqual([0]);
+    expect(fake.sent[0]).toMatchObject({
+      kind: MULTIPLAYER_INPUT_KIND,
+      sourcePeerId: "client",
+      targetPeerIds: ["server"],
+      sequence: 1,
+      payload: { sequence: 1, dx: 1 }
+    });
+    expect(fake.sent[0]).not.toHaveProperty("tick");
+    expect(presented.at(-1)?.predictedX).toBeCloseTo(0.5);
+
+    fake.emit(
+      messageFrom(
+        "server",
+        MULTIPLAYER_SNAPSHOT_KIND,
+        {
+          tick: 1,
+          x: 0.8,
+          acknowledgedSequence: 1
+        },
+        { tick: 1 }
+      )
+    );
+    systems[0]?.update({ delta: 25, elapsed: 50, tick: 2 });
+    await waitFor(() => fake.sent.length === 2);
+
+    expect(authoritativeTicks).toEqual([0, 1]);
+    expect(fake.sent[1]).toMatchObject({ sequence: 2, payload: { sequence: 2, dx: 1 } });
+    systems[0]?.update({ delta: 25, elapsed: 75, tick: 3 });
+    expect(presented.at(-1)?.predictedX).toBeCloseTo(1.3);
+
+    fake.failNextSend(new Error("transport interrupted"));
+    systems[0]?.update({ delta: 25, elapsed: 100, tick: 4 });
+    await waitFor(() => readReplicationDiagnostics?.().failedInputs === 1);
+    expect(fake.sent).toHaveLength(2);
+    expect(readReplicationDiagnostics?.().prediction?.pendingInputs).toBe(2);
+    systems[0]?.update({ delta: 50, elapsed: 150, tick: 5 });
+    expect(fake.sent).toHaveLength(2);
+    expect(readReplicationDiagnostics?.().throttledInputs).toBe(1);
+
+    fake.emit(
+      messageFrom(
+        "server",
+        MULTIPLAYER_SNAPSHOT_KIND,
+        {
+          tick: 2,
+          x: 1.6,
+          acknowledgedSequence: 2
+        },
+        { tick: 2 }
+      )
+    );
+    systems[0]?.update({ delta: 0, elapsed: 150, tick: 6 });
+    expect(readReplicationDiagnostics?.().prediction).toMatchObject({
+      pendingInputs: 0,
+      resets: 1
+    });
+
+    dispose?.();
+    expect(exposed).toBe(false);
+  });
+
+  it("uses one configured snapshot source and orders provider updates by sequence", async () => {
+    type ClientSnapshot = { tick: number; x: number };
+
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "managed-provider-source",
+      backend: fake.backend,
+      clock: () => 100
+    });
+    const systems: Array<{ update(ctx?: { delta?: number; elapsed?: number }): void }> = [];
+    const sourceListeners = new Set<(message: MultiplayerMessageEnvelope) => void>();
+    const applied: number[] = [];
+    let sourceSessionId = "session-1";
+    let currentSourceMessage: MultiplayerMessageEnvelope | undefined;
+    let diagnostics:
+      | (() => { rejectedSnapshots: number; lastAppliedSequence?: number })
+      | undefined;
+    const module = createMultiplayerModule<MultiplayerBridgeInstallContext, ClientSnapshot>({
+      runtime,
+      clientReplication: {
+        authority: { resolveAuthorityPeerId: () => "server" },
+        snapshotSource: {
+          subscribe(listener) {
+            sourceListeners.add(listener);
+            return () => sourceListeners.delete(listener);
+          },
+          current() {
+            return currentSourceMessage;
+          }
+        },
+        playback: { interpolationDelayMs: 0 },
+        readSnapshot(payload) {
+          return isRecord(payload) &&
+            typeof payload.tick === "number" &&
+            typeof payload.x === "number"
+            ? (payload as ClientSnapshot)
+            : undefined;
+        },
+        applyAuthoritative({ snapshot }) {
+          applied.push(snapshot.x);
+        },
+        applyFrame() {},
+        expose(view) {
+          diagnostics = view === undefined ? undefined : () => view.diagnostics();
+        }
+      }
+    });
+    const dispose = module.install({
+      eventBus: createEventBus(),
+      systems: { register: (system) => systems.push(system) }
+    });
+    const emitSource = (sequence: number, x: number) => {
+      const message = {
+        ...messageFrom("server", MULTIPLAYER_SNAPSHOT_KIND, { tick: 5, x }, { tick: 5 }),
+        sessionId: sourceSessionId,
+        sequence
+      };
+      currentSourceMessage = message;
+      for (const listener of sourceListeners) {
+        listener(message);
+      }
+    };
+    emitSource(0, 0);
+    await runtime.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "client", role: "client" }
+    });
+    systems[0]?.update({ delta: 0, elapsed: 0 });
+    fake.emit(messageFrom("server", MULTIPLAYER_SNAPSHOT_KIND, { tick: 1, x: 99 }, { tick: 1 }));
+    emitSource(1, 1);
+    systems[0]?.update({ delta: 0, elapsed: 0 });
+    emitSource(2, 2);
+    systems[0]?.update({ delta: 0, elapsed: 0 });
+    emitSource(1, 3);
+    systems[0]?.update({ delta: 0, elapsed: 0 });
+
+    expect(applied).toEqual([0, 1, 2]);
+    expect(diagnostics?.()).toMatchObject({
+      rejectedSnapshots: 1,
+      lastAppliedSequence: 2
+    });
+
+    await runtime.leaveSession("switch provider session");
+    sourceSessionId = "session-2";
+    await runtime.createSession({
+      id: sourceSessionId,
+      authority: "server-authoritative",
+      localPeer: { id: "client", role: "client" }
+    });
+    emitSource(1, 4);
+    systems[0]?.update({ delta: 0, elapsed: 0 });
+    expect(applied).toEqual([0, 1, 2, 4]);
+    expect(diagnostics?.()).toMatchObject({ lastAppliedSequence: 1 });
+    dispose?.();
+    expect(sourceListeners.size).toBe(0);
+  });
+
+  it("keeps managed prediction cadence smooth across irregular render frames", async () => {
+    type ClientSnapshot = { tick: number; x: number; acknowledgedSequence: number };
+    type ClientInput = { dx: number };
+    type PredictedState = { x: number };
+
+    const position = definePredictionVector2StateField<PredictedState>({
+      readX: (state) => state.x,
+      readY: () => 0,
+      write(state, x) {
+        state.x = x;
+      }
+    });
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "managed-irregular-cadence",
+      backend: fake.backend,
+      clock: () => 100
+    });
+    const systems: Array<{
+      update(ctx?: { delta?: number; elapsed?: number; tick?: number }): void;
+    }> = [];
+    const presented: number[] = [];
+    let requestInputSample: (() => void) | undefined;
+    const module = createMultiplayerModule<
+      MultiplayerBridgeInstallContext,
+      ClientSnapshot,
+      ClientInput,
+      PredictedState
+    >({
+      runtime,
+      clientReplication: {
+        authority: { resolveAuthorityPeerId: () => "server" },
+        readSnapshot(payload) {
+          return payload as ClientSnapshot;
+        },
+        prediction: {
+          inputRateHz: 20,
+          buffer: {
+            cloneState: (state) => ({ ...state }),
+            applyInput(state, input) {
+              state.x += input.dx;
+              return state;
+            },
+            presentation: definePredictionStatePresentation({ fields: [position] })
+          },
+          readInput() {
+            return { dx: 1 };
+          },
+          encodeInput({ input, predictionFrame }) {
+            return { sequence: predictionFrame.sequence, dx: input.dx };
+          },
+          readAuthoritativeState({ snapshot }) {
+            return { x: snapshot.x };
+          },
+          readAcknowledgedSequence({ snapshot }) {
+            return snapshot.acknowledgedSequence;
+          }
+        },
+        applyFrame({ predictedState }) {
+          if (predictedState !== undefined) {
+            presented.push(predictedState.x);
+          }
+        },
+        expose(view) {
+          requestInputSample = view === undefined ? undefined : () => view.requestInputSample();
+        }
+      }
+    });
+
+    const dispose = module.install({
+      eventBus: createEventBus(),
+      systems: { register: (system) => systems.push(system) }
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "server-authoritative",
+      localPeer: { id: "client", role: "client", playerId: "player.client" }
+    });
+    fake.emit(
+      messageFrom(
+        "server",
+        MULTIPLAYER_SNAPSHOT_KIND,
+        { tick: 0, x: 0, acknowledgedSequence: 0 },
+        { tick: 0 }
+      )
+    );
+
+    systems[0]?.update({ delta: 0, elapsed: 0, tick: 0 });
+    for (const elapsed of [12, 24, 36, 48, 60]) {
+      systems[0]?.update({ delta: 12, elapsed, tick: elapsed });
+    }
+    await waitFor(() => fake.sent.length === 2);
+
+    requestInputSample?.();
+    systems[0]?.update({ delta: 0, elapsed: 60, tick: 61 });
+    await waitFor(() => fake.sent.length === 3);
+
+    expect(presented).toHaveLength(7);
+    expect(presented).toEqual([
+      expect.closeTo(0),
+      expect.closeTo(0.24),
+      expect.closeTo(0.48),
+      expect.closeTo(0.72),
+      expect.closeTo(0.96),
+      expect.closeTo(1.2),
+      expect.closeTo(2)
+    ]);
+    expect(fake.sent[2]).toMatchObject({ sequence: 3, payload: { sequence: 3, dx: 1 } });
+
+    dispose?.();
+    await runtime.dispose();
+  });
 });
 
 type ActionPayload = {
@@ -1837,12 +2702,14 @@ type FakeBackendHarness = {
   sent: MultiplayerMessageEnvelope[];
   dropSession(): void;
   emit(message: MultiplayerMessageEnvelope): void;
+  failNextSend(error?: unknown): void;
 };
 
 function createFakeBackend(): FakeBackendHarness {
   const listeners = new Set<MultiplayerBackendListener>();
   const sent: MultiplayerMessageEnvelope[] = [];
   let session: MultiplayerSession | undefined;
+  let nextSendError: unknown;
   const connection: MultiplayerBackendConnection = {
     async createSession(request = {}) {
       const localPeer = {
@@ -1866,6 +2733,11 @@ function createFakeBackend(): FakeBackendHarness {
       session = undefined;
     },
     async send(message) {
+      if (nextSendError !== undefined) {
+        const error = nextSendError;
+        nextSendError = undefined;
+        throw error;
+      }
       sent.push(message);
     },
     subscribe(listener) {
@@ -1907,6 +2779,9 @@ function createFakeBackend(): FakeBackendHarness {
     },
     dropSession() {
       session = undefined;
+    },
+    failNextSend(error = new Error("fake backend send failed")) {
+      nextSendError = error;
     },
     emit(message) {
       for (const listener of Array.from(listeners)) {
@@ -1967,6 +2842,16 @@ function peer(
     ...(options.playerId === undefined ? {} : { playerId: options.playerId }),
     ...(options.metadata === undefined ? {} : { metadata: options.metadata })
   };
+}
+
+function expectMultiplayerError(callback: () => unknown, code: string): void {
+  try {
+    callback();
+  } catch (error) {
+    expect(error).toMatchObject({ code });
+    return;
+  }
+  throw new Error(`Expected multiplayer error: ${code}`);
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {
