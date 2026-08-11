@@ -8,7 +8,9 @@ import type {
 import type { ArenaItemAuthorityInstance } from "./item-authority-runtime";
 import type { ArenaCompiledItemDefinition } from "./item-definition";
 
-export function arenaItemPhysicsMemberId(item: ArenaItemAuthorityInstance): string {
+export function arenaItemPhysicsMemberId(
+  item: Readonly<Pick<ArenaItemAuthorityInstance, "id" | "instanceGeneration">>
+): string {
   return `${item.id}.body.g${item.instanceGeneration}`;
 }
 
@@ -25,7 +27,7 @@ export function createArenaItemPhysicsMaterial(
 
 export function createArenaItemPhysicsMember(input: {
   definition: ArenaCompiledItemDefinition;
-  item: ArenaItemAuthorityInstance;
+  item: Readonly<Pick<ArenaItemAuthorityInstance, "id" | "instanceGeneration">>;
   position: PhysicsVector;
   linearVelocity?: PhysicsVector | undefined;
 }): PhysicsPredictionIslandMemberDefinition {

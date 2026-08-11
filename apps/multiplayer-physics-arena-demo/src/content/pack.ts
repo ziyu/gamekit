@@ -106,7 +106,15 @@ const hazards: ArenaHazardDefinition[] = [
 ];
 
 const spawnSets: ArenaSpawnSetDefinition[] = [
-  spawnSet("spawn.circuit", participantPoints(8, 5.4)),
+  spawnSet("spawn.circuit", [
+    ...participantPoints(8, 5.4),
+    {
+      id: "item.0",
+      kind: "item",
+      position: { x: 0, y: 1.2, z: 2.2 },
+      definition: ref(ARENA_ITEM_TYPE, "item.foam-ball")
+    }
+  ]),
   spawnSet("spawn.scrap", [
     ...participantPoints(6, 4.2),
     ...itemPoints(["item.foam-ball", "item.energy-block", "item.blast-orb", "item.foam-hammer"])

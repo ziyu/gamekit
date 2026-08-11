@@ -1,5 +1,8 @@
 import type { MultiplayerPhysicsArenaFrame } from "@gamekit/app-host";
 
+import type { ArenaItemActionType } from "../items/item-action";
+import type { ArenaItemAuthorityState } from "../items/item-authority-runtime";
+
 import {
   ARENA_DEFINITION_VERSION,
   ARENA_SCHEMA_VERSION,
@@ -82,6 +85,32 @@ export type ArenaPublicStageResult = {
   winnerParticipantId?: string | undefined;
 };
 
+export type ArenaPublicItemState = {
+  id: string;
+  definitionId: string;
+  instanceGeneration: number;
+  state: ArenaItemAuthorityState;
+  ownerParticipantId?: string | undefined;
+  sourceParticipantId?: string | undefined;
+  executionId?: string | undefined;
+  stateChangedAtTick: number;
+  deadlineTick?: number | undefined;
+  revision: number;
+  bodyMemberId?: string | undefined;
+};
+
+export type ArenaPublicItemAction = {
+  id: string;
+  participantId: string;
+  type: ArenaItemActionType;
+  status: "windup" | "confirmed" | "rejected";
+  code: string;
+  tick: number;
+  itemId?: string | undefined;
+  itemGeneration?: number | undefined;
+  executionId?: string | undefined;
+};
+
 export type ArenaSnapshot = {
   schemaVersion: typeof ARENA_SCHEMA_VERSION;
   phase: ArenaMatchPhase;
@@ -92,6 +121,8 @@ export type ArenaSnapshot = {
   match: ArenaPublicMatchState;
   participants: ArenaPublicParticipantState[];
   stageResults: ArenaPublicStageResult[];
+  items: ArenaPublicItemState[];
+  itemActions: ArenaPublicItemAction[];
   frame: MultiplayerPhysicsArenaFrame;
   playerIdsByPeerId: Record<string, string>;
   inputAcksByPeerId: Record<string, number>;
@@ -141,6 +172,14 @@ export function readArenaSnapshot(value: unknown): ArenaSnapshot | undefined {
     value.stageResults.length > 8 ||
     !value.stageResults.every(isPublicStageResult) ||
     new Set(value.stageResults.map((result) => result.id)).size !== value.stageResults.length ||
+    !Array.isArray(value.items) ||
+    value.items.length > 32 ||
+    !value.items.every(isPublicItemState) ||
+    new Set(value.items.map((item) => item.id)).size !== value.items.length ||
+    !Array.isArray(value.itemActions) ||
+    value.itemActions.length > 64 ||
+    !value.itemActions.every(isPublicItemAction) ||
+    new Set(value.itemActions.map((action) => action.id)).size !== value.itemActions.length ||
     !isRecord(value.frame) ||
     value.frame.definitionVersion !== ARENA_DEFINITION_VERSION ||
     value.frame.membershipRevision !== value.match.membershipRevision ||
@@ -169,6 +208,58 @@ export function readArenaSnapshot(value: unknown): ArenaSnapshot | undefined {
     return undefined;
   }
   return structuredClone(value) as ArenaSnapshot;
+}
+
+function isPublicItemState(value: unknown): value is ArenaPublicItemState {
+  return (
+    isRecord(value) &&
+    boundedId(value.id) &&
+    boundedId(value.definitionId) &&
+    positiveSafeInteger(value.instanceGeneration) &&
+    isItemAuthorityState(value.state) &&
+    (value.ownerParticipantId === undefined || boundedId(value.ownerParticipantId)) &&
+    (value.sourceParticipantId === undefined || boundedId(value.sourceParticipantId)) &&
+    (value.executionId === undefined || boundedId(value.executionId)) &&
+    nonNegativeSafeInteger(value.stateChangedAtTick) &&
+    (value.deadlineTick === undefined || nonNegativeSafeInteger(value.deadlineTick)) &&
+    positiveSafeInteger(value.revision) &&
+    (value.bodyMemberId === undefined || boundedId(value.bodyMemberId)) &&
+    (value.bodyMemberId === undefined ||
+      value.state === "world" ||
+      value.state === "released" ||
+      value.state === "triggered")
+  );
+}
+
+function isPublicItemAction(value: unknown): value is ArenaPublicItemAction {
+  return (
+    isRecord(value) &&
+    boundedId(value.id) &&
+    boundedId(value.participantId) &&
+    (value.type === "interact" || value.type === "use" || value.type === "drop") &&
+    (value.status === "windup" || value.status === "confirmed" || value.status === "rejected") &&
+    boundedId(value.code) &&
+    nonNegativeSafeInteger(value.tick) &&
+    (value.itemId === undefined || boundedId(value.itemId)) &&
+    (value.itemGeneration === undefined || positiveSafeInteger(value.itemGeneration)) &&
+    (value.itemId === undefined) === (value.itemGeneration === undefined) &&
+    (value.executionId === undefined || boundedId(value.executionId))
+  );
+}
+
+function isItemAuthorityState(value: unknown): value is ArenaItemAuthorityState {
+  return (
+    value === "world" ||
+    value === "pickup-pending" ||
+    value === "carried" ||
+    value === "windup" ||
+    value === "released" ||
+    value === "melee-active" ||
+    value === "triggered" ||
+    value === "spent" ||
+    value === "cooldown" ||
+    value === "respawning"
+  );
 }
 
 function isPublicMatchState(value: unknown): value is ArenaPublicMatchState {
@@ -360,6 +451,10 @@ function axis(value: unknown): value is number {
 
 function nonNegativeSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function positiveSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
 function nonNegativeFinite(value: unknown): value is number {

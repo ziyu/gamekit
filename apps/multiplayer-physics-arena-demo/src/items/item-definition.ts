@@ -49,6 +49,36 @@ export type ArenaStageItemManifest = {
   spawns: ArenaCompiledItemSpawn[];
 };
 
+export type ArenaItemCatalog = {
+  definitions: ArenaCompiledItemDefinition[];
+  manifests: ArenaStageItemManifest[];
+};
+
+export function compileArenaItemCatalog(
+  stages: readonly Readonly<CompiledArenaStage>[]
+): ArenaItemCatalog {
+  const manifests = stages.map((stage) => compileArenaStageItemManifest(stage));
+  const definitionsById = new Map<string, ArenaCompiledItemDefinition>();
+  for (const manifest of manifests) {
+    for (const definition of manifest.definitions) {
+      const existing = definitionsById.get(definition.id);
+      if (
+        existing !== undefined &&
+        definitionSignature(existing) !== definitionSignature(definition)
+      ) {
+        throw new Error(`Arena item definition differs between stages: ${definition.id}`);
+      }
+      definitionsById.set(definition.id, structuredClone(definition));
+    }
+  }
+  return {
+    definitions: [...definitionsById.values()].sort((left, right) =>
+      left.id.localeCompare(right.id)
+    ),
+    manifests: structuredClone(manifests)
+  };
+}
+
 export function compileArenaItemDefinitions(
   definitions: readonly Readonly<ArenaItemDefinition>[],
   options: { maxDefinitions?: number | undefined } = {}
@@ -163,6 +193,10 @@ function compileDefinition(definition: Readonly<ArenaItemDefinition>): ArenaComp
           : "released",
     networkStrategy: definition.networkStrategy
   };
+}
+
+function definitionSignature(definition: ArenaCompiledItemDefinition): string {
+  return JSON.stringify(definition);
 }
 
 function validShape(shape: ArenaItemShapeDefinition): boolean {

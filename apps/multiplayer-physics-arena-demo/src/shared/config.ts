@@ -1,7 +1,7 @@
 export const ARENA_ROOM_NAME = "gamekit-knockout-circuit";
 export const ARENA_BROWSER_CONFIG_PATH = "/__gamekit/knockout-config";
-export const ARENA_SCHEMA_VERSION = "knockout-arena.v4";
-export const ARENA_DEFINITION_VERSION = "knockout-course.v2";
+export const ARENA_SCHEMA_VERSION = "knockout-arena.v5";
+export const ARENA_DEFINITION_VERSION = "knockout-course.v3";
 export const ARENA_ISLAND_ID = "knockout.full-arena";
 export const ARENA_FIXED_STEP_MS = 1000 / 60;
 export const ARENA_MOVE_SPEED = 6.4;
@@ -11,6 +11,7 @@ export const ARENA_MAX_HUMANS = 2;
 export const ARENA_BOT_COUNT = 6;
 export const ARENA_ACTOR_COUNT = ARENA_MAX_HUMANS + ARENA_BOT_COUNT;
 export const ARENA_INPUT_KIND = "game.input";
+export const ARENA_ACTION_KIND = "game.action";
 export const ARENA_SNAPSHOT_KIND = "game.snapshot";
 export const ARENA_MESSAGE_TYPE = "gamekit.message";
 

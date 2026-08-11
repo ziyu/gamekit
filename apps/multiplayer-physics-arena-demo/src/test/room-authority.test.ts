@@ -77,17 +77,22 @@ describe("Knockout Arena Room authority", () => {
       const latestA = snapshotsA.at(-1)!;
       const latestB = snapshotsB.at(-1)!;
       expect(latestA.frame.islandId).toBe("knockout.full-arena");
-      expect(latestA.frame.members).toHaveLength(14);
+      expect(latestA.frame.members).toHaveLength(15);
       expect(latestA.frame.auxiliary).toMatchObject([
+        {
+          id: "arena.item-carry",
+          version: "1",
+          state: { version: 1 }
+        },
         {
           id: "character.motor",
           version: "1.0.0",
           state: { version: 1 }
         }
       ]);
-      const motorState = latestA.frame.auxiliary?.[0]?.state as
-        | { members?: unknown[] | undefined }
-        | undefined;
+      const motorState = latestA.frame.auxiliary?.find(
+        (contributor) => contributor.id === "character.motor"
+      )?.state as { members?: unknown[] | undefined } | undefined;
       expect(motorState?.members).toHaveLength(8);
       expect(latestB.frame.tick).toBeGreaterThan(0);
       expect(latestA.authority).toMatchObject({
@@ -115,7 +120,7 @@ describe("Knockout Arena Room authority", () => {
         moveZ: -1,
         sequence: 2
       });
-      expect(running.frame.members).toHaveLength(14);
+      expect(running.frame.members).toHaveLength(15);
     } finally {
       unsubscribeA();
       unsubscribeB();

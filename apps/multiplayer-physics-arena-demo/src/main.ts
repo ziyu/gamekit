@@ -4,6 +4,7 @@ import { createConfiguredAppHost } from "@gamekit/app-host";
 import type { ThreeRendererNative } from "@gamekit/driver-three";
 import { initRapier3dPhysicsBackend } from "@gamekit/physics-rapier3d";
 
+import type { ArenaItemActionType } from "./items/item-action";
 import { createArenaDefinitionMap } from "./shared/arena-definition";
 import { createArenaVisual } from "./client/arena-visual";
 import {
@@ -46,8 +47,8 @@ async function boot(rootElement: HTMLElement): Promise<void> {
   const native = renderer.native() as ThreeRendererNative;
   const visual = createArenaVisual(native, createArenaDefinitionMap());
   const serverConfig = await loadArenaServerConfig();
-  const input = createKeyboardInput(ui.viewport);
   let session: ArenaClientSession | undefined;
+  const input = createKeyboardInput(ui.viewport, (action) => void session?.itemAction(action));
   let connecting = false;
   let lastFrame: number | undefined;
   let lastUiUpdate = 0;
@@ -65,7 +66,8 @@ async function boot(rootElement: HTMLElement): Promise<void> {
       await session?.dispose();
       session = undefined;
       const physicsBackend = await initRapier3dPhysicsBackend({
-        id: `knockout.browser.rapier3d.${Date.now()}`
+        id: `knockout.browser.rapier3d.${Date.now()}`,
+        groups: { "arena-item": 0b001, "arena-actor": 0b010, "arena-world": 0b100 }
       });
       session = await createArenaClientSession({
         config: serverConfig,
@@ -145,7 +147,10 @@ async function boot(rootElement: HTMLElement): Promise<void> {
   );
 }
 
-function createKeyboardInput(viewport: HTMLElement): {
+function createKeyboardInput(
+  viewport: HTMLElement,
+  onItemAction: (action: ArenaItemActionType) => void
+): {
   sample(): ArenaClientInput;
   dispose(): void;
 } {
@@ -153,11 +158,19 @@ function createKeyboardInput(viewport: HTMLElement): {
   let jumpRequested = false;
   const keydown = (event: KeyboardEvent) => {
     if (event.target instanceof HTMLInputElement) return;
-    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) {
+    if (
+      ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyE", "KeyF", "KeyQ"].includes(
+        event.code
+      )
+    ) {
       event.preventDefault();
     }
     pressed.add(event.code);
     if (event.code === "Space" && !event.repeat) jumpRequested = true;
+    if (event.repeat) return;
+    if (event.code === "KeyE") onItemAction("interact");
+    if (event.code === "KeyF") onItemAction("use");
+    if (event.code === "KeyQ") onItemAction("drop");
   };
   const keyup = (event: KeyboardEvent) => pressed.delete(event.code);
   window.addEventListener("keydown", keydown);

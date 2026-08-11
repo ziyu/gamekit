@@ -2,11 +2,15 @@ import type { ThreeRendererNative } from "@gamekit/driver-three";
 import type {
   PhysicsBodyState,
   PhysicsPredictionIslandMemberDefinition,
+  PhysicsPredictionIslandMemberState,
   PhysicsPredictionIslandStateSnapshot,
   PhysicsRotation
 } from "@gamekit/physics-core";
 import * as THREE from "three";
 
+import { compileArenaContent, createArenaDataRegistry } from "../content/registry";
+import { compileArenaItemCatalog } from "../items/item-definition";
+import { createArenaItemPhysicsMember } from "../items/item-physics";
 import { ARENA_ENVIRONMENT, arenaMemberRole } from "../shared/arena-definition";
 import type { ArenaEffectPresentationEvent } from "./arena-effects";
 
@@ -59,6 +63,11 @@ const COLOR = {
   violet: 0x8b78ff,
   white: 0xf5f7ff
 } as const;
+const ITEM_DEFINITIONS_BY_ID = new Map(
+  compileArenaItemCatalog(compileArenaContent(createArenaDataRegistry()).stages).definitions.map(
+    (definition) => [definition.id, definition]
+  )
+);
 
 export function createArenaVisual(
   native: ThreeRendererNative,
@@ -89,7 +98,7 @@ export function createArenaVisual(
       if (state) {
         const retained = new Set<string>();
         for (const member of state.members) {
-          const definition = definitions.get(member.id);
+          const definition = definitions.get(member.id) ?? resolveItemMemberDefinition(member);
           if (!definition) continue;
           retained.add(member.id);
           const visual = ensureMemberMesh(root, members, definition);
@@ -130,6 +139,31 @@ export function createArenaVisual(
       effects.length = 0;
     }
   };
+}
+
+function resolveItemMemberDefinition(
+  member: PhysicsPredictionIslandMemberState
+): PhysicsPredictionIslandMemberDefinition | undefined {
+  const itemId = member.body.userData?.itemId;
+  const itemGeneration = member.body.userData?.itemGeneration;
+  const definitionId = member.body.userData?.definitionId;
+  if (
+    typeof itemId !== "string" ||
+    typeof itemGeneration !== "number" ||
+    !Number.isSafeInteger(itemGeneration) ||
+    itemGeneration < 1 ||
+    typeof definitionId !== "string"
+  ) {
+    return undefined;
+  }
+  const definition = ITEM_DEFINITIONS_BY_ID.get(definitionId);
+  if (definition === undefined) return undefined;
+  return createArenaItemPhysicsMember({
+    definition,
+    item: { id: itemId, instanceGeneration: itemGeneration },
+    position: member.body.position,
+    linearVelocity: member.body.linearVelocity
+  });
 }
 
 function setupScene(native: ThreeRendererNative, root: THREE.Group): void {

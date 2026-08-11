@@ -87,7 +87,13 @@ export function renderArenaUi(root: HTMLElement): ArenaUi {
     keycap("WASD"),
     element("span", undefined, "RUN"),
     keycap("SPACE"),
-    element("span", undefined, "JUMP")
+    element("span", undefined, "JUMP"),
+    keycap("E"),
+    element("span", undefined, "GRAB"),
+    keycap("F"),
+    element("span", undefined, "USE"),
+    keycap("Q"),
+    element("span", undefined, "DROP")
   );
 
   const sessionCard = element("section", "arena-session-card");
@@ -318,7 +324,13 @@ export function updateArenaUi(
       keycap("WASD"),
       element("span", undefined, "RUN"),
       keycap("SPACE"),
-      element("span", undefined, "JUMP")
+      element("span", undefined, "JUMP"),
+      keycap("E"),
+      element("span", undefined, "GRAB"),
+      keycap("F"),
+      element("span", undefined, "USE"),
+      keycap("Q"),
+      element("span", undefined, "DROP")
     );
   }
 }

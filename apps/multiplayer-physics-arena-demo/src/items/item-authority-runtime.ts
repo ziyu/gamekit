@@ -410,7 +410,7 @@ export function createArenaItemAuthorityRuntime(options: {
       return rejected(command.id, "owner-state-mismatch", item);
     }
     item.instanceGeneration += 1;
-    transition(item, "released", "item-dropped", command.tick, {
+    transition(item, "world", "item-dropped", command.tick, {
       ownerParticipantId: undefined,
       sourceParticipantId: command.participantId,
       pendingClaimId: undefined,

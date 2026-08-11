@@ -114,6 +114,8 @@ function snapshot(
       }
     ],
     stageResults: [],
+    items: [],
+    itemActions: [],
     frame: {
       islandId: ARENA_ISLAND_ID,
       generation: `m${round}.s1.r${round}`,

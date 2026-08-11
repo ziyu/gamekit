@@ -17,6 +17,18 @@ import type {
 } from "@gamekit/physics-core";
 import { createKootaWorld } from "@gamekit/world-koota";
 
+import { compileArenaContent, createArenaDataRegistry } from "../content/registry";
+import { type ArenaItemActionType } from "../items/item-action";
+import {
+  createArenaItemCarryContributor,
+  createArenaItemCarryPredictionCommand
+} from "../items/item-carry-contributor";
+import { compileArenaItemCatalog } from "../items/item-definition";
+import { selectArenaItemTarget } from "../items/item-interaction";
+import {
+  createArenaItemPhysicsMaterial,
+  createArenaItemPhysicsMember
+} from "../items/item-physics";
 import { ARENA_ENVIRONMENT, createArenaDefinitionMap } from "../shared/arena-definition";
 import {
   ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
@@ -29,6 +41,7 @@ import {
 } from "./arena-effects";
 import {
   ARENA_BROWSER_CONFIG_PATH,
+  ARENA_ACTION_KIND,
   ARENA_DEFINITION_VERSION,
   ARENA_FIXED_STEP_MS,
   ARENA_INPUT_KIND,
@@ -57,6 +70,7 @@ export type ArenaClientSession = {
   predictedState(): PhysicsPredictionIslandStateSnapshot | undefined;
   localMemberId(): string | undefined;
   telemetry(): Record<string, unknown>;
+  itemAction(type: ArenaItemActionType): Promise<void>;
   dispose(): Promise<void>;
 };
 
@@ -139,11 +153,20 @@ export async function createArenaClientSession(options: {
     localPlayerId: peerId
   });
   const definitions = createArenaDefinitionMap();
+  const itemCatalog = compileArenaItemCatalog(
+    compileArenaContent(createArenaDataRegistry()).stages
+  );
+  const itemDefinitionsById = new Map(
+    itemCatalog.definitions.map((definition) => [definition.id, definition])
+  );
   let latestSnapshot: ArenaSnapshot | undefined;
   let replication: MultiplayerClientReplicationView<ArenaSnapshot, ArenaControlState> | undefined;
   const effects = createArenaClientEffectController(1, options.onEffect);
 
   let readPredictedBody: (memberId: string) => PhysicsBodyState | undefined = () => undefined;
+  let latestInput: ArenaClientInput = { moveX: 0, moveZ: -1, jump: false };
+  let latestInputSequence = 0;
+  let itemActionSequence = 0;
   const arena = createStandardMultiplayerPhysicsArenaPrediction<
     GameInstallContext,
     ArenaSnapshot,
@@ -169,12 +192,13 @@ export async function createArenaClientSession(options: {
           { id: "course", friction: 0.85, restitution: 0.05 },
           { id: "actor", friction: 0.55, restitution: 0.08, density: 1 },
           { id: "prop", friction: 0.65, restitution: 0.45, density: 0.7 },
-          { id: "hazard", friction: 0.45, restitution: 0.3 }
+          { id: "hazard", friction: 0.45, restitution: 0.3 },
+          ...itemCatalog.definitions.map(createArenaItemPhysicsMaterial)
         ]
       }
     },
     createAuxiliaryContributors() {
-      return [createArenaCharacterMotorContributor()];
+      return [createArenaCharacterMotorContributor(), createArenaItemCarryContributor()];
     },
     selectFrame({ snapshot }) {
       return {
@@ -183,7 +207,28 @@ export async function createArenaClientSession(options: {
       };
     },
     resolveMemberDefinition(member) {
-      return definitions.get(member.id);
+      const fixed = definitions.get(member.id);
+      if (fixed !== undefined) return fixed;
+      const itemId = member.body.userData?.itemId;
+      const itemGeneration = member.body.userData?.itemGeneration;
+      const definitionId = member.body.userData?.definitionId;
+      if (
+        typeof itemId !== "string" ||
+        typeof itemGeneration !== "number" ||
+        !Number.isSafeInteger(itemGeneration) ||
+        itemGeneration < 1 ||
+        typeof definitionId !== "string"
+      ) {
+        return undefined;
+      }
+      const definition = itemDefinitionsById.get(definitionId);
+      if (definition === undefined) return undefined;
+      return createArenaItemPhysicsMember({
+        definition,
+        item: { id: itemId, instanceGeneration: itemGeneration },
+        position: member.body.position,
+        linearVelocity: member.body.linearVelocity
+      });
     },
     mapInput({ input, snapshot, predictionFrame, predictionTick }) {
       const memberId = snapshot.playerIdsByPeerId[peerId];
@@ -212,6 +257,37 @@ export async function createArenaClientSession(options: {
           contributorId: ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
           payload: command
         })),
+        ...snapshot.items.flatMap((item) => {
+          if (
+            item.ownerParticipantId === undefined ||
+            (item.state !== "carried" && item.state !== "windup")
+          ) {
+            return [];
+          }
+          const participant = snapshot.participants.find(
+            (candidate) => candidate.id === item.ownerParticipantId
+          );
+          const control =
+            participant?.actorMemberId === undefined
+              ? undefined
+              : controlsByMemberId[participant.actorMemberId];
+          const definition = itemDefinitionsById.get(item.definitionId);
+          if (
+            participant?.actorMemberId === undefined ||
+            control === undefined ||
+            definition === undefined
+          ) {
+            return [];
+          }
+          return [
+            createArenaItemCarryPredictionCommand({
+              memberId: participant.actorMemberId,
+              speedMultiplier: definition.carrySpeedMultiplier,
+              jumpMultiplier: definition.carryJumpMultiplier,
+              jumpPressed: control.jump
+            })
+          ];
+        }),
         {
           type: "patch" as const,
           memberId: "hazard.sweeper",
@@ -311,9 +387,11 @@ export async function createArenaClientSession(options: {
           predictionStepMs: ARENA_FIXED_STEP_MS
         },
         readInput() {
-          return options.readInput();
+          latestInput = options.readInput();
+          return latestInput;
         },
         encodeInput({ input, predictionFrame }) {
+          latestInputSequence = predictionFrame.sequence;
           return { sequence: predictionFrame.sequence, ...input };
         },
         active({ snapshot }) {
@@ -394,6 +472,61 @@ export async function createArenaClientSession(options: {
         effects: effects.diagnostics()
       };
     },
+    async itemAction(type) {
+      const snapshot = latestSnapshot;
+      if (snapshot === undefined) return;
+      const participant = snapshot.participants.find((candidate) => candidate.peerId === peerId);
+      if (participant?.status !== "active" || participant.actorMemberId === undefined) return;
+      const actor = readPredictedBody(participant.actorMemberId);
+      const aim = normalizedAim(latestInput);
+      const target =
+        type !== "interact" || actor === undefined
+          ? undefined
+          : selectArenaItemTarget(
+              snapshot.items.map((item) => {
+                const body =
+                  item.bodyMemberId === undefined
+                    ? undefined
+                    : readPredictedBody(item.bodyMemberId);
+                const dx = (body?.position.x ?? actor.position.x) - actor.position.x;
+                const dz = (body?.position.z ?? actor.position.z ?? 0) - (actor.position.z ?? 0);
+                const distance = Math.hypot(dx, dz);
+                return {
+                  itemId: item.id,
+                  itemGeneration: item.instanceGeneration,
+                  distance,
+                  viewAlignment: distance <= 0.0001 ? 1 : (dx * aim.x + dz * aim.z) / distance,
+                  priority: itemDefinitionsById.get(item.definitionId)?.baseImpulse ?? 0,
+                  visible: body !== undefined,
+                  inRange: distance <= 2.8,
+                  state: item.state === "world" ? ("world" as const) : ("unavailable" as const)
+                };
+              })
+            );
+      itemActionSequence += 1;
+      const commandId = `${peerId}.item.${itemActionSequence}.${type}`;
+      await runtime.send({
+        id: commandId,
+        channel: "reliable",
+        kind: ARENA_ACTION_KIND,
+        targetPeerIds: [authorityPeerId],
+        correlationId: commandId,
+        payload: {
+          type,
+          commandId,
+          inputSequence: latestInputSequence,
+          aimX: aim.x,
+          aimZ: aim.z,
+          charge: type === "use" ? 1 : 0,
+          ...(target === undefined
+            ? {}
+            : {
+                targetItemId: target.itemId,
+                targetItemGeneration: target.itemGeneration
+              })
+        }
+      });
+    },
     async dispose() {
       game.dispose();
       effects.dispose();
@@ -401,6 +534,11 @@ export async function createArenaClientSession(options: {
       await runtime.dispose();
     }
   };
+}
+
+function normalizedAim(input: ArenaClientInput): { x: number; z: number } {
+  const length = Math.hypot(input.moveX, input.moveZ);
+  return length <= 0.0001 ? { x: 0, z: -1 } : { x: input.moveX / length, z: input.moveZ / length };
 }
 
 export function normalizeSessionId(value: string): string {

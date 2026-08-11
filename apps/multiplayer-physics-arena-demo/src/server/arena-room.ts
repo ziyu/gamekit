@@ -60,7 +60,10 @@ export class KnockoutArenaRoom extends Room {
       },
       resolveSessionId: (_room, createOptions) => createOptions.sessionId ?? sessionId,
       async createRuntime({ multiplayer }) {
-        const backend = await initRapier3dPhysicsBackend({ id: `knockout.rapier3d.${sessionId}` });
+        const backend = await initRapier3dPhysicsBackend({
+          id: `knockout.rapier3d.${sessionId}`,
+          groups: { "arena-item": 0b001, "arena-actor": 0b010, "arena-world": 0b100 }
+        });
         const authority: ArenaAuthorityRuntime = createArenaAuthorityRuntime({
           runtime: multiplayer,
           backend,

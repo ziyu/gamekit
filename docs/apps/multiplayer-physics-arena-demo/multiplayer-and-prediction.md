@@ -66,7 +66,7 @@ type ArenaSnapshot = {
   participants: ArenaParticipantProjection[];
   stageResults: ArenaPublicStageResult[];
   items: ArenaItemProjection[];
-  actions: ArenaPublicActionPhase[];
+  itemActions: ArenaPublicItemAction[];
   frame: MultiplayerPhysicsArenaFrame;
   playerIdsByPeerId: Record<string, string>;
   inputAcksByPeerId: Record<string, number>;
@@ -82,6 +82,10 @@ member state。App schema 承载 match/item/action/ack；Physics Core 不解析�
 
 Projection 验证有限数字、唯一 id、member/item/effect 上限、definition/schema compatibility 和 payload bytes。未知或超预算
 frame 被拒绝并诊断，不能部分读取后继续 replay。
+
+`items` 公开 definition、instance generation、authority state、owner/source/execution、revision、deadline 和可选 Physics member
+id；`itemActions` 公开 command 的 `windup/confirmed/rejected` 结果。两者分别有 32/64 的硬上限，客户端不得从 frame member
+缺失自行推断 owner，也不得把本地 predicted action 伪装成 confirmed result。
 
 `match.membershipRevision` 必须与 Physics frame 一致。Stage result 只追加 authority settlement，late join/reconnect 读取同一份
 participant/result projection 恢复当前语义状态，不从客户端缓存重建晋级或 winner。
@@ -109,6 +113,8 @@ command/history；不能在成员不完整时继续 replay。
 - Physics body/collider/solver 只由 island contributor 捕获一次。
 - Motor contributor 只捕获 per-member motor state和有界 timers。
 - Contributor 声明 max bytes/history/work，并共享 generation/member lifecycle。
+- `arena.item-carry` 是无业务缓存的 stateless contributor；每 tick command 显式携带 speed/jump modifier，因此 replay 不读取
+  snapshot callback 外的可变 owner 缓存。
 - Reconcile 先恢复 authority tick 的 Physics + motor baseline，再按 input history 重演。
 - 淘汰/member removal、stage generation、hard correction 和 dispose 原子清理两类 state。
 

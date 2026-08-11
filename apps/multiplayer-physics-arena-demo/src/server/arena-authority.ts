@@ -31,6 +31,7 @@ import {
   type ArenaStageRankingFact,
   type ArenaStageSettlement
 } from "../match/ranking-policy";
+import { readArenaItemAction, type ArenaItemAction } from "../items/item-action";
 import {
   ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
   createArenaCharacterIntent,
@@ -46,6 +47,7 @@ import { resetArenaRoundPhysics, resolveArenaActorAuthorityStep } from "./arena-
 import {
   ARENA_DEFINITION_VERSION,
   ARENA_FIXED_STEP_MS,
+  ARENA_ACTION_KIND,
   ARENA_INPUT_KIND,
   ARENA_ISLAND_ID,
   ARENA_MAX_HUMANS,
@@ -62,6 +64,10 @@ import {
   type ArenaAuthorityEffectCue,
   type ArenaSnapshot
 } from "../shared/protocol";
+import {
+  createArenaItemAuthorityCoordinator,
+  type ArenaItemAuthorityCoordinatorDiagnostics
+} from "./arena-item-authority";
 
 export type ArenaAuthorityRuntimeSnapshot = {
   phase: ArenaMatchPhase;
@@ -74,6 +80,7 @@ export type ArenaAuthorityRuntimeSnapshot = {
   match: ArenaMatchDirectorSnapshot;
   participants: ArenaParticipantRegistryDiagnostics;
   impacts: ArenaImpactLedgerDiagnostics;
+  items: ArenaItemAuthorityCoordinatorDiagnostics["runtime"];
   settlement?: ArenaStageSettlement | undefined;
 };
 
@@ -101,6 +108,10 @@ export type ArenaAuthorityRetainedState = {
   stageEntrants: number;
   stageResults: number;
   latestSnapshots: number;
+  itemInstances: number;
+  itemCommands: number;
+  itemActions: number;
+  itemExecutions: number;
 };
 
 export type CreateArenaAuthorityRuntimeOptions = {
@@ -143,10 +154,18 @@ export function createArenaAuthorityRuntime(
     maxAssists: 3
   });
   const characterMotor = createArenaCharacterMotorContributor();
+  const initialGeneration = { match: 1, stage: 1, membershipRevision: 1 };
+  const itemAuthority = createArenaItemAuthorityCoordinator({
+    stages: content.stages,
+    participants,
+    initialStageInstanceId: director.snapshot().stageInstanceId,
+    initialGeneration,
+    initialTick: 0
+  });
   const island = createPhysicsPredictionIsland({
     backend: options.backend,
-    generation: arenaGenerationKey({ match: 1, stage: 1, membershipRevision: 1 }),
-    initialMembers: definitions,
+    generation: arenaGenerationKey(initialGeneration),
+    initialMembers: [...definitions, ...itemAuthority.initialMembers()],
     environment: ARENA_ENVIRONMENT,
     fixedDeltaMs: ARENA_FIXED_STEP_MS,
     maxHistoryTicks: 180,
@@ -155,7 +174,7 @@ export function createArenaAuthorityRuntime(
     maxReplayTicksPerOperation: 120,
     maxMembers: 32,
     maxCommands: 2_048,
-    auxiliaryContributors: [characterMotor],
+    auxiliaryContributors: [characterMotor, itemAuthority.auxiliaryContributor],
     scene: {
       dimension: "3d",
       gravity: { x: 0, y: -18, z: 0 },
@@ -163,7 +182,8 @@ export function createArenaAuthorityRuntime(
         { id: "course", friction: 0.85, restitution: 0.05 },
         { id: "actor", friction: 0.55, restitution: 0.08, density: 1 },
         { id: "prop", friction: 0.65, restitution: 0.45, density: 0.7 },
-        { id: "hazard", friction: 0.45, restitution: 0.3 }
+        { id: "hazard", friction: 0.45, restitution: 0.3 },
+        ...itemAuthority.materialDefinitions()
       ]
     }
   });
@@ -203,15 +223,17 @@ export function createArenaAuthorityRuntime(
   });
 
   const authorityLoop: MultiplayerAuthorityHostLoop = createMultiplayerAuthorityHostLoop<
-    never,
+    ArenaItemAction,
     ArenaMoveInput,
     ArenaSnapshot
   >({
     runtime: options.runtime,
     binding,
+    actionKind: ARENA_ACTION_KIND,
     inputKind: ARENA_INPUT_KIND,
     snapshotKind: ARENA_SNAPSHOT_KIND,
     snapshotVersion: ARENA_SCHEMA_VERSION,
+    readAction: readArenaItemAction,
     readInput: readArenaMoveInput,
     inputSequence: (input) => input.sequence,
     inputDelivery: {
@@ -224,6 +246,35 @@ export function createArenaAuthorityRuntime(
     maxInputsPerSourcePerTick: 1,
     maxQueuedInputsPerSource: 24,
     maxQueuedInputs: ARENA_MAX_HUMANS * 24,
+    maxActionsPerSourcePerTick: 4,
+    maxQueuedActionsPerSource: 16,
+    maxQueuedActions: ARENA_MAX_HUMANS * 16,
+    handleAction({ message, payload }) {
+      const participant = participants.byPeerId(message.sourcePeerId);
+      if (
+        participant === undefined ||
+        !participant.connected ||
+        participant.actorMemberId === undefined ||
+        participant.status !== "active" ||
+        director.snapshot().phase !== "running"
+      ) {
+        return {
+          allowed: false,
+          code: "arena-item-action-unbound",
+          reason: "Arena item actions require an active running participant."
+        };
+      }
+      if (itemAuthority.hasAction(payload.commandId)) return { allowed: true };
+      if (itemAuthority.pendingActionCount() >= ARENA_MAX_HUMANS * 4) {
+        return {
+          allowed: false,
+          code: "arena-item-action-queue-full",
+          reason: "Arena item action queue is full for this tick."
+        };
+      }
+      itemAuthority.queueAction(participant.id, payload);
+      return { allowed: true };
+    },
     handleInput({ message, payload }) {
       const participant = participants.byPeerId(message.sourcePeerId);
       if (
@@ -289,6 +340,7 @@ export function createArenaAuthorityRuntime(
         match,
         participants: participants.diagnostics(),
         impacts: impactLedger.diagnostics(),
+        items: itemAuthority.diagnostics().runtime,
         ...(latestSettlement === undefined ? {} : { settlement: structuredClone(latestSettlement) })
       };
     },
@@ -315,7 +367,12 @@ export function createArenaAuthorityRuntime(
         rankingFacts: rankingSpatialFacts.size,
         stageEntrants: stageEntrantParticipantIds.size,
         stageResults: stageResults.length,
-        latestSnapshots: latest === undefined ? 0 : 1
+        latestSnapshots: latest === undefined ? 0 : 1,
+        itemInstances: itemAuthority.diagnostics().runtime.instances,
+        itemCommands: itemAuthority.diagnostics().runtime.commands,
+        itemActions:
+          itemAuthority.diagnostics().publicActions + itemAuthority.diagnostics().pendingActions,
+        itemExecutions: itemAuthority.diagnostics().pendingExecutions
       };
     },
     dispose() {
@@ -327,6 +384,7 @@ export function createArenaAuthorityRuntime(
       director.dispose();
       participants.dispose();
       impactLedger.dispose();
+      itemAuthority.dispose();
       inputsByPeerId.clear();
       inputAcksByPeerId.clear();
       actorControlsByMemberId.clear();
@@ -437,14 +495,13 @@ export function createArenaAuthorityRuntime(
             .filter((participant) => participant.actorMemberId !== undefined)
             .map((participant) => participant.id)
         );
-        resetArenaRoundPhysics(
-          island,
-          arenaGenerationKey({
-            match: action.round,
-            stage: action.stageIndex + 1,
-            membershipRevision
-          })
-        );
+        const generation = {
+          match: action.round,
+          stage: action.stageIndex + 1,
+          membershipRevision
+        };
+        resetArenaRoundPhysics(island, arenaGenerationKey(generation));
+        installStageItems(action.stageIndex, action.stageInstanceId, authorityTick, generation);
         authorityEffects.clear();
         rankingSpatialFacts.clear();
         impactLedger.reset();
@@ -518,18 +575,31 @@ export function createArenaAuthorityRuntime(
     }
     stageEntrantParticipantIds = nextEntrants;
     membershipRevision += 1;
-    resetArenaRoundPhysics(
-      island,
-      arenaGenerationKey({
-        match: director.snapshot().round,
-        stage: stageIndex + 1,
-        membershipRevision
-      })
-    );
+    const generation = {
+      match: director.snapshot().round,
+      stage: stageIndex + 1,
+      membershipRevision
+    };
+    resetArenaRoundPhysics(island, arenaGenerationKey(generation));
+    installStageItems(stageIndex, stageInstanceId, authorityTick, generation);
     authorityEffects.clear();
     rankingSpatialFacts.clear();
     impactLedger.reset();
     latestSettlement = undefined;
+  }
+
+  function installStageItems(
+    stageIndex: number,
+    stageInstanceId: string,
+    authorityTick: number,
+    generation: { match: number; stage: number; membershipRevision: number }
+  ): void {
+    itemAuthority.installStage({
+      stageIndex,
+      stageInstanceId,
+      generation,
+      tick: authorityTick
+    });
   }
 
   function settleStageParticipants(
@@ -652,6 +722,7 @@ export function createArenaAuthorityRuntime(
     const targetTick = island.tick() + 1;
     const commands: PhysicsPredictionIslandCommand[] = [];
     let commandIndex = 0;
+    const nextSequence = () => authorityTick * 64 + commandIndex++;
     const queuePatch = (
       memberId: string,
       patch: Extract<PhysicsPredictionIslandCommand, { type: "patch" }>["patch"]
@@ -659,31 +730,37 @@ export function createArenaAuthorityRuntime(
       commands.push({
         type: "patch",
         tick: targetTick,
-        sequence: authorityTick * 64 + commandIndex,
+        sequence: nextSequence(),
         memberId,
         patch
       });
-      commandIndex += 1;
     };
     const queueDespawn = (memberId: string) => {
       commands.push({
         type: "despawn",
         tick: targetTick,
-        sequence: authorityTick * 64 + commandIndex,
+        sequence: nextSequence(),
         memberId
       });
-      commandIndex += 1;
     };
     const queueCharacterControl = (command: CharacterMotorPredictionCommand) => {
       commands.push({
         type: "auxiliary",
         tick: targetTick,
-        sequence: authorityTick * 64 + commandIndex,
+        sequence: nextSequence(),
         contributorId: ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
         payload: command
       });
-      commandIndex += 1;
     };
+
+    itemAuthority.advancePhysics({
+      authorityTick,
+      targetTick,
+      island,
+      controlsByMemberId: actorControlsByMemberId,
+      nextSequence,
+      commands
+    });
 
     actorControlsByMemberId.clear();
     for (let slot = 0; slot < ARENA_MAX_HUMANS; slot += 1) {
@@ -692,22 +769,37 @@ export function createArenaAuthorityRuntime(
       const peerId = participant?.connected ? participant.peerId : undefined;
       const input =
         peerId === undefined ? botInput(authorityTick, slot) : inputsByPeerId.get(peerId);
-      actorControlsByMemberId.set(
+      const control = queueActorMotion(
+        queueCharacterControl,
+        queueDespawn,
         memberId,
-        queueActorMotion(queueCharacterControl, queueDespawn, memberId, input ?? neutralInput())
+        input ?? neutralInput()
       );
+      actorControlsByMemberId.set(memberId, control);
+      itemAuthority.queueCarryModifier({
+        memberId,
+        control,
+        tick: targetTick,
+        nextSequence,
+        commands
+      });
     }
     for (let slot = 0; slot < 6; slot += 1) {
       const memberId = `bot.${slot}`;
-      actorControlsByMemberId.set(
+      const control = queueActorMotion(
+        queueCharacterControl,
+        queueDespawn,
         memberId,
-        queueActorMotion(
-          queueCharacterControl,
-          queueDespawn,
-          memberId,
-          botInput(authorityTick, slot + 2)
-        )
+        botInput(authorityTick, slot + 2)
       );
+      actorControlsByMemberId.set(memberId, control);
+      itemAuthority.queueCarryModifier({
+        memberId,
+        control,
+        tick: targetTick,
+        nextSequence,
+        commands
+      });
     }
 
     const angle = authorityTick * 0.028;
@@ -857,6 +949,8 @@ export function createArenaAuthorityRuntime(
         revision: participant.revision
       })),
       stageResults: structuredClone(stageResults),
+      items: itemAuthority.publicItems(state.members),
+      itemActions: itemAuthority.publicActions(),
       frame: result.frame,
       playerIdsByPeerId: Object.fromEntries(
         participants

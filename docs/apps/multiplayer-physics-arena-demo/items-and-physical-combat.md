@@ -104,6 +104,8 @@ Item Authority Runtime 对 instance、command result 和 transition trace 分别
 - 每名角色默认一个 carry slot。扩展多 slot 需要新的明确 UI/输入设计，不能静默堆叠。
 - Carried item 使用稳定 socket semantic（例如 `hand.primary`），不把 Three bone/native object 写入 gameplay state。
 - Carry profile 可以修改角色 max speed、acceleration、dive、jump、turn rate 和被击落时 drop policy。
+- Carry modifier 作为 `arena.item-carry` auxiliary command 在 Character Motor 之后执行；它与 Physics checkpoint 同 tick
+  capture/restore/replay。Authority 与 Client 必须从同一 item owner/definition 生成 command，不能只在表现层调移动速度。
 - Carried item 不参与 solver contact。表现 attachment 只消费 owner presented transform；它不能作为命中或遮挡来源。
 - Owner eliminated、disconnect grace 超时、stage 结束或 item action cancel 时执行 definition 的 drop/spent policy，且只执行一次。
 
@@ -116,6 +118,8 @@ Item action 走 GAS execution：`requested → preparing/windup → committed �
 - Throw commit 解析 authority hand/socket position、normalized aim、charge curve、owner inherited velocity 和 collision-safe spawn。
 - Spawn 先运行 capsule/shape clearance；失败时使用明确 fallback/drop，不把 item 生成在墙后或 owner collider 内。
 - Drop 使用低速 world spawn，不触发 attack delivery；throw 才创建可命中的 active item generation。
+- Drop 与 throw 都递增 item instance generation；drop 回到 `world`，throw 进入 definition 声明的 active state。新 generation
+  的 Physics member id 必须替换旧 carried/world member，旧 generation 的 contact、command 和 result 一律 stale。
 - Melee commit 不生成隐藏物理锤 joint；Combat melee/shape delivery 从 authority actor/socket 空间事实求候选。
 
 ## 首组道具
@@ -183,7 +187,9 @@ environment cause。淘汰时 Match domain 只读取 ledger 的稳定摘要：
 
 ## Multiplayer Prediction
 
-- Continuous move/aim/charge 进入 fixed-step redundant input；pickup/use/throw/drop 的 edge/command 使用可去重 sequence。
+- Continuous move/aim/charge 进入 fixed-step redundant input；pickup/use/throw/drop 走 bounded reliable action lane，携带
+  command/correlation、已消费 input sequence、normalized aim、charge 和可选 item/generation hint。Authority 不信任 hint，仍按
+  authority body 重新 target/validate。
 - Owner 可以预测 pickup despawn、throw spawn 和 trajectory，但 item owner、hit、instability、stagger、KO 与 respawn 由 authority
   confirm/reject/correct。
 - 可碰撞 released item 与所有潜在 contact actor 在同一 prediction island；不能只在 owner client 模拟 collision。
