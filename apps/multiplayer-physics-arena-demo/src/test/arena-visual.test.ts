@@ -28,6 +28,42 @@ describe("Knockout Circuit presentation", () => {
     expect(native.scene.getObjectByName("knockout-circuit.root")).toBeUndefined();
   });
 
+  it("faces a runner along horizontal velocity instead of adding solver yaw", () => {
+    for (const [moveX, moveZ] of [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0]
+    ] as const) {
+      const native = fakeNative(vi.fn());
+      const visual = createArenaVisual(native, createArenaDefinitionMap());
+      const state = arenaState();
+      const player = state.members.find((member) => member.id === "player.0")!;
+      player.body.linearVelocity = { x: moveX * 4.5, y: 0, z: moveZ * 4.5 };
+      player.body.rotation = {
+        x: 0,
+        y: Math.sin(Math.PI / 4),
+        z: 0,
+        w: Math.cos(Math.PI / 4)
+      };
+
+      for (let frame = 0; frame < 24; frame += 1) {
+        state.tick += 1;
+        visual.update(state, "player.0", 16);
+      }
+
+      const model = native.scene.getObjectByName("player.0.runner-model");
+      const worldRotation = model?.getWorldQuaternion(new THREE.Quaternion());
+      const facing = new THREE.Vector3(0, 0, -1)
+        .applyQuaternion(worldRotation!)
+        .setY(0)
+        .normalize();
+      const movement = new THREE.Vector3(moveX, 0, moveZ);
+      expect(facing.dot(movement)).toBeGreaterThan(0.999);
+      visual.destroy();
+    }
+  });
+
   it("bounds speculative effect presentation and removes expired particles", () => {
     const native = fakeNative(vi.fn());
     const visual = createArenaVisual(native, createArenaDefinitionMap());

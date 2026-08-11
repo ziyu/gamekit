@@ -605,16 +605,19 @@ function updateMemberVisual(
   local: boolean
 ): void {
   const alpha = visual.initialized ? 1 - Math.exp(-deltaMs / (local ? 38 : 72)) : 1;
-  applyTransform(visual.root, body.position, body.rotation, alpha);
+  const actor = visual.role === "player" || visual.role === "bot";
+  // Rapier yaw belongs to the collision capsule. Runner facing is presentation state derived from
+  // horizontal velocity; applying both rotations would make every contact yaw the model twice.
+  applyTransform(visual.root, body.position, actor ? undefined : body.rotation, alpha);
   visual.initialized = true;
-  if (visual.role !== "player" && visual.role !== "bot") return;
+  if (!actor) return;
 
   const velocity = body.linearVelocity;
   const horizontalSpeed = Math.hypot(velocity.x, velocity.z ?? 0);
   const stride = Math.min(1, horizontalSpeed / 6.4);
   if (horizontalSpeed > 0.12) {
     const targetYaw = Math.atan2(-velocity.x, -(velocity.z ?? 0));
-    visual.model.rotation.y = lerpAngle(visual.model.rotation.y, targetYaw, alpha * 0.7);
+    visual.root.rotation.y = lerpAngle(visual.root.rotation.y, targetYaw, alpha * 0.7);
   }
   const step = tick * 0.42;
   visual.model.position.y = Math.abs(Math.sin(step)) * stride * 0.055 * UNIT;
