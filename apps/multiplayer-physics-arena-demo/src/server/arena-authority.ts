@@ -18,11 +18,10 @@ import {
 
 import {
   ARENA_ENVIRONMENT,
-  arenaActorSpawn,
   createArenaMemberDefinitions,
   isArenaActor
 } from "../shared/arena-definition";
-import { createArenaActorMotionPatch } from "../shared/arena-control";
+import { resetArenaRoundPhysics, resolveArenaActorAuthorityStep } from "./arena-actor-lifecycle";
 import {
   ARENA_DEFINITION_VERSION,
   ARENA_FIXED_STEP_MS,
@@ -112,6 +111,7 @@ export function createArenaAuthorityRuntime(
   const actorControlsByMemberId = new Map<string, ArenaActorControl>();
   const eliminatedMemberIds = new Set<string>();
   const authorityEffects = new Map<string, ArenaAuthorityEffectCue>();
+  let membershipRevision = 1;
   let phase: ArenaMatchPhase = "lobby";
   let round = 1;
   let countdownMs = COUNTDOWN_MS;
@@ -302,14 +302,23 @@ export function createArenaAuthorityRuntime(
   }
 
   function detectEliminations(): void {
+    let membershipChanged = false;
     for (const member of island.state().members) {
-      if (isArenaActor(member.id) && member.body.position.y < -4) {
+      if (
+        isArenaActor(member.id) &&
+        member.body.position.y < -4 &&
+        !eliminatedMemberIds.has(member.id)
+      ) {
         eliminatedMemberIds.add(member.id);
+        membershipChanged = true;
       }
     }
+    if (membershipChanged) membershipRevision += 1;
   }
 
   function resetRound(): void {
+    resetArenaRoundPhysics(island, round);
+    membershipRevision += 1;
     eliminatedMemberIds.clear();
     authorityEffects.clear();
     winnerId = undefined;
@@ -335,6 +344,15 @@ export function createArenaAuthorityRuntime(
       });
       commandIndex += 1;
     };
+    const queueDespawn = (memberId: string) => {
+      commands.push({
+        type: "despawn",
+        tick: targetTick,
+        sequence: authorityTick * 64 + commandIndex,
+        memberId
+      });
+      commandIndex += 1;
+    };
 
     actorControlsByMemberId.clear();
     for (let slot = 0; slot < ARENA_MAX_HUMANS; slot += 1) {
@@ -344,14 +362,14 @@ export function createArenaAuthorityRuntime(
         peerId === undefined ? botInput(authorityTick, slot) : inputsByPeerId.get(peerId);
       actorControlsByMemberId.set(
         memberId,
-        queueActorMotion(queuePatch, memberId, input ?? neutralInput())
+        queueActorMotion(queuePatch, queueDespawn, memberId, input ?? neutralInput())
       );
     }
     for (let slot = 0; slot < 6; slot += 1) {
       const memberId = `bot.${slot}`;
       actorControlsByMemberId.set(
         memberId,
-        queueActorMotion(queuePatch, memberId, botInput(authorityTick, slot + 2))
+        queueActorMotion(queuePatch, queueDespawn, memberId, botInput(authorityTick, slot + 2))
       );
     }
 
@@ -406,31 +424,32 @@ export function createArenaAuthorityRuntime(
       memberId: string,
       patch: Extract<PhysicsPredictionIslandCommand, { type: "patch" }>["patch"]
     ) => void,
+    queueDespawn: (memberId: string) => void,
     memberId: string,
     input: ArenaMoveInput
   ): ArenaActorControl {
     const body = island.body(memberId);
-    if (!body) return neutralControl();
-    if (phase === "countdown" || phase === "lobby" || eliminatedMemberIds.has(memberId)) {
-      const position = eliminatedMemberIds.has(memberId) ? arenaActorSpawn(memberId) : undefined;
-      queuePatch(memberId, {
-        ...(position === undefined ? {} : { position }),
-        linearVelocity: { x: 0, y: 0, z: 0 }
-      });
-      return neutralControl();
+    const step = resolveArenaActorAuthorityStep({
+      phase,
+      eliminated: eliminatedMemberIds.has(memberId),
+      input,
+      currentVelocity: body?.linearVelocity
+    });
+    if (step.action.type === "patch") {
+      queuePatch(memberId, step.action.patch);
+    } else if (step.action.type === "despawn") {
+      queueDespawn(memberId);
     }
-    const control = actorControl(input);
-    queuePatch(memberId, createArenaActorMotionPatch(control, body.linearVelocity));
-    return control;
+    return step.control;
   }
 
   function captureSnapshot(): ArenaSnapshot {
     const state = island.state();
     const result = projection.capture({
       islandId: ARENA_ISLAND_ID,
-      generation: `round.${round}`,
+      generation: state.generation,
       tick: state.tick,
-      membershipRevision: round,
+      membershipRevision,
       definitionVersion: ARENA_DEFINITION_VERSION,
       members: state.members
     });
@@ -473,14 +492,6 @@ export function createArenaAuthorityRuntime(
 
 function neutralInput(): ArenaMoveInput {
   return { sequence: 0, moveX: 0, moveZ: 0, jump: false };
-}
-
-function neutralControl(): ArenaActorControl {
-  return { moveX: 0, moveZ: 0, jump: false };
-}
-
-function actorControl(input: ArenaMoveInput): ArenaActorControl {
-  return { moveX: input.moveX, moveZ: input.moveZ, jump: input.jump };
 }
 
 function botInput(tick: number, slot: number): ArenaMoveInput {

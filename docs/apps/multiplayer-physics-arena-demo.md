@@ -21,7 +21,8 @@ Multiplayer Physics Arena Demo 是 GameKit 的 3D server-authoritative 高互动
 - 默认一局包含 2 个真人和 6 个 bots，支持 12 个参与者的压力 preset。
 - 玩家使用动态 capsule，支持移动、跳跃和可撤销的 dive；角色之间可以推挤、阻挡和连锁碰撞。
 - 单一短赛道由三个可读区域组成：旋转 sweeper、拥挤门与可推动物体、移动平台与终点。
-- 掉出场地后由 authority 决定淘汰或从最近检查点重生；到达终点和排名只由 authority 提交。
+- 掉出场地后由 authority 淘汰；淘汰 Actor 从本局 prediction island 移除，不再参与碰撞，也不会在本局内重生。
+  只有下一局开始时才由新的 round generation 统一恢复完整初始阵容；到达终点和排名只由 authority 提交。
 - 视觉采用“午夜电视竞技秀 + 霓虹玩具赛道”方向：程序化 Three mesh、强轮廓、赛道灯带和远景观众舱形成独立辨识度，
   不依赖外部品牌资产，也不复刻糖豆人角色或关卡美术。
 - 玩家使用独立的 Circuit Runner 造型和第三人称跟随镜头；移动步态、跳跃涟漪、碰撞碎片与短促镜头震动只消费
@@ -50,6 +51,8 @@ Multiplayer Physics Arena Demo 是 GameKit 的 3D server-authoritative 高互动
   但会参与接触的 Actor 必须在 replay 中继续消费共享 motor，避免碰撞速度与 authority 控制每帧分叉。
 - snapshot 到达后先 reconcile 全体成员，再重演未确认本地输入。成员 revision、generation、definition 或 history
   不可复用时安装完整 hard-correction baseline。
+- 淘汰会递增 membership revision，并通过 authority frame 移除对应 Actor；客户端不得为缺失 Actor 保留可碰撞替身。
+  下一局 generation 变化后重新安装完整初始 baseline。
 - 任何会与本地玩家发生因果接触的对象都不能只做 renderer interpolation。纯装饰物、远景和 UI 不进入 island。
 - 跳跃、dive、碰撞 pulse、落地尘土和镜头反馈可以本地 anticipation，但通过 speculative effect journal 去重并接受
   authority confirm/cancel；淘汰、检查点、名次和奖励不预测为最终事实。
