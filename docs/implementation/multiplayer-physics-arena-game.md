@@ -10,7 +10,7 @@ authority AI，以及完整表现、诊断和网络故障验收。
 
 长期设计入口：
 
-- `docs/apps/multiplayer-physics-arena-demo.md`
+- `docs/apps/multiplayer-physics-arena-demo/README.md`
 - `docs/modules/physics.md`
 - `docs/modules/multiplayer.md`
 - `docs/modules/combat.md`
@@ -23,17 +23,9 @@ authority AI，以及完整表现、诊断和网络故障验收。
 
 ## 完成定义
 
-最终验收必须同时满足：
-
-- 2 个真实浏览器玩家与 6 个 authority bots 能完成资格赛、道具乱斗和坍塌决赛，产生唯一 winner 并 rematch。
-- 一名参与者在当前 stage 被淘汰后从 Physics island 移除，只能观战；后续 stage 只恢复已晋级者，下一场 match 才恢复
-  完整参赛阵容。
-- 玩家可以稳定移动、转向、跳跃、dive、推挤、拾取、近战、蓄力投掷和丢弃；键鼠与标准 gamepad 都可操作。
-- 至少 3 个 stage 场景、10 类场景机关/表面、4 类可拾取道具和 3 种 bot archetype 进入真实对局。
-- 玩家、动态道具、飞行道具和会产生接触因果的机关使用同一个标准 arena prediction path；游戏不自建 netcode 状态机。
-- 0–150 ms one-way latency、0–50 ms jitter、0–5% input loss、snapshot gap 和 duplicate preset 下仍能完成整场比赛，
-  不重复命中、胜负、道具消费或 cue。
-- 10 分钟 authority/bot soak、双浏览器 smoke、全仓门禁和新增性能预算全部通过。
+长期功能、测试、网络和性能验收标准由
+[`quality-and-acceptance.md`](../apps/multiplayer-physics-arena-demo/quality-and-acceptance.md) 唯一维护。本文只在各 P 任务下记录
+当前实现证据、review、命令结果与 commit，不复制长期完成定义。
 
 ## 当前能力审计
 
@@ -51,31 +43,10 @@ authority AI，以及完整表现、诊断和网络故障验收。
 
 ## 架构与状态所有权
 
-```mermaid
-flowchart LR
-  I["Player Input / AI Intent"] --> C["Character Controller"]
-  I --> X["Arena Interaction Runtime"]
-  C --> P["Physics Body Commands"]
-  X --> G["GAS / Combat"]
-  X --> P
-  G --> P
-  P --> A["Authority Physics Arena Island"]
-  A --> R["Arena Authority Projection"]
-  R --> M["Managed Multiplayer Replication"]
-  M --> Q["Client Arena Prediction + Auxiliary Replay"]
-  Q --> V["Three / Animator / Audio / Camera / UI"]
-```
-
-长期所有权约束：
-
-- Physics solver、body/collider、contact、impulse 和 checkpoint 只由 Physics island 拥有。
-- Character controller 持有 grounded/coyote/jump-buffer/dive/recovery 等少量确定性状态，并以独立 rollback contributor
-  和 Physics checkpoint 同 tick capture/restore；不能塞进 renderer、AI blackboard 或 body `userData`。
-- Match stage、qualified/eliminated、winner、KO credit、item owner 和 item lifecycle 是 authority-only gameplay fact。
-- Carried item 不保留一个隐藏的可碰撞 body：world item 被 pickup 后从 island despawn，表现 attachment 使用同一稳定
-  item identity；release/throw 使用新 generation 重新 spawn。
-- Combat/GAS 决定攻击是否合法、instability/stagger 如何变化；Physics 只执行已提交的空间 command。
-- AI 只输出与玩家同构的 intent。Navigation 不移动 body，Animator/Audio/Camera/UI 不写回 gameplay 或 solver state。
+长期系统分层与全局不变量见
+[`README.md`](../apps/multiplayer-physics-arena-demo/README.md)，具体多人状态所有权见
+[`multiplayer-and-prediction.md`](../apps/multiplayer-physics-arena-demo/multiplayer-and-prediction.md)。本工作流只记录实现这些
+边界时的任务与验证，不建立第二套架构描述。
 
 ## 必须先关闭的公共协议缺口
 
@@ -122,59 +93,15 @@ capture/restore/replay/reset。实现必须：
 
 该变化需要 ADR 和 App Host/Multiplayer/Physics 回归矩阵，不能在 Arena session callback 中私自调用多个 restore loop。
 
-## 游戏内容基线
+## 长期功能设计入口
 
-### Stage 1：Circuit Forge 资格赛
-
-- 8 人起跑，前 6 名晋级。
-- 机关：传送带、旋转杆、活塞门、移动平台、弹射板、冰面。
-- 道具较少，以验证角色控制、路线选择、动态拥堵和进度排名为主。
-
-### Stage 2：Scrap Yard 道具乱斗
-
-- 6 人进入，前 3 名晋级；场地随时间开启危险区。
-- 机关：粉碎机、风区、伸缩墙、滚动物体、中心积分区。
-- 四类首发道具全部出现，重点验证 pickup 冲突、carry、近战、throw、impact 与 KO credit。
-
-### Stage 3：Crown Collapse 决赛
-
-- 3 人进入，最后存活者获胜。
-- 机关：坍塌地板、收缩安全区、旋转 sweeper、间歇弹射和少量高价值道具。
-- 必须在有限时间内强制收敛；timeout 只作为故障保护。
-
-### 首发道具
-
-| 道具   | 生命周期与使用                                | 主要验证                                     |
-| ------ | --------------------------------------------- | -------------------------------------------- |
-| 泡沫球 | 快速拾取、短蓄力、快速投掷、命中后弹跳/耗尽   | predicted throw、bounce、轻 knockback        |
-| 能量块 | 慢速携带、长蓄力、重投、落地后可再次拾取      | carry 降速、重 impulse、动态 body            |
-| 冲击球 | 投掷后延时或首次碰撞触发 area impulse         | authority fuse、范围命中去重、speculative FX |
-| 泡沫锤 | carried melee windup → arc delivery，也可丢弃 | GAS phase、Combat melee、stagger、朝向       |
-
-Item DataType 至少声明 mass/impulse profile、carry modifier、windup、cooldown、respawn、delivery/effect reference、
-presentation binding 和 network strategy。数值不能散落在 input/session/render 文件。
-
-## AI 基线
-
-### Sensor
-
-- opponents：距离、相对速度、instability、是否携带道具、是否在危险边缘；
-- items：可见/可达、类型、距离、争抢者数量；
-- hazards：kill volume、收缩区、移动机关 phase、落脚面和逃生方向；
-- objectives：finish/checkpoint、中心区、晋级名额与剩余时间；
-- recent impact：攻击来源、最后有效推力和短期威胁。
-
-### Goal 与 task
-
-- `survive`：远离边缘/危险区，优先安全落点；
-- `advance`：沿 Navigation route 推进资格赛；
-- `acquire-item` / `deny-item`：评估距离、价值和竞争风险；
-- `attack-vulnerable`：选择高 instability、靠近边缘或正在 recovery 的目标；
-- `contest-objective`：争夺中心区或最后晋级位置；
-- `recover-position`：stuck、被击飞或路线失效后的受控恢复。
-
-Task 只输出 move/aim/jump/dive/interact/use/throw intent。Bot archetype 使用 data 权重：`sprinter`、`brawler`、
-`opportunist`；skill profile 调整 perception delay、aim error、commitment、risk 和 reaction time。
+- 比赛与胜负：[`match-flow.md`](../apps/multiplayer-physics-arena-demo/match-flow.md)
+- 角色控制：[`character-controller.md`](../apps/multiplayer-physics-arena-demo/character-controller.md)
+- 道具与战斗：[`items-and-physical-combat.md`](../apps/multiplayer-physics-arena-demo/items-and-physical-combat.md)
+- 场景机关：[`stages-and-hazards.md`](../apps/multiplayer-physics-arena-demo/stages-and-hazards.md)
+- AI 与路线：[`ai-and-navigation.md`](../apps/multiplayer-physics-arena-demo/ai-and-navigation.md)
+- 表现与 UX：[`presentation-and-ux.md`](../apps/multiplayer-physics-arena-demo/presentation-and-ux.md)
+- 内容与 Data：[`content-and-data.md`](../apps/multiplayer-physics-arena-demo/content-and-data.md)
 
 ## 实施阶段
 
@@ -259,28 +186,9 @@ Task 只输出 move/aim/jump/dive/interact/use/throw intent。Bot archetype 使�
 
 ## 验收预算
 
-首轮目标预算；P0 用真实基线校准，但任何放宽都必须记录测量证据：
-
-| 指标                 | 目标                                                                                |
-| -------------------- | ----------------------------------------------------------------------------------- |
-| Authority fixed step | 8 actor / 36 island member 下 p95 ≤ 4 ms，max ≤ 8 ms                                |
-| Client replay        | 12-tick replay p95 ≤ 5 ms；30-tick replay p95 ≤ 12 ms                               |
-| Snapshot payload     | 20 Hz、36 member + gameplay facts p95 ≤ 32 KiB，hard max 64 KiB                     |
-| Checkpoint/history   | 单 checkpoint ≤ 512 KiB；总 history ≤ 96 MiB                                        |
-| Input/prediction     | lead/replay command/hard correction 全部有界；正常网络无持续 hard correction        |
-| AI                   | 8 bot perception/decision/path 不超过 authority step 预算的 20%；无同帧全量重评尖峰 |
-| Browser              | 1080p 目标 60 FPS；gameplay 主线程 p95 frame ≤ 16.7 ms                              |
-| 稳定性               | 10 分钟 soak 无无界 heap/history/trace 增长，dispose retained state 为 0            |
-
-## 测试矩阵
-
-- Unit：match/ranking/tie-break、item state machine、interaction selection、impact policy、motor state、AI score/task。
-- Conformance：Physics command memory/Rapier2D/Rapier3D、character controller、auxiliary replay、item predicted lifecycle。
-- Integration：真实 Rapier3D + Colyseus Room + 2 clients；Combat/GAS/AI/Nav 同一 authority runtime。
-- Fault：0/50/100/150 ms、jitter、loss、duplicate、snapshot gap、revision/generation、reconnect/late join。
-- Content：3 stage 的 spawn/route/clearance/hazard/item/forced-convergence validator。
-- Browser：键鼠与 gamepad、双窗口、完整三 stage、spectator、winner、rematch、console error、视觉可读性。
-- Benchmark/soak：Arena prediction、AI、Navigation、Combat、Checkpoint、Arena gameplay 和 retained state。
+长期预算、测试矩阵、network fault、benchmark 和 soak 标准见
+[`quality-and-acceptance.md`](../apps/multiplayer-physics-arena-demo/quality-and-acceptance.md)。各阶段在此记录实际命令、测量、
+失败、rework 与 commit。
 
 关闭前至少运行：
 

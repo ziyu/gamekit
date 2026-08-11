@@ -13,7 +13,7 @@ Status: Closed
 - `docs/adr/0049-standard-multiplayer-physics-arena-prediction.md`
 - `docs/modules/multiplayer.md`
 - `docs/modules/physics.md`
-- `docs/apps/multiplayer-physics-arena-demo.md`
+- `docs/apps/multiplayer-physics-arena-demo/README.md`
 
 本工作流不扩展 provider matchmaking，不实现 joint/ragdoll，不在首轮引入自动 island partition，也不替换现有
 Multiplayer Demo、Outpost 或低层 prediction API。
