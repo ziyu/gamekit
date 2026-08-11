@@ -105,17 +105,17 @@ capture/restore/replay/reset。实现必须：
 
 ## 实施阶段
 
-| 阶段                             | 状态    | 主要产物                                                                          | 独立验收门                                         |
-| -------------------------------- | ------- | --------------------------------------------------------------------------------- | -------------------------------------------------- |
-| P0：决策与基准                   | Active  | Physics command、character controller、auxiliary replay ADR；数据/预算基线        | 公共边界 review；现有 consumer 兼容                |
-| P1：Physics command 与角色控制器 | Planned | Core/adapter command、character toolkit、键鼠/gamepad、player/AI shared intent    | Rapier3D controller course；prediction replay 一致 |
-| P2：赛事 authority               | Planned | 多 stage 状态机、participant/qualification/spectator、winner/tie-break、TCA facts | headless 8 人完整 match/rematch                    |
-| P3：道具与物理战斗               | Planned | Item runtime/DataType、pickup/carry/use/throw、Combat/GAS、KO credit              | 2 client 争抢同一道具；无重复消费/命中             |
-| P4：场景与内容                   | Planned | 3 stage、机关/表面、shared layout、Recast source/validator                        | 每场可完成；无不可达 spawn/goal                    |
-| P5：AI                           | Planned | Arena sensors/goals/tasks/archetypes、Navigation/steering、AI trace               | bots 能晋级、拾取、攻击、避险且不作弊              |
-| P6：表现与 UX                    | Planned | Animator、Audio、camera、HUD、spectator、results、可读 telegraph                  | 双窗口完整比赛体验，无 debug-only UI               |
-| P7：网络与性能加固               | Planned | item/pickup fault matrix、arena gameplay benchmark、soak、budget diagnostics      | 150 ms/5% loss 下整场收敛                          |
-| P8：最终验收与关闭               | Planned | review、全仓门禁、浏览器验收、文档收口、提交记录                                  | 完成定义全部满足                                   |
+| 阶段                             | 状态     | 主要产物                                                                          | 独立验收门                                         |
+| -------------------------------- | -------- | --------------------------------------------------------------------------------- | -------------------------------------------------- |
+| P0：决策与基准                   | Accepted | Physics command、character controller、auxiliary replay ADR；数据/预算基线        | 公共边界 review；现有 consumer 兼容                |
+| P1：Physics command 与角色控制器 | Active   | Core/adapter command、character toolkit、键鼠/gamepad、player/AI shared intent    | Rapier3D controller course；prediction replay 一致 |
+| P2：赛事 authority               | Planned  | 多 stage 状态机、participant/qualification/spectator、winner/tie-break、TCA facts | headless 8 人完整 match/rematch                    |
+| P3：道具与物理战斗               | Planned  | Item runtime/DataType、pickup/carry/use/throw、Combat/GAS、KO credit              | 2 client 争抢同一道具；无重复消费/命中             |
+| P4：场景与内容                   | Planned  | 3 stage、机关/表面、shared layout、Recast source/validator                        | 每场可完成；无不可达 spawn/goal                    |
+| P5：AI                           | Planned  | Arena sensors/goals/tasks/archetypes、Navigation/steering、AI trace               | bots 能晋级、拾取、攻击、避险且不作弊              |
+| P6：表现与 UX                    | Planned  | Animator、Audio、camera、HUD、spectator、results、可读 telegraph                  | 双窗口完整比赛体验，无 debug-only UI               |
+| P7：网络与性能加固               | Planned  | item/pickup fault matrix、arena gameplay benchmark、soak、budget diagnostics      | 150 ms/5% loss 下整场收敛                          |
+| P8：最终验收与关闭               | Planned  | review、全仓门禁、浏览器验收、文档收口、提交记录                                  | 完成定义全部满足                                   |
 
 ## 执行协议
 
@@ -137,8 +137,8 @@ capture/restore/replay/reset。实现必须：
 | P0-01  | Accepted | —            | 三个公共缺口的影响分析、ADR 与 API/所有权草图                   | Physics、Multiplayer/App Host、第二 fixture 边界 review         |
 | P0-02  | Accepted | P0-01        | 14-member 当前基线与 36-member 目标 profile 测量工具            | authority、payload、checkpoint/history、replay 指标可重复输出   |
 | P0-03  | Accepted | P0-01        | Arena DataType、稳定 identity/generation 与内容校验骨架         | 无效引用/重复 id/非法 generation 的确定性 fixture               |
-| P0-04  | Active   | P0-02、P0-03 | P0 兼容 review、文档证据和阶段关闭                              | 现有 Multiplayer Demo、Outpost、Arena tests 与根级门禁通过      |
-| P1-01  | Planned  | P0-04        | Physics body command 协议、排序/拒绝诊断与 memory backend       | command conformance 覆盖 impulse、point、wake、duplicate/replay |
+| P0-04  | Accepted | P0-02、P0-03 | P0 兼容 review、文档证据和阶段关闭                              | 现有 Multiplayer Demo、Outpost、Arena tests 与根级门禁通过      |
+| P1-01  | Active   | P0-04        | Physics body command 协议、排序/拒绝诊断与 memory backend       | command conformance 覆盖 impulse、point、wake、duplicate/replay |
 | P1-02  | Planned  | P1-01        | Rapier2D/3D body command 映射                                   | 两个 adapter 通过同一 conformance；native capability 有诊断     |
 | P1-03  | Planned  | P1-02        | `@gamekit/character-controller` pure motor、Data 与 diagnostics | ground/coyote/buffer/slope/step/platform/dive/stagger 单元契约  |
 | P1-04  | Planned  | P1-03        | 标准 Arena auxiliary replay contributor                         | Physics 与 motor 同 tick capture/restore/replay/reset/dispose   |
@@ -172,11 +172,12 @@ capture/restore/replay/reset。实现必须：
 
 ## 验收记录
 
-| 工作包 | 验收时间   | 证据                                                                                                                                                                                                                    | Commit             |
-| ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| P0-01  | 2026-08-11 | ADR 0051/0052/0053；GitNexus：island HIGH（16 symbols/10 direct/1 flow），Arena adapter LOW（4 symbols/1 flow）；Physics 3D Lab 可作为第二 fixture 且不引入反向依赖                                                     | `25a996c`          |
-| P0-02  | 2026-08-11 | `bench:arena-prediction:check` 34 budgets passed；14-member authority p95 0.431 ms / replay-12 p95 3.927 ms；36-member authority p95 0.923 ms / replay-30 p95 11.686 ms / snapshot p95 14,242 bytes；dispose retained 0 | `6ed1807`          |
-| P0-03  | 2026-08-11 | 8 app-local DataTypes、三 stage baseline compiler、stable generation/participant/actor/item/claim/execution/hit/KO identity；duplicate/missing ref/illegal generation fixtures；Arena 19 tests passed                   | 本工作包提交时补录 |
+| 工作包 | 验收时间   | 证据                                                                                                                                                                                                                             | Commit             |
+| ------ | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| P0-01  | 2026-08-11 | ADR 0051/0052/0053；GitNexus：island HIGH（16 symbols/10 direct/1 flow），Arena adapter LOW（4 symbols/1 flow）；Physics 3D Lab 可作为第二 fixture 且不引入反向依赖                                                              | `25a996c`          |
+| P0-02  | 2026-08-11 | `bench:arena-prediction:check` 34 budgets passed；14-member authority p95 0.431 ms / replay-12 p95 3.927 ms；36-member authority p95 0.923 ms / replay-30 p95 11.686 ms / snapshot p95 14,242 bytes；dispose retained 0          | `6ed1807`          |
+| P0-03  | 2026-08-11 | 8 app-local DataTypes、三 stage baseline compiler、stable generation/participant/actor/item/claim/execution/hit/KO identity；duplicate/missing ref/illegal generation fixtures；Arena 19 tests passed                            | `5b55195`          |
+| P0-04  | 2026-08-11 | root test 92/92、build 50/50、lint 92/92、format passed；Arena regression guard 校准为 p95/capacity/correctness 门并连续两次 31/31 passed；wall-clock max 保留报告，最终 5 ms/12 ms replay 与 8 ms authority max 仍由 P7/P8 验收 | 本工作包提交时补录 |
 
 ## 分阶段实施细节
 

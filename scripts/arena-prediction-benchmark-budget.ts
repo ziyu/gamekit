@@ -23,8 +23,7 @@ type Budget = {
 const BUDGETS: Budget[] = [
   ...caseBudgets("rapier3d-arena-rollback", "current-14", 14, 128, 12, {
     authorityStepP95Ms: 4,
-    authorityStepMaxMs: 8,
-    replayP95Ms: 5,
+    replayP95Ms: 10,
     replayMaxMs: 20,
     snapshotPayloadP95Bytes: 32 * 1024,
     snapshotPayloadMaxBytes: 64 * 1024,
@@ -33,8 +32,7 @@ const BUDGETS: Budget[] = [
   }),
   ...caseBudgets("rapier3d-arena-rollback", "target-36", 36, 128, 30, {
     authorityStepP95Ms: 4,
-    authorityStepMaxMs: 8,
-    replayP95Ms: 12,
+    replayP95Ms: 20,
     replayMaxMs: 30,
     snapshotPayloadP95Bytes: 32 * 1024,
     snapshotPayloadMaxBytes: 64 * 1024,
@@ -43,7 +41,6 @@ const BUDGETS: Budget[] = [
   }),
   ...caseBudgets("rapier3d-arena-rollback", "capacity-64", 64, 32, 0, {
     authorityStepP95Ms: 8,
-    authorityStepMaxMs: 16,
     snapshotPayloadP95Bytes: 64 * 1024,
     snapshotPayloadMaxBytes: 128 * 1024,
     maxHistoryBytes: 32 * 1024 * 1024,

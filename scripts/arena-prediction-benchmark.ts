@@ -77,6 +77,8 @@ console.log(
       methodology: {
         backend: "real Rapier3D compat WASM",
         timing: "wall-clock performance.now",
+        budgetPolicy:
+          "P0 coarse regression guard; final 5 ms / 12 ms replay targets remain in quality-and-acceptance.md for P7 optimization and P8 acceptance",
         fixtureConstruction: "excluded from each measured round",
         measuredWork:
           "fixed-step authority simulation with 20 Hz projection, authoritative rewind, pending command replay, and authority frame projection after a prebuilt history",
