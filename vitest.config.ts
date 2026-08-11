@@ -106,6 +106,10 @@ export default defineConfig({
         .pathname,
       "@gamekit/camera-core": new URL("./packages/camera-core/src/index.ts", import.meta.url)
         .pathname,
+      "@gamekit/character-controller": new URL(
+        "./packages/character-controller/src/index.ts",
+        import.meta.url
+      ).pathname,
       "@gamekit/physics-core/testing": new URL(
         "./packages/physics-core/src/testing/index.ts",
         import.meta.url

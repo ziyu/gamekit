@@ -1,0 +1,37 @@
+{
+  "name": "@gamekit/character-controller",
+  "version": "0.1.0-alpha.5",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-library-package.mjs",
+    "test": "vitest run --root ../.. --config vitest.config.ts packages/character-controller/test --passWithNoTests",
+    "lint": "oxlint ."
+  },
+  "dependencies": {
+    "@gamekit/core": "workspace:*",
+    "@gamekit/data": "workspace:*",
+    "@gamekit/physics-core": "workspace:*"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "gamekitBuild": {
+    "bundleDts": false,
+    "entries": [
+      "src/index.ts"
+    ]
+  }
+}

@@ -65,6 +65,7 @@ packages/
   camera-core/
 
   physics-core/
+  character-controller/
   physics-rapier2d/
   physics-rapier3d/
   physics-matter/
@@ -138,6 +139,7 @@ game-runtime → core / world / event-bus
 world-koota → world / core / koota
 input-dom/input-tauri → input-core
 physics-core → core / event-bus / game-runtime / world / data / save
+character-controller → core / data / physics-core
 physics-rapier2d → physics-core / core / @dimforge/rapier2d-compat
 physics-rapier3d → physics-core / core / @dimforge/rapier3d-compat
 physics-matter → physics-core / core / matter-js
@@ -239,6 +241,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 | `@gamekit/input-dom` / `@gamekit/input-tauri`                                         | App Service adapter                           | DOM/Web Gamepad/Tauri 输入来源接入；Phaser runtime input 来源由 Phaser Driver 暴露。                                                                                                       |
 | `@gamekit/camera-core`                                                                | Game Module toolkit                           | CameraController、CameraRig、camera system/action helper；不作为 App Host 标准服务。                                                                                                       |
 | `@gamekit/physics-core`                                                               | Game Module toolkit                           | 统一 Physics facade、body/collider/query/contact 协议、标准 physics module helper。                                                                                                        |
+| `@gamekit/character-controller`                                                       | Game Module toolkit                           | 玩家/AI 共用的 backend-neutral locomotion intent、pure motor、Data 与 diagnostics；通过 Physics 协议输出 patch/command，不拥有输入、AI、表现或多人生命周期。                               |
 | `@gamekit/physics-rapier2d` / `@gamekit/physics-rapier3d` / `@gamekit/physics-matter` | Game Module backend adapter                   | 独立物理库 adapter；Rapier 按 2D / 3D 分包，第三方类型不进入 physics-core 或 gameplay 公共 API。                                                                                           |
 | `@gamekit/combat`                                                                     | Game Module toolkit                           | 通用 effect delivery、target relationship、hit resolution、projectile/hitscan/area executor，以及 kinematic projectile record/reconciliation/presentation transition；不定义具体游戏数值。 |
 | `@gamekit/ai-core`                                                                    | Game Module toolkit                           | 感知记忆、Utility goal、Task lifecycle、预算调度和 trace；不拥有 World、Physics、Navigation backend 或游戏行为。                                                                           |
@@ -277,6 +280,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 - Input：`docs/modules/input.md`
 - Camera：`docs/modules/camera.md`
 - Physics：`docs/modules/physics.md`
+- Character Controller：`docs/modules/character-controller.md`
 - Combat：`docs/modules/combat.md`
 - AI：`docs/modules/ai.md`
 - Navigation：`docs/modules/navigation.md`
@@ -345,6 +349,8 @@ Physics 是 gameplay/session 能力和多后端 facade，不是 Renderer、Input
 独立物理库使用 `@gamekit/physics-*` adapter。Phaser Arcade / Matter Physics 这类绑定在 Phaser Scene runtime 内的能力由 `@gamekit/driver-phaser` 持有外部 runtime，再暴露 physics backend adapter；adapter 不单独创建 Phaser.Game 或 Scene。Gameplay 通过 World component、Physics query 和低频 contact event 消费物理事实，不保存 backend native handle、broadphase cache 或 contact manifold。
 
 Fixed-step Physics module 可以提供 opt-in transient interpolation store 给 Renderer sync 和 Camera follow target 共用。该 store 不改变 World authority、Save 或 multiplayer snapshot，也不成为 Renderer/Camera 对 Physics 的包级依赖；组合层负责显式注入，并通过可选 policy 提供游戏尺度相关的不连续判定或表现曲线，Physics Core 不写死玩法阈值。
+
+Character Controller 是独立可选 gameplay toolkit。它消费 world-space semantic intent 与 Physics body/query 事实，维护可 checkpoint 的 grounded/coyote/jump-buffer/dive/recovery/stagger state，并输出 backend-neutral body patch/command。Pure motor 不依赖 Input、Camera、Renderer、AI、Multiplayer 或具体 Physics backend；玩家与 AI 必须通过同一 intent/transition，runtime strategy 只负责稳定 query 与 backend 映射。具体边界见 `docs/modules/character-controller.md` 与 `docs/adr/0052-reusable-character-controller-toolkit.md`。
 
 详细设计见 `docs/modules/physics.md`，facade / adapter 决策背景见 `docs/adr/0010-unified-physics-facade.md`，query / cast / filter 公共协议见 `docs/adr/0011-physics-query-and-filter-api.md`。
 

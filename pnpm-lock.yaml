@@ -771,6 +771,18 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/character-controller:
+    dependencies:
+      '@gamekit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@gamekit/data':
+        specifier: workspace:*
+        version: link:../data
+      '@gamekit/physics-core':
+        specifier: workspace:*
+        version: link:../physics-core
+
   packages/combat:
     dependencies:
       '@gamekit/core':
