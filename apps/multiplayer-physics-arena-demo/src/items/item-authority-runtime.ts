@@ -62,6 +62,14 @@ export type ArenaItemAuthorityCommand =
     }
   | { type: "commit-action"; id: string; executionId: string; tick: number }
   | {
+      type: "drop";
+      id: string;
+      itemId: string;
+      itemGeneration: number;
+      participantId: string;
+      tick: number;
+    }
+  | {
       type: "spend";
       id: string;
       itemId: string;
@@ -288,6 +296,7 @@ export function createArenaItemAuthorityRuntime(options: {
     if (command.type === "resolve-claim") return applyClaimResolution(command);
     if (command.type === "begin-action") return applyBeginAction(command);
     if (command.type === "commit-action") return applyCommitAction(command);
+    if (command.type === "drop") return applyDrop(command);
     return applySpend(command);
   }
 
@@ -384,6 +393,31 @@ export function createArenaItemAuthorityRuntime(options: {
       deadlineTick: undefined
     });
     return applied(command.id, "item-spent", item);
+  }
+
+  function applyDrop(
+    command: Extract<ArenaItemAuthorityCommand, { type: "drop" }>
+  ): ArenaItemAuthorityCommandResult {
+    const item = instances.get(command.itemId);
+    if (item === undefined) return rejected(command.id, "item-missing");
+    if (item.instanceGeneration !== command.itemGeneration) {
+      return rejected(command.id, "stale-generation", item);
+    }
+    if (
+      (item.state !== "carried" && item.state !== "windup") ||
+      item.ownerParticipantId !== command.participantId
+    ) {
+      return rejected(command.id, "owner-state-mismatch", item);
+    }
+    item.instanceGeneration += 1;
+    transition(item, "released", "item-dropped", command.tick, {
+      ownerParticipantId: undefined,
+      sourceParticipantId: command.participantId,
+      pendingClaimId: undefined,
+      executionId: undefined,
+      deadlineTick: undefined
+    });
+    return applied(command.id, "item-dropped", item);
   }
 
   function settleTimers(item: ArenaItemAuthorityInstance, tick: number): void {
@@ -560,6 +594,16 @@ function commandSignature(command: ArenaItemAuthorityCommand): string {
   }
   if (command.type === "commit-action") {
     return [command.type, command.id, command.executionId, command.tick].join("|");
+  }
+  if (command.type === "drop") {
+    return [
+      command.type,
+      command.id,
+      command.itemId,
+      command.itemGeneration,
+      command.participantId,
+      command.tick
+    ].join("|");
   }
   return [command.type, command.id, command.itemId, command.itemGeneration, command.tick].join("|");
 }
