@@ -66,8 +66,13 @@ import {
 } from "../shared/protocol";
 import {
   createArenaItemAuthorityCoordinator,
+  type ArenaCommittedItemCombatAction,
   type ArenaItemAuthorityCoordinatorDiagnostics
 } from "./arena-item-authority";
+import {
+  createArenaCombatAuthorityCoordinator,
+  type ArenaCombatAuthorityDiagnostics
+} from "./arena-combat-authority";
 
 export type ArenaAuthorityRuntimeSnapshot = {
   phase: ArenaMatchPhase;
@@ -81,6 +86,7 @@ export type ArenaAuthorityRuntimeSnapshot = {
   participants: ArenaParticipantRegistryDiagnostics;
   impacts: ArenaImpactLedgerDiagnostics;
   items: ArenaItemAuthorityCoordinatorDiagnostics["runtime"];
+  combat: ArenaCombatAuthorityDiagnostics;
   settlement?: ArenaStageSettlement | undefined;
 };
 
@@ -112,6 +118,8 @@ export type ArenaAuthorityRetainedState = {
   itemCommands: number;
   itemActions: number;
   itemExecutions: number;
+  combatHits: number;
+  combatKnockbacks: number;
 };
 
 export type CreateArenaAuthorityRuntimeOptions = {
@@ -161,6 +169,12 @@ export function createArenaAuthorityRuntime(
     initialStageInstanceId: director.snapshot().stageInstanceId,
     initialGeneration,
     initialTick: 0
+  });
+  const combatAuthority = createArenaCombatAuthorityCoordinator({
+    participants,
+    impactLedger,
+    definitions: itemAuthority.combatDefinitions(),
+    fixedDeltaMs: ARENA_FIXED_STEP_MS
   });
   const island = createPhysicsPredictionIsland({
     backend: options.backend,
@@ -341,6 +355,7 @@ export function createArenaAuthorityRuntime(
         participants: participants.diagnostics(),
         impacts: impactLedger.diagnostics(),
         items: itemAuthority.diagnostics().runtime,
+        combat: combatAuthority.diagnostics(),
         ...(latestSettlement === undefined ? {} : { settlement: structuredClone(latestSettlement) })
       };
     },
@@ -372,7 +387,9 @@ export function createArenaAuthorityRuntime(
         itemCommands: itemAuthority.diagnostics().runtime.commands,
         itemActions:
           itemAuthority.diagnostics().publicActions + itemAuthority.diagnostics().pendingActions,
-        itemExecutions: itemAuthority.diagnostics().pendingExecutions
+        itemExecutions: itemAuthority.diagnostics().pendingExecutions,
+        combatHits: combatAuthority.diagnostics().hits,
+        combatKnockbacks: combatAuthority.diagnostics().pendingKnockbacks
       };
     },
     dispose() {
@@ -385,6 +402,7 @@ export function createArenaAuthorityRuntime(
       participants.dispose();
       impactLedger.dispose();
       itemAuthority.dispose();
+      combatAuthority.dispose();
       inputsByPeerId.clear();
       inputAcksByPeerId.clear();
       actorControlsByMemberId.clear();
@@ -505,6 +523,7 @@ export function createArenaAuthorityRuntime(
         authorityEffects.clear();
         rankingSpatialFacts.clear();
         impactLedger.reset();
+        combatAuthority.reset(authorityTick);
         latestSettlement = undefined;
         stageResults.length = 0;
       }
@@ -585,6 +604,7 @@ export function createArenaAuthorityRuntime(
     authorityEffects.clear();
     rankingSpatialFacts.clear();
     impactLedger.reset();
+    combatAuthority.reset(authorityTick);
     latestSettlement = undefined;
   }
 
@@ -719,6 +739,7 @@ export function createArenaAuthorityRuntime(
   }
 
   function advancePhysics(authorityTick: number): void {
+    combatAuthority.advance(authorityTick);
     const targetTick = island.tick() + 1;
     const commands: PhysicsPredictionIslandCommand[] = [];
     let commandIndex = 0;
@@ -761,6 +782,8 @@ export function createArenaAuthorityRuntime(
       nextSequence,
       commands
     });
+    resolveCommittedItemCombat(itemAuthority.drainCommittedCombatActions(), authorityTick);
+    combatAuthority.queuePhysicsCommands({ tick: targetTick, nextSequence, commands });
 
     actorControlsByMemberId.clear();
     for (let slot = 0; slot < ARENA_MAX_HUMANS; slot += 1) {
@@ -824,6 +847,7 @@ export function createArenaAuthorityRuntime(
   ): void {
     for (const contact of contacts) {
       if (contact.phase !== "enter") continue;
+      resolveItemContactCombat(contact, currentTick);
       const [colliderA, colliderB] = [contact.colliderA, contact.colliderB].sort();
       if (colliderA === undefined || colliderB === undefined) continue;
       const id = `round.${director.snapshot().round}:${contact.tick}:${contact.kind}:${colliderA}|${colliderB}`;
@@ -848,6 +872,104 @@ export function createArenaAuthorityRuntime(
     }
   }
 
+  function resolveCommittedItemCombat(
+    actions: readonly ArenaCommittedItemCombatAction[],
+    currentTick: number
+  ): void {
+    for (const action of actions) {
+      if (action.actionMode !== "melee") continue;
+      const sourceParticipant = participants.participant(action.sourceParticipantId);
+      const sourceBody =
+        sourceParticipant?.actorMemberId === undefined
+          ? undefined
+          : island.body(sourceParticipant.actorMemberId);
+      if (sourceBody === undefined) continue;
+      const aimLength = Math.hypot(action.aim.x, action.aim.z ?? 0);
+      const aimX = aimLength <= 0.0001 ? 0 : action.aim.x / aimLength;
+      const aimZ = aimLength <= 0.0001 ? -1 : (action.aim.z ?? 0) / aimLength;
+      for (const member of island.state().members) {
+        if (!isArenaActor(member.id) || member.id === sourceParticipant?.actorMemberId) continue;
+        const targetParticipant = participants.byActorMemberId(member.id);
+        if (targetParticipant === undefined) continue;
+        const dx = member.body.position.x - sourceBody.position.x;
+        const dz = (member.body.position.z ?? 0) - (sourceBody.position.z ?? 0);
+        const distance = Math.hypot(dx, dz);
+        if (distance > action.areaRadius + 0.65) continue;
+        if (distance > 0.0001 && (dx * aimX + dz * aimZ) / distance < 0.05) continue;
+        combatAuthority.resolve({
+          id: `${action.executionId}:hit:${targetParticipant.id}`,
+          executionId: action.executionId,
+          itemId: action.itemId,
+          itemGeneration: action.itemGeneration,
+          definitionId: action.definitionId,
+          sourceParticipantId: action.sourceParticipantId,
+          targetParticipantId: targetParticipant.id,
+          tick: currentTick,
+          charge: action.charge,
+          direction: action.aim
+        });
+      }
+    }
+  }
+
+  function resolveItemContactCombat(
+    contact: PhysicsPredictionIslandContact,
+    currentTick: number
+  ): void {
+    const pairs = [
+      [contact.bodyA, contact.bodyB],
+      [contact.bodyB, contact.bodyA]
+    ] as const;
+    for (const [itemMemberId, targetMemberId] of pairs) {
+      if (
+        itemMemberId === undefined ||
+        targetMemberId === undefined ||
+        !isArenaActor(targetMemberId)
+      ) {
+        continue;
+      }
+      const profile = itemAuthority.combatProfileForMember(itemMemberId);
+      const targetParticipant = participants.byActorMemberId(targetMemberId);
+      const itemBody = island.body(itemMemberId);
+      if (profile === undefined || targetParticipant === undefined || itemBody === undefined)
+        continue;
+      const targets =
+        profile.actionMode === "throw-area" && profile.areaRadius > 0
+          ? island.state().members.filter((member) => {
+              if (!isArenaActor(member.id)) return false;
+              const dx = member.body.position.x - itemBody.position.x;
+              const dz = (member.body.position.z ?? 0) - (itemBody.position.z ?? 0);
+              return Math.hypot(dx, dz) <= profile.areaRadius;
+            })
+          : island.state().members.filter((member) => member.id === targetMemberId);
+      for (const target of targets) {
+        const participant = participants.byActorMemberId(target.id);
+        if (participant === undefined) continue;
+        const dx = target.body.position.x - itemBody.position.x;
+        const dz = (target.body.position.z ?? 0) - (itemBody.position.z ?? 0);
+        const direction =
+          Math.hypot(itemBody.linearVelocity.x, itemBody.linearVelocity.z ?? 0) > 0.1
+            ? itemBody.linearVelocity
+            : Math.hypot(dx, dz) > 0.0001
+              ? { x: dx, y: 0, z: dz }
+              : profile.aim;
+        combatAuthority.resolve({
+          id: `${profile.executionId}:hit:${participant.id}`,
+          executionId: profile.executionId,
+          itemId: profile.itemId,
+          itemGeneration: profile.itemGeneration,
+          definitionId: profile.definitionId,
+          sourceParticipantId: profile.sourceParticipantId,
+          targetParticipantId: participant.id,
+          tick: currentTick,
+          charge: profile.charge,
+          direction
+        });
+      }
+      return;
+    }
+  }
+
   function queueActorMotion(
     queueControl: (command: CharacterMotorPredictionCommand) => void,
     queueDespawn: (memberId: string) => void,
@@ -868,10 +990,15 @@ export function createArenaAuthorityRuntime(
       memberAvailable: body !== undefined
     });
     if (step.action.type === "control") {
+      const staggerDurationMs =
+        participant === undefined
+          ? undefined
+          : combatAuthority.takeStaggerDurationMs(participant.id);
       queueControl({
         type: "control",
         memberId,
-        intent: createArenaCharacterIntent(step.control, step.control.sequence)
+        intent: createArenaCharacterIntent(step.control, step.control.sequence),
+        ...(staggerDurationMs === undefined ? {} : { staggerDurationMs })
       });
     } else if (step.action.type === "despawn") {
       queueDespawn(memberId);
@@ -951,6 +1078,10 @@ export function createArenaAuthorityRuntime(
       stageResults: structuredClone(stageResults),
       items: itemAuthority.publicItems(state.members),
       itemActions: itemAuthority.publicActions(),
+      combat: {
+        actors: combatAuthority.publicActors(),
+        hits: combatAuthority.publicHits()
+      },
       frame: result.frame,
       playerIdsByPeerId: Object.fromEntries(
         participants

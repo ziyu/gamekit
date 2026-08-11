@@ -321,6 +321,9 @@ importers:
       '@gamekit/character-controller':
         specifier: workspace:*
         version: link:../../packages/character-controller
+      '@gamekit/combat':
+        specifier: workspace:*
+        version: link:../../packages/combat
       '@gamekit/data':
         specifier: workspace:*
         version: link:../../packages/data
@@ -336,6 +339,9 @@ importers:
       '@gamekit/game-runtime':
         specifier: workspace:*
         version: link:../../packages/game-runtime
+      '@gamekit/gas':
+        specifier: workspace:*
+        version: link:../../packages/gas
       '@gamekit/multiplayer-colyseus':
         specifier: workspace:*
         version: link:../../packages/multiplayer-colyseus

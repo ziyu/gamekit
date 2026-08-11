@@ -67,6 +67,10 @@ type ArenaSnapshot = {
   stageResults: ArenaPublicStageResult[];
   items: ArenaItemProjection[];
   itemActions: ArenaPublicItemAction[];
+  combat: {
+    actors: ArenaPublicCombatState[];
+    hits: ArenaPublicCombatHit[];
+  };
   frame: MultiplayerPhysicsArenaFrame;
   playerIdsByPeerId: Record<string, string>;
   inputAcksByPeerId: Record<string, number>;
@@ -86,6 +90,10 @@ frame 被拒绝并诊断，不能部分读取后继续 replay。
 `items` 公开 definition、instance generation、authority state、owner/source/execution、revision、deadline 和可选 Physics member
 id；`itemActions` 公开 command 的 `windup/confirmed/rejected` 结果。两者分别有 32/64 的硬上限，客户端不得从 frame member
 缺失自行推断 owner，也不得把本地 predicted action 伪装成 confirmed result。
+
+`combat.actors` 公开 authority instability、stagger deadline 与 last hit tick；`combat.hits` 公开稳定 hit ticket、source/target、
+item generation、impulse 和命中后的 instability，两者各有 64 条硬上限。它们是表现、KO feed 与 fault-matrix settlement 的
+只读事实，不进入客户端 gameplay 回写；客户端的 contact cue 不能自行生成命中、属性或 KO。
 
 `match.membershipRevision` 必须与 Physics frame 一致。Stage result 只追加 authority settlement，late join/reconnect 读取同一份
 participant/result projection 恢复当前语义状态，不从客户端缓存重建晋级或 winner。

@@ -113,6 +113,12 @@ Item Authority Runtime 对 instance、command result 和 transition trace 分别
 
 Item action 走 GAS execution：`requested → preparing/windup → committed → active → recovering → completed/cancelled`。
 
+Arena authority 通过标准 `createGasRuntime`、`createCombatRuntime` 与
+`createCombatAbilityDeliveryBridge` 组合道具命中，不维护私有 hit/effect 替身。Item Runtime 负责拾取、携带与可见 windup；物品
+进入 active generation 后，authority contact/melee target 生成稳定 delivery request，GAS committed phase 绑定对应 Combat
+delivery。每种 compiled item definition 都生成稳定 ability/effect/delivery/binding，definition 的 `baseImpulse` 与 GAS
+instability delta 分别进入空间响应和属性响应。
+
 - `usePressed/useHeld` 控制 request 与有限 charge；charge 由 authority tick 计算并钳制到 definition 上限。
 - Commit 前被 stagger、eliminated、item owner change 或 stage transition 会 cancel，不生成攻击或 Physics body。
 - Throw commit 解析 authority hand/socket position、normalized aim、charge curve、owner inherited velocity 和 collision-safe spawn。
@@ -172,6 +178,11 @@ committed item action / active item contact
 
 Effect application 与 Physics impulse 必须共享 correlation/hit ticket，但各自只有一个 owner。Contact、melee query、area query
 不能为同一次 attack 重复结算。被 authority reject 的 speculative impact 只能撤销表现，不能补写 gameplay。
+
+当前 authority bridge 对每个 execution + target 只创建一个 GAS request；GAS request history 与 Combat hit ticket 共同抑制
+duplicate。成功 hit 才向 Physics island 排入下一 tick 的 `linear-impulse` body command，并把一次性
+`staggerDurationMs` 合并进共享 Character Motor contributor。公开 `combat.actors`/`combat.hits` 分别以 64 条为上限；stage reset
+同时清空 instability、stagger、delivery/hit history 和 pending impulse，dispose 后 retained hit/impulse 必须为零。
 
 ## KO/Assist 归因
 

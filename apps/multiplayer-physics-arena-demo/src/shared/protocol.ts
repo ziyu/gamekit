@@ -111,6 +111,31 @@ export type ArenaPublicItemAction = {
   executionId?: string | undefined;
 };
 
+export type ArenaPublicCombatState = {
+  participantId: string;
+  instability: number;
+  staggerUntilTick: number;
+  lastHitTick?: number | undefined;
+  revision: number;
+};
+
+export type ArenaPublicCombatHit = {
+  id: string;
+  sourceParticipantId: string;
+  targetParticipantId: string;
+  itemId: string;
+  itemGeneration: number;
+  definitionId: string;
+  tick: number;
+  impulseMagnitude: number;
+  instability: number;
+};
+
+export type ArenaPublicCombatProjection = {
+  actors: ArenaPublicCombatState[];
+  hits: ArenaPublicCombatHit[];
+};
+
 export type ArenaSnapshot = {
   schemaVersion: typeof ARENA_SCHEMA_VERSION;
   phase: ArenaMatchPhase;
@@ -123,6 +148,7 @@ export type ArenaSnapshot = {
   stageResults: ArenaPublicStageResult[];
   items: ArenaPublicItemState[];
   itemActions: ArenaPublicItemAction[];
+  combat: ArenaPublicCombatProjection;
   frame: MultiplayerPhysicsArenaFrame;
   playerIdsByPeerId: Record<string, string>;
   inputAcksByPeerId: Record<string, number>;
@@ -180,6 +206,7 @@ export function readArenaSnapshot(value: unknown): ArenaSnapshot | undefined {
     value.itemActions.length > 64 ||
     !value.itemActions.every(isPublicItemAction) ||
     new Set(value.itemActions.map((action) => action.id)).size !== value.itemActions.length ||
+    !isPublicCombatProjection(value.combat) ||
     !isRecord(value.frame) ||
     value.frame.definitionVersion !== ARENA_DEFINITION_VERSION ||
     value.frame.membershipRevision !== value.match.membershipRevision ||
@@ -208,6 +235,55 @@ export function readArenaSnapshot(value: unknown): ArenaSnapshot | undefined {
     return undefined;
   }
   return structuredClone(value) as ArenaSnapshot;
+}
+
+function isPublicCombatProjection(value: unknown): value is ArenaPublicCombatProjection {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.actors) &&
+    value.actors.length <= 64 &&
+    value.actors.every(isPublicCombatState) &&
+    new Set(value.actors.map((actor) => actor.participantId)).size === value.actors.length &&
+    Array.isArray(value.hits) &&
+    value.hits.length <= 64 &&
+    value.hits.every(isPublicCombatHit) &&
+    new Set(value.hits.map((hit) => hit.id)).size === value.hits.length
+  );
+}
+
+function isPublicCombatState(value: unknown): value is ArenaPublicCombatState {
+  return (
+    isRecord(value) &&
+    boundedId(value.participantId) &&
+    typeof value.instability === "number" &&
+    Number.isFinite(value.instability) &&
+    value.instability >= 0 &&
+    value.instability <= 1 &&
+    nonNegativeSafeInteger(value.staggerUntilTick) &&
+    (value.lastHitTick === undefined || nonNegativeSafeInteger(value.lastHitTick)) &&
+    positiveSafeInteger(value.revision)
+  );
+}
+
+function isPublicCombatHit(value: unknown): value is ArenaPublicCombatHit {
+  return (
+    isRecord(value) &&
+    boundedId(value.id) &&
+    boundedId(value.sourceParticipantId) &&
+    boundedId(value.targetParticipantId) &&
+    value.sourceParticipantId !== value.targetParticipantId &&
+    boundedId(value.itemId) &&
+    positiveSafeInteger(value.itemGeneration) &&
+    boundedId(value.definitionId) &&
+    nonNegativeSafeInteger(value.tick) &&
+    typeof value.impulseMagnitude === "number" &&
+    Number.isFinite(value.impulseMagnitude) &&
+    value.impulseMagnitude > 0 &&
+    typeof value.instability === "number" &&
+    Number.isFinite(value.instability) &&
+    value.instability >= 0 &&
+    value.instability <= 1
+  );
 }
 
 function isPublicItemState(value: unknown): value is ArenaPublicItemState {

@@ -39,6 +39,7 @@ describe("Knockout Arena protocol", () => {
       stageResults: [],
       items: [],
       itemActions: [],
+      combat: { actors: [], hits: [] },
       frame: {
         islandId: ARENA_ISLAND_ID,
         generation: "round.1",

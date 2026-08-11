@@ -1,6 +1,6 @@
 export const ARENA_ROOM_NAME = "gamekit-knockout-circuit";
 export const ARENA_BROWSER_CONFIG_PATH = "/__gamekit/knockout-config";
-export const ARENA_SCHEMA_VERSION = "knockout-arena.v5";
+export const ARENA_SCHEMA_VERSION = "knockout-arena.v6";
 export const ARENA_DEFINITION_VERSION = "knockout-course.v3";
 export const ARENA_ISLAND_ID = "knockout.full-arena";
 export const ARENA_FIXED_STEP_MS = 1000 / 60;

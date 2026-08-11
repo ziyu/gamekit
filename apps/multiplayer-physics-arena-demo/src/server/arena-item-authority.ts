@@ -18,7 +18,10 @@ import {
   createArenaItemCarryContributor,
   createArenaItemCarryPredictionCommand
 } from "../items/item-carry-contributor";
-import { compileArenaItemCatalog } from "../items/item-definition";
+import {
+  compileArenaItemCatalog,
+  type ArenaCompiledItemDefinition
+} from "../items/item-definition";
 import {
   commitArenaItemClaimBatch,
   selectArenaItemTarget,
@@ -44,9 +47,36 @@ export type ArenaItemAuthorityCoordinatorDiagnostics = {
   disposed: boolean;
 };
 
+export type ArenaCommittedItemCombatAction = {
+  commandId: string;
+  executionId: string;
+  itemId: string;
+  itemGeneration: number;
+  definitionId: string;
+  sourceParticipantId: string;
+  tick: number;
+  charge: number;
+  aim: PhysicsVector;
+  actionMode: ArenaCompiledItemDefinition["actionMode"];
+  areaRadius: number;
+};
+
+export type ArenaActiveItemCombatProfile = {
+  executionId: string;
+  itemId: string;
+  itemGeneration: number;
+  definitionId: string;
+  sourceParticipantId: string;
+  actionMode: ArenaCompiledItemDefinition["actionMode"];
+  areaRadius: number;
+  charge: number;
+  aim: PhysicsVector;
+};
+
 export type ArenaItemAuthorityCoordinator = {
   initialMembers(): PhysicsPredictionIslandMemberDefinition[];
   materialDefinitions(): PhysicsMaterialDefinition[];
+  combatDefinitions(): ArenaCompiledItemDefinition[];
   auxiliaryContributor: ReturnType<typeof createArenaItemCarryContributor>;
   hasAction(commandId: string): boolean;
   pendingActionCount(): number;
@@ -72,6 +102,8 @@ export type ArenaItemAuthorityCoordinator = {
     nextSequence(): number;
     commands: PhysicsPredictionIslandCommand[];
   }): void;
+  combatProfileForMember(memberId: string): ArenaActiveItemCombatProfile | undefined;
+  drainCommittedCombatActions(): ArenaCommittedItemCombatAction[];
   publicItems(members: readonly PhysicsPredictionIslandMemberState[]): ArenaPublicItemState[];
   publicActions(): ArenaPublicItemAction[];
   diagnostics(): ArenaItemAuthorityCoordinatorDiagnostics;
@@ -117,6 +149,8 @@ export function createArenaItemAuthorityCoordinator(options: {
   const pendingItemActions: PendingArenaItemAction[] = [];
   const pendingItemActionIds = new Set<string>();
   const pendingItemExecutions = new Map<string, PendingArenaItemExecution>();
+  const activeCombatProfilesByMemberId = new Map<string, ArenaActiveItemCombatProfile>();
+  const committedCombatActions: ArenaCommittedItemCombatAction[] = [];
   const initialItems = runtime.installStage({
     stageInstanceId: options.initialStageInstanceId,
     generation: options.initialGeneration,
@@ -140,6 +174,10 @@ export function createArenaItemAuthorityCoordinator(options: {
     materialDefinitions() {
       assertActive();
       return catalog.definitions.map(createArenaItemPhysicsMaterial);
+    },
+    combatDefinitions() {
+      assertActive();
+      return catalog.definitions.map((definition) => structuredClone(definition));
     },
     auxiliaryContributor,
     hasAction(commandId) {
@@ -167,6 +205,8 @@ export function createArenaItemAuthorityCoordinator(options: {
       pendingItemActions.length = 0;
       pendingItemActionIds.clear();
       pendingItemExecutions.clear();
+      activeCombatProfilesByMemberId.clear();
+      committedCombatActions.length = 0;
       itemActionResults.clear();
       stageItemsNeedReset = true;
     },
@@ -284,6 +324,15 @@ export function createArenaItemAuthorityCoordinator(options: {
         sequence: input.nextSequence()
       });
     },
+    combatProfileForMember(memberId) {
+      assertActive();
+      const profile = activeCombatProfilesByMemberId.get(memberId);
+      return profile === undefined ? undefined : structuredClone(profile);
+    },
+    drainCommittedCombatActions() {
+      assertActive();
+      return committedCombatActions.splice(0).map((action) => structuredClone(action));
+    },
     publicItems(members) {
       assertActive();
       const memberIds = new Set(members.map((member) => member.id));
@@ -328,6 +377,8 @@ export function createArenaItemAuthorityCoordinator(options: {
       pendingItemActions.length = 0;
       pendingItemActionIds.clear();
       pendingItemExecutions.clear();
+      activeCombatProfilesByMemberId.clear();
+      committedCombatActions.length = 0;
       itemActionResults.clear();
     }
   };
@@ -500,6 +551,20 @@ export function createArenaItemAuthorityCoordinator(options: {
       pendingItemExecutions.delete(execution.executionId);
       if (result.status === "applied" && result.item !== undefined) {
         const definition = definitionsById.get(result.item.definitionId)!;
+        const combatAction: ArenaCommittedItemCombatAction = {
+          commandId: execution.commandId,
+          executionId: execution.executionId,
+          itemId: result.item.id,
+          itemGeneration: result.item.instanceGeneration,
+          definitionId: result.item.definitionId,
+          sourceParticipantId: execution.participantId,
+          tick: input.authorityTick,
+          charge: execution.charge,
+          aim: structuredClone(execution.aim),
+          actionMode: definition.actionMode,
+          areaRadius: definition.areaRadius
+        };
+        committedCombatActions.push(combatAction);
         if (definition.actionMode !== "melee") {
           physics.release(
             result.item,
@@ -508,6 +573,17 @@ export function createArenaItemAuthorityCoordinator(options: {
             execution.charge,
             "throw"
           );
+          activeCombatProfilesByMemberId.set(arenaItemPhysicsMemberId(result.item), {
+            executionId: execution.executionId,
+            itemId: result.item.id,
+            itemGeneration: result.item.instanceGeneration,
+            definitionId: result.item.definitionId,
+            sourceParticipantId: execution.participantId,
+            actionMode: definition.actionMode,
+            areaRadius: definition.areaRadius,
+            charge: execution.charge,
+            aim: structuredClone(execution.aim)
+          });
         }
       }
       updateItemActionResult(
@@ -548,6 +624,7 @@ export function createArenaItemAuthorityCoordinator(options: {
         tick: input.authorityTick
       });
       if (spent.status === "applied" && body !== undefined) {
+        activeCombatProfilesByMemberId.delete(arenaItemPhysicsMemberId(item));
         physics.despawn(arenaItemPhysicsMemberId(item));
       }
     }

@@ -116,6 +116,7 @@ function snapshot(
     stageResults: [],
     items: [],
     itemActions: [],
+    combat: { actors: [], hits: [] },
     frame: {
       islandId: ARENA_ISLAND_ID,
       generation: `m${round}.s1.r${round}`,
