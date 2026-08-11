@@ -38,6 +38,7 @@ export type ArenaFeedbackRuntime = {
     deltaMs: number;
   }): void;
   effect(event: ArenaEffectPresentationEvent): void;
+  cycleSpectatorTarget(direction: -1 | 1): void;
   snapshot(): ArenaFeedbackSnapshot;
   diagnostics(): ArenaFeedbackDiagnostics;
   dispose(): void;
@@ -57,6 +58,7 @@ export function createArenaFeedbackRuntime(audio: GameAudio): ArenaFeedbackRunti
   let elapsedMs = 0;
   let matchPhaseSignature = "";
   let cameraSignature = "";
+  let preferredCameraMemberId: string | undefined;
   const hazardSignatures = new Map<string, string>();
   const emitterIds = new Set<string>();
   let hazardTransitions = 0;
@@ -71,7 +73,7 @@ export function createArenaFeedbackRuntime(audio: GameAudio): ArenaFeedbackRunti
       latestSnapshot = snapshot;
       latestState = predictedState;
       elapsedMs += Math.min(50, Math.max(0, deltaMs));
-      const camera = resolveCamera(snapshot, localMemberId);
+      const camera = resolveCamera(snapshot, localMemberId, preferredCameraMemberId);
       const nextCameraSignature = `${camera.mode}:${camera.targetMemberId ?? "none"}`;
       if (cameraSignature !== nextCameraSignature) {
         cameraSignature = nextCameraSignature;
@@ -115,6 +117,20 @@ export function createArenaFeedbackRuntime(audio: GameAudio): ArenaFeedbackRunti
         ...(position === undefined ? {} : { transform: { position } })
       });
       if (result.status === "playing" || result.status === "scheduled") effectSounds += 1;
+    },
+    cycleSpectatorTarget(direction) {
+      if (disposed || latestSnapshot === undefined) return;
+      const candidates = activeCameraCandidates(latestSnapshot);
+      if (candidates.length === 0) {
+        preferredCameraMemberId = undefined;
+        return;
+      }
+      const currentIndex = candidates.findIndex(
+        ({ actorMemberId }) => actorMemberId === feedback.camera.targetMemberId
+      );
+      const nextIndex =
+        currentIndex < 0 ? 0 : (currentIndex + direction + candidates.length) % candidates.length;
+      preferredCameraMemberId = candidates[nextIndex]?.actorMemberId;
     },
     snapshot() {
       return {
@@ -230,7 +246,8 @@ export function createArenaFeedbackRuntime(audio: GameAudio): ArenaFeedbackRunti
 
 function resolveCamera(
   snapshot: ArenaSnapshot | undefined,
-  localMemberId: string | undefined
+  localMemberId: string | undefined,
+  preferredMemberId: string | undefined
 ): ArenaFeedbackSnapshot["camera"] {
   if (localMemberId !== undefined) {
     const localParticipant = snapshot?.participants.find(
@@ -240,17 +257,23 @@ function resolveCamera(
       return { mode: "playing", targetMemberId: localMemberId };
     }
   }
-  const candidates = [...(snapshot?.participants ?? [])]
-    .filter(
-      (participant) => participant.status === "active" && participant.actorMemberId !== undefined
-    )
-    .sort((left, right) => left.slot - right.slot || left.id.localeCompare(right.id));
+  const candidates = snapshot === undefined ? [] : activeCameraCandidates(snapshot);
   const winner = snapshot?.participants.find((participant) => participant.id === snapshot.winnerId);
-  const targetMemberId = winner?.actorMemberId ?? candidates[0]?.actorMemberId;
+  const preferred = candidates.find(({ actorMemberId }) => actorMemberId === preferredMemberId);
+  const targetMemberId =
+    winner?.actorMemberId ?? preferred?.actorMemberId ?? candidates[0]?.actorMemberId;
   return {
     mode: snapshot?.phase === "results" ? "broadcast" : "spectator",
     ...(targetMemberId === undefined ? {} : { targetMemberId })
   };
+}
+
+function activeCameraCandidates(snapshot: ArenaSnapshot): ArenaSnapshot["participants"] {
+  return [...snapshot.participants]
+    .filter(
+      (participant) => participant.status === "active" && participant.actorMemberId !== undefined
+    )
+    .sort((left, right) => left.slot - right.slot || left.id.localeCompare(right.id));
 }
 
 function effectPosition(

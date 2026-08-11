@@ -150,6 +150,14 @@ Stage intro、results和winner podium可以使用app-ownedThree native camera，
 Gameplay视图始终占主区域。常驻HUD只显示当前做决定需要的信息；网络tick、body count、checkpoint bytes、trace和provider
 状态只进入可折叠DevTools/telemetry，不伪装成正式体验。
 
+Arena UI先由纯`ArenaUiViewModel`把公开match/participant/ranking/item/combat快照、feedback camera和本机peer身份投影为页面状态，
+DOM层只提交`textContent`、class和CSS custom property。Lobby、stage intro、playing、spectator、stage results与match results不能各自
+重新解释淘汰、晋级、winner或rematch；results deadline统一显示authority自动排队的下一stage或下一match。
+
+KO feed的首次snapshot只建立hit/status/result基线，避免late join补播旧比赛事件；之后按stable hit/result identity和participant status
+edge生成item hit、environment KO、qualified与winner条目。Tracker只保留协议本身的有界rolling set，UI同时最多显示6条；网络telemetry
+只保留在默认折叠的diagnostics区域。
+
 Instability bar表达“更容易被击飞”，不暗示传统HP。KO feed必须区分player/item、environment、disconnect/forfeit。
 
 ## 输入提示与辅助功能
@@ -160,6 +168,10 @@ Instability bar表达“更容易被击飞”，不暗示传统HP。KO feed必�
 - 关键危险、participant、队伍/状态不能只靠红绿；提供高对比轮廓、pattern和icon。
 - Countdown、warning、KO和results同时提供视觉/音频通道；减少动态模式降低粒子、trail和camera impulse但不删除预兆。
 - UI响应viewport变化，不通过缩小3D主视图永久塞入telemetry侧栏。
+
+浏览器输入控制器只在game viewport自身或其后代持有focus时采样；room input、button、modal、telemetry与window blur都会得到neutral
+movement并清空edge。键盘与`mapping === "standard"`的gamepad共享相同semantic callback，按有效axis/button edge切换最近设备提示；
+手柄dead zone在归一化前应用。观战上/下一目标也走feedback display callback，不能提交gameplay input或改变Physics identity。
 
 ## Performance 与诊断
 

@@ -6,8 +6,8 @@ import { initRapier3dPhysicsBackend } from "@gamekit/physics-rapier3d";
 
 import { createArenaGameAudio } from "./client/arena-audio-content";
 import { createArenaFeedbackRuntime } from "./client/arena-feedback";
+import { createArenaInputController } from "./client/arena-input";
 import { createArenaWebAudioBackend } from "./client/arena-web-audio-backend";
-import type { ArenaItemActionType } from "./items/item-action";
 import { createArenaDefinitionMap } from "./shared/arena-definition";
 import { createArenaVisual } from "./client/arena-visual";
 import {
@@ -19,7 +19,6 @@ import {
 import {
   createArenaClientSession,
   loadArenaServerConfig,
-  type ArenaClientInput,
   type ArenaClientSession,
   type ArenaSessionIntent
 } from "./client/session";
@@ -53,7 +52,10 @@ async function boot(rootElement: HTMLElement): Promise<void> {
   const feedback = createArenaFeedbackRuntime(audio);
   const serverConfig = await loadArenaServerConfig();
   let session: ArenaClientSession | undefined;
-  const input = createKeyboardInput(ui.viewport, (action) => void session?.itemAction(action));
+  const input = createArenaInputController(ui.viewport, {
+    onItemAction: (action) => void session?.itemAction(action),
+    onSpectatorCycle: (direction) => feedback.cycleSpectatorTarget(direction)
+  });
   let connecting = false;
   let lastFrame: number | undefined;
   let lastUiUpdate = 0;
@@ -86,7 +88,6 @@ async function boot(rootElement: HTMLElement): Promise<void> {
           feedback.effect(event);
           visual.effect(event);
           ui.showEffect(event);
-          ui.pushLog(`${event.kind.toUpperCase()} · ${event.phase.toUpperCase()}`);
         }
       });
       ui.setConnection("online", `AUTHORITY LINKED · ${session.peerId}`);
@@ -105,6 +106,8 @@ async function boot(rootElement: HTMLElement): Promise<void> {
 
   ui.createButton.addEventListener("click", () => void connect("create"));
   ui.joinButton.addEventListener("click", () => void connect("join"));
+  ui.spectatorPreviousButton.addEventListener("click", () => feedback.cycleSpectatorTarget(-1));
+  ui.spectatorNextButton.addEventListener("click", () => feedback.cycleSpectatorTarget(1));
   ui.disconnectButton.addEventListener("click", () => {
     const active = session;
     session = undefined;
@@ -138,16 +141,26 @@ async function boot(rootElement: HTMLElement): Promise<void> {
     const feedbackSnapshot = feedback.snapshot();
     visual.update(predictedState, session?.localMemberId(), delta, presentation, feedbackSnapshot);
     if (now - lastUiUpdate >= 100) {
-      updateArenaUi(ui, session?.snapshot(), session?.localMemberId(), {
-        ...(session?.telemetry() ?? { status: "offline" }),
-        feedback: feedback.diagnostics(),
-        audio: {
-          unlock: feedbackSnapshot.audio.unlock,
-          active: feedbackSnapshot.audio.activePlaybackInstances,
-          native: feedbackSnapshot.audio.nativePlaybackCount,
-          emitters: feedbackSnapshot.audio.spatial.emitters.length
+      updateArenaUi(
+        ui,
+        session?.snapshot(),
+        session?.localMemberId(),
+        {
+          ...(session?.telemetry() ?? { status: "offline" }),
+          feedback: feedback.diagnostics(),
+          audio: {
+            unlock: feedbackSnapshot.audio.unlock,
+            active: feedbackSnapshot.audio.activePlaybackInstances,
+            native: feedbackSnapshot.audio.nativePlaybackCount,
+            emitters: feedbackSnapshot.audio.spatial.emitters.length
+          }
+        },
+        {
+          camera: feedbackSnapshot.camera,
+          inputDevice: input.device(),
+          localPeerId: session?.peerId
         }
-      });
+      );
       lastUiUpdate = now;
     }
     frameHandle = requestAnimationFrame(frame);
@@ -168,55 +181,6 @@ async function boot(rootElement: HTMLElement): Promise<void> {
     },
     { once: true }
   );
-}
-
-function createKeyboardInput(
-  viewport: HTMLElement,
-  onItemAction: (action: ArenaItemActionType) => void
-): {
-  sample(): ArenaClientInput;
-  dispose(): void;
-} {
-  const pressed = new Set<string>();
-  let jumpRequested = false;
-  const keydown = (event: KeyboardEvent) => {
-    if (event.target instanceof HTMLInputElement) return;
-    if (
-      ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyE", "KeyF", "KeyQ"].includes(
-        event.code
-      )
-    ) {
-      event.preventDefault();
-    }
-    pressed.add(event.code);
-    if (event.code === "Space" && !event.repeat) jumpRequested = true;
-    if (event.repeat) return;
-    if (event.code === "KeyE") onItemAction("interact");
-    if (event.code === "KeyF") onItemAction("use");
-    if (event.code === "KeyQ") onItemAction("drop");
-  };
-  const keyup = (event: KeyboardEvent) => pressed.delete(event.code);
-  window.addEventListener("keydown", keydown);
-  window.addEventListener("keyup", keyup);
-  viewport.addEventListener("pointerdown", () => viewport.focus());
-  return {
-    sample() {
-      const moveX =
-        Number(pressed.has("KeyD") || pressed.has("ArrowRight")) -
-        Number(pressed.has("KeyA") || pressed.has("ArrowLeft"));
-      const moveZ =
-        Number(pressed.has("KeyS") || pressed.has("ArrowDown")) -
-        Number(pressed.has("KeyW") || pressed.has("ArrowUp"));
-      const jump = jumpRequested;
-      jumpRequested = false;
-      return { moveX, moveZ, jump };
-    },
-    dispose() {
-      window.removeEventListener("keydown", keydown);
-      window.removeEventListener("keyup", keyup);
-      pressed.clear();
-    }
-  };
 }
 
 function requireValue<T>(value: T | undefined, label: string): T {

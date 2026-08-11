@@ -33,12 +33,17 @@ describe("Knockout Circuit feedback presentation", () => {
       members: [
         body("player.0", -2, 1, 3),
         body("bot.0", 2, 1, 1),
+        body("bot.1", 3, 1, 2),
         body(schedule.memberId, schedule.origin.x, schedule.origin.y, schedule.origin.z ?? 0)
       ]
     };
     const presentation = {
       generation: 1,
-      actors: [presented("player.0", "player.0", false), presented("bot.0", "bot.0", false)]
+      actors: [
+        presented("player.0", "player.0", false),
+        presented("bot.0", "bot.0", false),
+        presented("bot.1", "bot.1", false)
+      ]
     };
 
     feedback.sync({
@@ -70,7 +75,20 @@ describe("Knockout Circuit feedback presentation", () => {
       deltaMs: ARENA_FIXED_STEP_MS
     });
     expect(feedback.diagnostics().hazardTransitions).toBe(hazardTransitions);
-    expect(feedback.diagnostics().trackedEmitters).toBe(3);
+    expect(feedback.diagnostics().trackedEmitters).toBe(4);
+
+    feedback.cycleSpectatorTarget(1);
+    feedback.sync({
+      snapshot,
+      predictedState,
+      presentation,
+      localMemberId: "player.0",
+      deltaMs: ARENA_FIXED_STEP_MS
+    });
+    expect(feedback.snapshot().camera).toEqual({
+      mode: "spectator",
+      targetMemberId: "bot.1"
+    });
 
     const effect = {
       effectId: "contact:bot.0.collider|hazard.collider:contact:12",
@@ -169,6 +187,16 @@ function arenaSnapshot(tick: number): ArenaSnapshot {
         kind: "bot",
         slot: 1,
         actorMemberId: "bot.0",
+        connected: false,
+        status: "active",
+        stageInstanceId: "match.1:stage.circuit-forge:1",
+        revision: 1
+      },
+      {
+        id: "bot.1",
+        kind: "bot",
+        slot: 2,
+        actorMemberId: "bot.1",
         connected: false,
         status: "active",
         stageInstanceId: "match.1:stage.circuit-forge:1",
