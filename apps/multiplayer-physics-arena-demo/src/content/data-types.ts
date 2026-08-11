@@ -127,13 +127,127 @@ function itemDataType(): DataTypeDefinition<ArenaItemDefinition> {
     type: ARENA_ITEM_TYPE,
     getTags: (item) => ["arena", "item", item.kind],
     validate(document) {
+      const item = document.data;
+      const expectedMode =
+        item.kind === "melee" ? "melee" : item.kind === "area" ? "throw-area" : "throw-contact";
       return [
         ...matchingId(document),
-        ...positive(document, document.data.mass, "mass"),
-        ...ratio(document, document.data.carrySpeedMultiplier, "carrySpeedMultiplier"),
-        ...nonNegativeInteger(document, document.data.windupTicks, "windupTicks"),
-        ...nonNegativeInteger(document, document.data.cooldownTicks, "cooldownTicks"),
-        ...nonNegativeInteger(document, document.data.respawnTicks, "respawnTicks")
+        ...(item.physics.shape.type === "sphere"
+          ? positive(document, item.physics.shape.radius, "physics.shape.radius")
+          : [
+              ...positive(document, item.physics.shape.width, "physics.shape.width"),
+              ...positive(document, item.physics.shape.height, "physics.shape.height"),
+              ...positive(document, item.physics.shape.depth, "physics.shape.depth")
+            ]),
+        ...positive(document, item.physics.mass, "physics.mass"),
+        ...ratio(document, item.physics.friction, "physics.friction"),
+        ...ratio(document, item.physics.restitution, "physics.restitution"),
+        ...(typeof item.physics.continuousCollisionDetection === "boolean"
+          ? []
+          : [
+              diagnostic(
+                document,
+                "arena.item_ccd_boolean",
+                "physics.continuousCollisionDetection must be boolean",
+                "physics.continuousCollisionDetection"
+              )
+            ]),
+        ...positive(document, item.physics.maxLinearSpeed, "physics.maxLinearSpeed"),
+        ...positiveInteger(document, item.physics.lifetimeTicks, "physics.lifetimeTicks"),
+        ...nonNegativeInteger(document, item.physics.maxBounces, "physics.maxBounces"),
+        ...nonBlank(document, item.carry.socket, "carry.socket"),
+        ...ratio(document, item.carry.speedMultiplier, "carry.speedMultiplier"),
+        ...ratio(document, item.carry.jumpMultiplier, "carry.jumpMultiplier"),
+        ...(item.carry.dropPolicy === "drop" || item.carry.dropPolicy === "spend"
+          ? []
+          : [
+              diagnostic(
+                document,
+                "arena.item_drop_policy",
+                "carry.dropPolicy must be drop or spend",
+                "carry.dropPolicy"
+              )
+            ]),
+        ...nonNegativeInteger(document, item.action.windupTicks, "action.windupTicks"),
+        ...nonNegativeInteger(document, item.action.maxChargeTicks, "action.maxChargeTicks"),
+        ...positiveInteger(document, item.action.activeTicks, "action.activeTicks"),
+        ...nonNegativeInteger(document, item.action.cooldownTicks, "action.cooldownTicks"),
+        ...nonNegative(document, item.action.launchSpeed, "action.launchSpeed"),
+        ...positive(document, item.action.baseImpulse, "action.baseImpulse"),
+        ...nonNegative(document, item.action.areaRadius, "action.areaRadius"),
+        ...nonNegativeInteger(document, item.respawn.ticks, "respawn.ticks"),
+        ...nonBlank(document, item.presentationId, "presentationId"),
+        ...(item.networkStrategy === "predicted-entity" || item.networkStrategy === "authority-only"
+          ? []
+          : [
+              diagnostic(
+                document,
+                "arena.item_network_strategy",
+                "networkStrategy must be predicted-entity or authority-only",
+                "networkStrategy"
+              )
+            ]),
+        ...(item.action.mode === expectedMode
+          ? []
+          : [
+              diagnostic(
+                document,
+                "arena.item_action_kind_mismatch",
+                `${item.kind} requires ${expectedMode} action mode`,
+                "action.mode"
+              )
+            ]),
+        ...(item.action.mode === "melee"
+          ? item.action.launchSpeed === 0 && item.action.areaRadius > 0
+            ? []
+            : [
+                diagnostic(
+                  document,
+                  "arena.item_melee_profile",
+                  "Melee action requires zero launch speed and positive reach",
+                  "action"
+                )
+              ]
+          : item.action.launchSpeed > 0
+            ? []
+            : [
+                diagnostic(
+                  document,
+                  "arena.item_throw_profile",
+                  "Throw action requires positive launch speed",
+                  "action.launchSpeed"
+                )
+              ]),
+        ...(item.action.mode === "throw-area" && item.action.areaRadius <= 0
+          ? [
+              diagnostic(
+                document,
+                "arena.item_area_radius",
+                "Area action requires a positive radius",
+                "action.areaRadius"
+              )
+            ]
+          : []),
+        ...(item.respawn.mode === "none" && item.respawn.ticks !== 0
+          ? [
+              diagnostic(
+                document,
+                "arena.item_respawn_none_ticks",
+                "Non-respawning items require zero respawn ticks",
+                "respawn.ticks"
+              )
+            ]
+          : []),
+        ...(item.respawn.mode === "timed" && item.respawn.ticks === 0
+          ? [
+              diagnostic(
+                document,
+                "arena.item_respawn_timed_ticks",
+                "Timed respawn requires positive respawn ticks",
+                "respawn.ticks"
+              )
+            ]
+          : [])
       ];
     }
   };

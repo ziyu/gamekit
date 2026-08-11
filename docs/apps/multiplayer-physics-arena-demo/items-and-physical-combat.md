@@ -17,18 +17,45 @@ type ArenaItemGeneration = number;
 
 type ArenaItemDefinition = {
   id: string;
-  category: "throwable" | "melee" | "impact" | "utility";
-  worldBody: DataRef<"physics.body">;
-  carry: ArenaCarryProfile;
-  action: ArenaItemActionDefinition;
-  respawn: ArenaItemRespawnPolicy;
-  presentation: DataRef<"arena.item-presentation">;
+  kind: "throwable" | "impact" | "area" | "melee";
+  physics: {
+    shape: SphereShape | BoxShape;
+    mass: number;
+    friction: number;
+    restitution: number;
+    continuousCollisionDetection: boolean;
+    maxLinearSpeed: number;
+    lifetimeTicks: number;
+    maxBounces: number;
+  };
+  carry: {
+    socket: string;
+    speedMultiplier: number;
+    jumpMultiplier: number;
+    dropPolicy: "drop" | "spend";
+  };
+  action: {
+    mode: "throw-contact" | "throw-area" | "melee";
+    windupTicks: number;
+    maxChargeTicks: number;
+    activeTicks: number;
+    cooldownTicks: number;
+    launchSpeed: number;
+    baseImpulse: number;
+    areaRadius: number;
+  };
+  respawn: { mode: "timed" | "none"; ticks: number };
+  presentationId: string;
   networkStrategy: "predicted-entity" | "authority-only";
 };
 ```
 
 Definition id、instance id 和 generation 必须分开。一次 pickup 后再 throw 的物理 body 使用同一个 item instance 但递增
 generation；旧 generation 的 contact、prediction、effect 或 delayed snapshot 不能结束新实例。
+
+Definition Compiler 验证有限数值、shape、kind/action 对应、throw/melee 空间参数、respawn policy、stable presentation/socket id、
+definition/spawn 唯一性和容量，并从 compiled stage item pool + spawn set 生成稳定 manifest。Authority Runtime 只接受与启动时 compiled
+definition 完全一致的 manifest，不能信任业务层临时拼出的部分定义。
 
 ## 生命周期
 
@@ -54,6 +81,9 @@ spawning
 - `released` 以新 generation spawn Physics member；初始 transform/velocity/impulse 来自 authority commit。
 - `spent` 清理 hit memory、fuse、effect 与 physics member；是否回到 world 或 respawn 由 definition 决定。
 - 每个 transition 记录 authority tick、reason 与 correlation id，并且对重复 command 幂等。
+
+Item Authority Runtime 对 instance、command result 和 transition trace 分别设硬上限。Command id 重复且内容相同返回原结果；同 id
+不同内容明确拒绝。Stage generation reset 清空旧 instance/command/trace，dispose 后 retained instance、command 和 trace 必须为零。
 
 ## Interaction Targeting 与 Pickup Arbitration
 

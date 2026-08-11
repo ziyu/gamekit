@@ -123,11 +123,35 @@ function itemEntry(id: string) {
     data: {
       id,
       kind: "throwable" as const,
-      mass: 1,
-      carrySpeedMultiplier: 1,
-      windupTicks: 0,
-      cooldownTicks: 0,
-      respawnTicks: 0
+      physics: {
+        shape: { type: "sphere" as const, radius: 0.5 },
+        mass: 1,
+        friction: 0.5,
+        restitution: 0.5,
+        continuousCollisionDetection: true,
+        maxLinearSpeed: 10,
+        lifetimeTicks: 120,
+        maxBounces: 2
+      },
+      carry: {
+        socket: "hand.primary",
+        speedMultiplier: 1,
+        jumpMultiplier: 1,
+        dropPolicy: "drop" as const
+      },
+      action: {
+        mode: "throw-contact" as const,
+        windupTicks: 0,
+        maxChargeTicks: 0,
+        activeTicks: 120,
+        cooldownTicks: 0,
+        launchSpeed: 10,
+        baseImpulse: 4,
+        areaRadius: 0
+      },
+      respawn: { mode: "none" as const, ticks: 0 },
+      presentationId: "presentation.fixture",
+      networkStrategy: "predicted-entity" as const
     }
   };
 }

@@ -93,6 +93,10 @@ Item definition引用：
 Data validation确保引用strategy所需能力完整：predicted entity必须有member definition/correlation policy；melee必须有delivery；
 fuse item必须有trigger/area policy；任何hit item必须有hit/lifetime上限。
 
+Compiler 输出扁平、只读的 runtime profile，包括 shape/material 数值、CCD/speed/lifetime/bounce 上限、carry socket/modifier/drop、
+action timing/charge/launch/impulse/radius、respawn、presentation 与 network strategy。Item authority 按 compiled profile 工作，不能再次
+读取 DataRegistry 或按 item id 分支。
+
 ## Character 与 AI Definition
 
 Character motor definition的公共结构归character-controller toolkit；Arena DataPack只选择profile并附加carry/stage/surface modifier。

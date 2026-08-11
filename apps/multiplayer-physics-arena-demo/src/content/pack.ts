@@ -24,10 +24,54 @@ export const ARENA_CONTENT_VERSION = "1.0.0";
 export const ARENA_DEFAULT_MATCH_RULE_ID = "match.knockout.standard";
 
 const items: ArenaItemDefinition[] = [
-  item("item.foam-ball", "throwable", 0.75, 1, 8, 24, 240),
-  item("item.energy-block", "impact", 4.5, 0.72, 24, 45, 300),
-  item("item.blast-orb", "area", 1.6, 0.88, 18, 60, 360),
-  item("item.foam-hammer", "melee", 2.2, 0.82, 14, 36, 300)
+  item("item.foam-ball", "throwable", {
+    physics: physicsItem({ type: "sphere", radius: 0.48 }, 0.75, 0.5, 0.72, 22, 240, 4),
+    carry: carryItem(1, 1, "drop"),
+    action: actionItem("throw-contact", 8, 30, 240, 24, 12, 5, 0),
+    respawn: { mode: "timed", ticks: 240 },
+    presentationId: "presentation.foam-ball",
+    networkStrategy: "predicted-entity"
+  }),
+  item("item.energy-block", "impact", {
+    physics: physicsItem(
+      { type: "box", width: 0.85, height: 0.7, depth: 0.85 },
+      4.5,
+      0.7,
+      0.22,
+      14,
+      300,
+      2
+    ),
+    carry: carryItem(0.72, 0.86, "drop"),
+    action: actionItem("throw-contact", 24, 60, 300, 45, 8, 11, 0),
+    respawn: { mode: "timed", ticks: 300 },
+    presentationId: "presentation.energy-block",
+    networkStrategy: "predicted-entity"
+  }),
+  item("item.blast-orb", "area", {
+    physics: physicsItem({ type: "sphere", radius: 0.65 }, 1.6, 0.45, 0.35, 18, 180, 1),
+    carry: carryItem(0.88, 0.95, "spend"),
+    action: actionItem("throw-area", 18, 45, 90, 60, 10, 8, 3.8),
+    respawn: { mode: "timed", ticks: 360 },
+    presentationId: "presentation.blast-orb",
+    networkStrategy: "predicted-entity"
+  }),
+  item("item.foam-hammer", "melee", {
+    physics: physicsItem(
+      { type: "box", width: 0.55, height: 1.6, depth: 0.45 },
+      2.2,
+      0.65,
+      0.18,
+      10,
+      300,
+      0
+    ),
+    carry: carryItem(0.82, 0.92, "drop"),
+    action: actionItem("melee", 14, 0, 12, 36, 0, 8, 1.8),
+    respawn: { mode: "timed", ticks: 300 },
+    presentationId: "presentation.foam-hammer",
+    networkStrategy: "authority-only"
+  })
 ];
 
 export const ARENA_STANDARD_MOTOR_PROFILE: ArenaMotorProfileDefinition = {
@@ -130,13 +174,60 @@ export const arenaContentPack: DataPack = {
 function item(
   id: string,
   kind: ArenaItemDefinition["kind"],
-  mass: number,
-  carrySpeedMultiplier: number,
-  windupTicks: number,
-  cooldownTicks: number,
-  respawnTicks: number
+  definition: Omit<ArenaItemDefinition, "id" | "kind">
 ): ArenaItemDefinition {
-  return { id, kind, mass, carrySpeedMultiplier, windupTicks, cooldownTicks, respawnTicks };
+  return { id, kind, ...definition };
+}
+
+function physicsItem(
+  shape: ArenaItemDefinition["physics"]["shape"],
+  mass: number,
+  friction: number,
+  restitution: number,
+  maxLinearSpeed: number,
+  lifetimeTicks: number,
+  maxBounces: number
+): ArenaItemDefinition["physics"] {
+  return {
+    shape,
+    mass,
+    friction,
+    restitution,
+    continuousCollisionDetection: true,
+    maxLinearSpeed,
+    lifetimeTicks,
+    maxBounces
+  };
+}
+
+function carryItem(
+  speedMultiplier: number,
+  jumpMultiplier: number,
+  dropPolicy: ArenaItemDefinition["carry"]["dropPolicy"]
+): ArenaItemDefinition["carry"] {
+  return { socket: "hand.primary", speedMultiplier, jumpMultiplier, dropPolicy };
+}
+
+function actionItem(
+  mode: ArenaItemDefinition["action"]["mode"],
+  windupTicks: number,
+  maxChargeTicks: number,
+  activeTicks: number,
+  cooldownTicks: number,
+  launchSpeed: number,
+  baseImpulse: number,
+  areaRadius: number
+): ArenaItemDefinition["action"] {
+  return {
+    mode,
+    windupTicks,
+    maxChargeTicks,
+    activeTicks,
+    cooldownTicks,
+    launchSpeed,
+    baseImpulse,
+    areaRadius
+  };
 }
 
 function bot(

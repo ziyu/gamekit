@@ -58,14 +58,45 @@ export type ArenaHazardDefinition = {
 
 export type ArenaItemKind = "throwable" | "impact" | "area" | "melee";
 
+export type ArenaItemShapeDefinition =
+  | { type: "sphere"; radius: number }
+  | { type: "box"; width: number; height: number; depth: number };
+
 export type ArenaItemDefinition = {
   id: string;
   kind: ArenaItemKind;
-  mass: number;
-  carrySpeedMultiplier: number;
-  windupTicks: number;
-  cooldownTicks: number;
-  respawnTicks: number;
+  physics: {
+    shape: ArenaItemShapeDefinition;
+    mass: number;
+    friction: number;
+    restitution: number;
+    continuousCollisionDetection: boolean;
+    maxLinearSpeed: number;
+    lifetimeTicks: number;
+    maxBounces: number;
+  };
+  carry: {
+    socket: string;
+    speedMultiplier: number;
+    jumpMultiplier: number;
+    dropPolicy: "drop" | "spend";
+  };
+  action: {
+    mode: "throw-contact" | "throw-area" | "melee";
+    windupTicks: number;
+    maxChargeTicks: number;
+    activeTicks: number;
+    cooldownTicks: number;
+    launchSpeed: number;
+    baseImpulse: number;
+    areaRadius: number;
+  };
+  respawn: {
+    mode: "timed" | "none";
+    ticks: number;
+  };
+  presentationId: string;
+  networkStrategy: "predicted-entity" | "authority-only";
 };
 
 export type ArenaMotorProfileDefinition = {
