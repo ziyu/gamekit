@@ -36,6 +36,8 @@ describe("Knockout Arena multi-stage authority", () => {
       const brawlBaseline = fixture.authority.latestSnapshot();
       expect(brawlBaseline.frame.generation).not.toBe(qualifier.frame.generation);
       expect(actorIds(brawlBaseline)).toHaveLength(6);
+      expect(brawlBaseline.frame.members.map(({ id }) => id)).toContain("scrap.outer-conveyor");
+      expect(brawlBaseline.frame.members.map(({ id }) => id)).not.toContain("circuit.piston-gate");
       expect(
         brawlBaseline.participants.filter((participant) => participant.status === "spectator")
       ).toHaveLength(2);
@@ -52,6 +54,12 @@ describe("Knockout Arena multi-stage authority", () => {
         fixture.authority,
         (snapshot) => snapshot.match.stageIndex === 2 && snapshot.phase === "running",
         600
+      );
+      expect(fixture.authority.latestSnapshot().frame.members.map(({ id }) => id)).toContain(
+        "crown.shrinking-zone"
+      );
+      expect(fixture.authority.latestSnapshot().frame.members.map(({ id }) => id)).not.toContain(
+        "scrap.outer-conveyor"
       );
       advanceUntil(fixture.authority, (snapshot) => snapshot.stageResults.length === 3, 4_600);
       const finalResult = fixture.authority.latestSnapshot();

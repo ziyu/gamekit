@@ -4,6 +4,7 @@ export type ArenaStageCompletionReason =
   | "all-eliminated"
   | "last-standing"
   | "qualification-reached"
+  | "field-reduced"
   | "deadline";
 
 export type ArenaStageRuleDecision =
@@ -84,6 +85,14 @@ export function createArenaStageRule(definition: Readonly<ArenaStageDefinition>)
           reason: "last-standing",
           winnerParticipantId: input.activeParticipantIds[0]
         };
+      }
+      if (
+        definition.kind === "brawl" &&
+        input.activeParticipantIds.length > 0 &&
+        input.activeParticipantIds.length <= definition.qualificationCount
+      ) {
+        completions += 1;
+        return { status: "complete", reason: "field-reduced" };
       }
       if (
         definition.kind === "qualifier" &&

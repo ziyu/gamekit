@@ -116,6 +116,11 @@ transform/strength、next transition tick 和 public warning。
 - Kinematic target 由绝对 stage tick 计算，不累计浮点 delta 漂移。
 - Randomized pattern 从 stage-owned RNG 子流生成，并把公开 seed/version 放入 stage projection。
 - Late join 根据当前 phase/start tick 恢复，不从 phase 0 重播。
+- `sampleArenaStageHazards` 是 authority 与 prediction 的共享纯 sampler；kinematic patch 和对 dynamic body 的一次性 command 都由
+  绝对 stage tick、稳定 placement id 与当前 body facts 计算。传送带逐 tick 施加小冲量，风区与收缩区按固定 tick bucket
+  施加冲量，launch pad 使用固定周期 ticket，保证 rollback 重放不依赖本地累计状态。
+- Crumble floor 与 shrinking zone 的强度只随 stage 总进度单调变化，周期 phase 只控制 warning/active/recovery；不能用周期
+  pulse 把已经收缩的决胜区域重新放大。
 
 ## Surface 与 Gameplay Volume
 
@@ -164,6 +169,11 @@ kinematic schedule 或自由 dynamic body 表达，不偷渡 Rapier joint handle
   stable participant spawn；authority 与 client 都从同一绝对 stage tick hazard sampler 生成 patch，不能分别累计局部相位。
 - 资格赛 checkpoint 只按 `routeOrder` 单调推进；达到全部 checkpoint 后进入 finish volume 才算完成。完成数达到 qualification count
   时 Stage Rule 可以提前结算，deadline 继续作为断路或玩家停滞时的确定性后备。
+- Scrap Yard 与 Crown Collapse 使用 authority-owned forced-convergence planner。乱斗从 stage 55% 进度开始按 safe-zone
+  scale 收敛到 `qualificationCount`，决赛从 25% 开始收敛到 1 人；82% 后允许按稳定的“离安全区中心距离、participant id”
+  顺序强制淘汰。planner 只读取当前 authority body facts，不读取客户端预测或 Renderer，且始终保留规则要求的最小存活数。
+- 自然 kill volume 与强制收敛候选在同一 authority tick 合并，再统一进入 participant transition、impact attribution、ranking
+  和 stage settlement；乱斗达到晋级人数后以 `field-reduced` 结束，决赛只以唯一存活者产生 winner。
 
 ## 内容校验
 

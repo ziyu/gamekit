@@ -31,6 +31,7 @@ import {
   type ArenaStageRankingFact,
   type ArenaStageSettlement
 } from "../match/ranking-policy";
+import { planArenaStageConvergence } from "../match/stage-convergence";
 import { readArenaItemAction, type ArenaItemAction } from "../items/item-action";
 import {
   ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
@@ -38,7 +39,11 @@ import {
   createArenaCharacterMotorContributor
 } from "../shared/arena-control";
 import { arenaGenerationKey } from "../shared/arena-identity";
-import { planArenaStageInstallation, sampleArenaStageHazards } from "../shared/arena-stage-course";
+import {
+  planArenaHazardBodyCommands,
+  planArenaStageInstallation,
+  sampleArenaStageHazards
+} from "../shared/arena-stage-course";
 import {
   ARENA_ENVIRONMENT,
   createArenaMemberDefinitions,
@@ -778,19 +783,53 @@ export function createArenaAuthorityRuntime(
   }
 
   function detectEliminations(authorityTick: number): void {
-    const killVolumes = content.stages[director.snapshot().stageIndex]!.course.volumes.filter(
-      (volume) => volume.kind === "kill"
-    );
-    let membershipChanged = false;
-    for (const member of island.state().members) {
-      if (
-        !isArenaActor(member.id) ||
-        !killVolumes.some((volume) => pointInside(member.body.position, volume))
-      ) {
-        continue;
-      }
+    const match = director.snapshot();
+    const stage = content.stages[match.stageIndex]!;
+    const killVolumes = stage.course.volumes.filter((volume) => volume.kind === "kill");
+    const safeVolume = stage.course.volumes.find((volume) => volume.kind === "safe-zone");
+    const actors = island.state().members.flatMap((member) => {
+      if (!isArenaActor(member.id)) return [];
       const participant = participants.byActorMemberId(member.id);
-      if (participant === undefined || participant.status === "eliminated") continue;
+      if (
+        participant === undefined ||
+        !stageEntrantParticipantIds.has(participant.id) ||
+        participant.status === "eliminated" ||
+        participant.status === "spectator" ||
+        participant.status === "finished"
+      ) {
+        return [];
+      }
+      return [{ member, participant }];
+    });
+    const convergence = planArenaStageConvergence({
+      stageKind: stage.definition.kind,
+      elapsedTicks: Math.max(0, authorityTick - (match.stageStartedAtTick ?? authorityTick)),
+      durationTicks: stage.definition.durationTicks,
+      qualificationCount: stage.definition.qualificationCount,
+      safeVolume,
+      candidates: actors.map(({ member, participant }) => ({
+        participantId: participant.id,
+        memberId: member.id,
+        position: member.body.position
+      }))
+    });
+    const natural = actors
+      .filter(({ member }) =>
+        killVolumes.some((volume) => pointInside(member.body.position, volume))
+      )
+      .map(({ participant }) => participant.id);
+    const candidateIds = [...new Set([...natural, ...convergence.eliminatedParticipantIds])];
+    const minimumSurvivors =
+      stage.definition.kind === "final"
+        ? 1
+        : stage.definition.kind === "brawl"
+          ? stage.definition.qualificationCount
+          : 0;
+    const maximumEliminations = Math.max(0, actors.length - minimumSurvivors);
+    let membershipChanged = false;
+    for (const participantId of candidateIds.slice(0, maximumEliminations)) {
+      const participant = participants.participant(participantId);
+      if (participant === undefined) continue;
       const result = participants.transition(participant.id, "eliminated", {
         reason: "stage-eliminated",
         tick: authorityTick,
@@ -799,7 +838,7 @@ export function createArenaAuthorityRuntime(
       if (result.status === "applied") {
         membershipChanged = true;
         impactLedger.attribute({
-          eliminationId: `${director.snapshot().stageInstanceId}:elimination:${participant.id}`,
+          eliminationId: `${match.stageInstanceId}:elimination:${participant.id}`,
           targetParticipantId: participant.id,
           tick: authorityTick
         });
@@ -922,6 +961,20 @@ export function createArenaAuthorityRuntime(
       stageStartedAtTick: match.stageStartedAtTick ?? match.startedAtTick
     })) {
       queuePatch(hazard.memberId, hazard.patch);
+    }
+    for (const hazard of planArenaHazardBodyCommands({
+      stageIndex: match.stageIndex,
+      tick: targetTick,
+      stageStartedAtTick: match.stageStartedAtTick ?? match.startedAtTick,
+      bodies: island.state().members.map(({ body }) => body)
+    })) {
+      commands.push({
+        type: "body-command",
+        tick: targetTick,
+        sequence: nextSequence(),
+        memberId: hazard.memberId,
+        command: hazard.command
+      });
     }
 
     for (const command of commands) island.queue(command);

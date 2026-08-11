@@ -50,6 +50,7 @@ export type CompiledArenaHazardSchedule = {
   activeTicks: number;
   axis: "x" | "y" | "z";
   origin: PhysicsVector;
+  size: { width: number; height: number; depth: number };
   travel: number;
   strength: number;
 };
@@ -293,6 +294,7 @@ function compileHazardSchedule(
     activeTicks: definition.schedule.activeTicks,
     axis: placement.axis ?? "x",
     origin: cloneVector(placement.position),
+    size: { ...placement.size },
     travel: placement.travel ?? 0,
     strength: placement.strength ?? 0
   };

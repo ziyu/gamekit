@@ -117,6 +117,20 @@ describe("Knockout Arena match director", () => {
     director.dispose();
   });
 
+  it("completes a brawl as soon as convergence reaches its survivor target", () => {
+    const rule = createArenaStageRule(stage("brawl", 120, "stage.brawl", 3));
+
+    expect(
+      rule.evaluate({
+        elapsedTicks: 60,
+        entrantParticipantIds: ["a", "b", "c", "d", "e", "f"],
+        activeParticipantIds: ["a", "c", "e"]
+      })
+    ).toEqual({ status: "complete", reason: "field-reduced" });
+    expect(rule.diagnostics()).toMatchObject({ evaluations: 1, completions: 1 });
+    rule.dispose();
+  });
+
   it("rejects stage rule inputs whose active set is not a subset of entrants", () => {
     const rule = createArenaStageRule(stage("brawl", 20));
 

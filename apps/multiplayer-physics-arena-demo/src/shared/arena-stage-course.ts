@@ -1,5 +1,7 @@
 import type {
+  PhysicsBodyCommandPayload,
   PhysicsBodyPatch,
+  PhysicsBodyState,
   PhysicsPredictionIslandCommand,
   PhysicsPredictionIslandMemberDefinition,
   PhysicsVector
@@ -22,6 +24,11 @@ export type ArenaStageInstallationPlan = {
   commands: PhysicsPredictionIslandCommand[];
   memberIds: string[];
   actorSpawns: Readonly<Record<string, PhysicsVector>>;
+};
+
+export type ArenaHazardBodyCommand = {
+  memberId: string;
+  command: PhysicsBodyCommandPayload;
 };
 
 const ALL_COURSE_MEMBER_IDS = new Set(
@@ -98,10 +105,37 @@ export function sampleArenaStageHazards(options: {
   tick: number;
   stageStartedAtTick: number;
 }): ArenaHazardSample[] {
-  const schedules = requireStage(options.stageIndex).courseProjection.hazardSchedules;
+  const stage = requireStage(options.stageIndex);
+  const schedules = stage.courseProjection.hazardSchedules;
+  const elapsedTicks = Math.max(0, options.tick - options.stageStartedAtTick);
+  const stageProgress = Math.min(1, elapsedTicks / stage.definition.durationTicks);
   return schedules.map((schedule) =>
-    sampleHazard(schedule, Math.max(0, options.tick - options.stageStartedAtTick), options.tick)
+    sampleHazard(schedule, elapsedTicks, options.tick, stageProgress)
   );
+}
+
+export function planArenaHazardBodyCommands(options: {
+  stageIndex: number;
+  tick: number;
+  stageStartedAtTick: number;
+  bodies: readonly PhysicsBodyState[];
+}): ArenaHazardBodyCommand[] {
+  const stage = requireStage(options.stageIndex);
+  const schedulesByMemberId = new Map(
+    stage.courseProjection.hazardSchedules.map((schedule) => [schedule.memberId, schedule])
+  );
+  const samples = sampleArenaStageHazards(options);
+  const commands: ArenaHazardBodyCommand[] = [];
+  for (const sample of samples) {
+    if (!sample.active) continue;
+    const schedule = schedulesByMemberId.get(sample.memberId)!;
+    for (const body of options.bodies) {
+      if (body.kind !== "dynamic" || !insideHazard(body.position, schedule)) continue;
+      const command = hazardBodyCommand(schedule, sample, body, options.tick);
+      if (command !== undefined) commands.push({ memberId: body.id, command });
+    }
+  }
+  return commands;
 }
 
 export function arenaStageCourseMemberDefinitions(
@@ -113,7 +147,8 @@ export function arenaStageCourseMemberDefinitions(
 function sampleHazard(
   schedule: CompiledArenaHazardSchedule,
   elapsedTicks: number,
-  absoluteTick: number
+  absoluteTick: number,
+  stageProgress: number
 ): ArenaHazardSample {
   const cycleTick = positiveModulo(elapsedTicks + schedule.phaseTicks, schedule.periodTicks);
   const warningTicks = Math.min(30, Math.max(6, Math.floor(schedule.periodTicks * 0.12)));
@@ -137,7 +172,7 @@ function sampleHazard(
   const nextTransitionTick = absoluteTick + Math.max(1, nextBoundary - cycleTick);
   const progress = cycleTick / schedule.periodTicks;
   const activeProgress = Math.min(1, cycleTick / Math.max(1, schedule.activeTicks));
-  const patch = hazardPatch(schedule, progress, activeProgress, active);
+  const patch = hazardPatch(schedule, progress, activeProgress, active, stageProgress);
   return { memberId: schedule.memberId, phase, active, nextTransitionTick, patch };
 }
 
@@ -145,7 +180,8 @@ function hazardPatch(
   schedule: CompiledArenaHazardSchedule,
   cycleProgress: number,
   activeProgress: number,
-  active: boolean
+  active: boolean,
+  stageProgress: number
 ): PhysicsBodyPatch {
   if (schedule.kind === "rotating-sweeper") {
     const angle = cycleProgress * Math.PI * 2;
@@ -166,16 +202,84 @@ function hazardPatch(
   }
   if (schedule.kind === "crumble-floor") {
     return {
-      position: offsetAlongAxis(schedule.origin, "y", active ? 0 : -Math.max(2, schedule.travel))
+      position: offsetAlongAxis(
+        schedule.origin,
+        "y",
+        stageProgress < 0.3 || active ? 0 : -Math.max(2, schedule.travel)
+      ),
+      userData: { collapseProgress: stageProgress }
     };
   }
   if (schedule.kind === "shrinking-zone") {
-    const pulse = active ? Math.max(0.25, 1 - activeProgress * 0.75) : 1;
+    const pulse = Math.max(0.18, 1 - stageProgress * 0.82);
     return { userData: { hazardStrength: schedule.strength, safeScale: pulse } };
   }
   return {
     position: structuredClone(schedule.origin),
     userData: { hazardStrength: active ? schedule.strength : 0 }
+  };
+}
+
+function hazardBodyCommand(
+  schedule: CompiledArenaHazardSchedule,
+  sample: ArenaHazardSample,
+  body: PhysicsBodyState,
+  tick: number
+): PhysicsBodyCommandPayload | undefined {
+  if (schedule.kind === "conveyor") {
+    return {
+      type: "linear-impulse",
+      impulse: axisVector(schedule.axis, schedule.strength * 0.006),
+      wake: "wake"
+    };
+  }
+  if (schedule.kind === "wind-zone" && tick % 6 === 0) {
+    return {
+      type: "linear-impulse",
+      impulse: axisVector(schedule.axis, schedule.strength * 0.035),
+      wake: "wake"
+    };
+  }
+  if (schedule.kind === "bounce-pad" && tick % 18 === 0) {
+    return {
+      type: "linear-impulse",
+      impulse: { x: 0, y: schedule.strength * 0.18, z: 0 },
+      wake: "wake"
+    };
+  }
+  if (schedule.kind === "shrinking-zone" && tick % 6 === 0) {
+    const safeScale = Number(sample.patch.userData?.safeScale ?? 1);
+    const dx = body.position.x - schedule.origin.x;
+    const dz = (body.position.z ?? 0) - (schedule.origin.z ?? 0);
+    const radius = Math.min(schedule.size.width, schedule.size.depth) * 0.5 * safeScale;
+    const distance = Math.hypot(dx, dz);
+    if (distance <= radius || distance <= 0.001) return undefined;
+    return {
+      type: "linear-impulse",
+      impulse: {
+        x: (-dx / distance) * schedule.strength * 0.04,
+        y: 0.02,
+        z: (-dz / distance) * schedule.strength * 0.04
+      },
+      wake: "wake"
+    };
+  }
+  return undefined;
+}
+
+function insideHazard(position: PhysicsVector, schedule: CompiledArenaHazardSchedule): boolean {
+  return (
+    Math.abs(position.x - schedule.origin.x) <= schedule.size.width / 2 + 0.8 &&
+    Math.abs(position.y - schedule.origin.y) <= schedule.size.height / 2 + 1.2 &&
+    Math.abs((position.z ?? 0) - (schedule.origin.z ?? 0)) <= schedule.size.depth / 2 + 0.8
+  );
+}
+
+function axisVector(axis: "x" | "y" | "z", value: number): PhysicsVector {
+  return {
+    x: axis === "x" ? value : 0,
+    y: axis === "y" ? value : 0,
+    z: axis === "z" ? value : 0
   };
 }
 

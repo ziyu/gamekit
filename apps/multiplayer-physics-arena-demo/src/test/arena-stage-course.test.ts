@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { ARENA_COMPILED_CONTENT } from "../content/default-content";
-import { planArenaStageInstallation, sampleArenaStageHazards } from "../shared/arena-stage-course";
+import {
+  planArenaHazardBodyCommands,
+  planArenaStageInstallation,
+  sampleArenaStageHazards
+} from "../shared/arena-stage-course";
 
 describe("Knockout Arena compiled stage course", () => {
   it("atomically replaces course members and places qualified actors at the next start grid", () => {
@@ -84,7 +88,50 @@ describe("Knockout Arena compiled stage course", () => {
       ).toBe(true);
     }
   });
+
+  it("produces deterministic conveyor, wind, launch-pad and shrinking-zone body commands", () => {
+    const scrap = planArenaHazardBodyCommands({
+      stageIndex: 1,
+      tick: 18,
+      stageStartedAtTick: 0,
+      bodies: [
+        dynamicBody("actor.conveyor", { x: 36, y: 1.1, z: 8.4 }),
+        dynamicBody("actor.wind", { x: 28.5, y: 1.3, z: -1 }),
+        dynamicBody("actor.bounce", { x: 42.5, y: 1.1, z: -4.8 })
+      ]
+    });
+    expect(scrap.map(({ memberId }) => memberId)).toEqual(
+      expect.arrayContaining(["actor.conveyor", "actor.wind", "actor.bounce"])
+    );
+    expect(scrap.find(({ memberId }) => memberId === "actor.bounce")?.command).toMatchObject({
+      type: "linear-impulse",
+      impulse: { y: expect.any(Number) }
+    });
+
+    const crown = planArenaHazardBodyCommands({
+      stageIndex: 2,
+      tick: 3_600,
+      stageStartedAtTick: 0,
+      bodies: [dynamicBody("actor.edge", { x: 80, y: 1.2, z: 0 })]
+    });
+    expect(crown).toEqual([
+      expect.objectContaining({
+        memberId: "actor.edge",
+        command: expect.objectContaining({ type: "linear-impulse" })
+      })
+    ]);
+  });
 });
+
+function dynamicBody(id: string, position: { x: number; y: number; z: number }) {
+  return {
+    id,
+    kind: "dynamic" as const,
+    position,
+    linearVelocity: { x: 0, y: 0, z: 0 },
+    sleeping: false
+  };
+}
 
 function insideBounds(
   point: { x: number; y: number; z?: number },

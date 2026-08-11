@@ -51,7 +51,7 @@ import {
   arenaAuthorityPeerId
 } from "../shared/config";
 import { readArenaSnapshot, type ArenaSnapshot } from "../shared/protocol";
-import { sampleArenaStageHazards } from "../shared/arena-stage-course";
+import { planArenaHazardBodyCommands, sampleArenaStageHazards } from "../shared/arena-stage-course";
 
 export type ArenaClientInput = {
   moveX: number;
@@ -301,6 +301,16 @@ export async function createArenaClientSession(options: {
           type: "patch" as const,
           memberId: hazard.memberId,
           patch: hazard.patch
+        })),
+        ...planArenaHazardBodyCommands({
+          stageIndex: snapshot.match.stageIndex,
+          tick: predictionTick,
+          stageStartedAtTick: snapshot.match.stageStartedAtTick ?? snapshot.match.startedAtTick,
+          bodies: snapshot.frame.members.map(({ body }) => body)
+        }).map((hazard) => ({
+          type: "body-command" as const,
+          memberId: hazard.memberId,
+          command: hazard.command
         }))
       ];
     },
