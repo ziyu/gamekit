@@ -3,6 +3,7 @@ import type { MultiplayerPhysicsArenaFrame } from "@gamekit/app-host";
 import {
   ARENA_DEFINITION_VERSION,
   ARENA_SCHEMA_VERSION,
+  type ArenaActorControl,
   type ArenaMatchPhase,
   type ArenaMoveInput
 } from "./config";
@@ -35,6 +36,7 @@ export type ArenaSnapshot = {
   frame: MultiplayerPhysicsArenaFrame;
   playerIdsByPeerId: Record<string, string>;
   inputAcksByPeerId: Record<string, number>;
+  actorControlsByMemberId: Record<string, ArenaActorControl>;
   eliminatedMemberIds: string[];
   effects: ArenaAuthorityEffectCue[];
   serverTime: number;
@@ -72,6 +74,7 @@ export function readArenaSnapshot(value: unknown): ArenaSnapshot | undefined {
     value.frame.definitionVersion !== ARENA_DEFINITION_VERSION ||
     !isRecord(value.playerIdsByPeerId) ||
     !isRecord(value.inputAcksByPeerId) ||
+    !isRecord(value.actorControlsByMemberId) ||
     !Array.isArray(value.eliminatedMemberIds) ||
     !value.eliminatedMemberIds.every((id) => typeof id === "string") ||
     !Array.isArray(value.effects) ||
@@ -85,10 +88,35 @@ export function readArenaSnapshot(value: unknown): ArenaSnapshot | undefined {
   }
   const playerIdsByPeerId = readStringMap(value.playerIdsByPeerId);
   const inputAcksByPeerId = readIntegerMap(value.inputAcksByPeerId);
-  if (playerIdsByPeerId === undefined || inputAcksByPeerId === undefined) {
+  const actorControlsByMemberId = readActorControlMap(value.actorControlsByMemberId);
+  if (
+    playerIdsByPeerId === undefined ||
+    inputAcksByPeerId === undefined ||
+    actorControlsByMemberId === undefined
+  ) {
     return undefined;
   }
   return structuredClone(value) as ArenaSnapshot;
+}
+
+function readActorControlMap(
+  value: Record<string, unknown>
+): Record<string, ArenaActorControl> | undefined {
+  if (Object.keys(value).length > 64) return undefined;
+  const result: Record<string, ArenaActorControl> = {};
+  for (const [memberId, entry] of Object.entries(value)) {
+    if (
+      memberId.length === 0 ||
+      !isRecord(entry) ||
+      !axis(entry.moveX) ||
+      !axis(entry.moveZ) ||
+      typeof entry.jump !== "boolean"
+    ) {
+      return undefined;
+    }
+    result[memberId] = { moveX: entry.moveX, moveZ: entry.moveZ, jump: entry.jump };
+  }
+  return result;
 }
 
 function isAuthorityEffectCue(value: unknown): value is ArenaAuthorityEffectCue {

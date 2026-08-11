@@ -22,6 +22,7 @@ import {
   createArenaMemberDefinitions,
   isArenaActor
 } from "../shared/arena-definition";
+import { createArenaActorMotionPatch } from "../shared/arena-control";
 import {
   ARENA_DEFINITION_VERSION,
   ARENA_FIXED_STEP_MS,
@@ -32,6 +33,7 @@ import {
   ARENA_SNAPSHOT_INTERVAL_TICKS,
   ARENA_SNAPSHOT_KIND,
   arenaPlayerMemberId,
+  type ArenaActorControl,
   type ArenaMatchPhase,
   type ArenaMoveInput
 } from "../shared/config";
@@ -69,8 +71,6 @@ export type CreateArenaAuthorityRuntimeOptions = {
 const COUNTDOWN_MS = 3_000;
 const ROUND_DURATION_MS = 120_000;
 const RESULTS_DURATION_MS = 5_000;
-const MOVE_SPEED = 6.4;
-const JUMP_SPEED = 7.2;
 const AUTHORITY_EFFECT_RETENTION_TICKS = 60;
 const MAX_AUTHORITY_EFFECTS = 128;
 
@@ -109,6 +109,7 @@ export function createArenaAuthorityRuntime(
   const peerSlots = new Map<string, number>();
   const inputsByPeerId = new Map<string, ArenaMoveInput>();
   const inputAcksByPeerId = new Map<string, number>();
+  const actorControlsByMemberId = new Map<string, ArenaActorControl>();
   const eliminatedMemberIds = new Set<string>();
   const authorityEffects = new Map<string, ArenaAuthorityEffectCue>();
   let phase: ArenaMatchPhase = "lobby";
@@ -219,6 +220,7 @@ export function createArenaAuthorityRuntime(
       peerSlots.clear();
       inputsByPeerId.clear();
       inputAcksByPeerId.clear();
+      actorControlsByMemberId.clear();
       eliminatedMemberIds.clear();
       authorityEffects.clear();
     }
@@ -334,15 +336,23 @@ export function createArenaAuthorityRuntime(
       commandIndex += 1;
     };
 
+    actorControlsByMemberId.clear();
     for (let slot = 0; slot < ARENA_MAX_HUMANS; slot += 1) {
       const memberId = arenaPlayerMemberId(slot);
       const peerId = [...peerSlots.entries()].find((entry) => entry[1] === slot)?.[0];
       const input =
         peerId === undefined ? botInput(authorityTick, slot) : inputsByPeerId.get(peerId);
-      queueActorMotion(queuePatch, memberId, input ?? neutralInput());
+      actorControlsByMemberId.set(
+        memberId,
+        queueActorMotion(queuePatch, memberId, input ?? neutralInput())
+      );
     }
     for (let slot = 0; slot < 6; slot += 1) {
-      queueActorMotion(queuePatch, `bot.${slot}`, botInput(authorityTick, slot + 2));
+      const memberId = `bot.${slot}`;
+      actorControlsByMemberId.set(
+        memberId,
+        queueActorMotion(queuePatch, memberId, botInput(authorityTick, slot + 2))
+      );
     }
 
     const angle = authorityTick * 0.028;
@@ -398,27 +408,20 @@ export function createArenaAuthorityRuntime(
     ) => void,
     memberId: string,
     input: ArenaMoveInput
-  ): void {
+  ): ArenaActorControl {
     const body = island.body(memberId);
-    if (!body) return;
+    if (!body) return neutralControl();
     if (phase === "countdown" || phase === "lobby" || eliminatedMemberIds.has(memberId)) {
       const position = eliminatedMemberIds.has(memberId) ? arenaActorSpawn(memberId) : undefined;
       queuePatch(memberId, {
         ...(position === undefined ? {} : { position }),
         linearVelocity: { x: 0, y: 0, z: 0 }
       });
-      return;
+      return neutralControl();
     }
-    const length = Math.hypot(input.moveX, input.moveZ);
-    const scale = length > 1 ? 1 / length : 1;
-    const canJump = Math.abs(body.linearVelocity.y) < 0.35;
-    queuePatch(memberId, {
-      linearVelocity: {
-        x: input.moveX * scale * MOVE_SPEED,
-        y: input.jump && canJump ? JUMP_SPEED : body.linearVelocity.y,
-        z: input.moveZ * scale * MOVE_SPEED
-      }
-    });
+    const control = actorControl(input);
+    queuePatch(memberId, createArenaActorMotionPatch(control, body.linearVelocity));
+    return control;
   }
 
   function captureSnapshot(): ArenaSnapshot {
@@ -448,6 +451,9 @@ export function createArenaAuthorityRuntime(
         [...peerSlots.entries()].map(([peerId, slot]) => [peerId, arenaPlayerMemberId(slot)])
       ),
       inputAcksByPeerId: Object.fromEntries(inputAcksByPeerId),
+      actorControlsByMemberId: Object.fromEntries(
+        [...actorControlsByMemberId.entries()].sort(([left], [right]) => left.localeCompare(right))
+      ),
       eliminatedMemberIds: [...eliminatedMemberIds].sort(),
       effects: [...authorityEffects.values()].sort(
         (left, right) => left.tick - right.tick || left.id.localeCompare(right.id)
@@ -467,6 +473,14 @@ export function createArenaAuthorityRuntime(
 
 function neutralInput(): ArenaMoveInput {
   return { sequence: 0, moveX: 0, moveZ: 0, jump: false };
+}
+
+function neutralControl(): ArenaActorControl {
+  return { moveX: 0, moveZ: 0, jump: false };
+}
+
+function actorControl(input: ArenaMoveInput): ArenaActorControl {
+  return { moveX: input.moveX, moveZ: input.moveZ, jump: input.jump };
 }
 
 function botInput(tick: number, slot: number): ArenaMoveInput {

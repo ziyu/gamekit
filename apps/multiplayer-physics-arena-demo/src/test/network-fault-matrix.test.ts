@@ -140,7 +140,7 @@ async function runMatrixCase(profile: MultiplayerNetworkConditionProfile) {
       }
     },
     captureSnapshot: ({ tick }) => ({
-      schemaVersion: "knockout-arena.v1",
+      schemaVersion: "knockout-arena.v2",
       tick,
       ack: authorityAcknowledgedSequence
     })

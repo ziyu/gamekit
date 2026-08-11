@@ -85,6 +85,11 @@ describe("Knockout Arena Room authority", () => {
         rejectedInputs: 0
       });
       expect(latestA.authority.payloadBytes).toBeGreaterThan(1_000);
+      expect(latestA.actorControlsByMemberId).toMatchObject({
+        "player.0": { moveX: 0, moveZ: 0, jump: false },
+        "player.1": { moveX: 0, moveZ: 0, jump: false }
+      });
+      expect(Object.keys(latestA.actorControlsByMemberId)).toHaveLength(8);
     } finally {
       unsubscribeA();
       unsubscribeB();

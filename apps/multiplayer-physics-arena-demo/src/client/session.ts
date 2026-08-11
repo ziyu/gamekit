@@ -18,6 +18,7 @@ import type {
 import { createKootaWorld } from "@gamekit/world-koota";
 
 import { ARENA_ENVIRONMENT, createArenaDefinitionMap } from "../shared/arena-definition";
+import { createArenaActorControlPatches } from "../shared/arena-control";
 import {
   createArenaClientEffectController,
   type ArenaEffectPresentationEvent
@@ -146,7 +147,7 @@ export async function createArenaClientSession(options: {
     ArenaControlState
   >({
     id: "knockout.client.full-arena",
-    maxCommandsPerInput: 6,
+    maxCommandsPerInput: 16,
     island: {
       backend: options.physicsBackend,
       environment: ARENA_ENVIRONMENT,
@@ -156,7 +157,7 @@ export async function createArenaClientSession(options: {
       maxHistoryBytes: 96 * 1024 * 1024,
       maxReplayTicksPerOperation: 120,
       maxMembers: 32,
-      maxCommands: 2_048,
+      maxCommands: 4_096,
       scene: {
         dimension: "3d",
         gravity: { x: 0, y: -18, z: 0 },
@@ -179,31 +180,33 @@ export async function createArenaClientSession(options: {
     },
     mapInput({ input, snapshot, predictionFrame, predictionTick }) {
       const memberId = snapshot.playerIdsByPeerId[peerId];
-      if (!memberId || snapshot.eliminatedMemberIds.includes(memberId)) return [];
-      const body = readPredictedBody(memberId);
-      const length = Math.hypot(input.moveX, input.moveZ);
-      const scale = length > 1 ? 1 / length : 1;
+      const body = memberId === undefined ? undefined : readPredictedBody(memberId);
       const angle = predictionTick * 0.028;
       const canJump = input.jump && Math.abs(body?.linearVelocity.y ?? 1) < 0.35;
-      if (canJump) {
+      if (memberId !== undefined && canJump) {
         effects.anticipateJump({
           memberId,
           inputSequence: predictionFrame.sequence,
           predictionTick
         });
       }
+      const controlsByMemberId = structuredClone(snapshot.actorControlsByMemberId);
+      if (memberId !== undefined && !snapshot.eliminatedMemberIds.includes(memberId)) {
+        controlsByMemberId[memberId] = {
+          moveX: input.moveX,
+          moveZ: input.moveZ,
+          jump: input.jump
+        };
+      }
       return [
-        {
+        ...createArenaActorControlPatches(
+          controlsByMemberId,
+          (actorId) => readPredictedBody(actorId)?.linearVelocity
+        ).map(({ memberId: actorId, patch }) => ({
           type: "patch" as const,
-          memberId,
-          patch: {
-            linearVelocity: {
-              x: input.moveX * scale * 6.4,
-              y: canJump ? 7.2 : (body?.linearVelocity.y ?? 0),
-              z: input.moveZ * scale * 6.4
-            }
-          }
-        },
+          memberId: actorId,
+          patch
+        })),
         {
           type: "patch" as const,
           memberId: "hazard.sweeper",

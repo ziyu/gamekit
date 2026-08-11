@@ -38,16 +38,16 @@ Multiplayer Physics Arena Demo 是 GameKit 的 3D server-authoritative 高互动
   bundle 映射到 unreliable channel，而不改变 sequence/ack/inbox 语义。
 - Kinematic obstacle motion 由共享 definition、round generation 和 tick 确定性计算；动态玩家和可推动物体由
   authority Rapier scene 求解。
-- Authority payload 声明完整 `islandId`、generation、tick、membership revision、definition version 和成员 body
-  state；player/peer、ack、round phase、checkpoint、finish 和 result 保持 app schema 字段。
+- Authority payload 声明完整 `islandId`、generation、tick、membership revision、definition version、成员 body state
+  和全体 Actor 已消费的持续控制意图；player/peer、ack、round phase、checkpoint、finish 和 result 保持 app schema 字段。
 - 离线练习使用同一 authority/snapshot/prediction contract，只把 transport 换成本地 in-process endpoint。
 
 ## Client prediction
 
 - 首个版本每个客户端使用一个完整 arena island，包含本局所有玩家、会参与接触的动态道具和 kinematic 机关。
 - 静态赛道 geometry 由 versioned Data/layout 在客户端和服务端重建，不重复进入每个 authority frame。
-- 客户端只把本地玩家输入映射为 predicted command；远端玩家从最新 authority state 以其 body state 继续求解，并在
-  后续 snapshot 到达时整体校正。
+- 客户端把本地玩家输入和 authority 最近确认的远端持续控制映射为同 tick predicted command；远端离散事实不预测，
+  但会参与接触的 Actor 必须在 replay 中继续消费共享 motor，避免碰撞速度与 authority 控制每帧分叉。
 - snapshot 到达后先 reconcile 全体成员，再重演未确认本地输入。成员 revision、generation、definition 或 history
   不可复用时安装完整 hard-correction baseline。
 - 任何会与本地玩家发生因果接触的对象都不能只做 renderer interpolation。纯装饰物、远景和 UI 不进入 island。
