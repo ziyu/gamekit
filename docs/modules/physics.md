@@ -710,9 +710,16 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
   `createStandardMultiplayerPhysicsPredictionDomain(...)`；它统一托管 predicted identity、reconcile 状态和 hard
   correction fallback。Island 的 `hardCorrect(...)` 只接受完整、合法、容量内的 authority snapshot，先解析所有
   缺失 member definition，再以该 tick 建立新的单 checkpoint baseline 并清空旧 command/history；失败不能部分改写 scene。
+- Character motor、可重演 cooldown 等会改变同 tick Physics command、但不属于 solver checkpoint 的少量确定性状态，必须通过
+  `PhysicsPredictionIslandAuxiliaryContributor` 注册给 island。Contributor 使用唯一 id/version 和稳定 order，提供
+  capture/validate/restore/reconcile/reset/hash/measure/dispose；island 把 solver 与所有 contributor 作为一个原子 checkpoint，
+  统一限制 contributor 数、单 contributor bytes、总 checkpoint/history bytes 和 replay work，并在 hard correction、generation
+  reset 与 dispose 时一起处理。Contributor 只通过受限 simulation facade 读写 island member，不得持有第二个 scene、推进 solver、
+  捕获整个 World/AI/match/presentation 状态，或与通用 Physics rollback contributor 重复拥有 solver state。
 - 多人 arena 集成优先使用 App Host 标准 Physics Arena adapter；Authority 显式发布完整 membership revision 和
-  definition version，应用只提供 member/input/presentation mapping。不要让 client 根据摄像机范围猜 island，也不要让
-  arena island 与 PhysicsHandle rollback contributor 捕获同一批 body。
+  definition version；注册 auxiliary contributor 时还要发布同 tick 的完整、按 id 排序的 auxiliary state envelope。应用只提供
+  member/input/presentation mapping 和 contributor factory。不要让 client 根据摄像机范围猜 island，也不要让 arena island 与
+  PhysicsHandle rollback contributor 捕获同一批 body。
 - 新 backend 先通过 physics conformance tests，再补 backend-specific behavior test。真实 canvas 或 Phaser Scene 只用于少量集成测试。
 - Backend-specific shape-cast 测试必须区分世界空间 contact point 与移动 shape origin，并至少用一个非零半径/
   half-extent 断言 origin 停在 blocker 外；只断言 collider id 会遗漏整半径的穿透错误。

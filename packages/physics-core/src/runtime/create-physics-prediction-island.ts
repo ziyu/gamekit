@@ -3,11 +3,14 @@ import type {
   PhysicsBackendAdapter,
   PhysicsBodyCommand,
   PhysicsBodyCommandPayload,
+  PhysicsBodyCommandResult,
   PhysicsBodyDefinition,
   PhysicsBodyPatch,
   PhysicsBodyState,
   PhysicsColliderDefinition,
   PhysicsContactEvent,
+  PhysicsQuery,
+  PhysicsQueryResult,
   PhysicsScene,
   PhysicsSceneCheckpoint,
   PhysicsSceneConfig
@@ -24,6 +27,56 @@ export type PhysicsPredictionIslandMemberDefinition = {
 export type PhysicsPredictionIslandEnvironment = {
   bodies?: readonly PhysicsBodyDefinition[];
   colliders?: readonly PhysicsColliderDefinition[];
+};
+
+export type PhysicsPredictionIslandAuxiliarySimulation = {
+  memberIds(): string[];
+  body(memberId: string): PhysicsBodyState | undefined;
+  query(query: PhysicsQuery): PhysicsQueryResult[];
+  updateBody(memberId: string, patch: PhysicsBodyPatch): void;
+  applyBodyCommand(memberId: string, command: PhysicsBodyCommandPayload): PhysicsBodyCommandResult;
+};
+
+export type PhysicsPredictionIslandAuxiliaryContext = {
+  generation: PhysicsPredictionIslandGeneration;
+  tick: number;
+  fixedDeltaMs: number;
+  replay: boolean;
+  simulation: PhysicsPredictionIslandAuxiliarySimulation;
+};
+
+export type PhysicsPredictionIslandAuxiliaryApplyContext =
+  PhysicsPredictionIslandAuxiliaryContext & {
+    sequence: number;
+  };
+
+export type PhysicsPredictionIslandAuxiliaryState = {
+  id: string;
+  version: string;
+  state: unknown;
+};
+
+export type PhysicsPredictionIslandAuxiliaryContributor<
+  TCommand = unknown,
+  TCheckpoint = unknown,
+  TAuthorityState = TCheckpoint
+> = {
+  id: string;
+  version?: string | undefined;
+  order?: number | undefined;
+  maxCheckpointBytes: number;
+  apply(command: TCommand, context: PhysicsPredictionIslandAuxiliaryApplyContext): void;
+  capture(context: PhysicsPredictionIslandAuxiliaryContext): TCheckpoint;
+  validate?(checkpoint: TCheckpoint, context: PhysicsPredictionIslandAuxiliaryContext): boolean;
+  restore(checkpoint: TCheckpoint, context: PhysicsPredictionIslandAuxiliaryContext): void;
+  reconcile?(
+    authorityState: TAuthorityState,
+    context: PhysicsPredictionIslandAuxiliaryContext
+  ): void;
+  reset?(context: PhysicsPredictionIslandAuxiliaryContext): void;
+  measureBytes(checkpoint: TCheckpoint): number;
+  hash(checkpoint: TCheckpoint): string;
+  dispose?(): void;
 };
 
 export type PhysicsPredictionIslandCommand =
@@ -48,6 +101,13 @@ export type PhysicsPredictionIslandCommand =
       command: PhysicsBodyCommandPayload;
     }
   | {
+      type: "auxiliary";
+      tick: number;
+      sequence: number;
+      contributorId: string;
+      payload: unknown;
+    }
+  | {
       type: "despawn";
       tick: number;
       sequence: number;
@@ -63,6 +123,7 @@ export type PhysicsPredictionIslandStateSnapshot = {
   generation: PhysicsPredictionIslandGeneration;
   tick: number;
   members: PhysicsPredictionIslandMemberState[];
+  auxiliary?: PhysicsPredictionIslandAuxiliaryState[] | undefined;
 };
 
 export type PhysicsPredictionIslandContact = PhysicsContactEvent & {
@@ -94,6 +155,7 @@ export type PhysicsPredictionIslandReconcileResult = {
     | "confirmed"
     | "corrected"
     | "membership-mismatch"
+    | "auxiliary-mismatch"
     | "history-overflow"
     | "replay-budget"
     | "stale-generation";
@@ -107,6 +169,7 @@ export type PhysicsPredictionIslandHardCorrectResult = {
     | "member-definition-missing"
     | "member-capacity"
     | "checkpoint-budget"
+    | "auxiliary-mismatch"
     | "invalid-snapshot";
   correctedMembers: number;
   missingMemberIds: string[];
@@ -124,10 +187,20 @@ export type PhysicsPredictionIslandDiagnostics = {
   patched: number;
   bodyCommandsApplied: number;
   bodyCommandsRejected: number;
+  auxiliaryCommandsApplied: number;
+  auxiliaryCommandsRejected: number;
   despawned: number;
   steps: number;
   checkpointCaptures: number;
   checkpointRestores: number;
+  auxiliaryCaptures: number;
+  auxiliaryRestores: number;
+  auxiliaryReconciliations: number;
+  auxiliaryResets: number;
+  auxiliaryFailures: number;
+  auxiliaryHashMismatches: number;
+  auxiliaryContributors: number;
+  maxAuxiliaryCheckpointBytesObserved: number;
   resimulations: number;
   resimulatedTicks: number;
   reconciliations: number;
@@ -161,6 +234,8 @@ export type CreatePhysicsPredictionIslandOptions = {
   maxReplayTicksPerOperation?: number;
   maxMembers?: number;
   maxCommands?: number;
+  auxiliaryContributors?: readonly PhysicsPredictionIslandAuxiliaryContributor[];
+  maxAuxiliaryContributors?: number;
 };
 
 export type PhysicsPredictionIsland = {
@@ -183,6 +258,16 @@ type StoredIslandCheckpoint = {
   tick: number;
   scene: PhysicsSceneCheckpoint;
   members: PhysicsPredictionIslandMemberDefinition[];
+  auxiliary: StoredAuxiliaryCheckpoint[];
+  byteLength: number;
+};
+
+type StoredAuxiliaryCheckpoint = {
+  id: string;
+  version: string;
+  state: unknown;
+  byteLength: number;
+  hash: string;
 };
 
 const DEFAULT_FIXED_DELTA_MS = 1000 / 60;
@@ -192,6 +277,7 @@ const DEFAULT_MAX_HISTORY_BYTES = 64 * 1024 * 1024;
 const DEFAULT_MAX_REPLAY_TICKS_PER_OPERATION = 128;
 const DEFAULT_MAX_MEMBERS = 64;
 const DEFAULT_MAX_COMMANDS = 256;
+const DEFAULT_MAX_AUXILIARY_CONTRIBUTORS = 16;
 
 export function createPhysicsPredictionIsland(
   options: CreatePhysicsPredictionIslandOptions
@@ -221,6 +307,15 @@ export function createPhysicsPredictionIsland(
   );
   const maxMembers = positiveInteger(options.maxMembers, DEFAULT_MAX_MEMBERS);
   const maxCommands = positiveInteger(options.maxCommands, DEFAULT_MAX_COMMANDS);
+  const maxAuxiliaryContributors = positiveInteger(
+    options.maxAuxiliaryContributors,
+    DEFAULT_MAX_AUXILIARY_CONTRIBUTORS
+  );
+  const contributors = normalizeAuxiliaryContributors(
+    options.auxiliaryContributors,
+    maxAuxiliaryContributors
+  );
+  const contributorById = new Map(contributors.map((contributor) => [contributor.id, contributor]));
   const initialTick = nonNegativeInteger(options.initialTick, 0);
   const scene = options.backend.createScene({
     ...options.scene,
@@ -259,16 +354,26 @@ export function createPhysicsPredictionIsland(
     | "historyEntries"
     | "historyBytes"
     | "commands"
+    | "auxiliaryContributors"
     | "disposed"
   > = {
     spawned: 0,
     patched: 0,
     bodyCommandsApplied: 0,
     bodyCommandsRejected: 0,
+    auxiliaryCommandsApplied: 0,
+    auxiliaryCommandsRejected: 0,
     despawned: 0,
     steps: 0,
     checkpointCaptures: 0,
     checkpointRestores: 0,
+    auxiliaryCaptures: 0,
+    auxiliaryRestores: 0,
+    auxiliaryReconciliations: 0,
+    auxiliaryResets: 0,
+    auxiliaryFailures: 0,
+    auxiliaryHashMismatches: 0,
+    maxAuxiliaryCheckpointBytesObserved: 0,
     resimulations: 0,
     resimulatedTicks: 0,
     reconciliations: 0,
@@ -287,27 +392,67 @@ export function createPhysicsPredictionIsland(
     maxCheckpointBytesObserved: 0
   };
 
+  const simulation: PhysicsPredictionIslandAuxiliarySimulation = {
+    memberIds() {
+      return [...members.keys()].sort();
+    },
+    body(memberId) {
+      const member = members.get(memberId);
+      if (member === undefined) return undefined;
+      const body = scene.getBodyState(member.body.id);
+      return body === undefined ? undefined : cloneBodyState(body);
+    },
+    query(query) {
+      return structuredClone(scene.query(structuredClone(query)));
+    },
+    updateBody(memberId, patch) {
+      const member = requireSimulationMember(memberId);
+      scene.updateBody(member.body.id, structuredClone(patch));
+    },
+    applyBodyCommand(memberId, command) {
+      const member = members.get(memberId);
+      if (member === undefined) {
+        return {
+          status: "body-missing",
+          bodyId: memberId,
+          commandType: command.type,
+          reason: `Missing prediction island member: ${memberId}`
+        };
+      }
+      if (scene.applyBodyCommand === undefined) {
+        return {
+          status: "unsupported",
+          bodyId: member.body.id,
+          commandType: command.type,
+          reason: `Physics backend does not support body commands: ${options.backend.kind}`
+        };
+      }
+      return scene.applyBodyCommand(materializeBodyCommand(member.body.id, command));
+    }
+  };
+
+  let initialCheckpoint: StoredIslandCheckpoint;
   try {
     materializeEnvironment(scene, options.environment);
     for (const member of options.initialMembers ?? []) {
       spawnMember(member, false);
     }
+    initialCheckpoint = captureCheckpoint(initialTick);
+    if (!storeCheckpoint(initialCheckpoint)) {
+      throw new GameError(
+        "physics.prediction_island_initial_checkpoint_budget",
+        "Physics prediction island initial checkpoint exceeds the configured byte budget",
+        {
+          checkpointBytes: initialCheckpoint.byteLength,
+          maxCheckpointBytes,
+          maxHistoryBytes
+        }
+      );
+    }
   } catch (error) {
+    disposeContributors();
     scene.dispose();
     throw error;
-  }
-  const initialCheckpoint = captureCheckpoint(initialTick);
-  if (!storeCheckpoint(initialCheckpoint)) {
-    scene.dispose();
-    throw new GameError(
-      "physics.prediction_island_initial_checkpoint_budget",
-      "Physics prediction island initial checkpoint exceeds the configured byte budget",
-      {
-        checkpointBytes: initialCheckpoint.scene.byteLength,
-        maxCheckpointBytes,
-        maxHistoryBytes
-      }
-    );
   }
 
   return {
@@ -376,6 +521,11 @@ export function createPhysicsPredictionIsland(
         metrics.membershipMismatches += 1;
         return { status: "membership-mismatch", correctionMagnitude: 0, replayedTicks: 0 };
       }
+      const authorityAuxiliary = resolveAuthorityAuxiliary(snapshot);
+      if (authorityAuxiliary === undefined) {
+        metrics.auxiliaryFailures += 1;
+        return { status: "auxiliary-mismatch", correctionMagnitude: 0, replayedTicks: 0 };
+      }
       const targetTick = currentTick;
       const replayTicks = targetTick - snapshot.tick;
       if (replayTicks > maxReplayTicksPerOperation) {
@@ -401,6 +551,19 @@ export function createPhysicsPredictionIsland(
         );
         scene.updateBody(definition.body.id, bodyStatePatch(authorityMember.body));
       }
+      let auxiliaryCorrection = false;
+      try {
+        auxiliaryCorrection = reconcileAuxiliary(
+          authorityAuxiliary,
+          checkpoint,
+          snapshot.tick,
+          false
+        );
+      } catch {
+        metrics.auxiliaryFailures += 1;
+        if (currentCheckpoint !== undefined) restoreCheckpoint(currentCheckpoint);
+        return { status: "auxiliary-mismatch", correctionMagnitude: 0, replayedTicks: 0 };
+      }
       const correctedCheckpoint = captureCheckpoint(snapshot.tick);
       if (!checkpointWithinBudget(correctedCheckpoint)) {
         if (currentCheckpoint !== undefined) {
@@ -419,11 +582,11 @@ export function createPhysicsPredictionIsland(
         metrics.maxCorrectionMagnitude,
         correctionMagnitude
       );
-      if (correctionMagnitude > 0.000_001) {
+      if (correctionMagnitude > 0.000_001 || auxiliaryCorrection) {
         metrics.corrections += 1;
       }
       return {
-        status: correctionMagnitude > 0.000_001 ? "corrected" : "confirmed",
+        status: correctionMagnitude > 0.000_001 || auxiliaryCorrection ? "corrected" : "confirmed",
         correctionMagnitude,
         replayedTicks: replayed.steps
       };
@@ -442,6 +605,16 @@ export function createPhysicsPredictionIsland(
         metrics.hardCorrectionFailures += 1;
         return {
           status: "member-capacity",
+          correctedMembers: 0,
+          missingMemberIds: []
+        };
+      }
+      const authorityAuxiliary = resolveAuthorityAuxiliary(snapshot);
+      if (authorityAuxiliary === undefined) {
+        metrics.hardCorrectionFailures += 1;
+        metrics.auxiliaryFailures += 1;
+        return {
+          status: "auxiliary-mismatch",
           correctedMembers: 0,
           missingMemberIds: []
         };
@@ -470,26 +643,45 @@ export function createPhysicsPredictionIsland(
         };
       }
 
+      const previousGeneration = generation;
       const previousCheckpoint = captureCheckpoint(currentTick);
-      restoreCheckpoint(initialCheckpoint);
-      const desiredIds = new Set(snapshot.members.map((member) => member.id));
-      for (const [memberId, definition] of members) {
-        if (desiredIds.has(memberId)) {
-          continue;
+      let nextCheckpoint: StoredIslandCheckpoint;
+      try {
+        restoreCheckpoint(initialCheckpoint);
+        const desiredIds = new Set(snapshot.members.map((member) => member.id));
+        for (const [memberId, definition] of members) {
+          if (desiredIds.has(memberId)) {
+            continue;
+          }
+          scene.destroyBody(definition.body.id);
+          members.delete(memberId);
         }
-        scene.destroyBody(definition.body.id);
-        members.delete(memberId);
-      }
-      for (const authorityMember of snapshot.members) {
-        let definition = members.get(authorityMember.id);
-        if (definition === undefined) {
-          definition = availableDefinitions.get(authorityMember.id)!;
-          spawnMember(definition, false);
+        for (const authorityMember of snapshot.members) {
+          let definition = members.get(authorityMember.id);
+          if (definition === undefined) {
+            definition = availableDefinitions.get(authorityMember.id)!;
+            spawnMember(definition, false);
+          }
+          scene.updateBody(definition.body.id, bodyStatePatch(authorityMember.body));
         }
-        scene.updateBody(definition.body.id, bodyStatePatch(authorityMember.body));
+        generation = snapshot.generation;
+        currentTick = snapshot.tick;
+        resetAuxiliary(snapshot.tick);
+        reconcileAuxiliary(authorityAuxiliary, initialCheckpoint, snapshot.tick, false);
+        nextCheckpoint = captureCheckpoint(snapshot.tick);
+      } catch {
+        generation = previousGeneration;
+        restoreCheckpoint(previousCheckpoint);
+        metrics.hardCorrectionFailures += 1;
+        metrics.auxiliaryFailures += 1;
+        return {
+          status: "auxiliary-mismatch",
+          correctedMembers: 0,
+          missingMemberIds: []
+        };
       }
-      const nextCheckpoint = captureCheckpoint(snapshot.tick);
       if (!checkpointWithinBudget(nextCheckpoint)) {
+        generation = previousGeneration;
         restoreCheckpoint(previousCheckpoint);
         metrics.hardCorrectionFailures += 1;
         return {
@@ -498,8 +690,6 @@ export function createPhysicsPredictionIsland(
           missingMemberIds: []
         };
       }
-      generation = snapshot.generation;
-      currentTick = snapshot.tick;
       commandsByTick.clear();
       commandBySequence.clear();
       commandCount = 0;
@@ -542,6 +732,7 @@ export function createPhysicsPredictionIsland(
       generation = nextGeneration;
       restoreCheckpoint(initialCheckpoint);
       currentTick = nextTick;
+      resetAuxiliary(nextTick);
       commandsByTick.clear();
       commandBySequence.clear();
       commandCount = 0;
@@ -565,6 +756,7 @@ export function createPhysicsPredictionIsland(
         historyEntries: history.size,
         historyBytes,
         commands: commandCount,
+        auxiliaryContributors: contributors.length,
         ...metrics,
         disposed
       };
@@ -581,6 +773,7 @@ export function createPhysicsPredictionIsland(
       commandsByTick.clear();
       commandBySequence.clear();
       commandCount = 0;
+      disposeContributors();
       scene.dispose();
     }
   };
@@ -693,6 +886,34 @@ export function createPhysicsPredictionIsland(
         metrics.bodyCommandsApplied += 1;
         return;
       }
+      case "auxiliary": {
+        const contributor = contributorById.get(command.contributorId);
+        if (contributor === undefined) {
+          metrics.auxiliaryCommandsRejected += 1;
+          metrics.auxiliaryFailures += 1;
+          throw new GameError(
+            "physics.prediction_island_auxiliary_missing",
+            `Prediction island auxiliary contributor is missing: ${command.contributorId}`,
+            { command, replay }
+          );
+        }
+        try {
+          contributor.apply(
+            structuredClone(command.payload),
+            auxiliaryContext(command.tick, replay, command.sequence)
+          );
+        } catch (error) {
+          metrics.auxiliaryCommandsRejected += 1;
+          metrics.auxiliaryFailures += 1;
+          throw new GameError(
+            "physics.prediction_island_auxiliary_apply_failed",
+            `Prediction island auxiliary contributor failed: ${command.contributorId}`,
+            { command, replay, cause: errorMessage(error) }
+          );
+        }
+        metrics.auxiliaryCommandsApplied += 1;
+        return;
+      }
       case "despawn": {
         const member = members.get(command.memberId);
         if (member === undefined) {
@@ -736,13 +957,17 @@ export function createPhysicsPredictionIsland(
 
   function captureCheckpoint(tick: number): StoredIslandCheckpoint {
     const checkpoint = captureScene();
+    const auxiliary = captureAuxiliary(tick, false);
     metrics.checkpointCaptures += 1;
     return {
       tick,
       scene: checkpoint,
       members: [...members.values()]
         .sort((left, right) => left.id.localeCompare(right.id))
-        .map(cloneMember)
+        .map(cloneMember),
+      auxiliary,
+      byteLength:
+        checkpoint.byteLength + auxiliary.reduce((total, entry) => total + entry.byteLength, 0)
     };
   }
 
@@ -752,20 +977,20 @@ export function createPhysicsPredictionIsland(
     }
     const previous = history.get(checkpoint.tick);
     if (previous !== undefined) {
-      historyBytes -= previous.scene.byteLength;
+      historyBytes -= previous.byteLength;
     }
     if (!history.has(checkpoint.tick)) {
       historyOrder.push(checkpoint.tick);
     }
     history.set(checkpoint.tick, checkpoint);
-    historyBytes += checkpoint.scene.byteLength;
+    historyBytes += checkpoint.byteLength;
     while (historyOrder.length > maxHistoryTicks + 1 || historyBytes > maxHistoryBytes) {
       const evictedForBytes = historyBytes > maxHistoryBytes;
       const expiredTick = historyOrder.shift();
       if (expiredTick !== undefined) {
         const expired = history.get(expiredTick);
         if (expired !== undefined) {
-          historyBytes -= expired.scene.byteLength;
+          historyBytes -= expired.byteLength;
           history.delete(expiredTick);
           if (evictedForBytes) {
             metrics.historyByteEvictions += 1;
@@ -781,7 +1006,7 @@ export function createPhysicsPredictionIsland(
   }
 
   function checkpointWithinBudget(checkpoint: StoredIslandCheckpoint): boolean {
-    const bytes = checkpoint.scene.byteLength;
+    const bytes = checkpoint.byteLength;
     metrics.maxCheckpointBytesObserved = Math.max(metrics.maxCheckpointBytesObserved, bytes);
     if (bytes <= maxCheckpointBytes && bytes <= maxHistoryBytes) {
       return true;
@@ -791,6 +1016,7 @@ export function createPhysicsPredictionIsland(
   }
 
   function restoreCheckpoint(checkpoint: StoredIslandCheckpoint): void {
+    validateAuxiliaryCheckpoint(checkpoint.auxiliary, checkpoint.tick);
     restoreScene(checkpoint.scene);
     metrics.checkpointRestores += 1;
     currentTick = checkpoint.tick;
@@ -798,6 +1024,7 @@ export function createPhysicsPredictionIsland(
     for (const member of checkpoint.members) {
       members.set(member.id, cloneMember(member));
     }
+    restoreAuxiliary(checkpoint.auxiliary, checkpoint.tick, false);
   }
 
   function dropHistoryAfter(tick: number): void {
@@ -809,7 +1036,7 @@ export function createPhysicsPredictionIsland(
       historyOrder.splice(index, 1);
       const checkpoint = history.get(historyTick);
       if (checkpoint !== undefined) {
-        historyBytes -= checkpoint.scene.byteLength;
+        historyBytes -= checkpoint.byteLength;
         history.delete(historyTick);
       }
     }
@@ -829,7 +1056,7 @@ export function createPhysicsPredictionIsland(
   }
 
   function capturePublicState(): PhysicsPredictionIslandStateSnapshot {
-    return {
+    const snapshot: PhysicsPredictionIslandStateSnapshot = {
       generation,
       tick: currentTick,
       members: [...members.values()]
@@ -842,6 +1069,228 @@ export function createPhysicsPredictionIsland(
           return { id: member.id, body: cloneBodyState(body) };
         })
     };
+    if (contributors.length > 0) {
+      snapshot.auxiliary = captureAuxiliary(currentTick, false).map((entry) => ({
+        id: entry.id,
+        version: entry.version,
+        state: structuredClone(entry.state)
+      }));
+    }
+    return snapshot;
+  }
+
+  function requireSimulationMember(memberId: string): PhysicsPredictionIslandMemberDefinition {
+    const member = members.get(memberId);
+    if (member === undefined) {
+      throw new GameError(
+        "physics.prediction_island_member_missing",
+        `Prediction island member is missing: ${memberId}`,
+        { memberId }
+      );
+    }
+    return member;
+  }
+
+  function auxiliaryContext(tick: number, replay: boolean): PhysicsPredictionIslandAuxiliaryContext;
+  function auxiliaryContext(
+    tick: number,
+    replay: boolean,
+    sequence: number
+  ): PhysicsPredictionIslandAuxiliaryApplyContext;
+  function auxiliaryContext(
+    tick: number,
+    replay: boolean,
+    sequence?: number
+  ): PhysicsPredictionIslandAuxiliaryContext | PhysicsPredictionIslandAuxiliaryApplyContext {
+    return {
+      generation,
+      tick,
+      fixedDeltaMs,
+      replay,
+      simulation,
+      ...(sequence === undefined ? {} : { sequence })
+    };
+  }
+
+  function captureAuxiliary(tick: number, replay: boolean): StoredAuxiliaryCheckpoint[] {
+    const checkpoints: StoredAuxiliaryCheckpoint[] = [];
+    let totalBytes = 0;
+    for (const contributor of contributors) {
+      try {
+        const state = structuredClone(contributor.capture(auxiliaryContext(tick, replay)));
+        const byteLength = measuredAuxiliaryBytes(contributor, state);
+        const hash = auxiliaryHash(contributor, state);
+        if (byteLength > contributor.maxCheckpointBytes) {
+          throw new GameError(
+            "physics.prediction_island_auxiliary_checkpoint_budget",
+            `Auxiliary checkpoint exceeds contributor budget: ${contributor.id}`,
+            { contributorId: contributor.id, byteLength, maxBytes: contributor.maxCheckpointBytes }
+          );
+        }
+        checkpoints.push({
+          id: contributor.id,
+          version: contributor.version ?? "1",
+          state,
+          byteLength,
+          hash
+        });
+        totalBytes += byteLength;
+        metrics.auxiliaryCaptures += 1;
+      } catch (error) {
+        metrics.auxiliaryFailures += 1;
+        throw new GameError(
+          "physics.prediction_island_auxiliary_capture_failed",
+          `Failed to capture auxiliary contributor: ${contributor.id}`,
+          { contributorId: contributor.id, cause: errorMessage(error) }
+        );
+      }
+    }
+    metrics.maxAuxiliaryCheckpointBytesObserved = Math.max(
+      metrics.maxAuxiliaryCheckpointBytesObserved,
+      totalBytes
+    );
+    return checkpoints;
+  }
+
+  function validateAuxiliaryCheckpoint(
+    checkpoints: readonly StoredAuxiliaryCheckpoint[],
+    tick: number
+  ): void {
+    if (checkpoints.length !== contributors.length) {
+      throw new GameError(
+        "physics.prediction_island_auxiliary_checkpoint_mismatch",
+        "Auxiliary checkpoint contributor count does not match the island",
+        { checkpointContributors: checkpoints.length, contributors: contributors.length }
+      );
+    }
+    for (const [index, contributor] of contributors.entries()) {
+      const checkpoint = checkpoints[index];
+      if (
+        checkpoint === undefined ||
+        checkpoint.id !== contributor.id ||
+        checkpoint.version !== (contributor.version ?? "1")
+      ) {
+        throw new GameError(
+          "physics.prediction_island_auxiliary_checkpoint_mismatch",
+          `Auxiliary checkpoint identity does not match contributor: ${contributor.id}`,
+          { contributorId: contributor.id, checkpoint }
+        );
+      }
+      const state = structuredClone(checkpoint.state);
+      const byteLength = measuredAuxiliaryBytes(contributor, state);
+      if (byteLength !== checkpoint.byteLength || byteLength > contributor.maxCheckpointBytes) {
+        throw new GameError(
+          "physics.prediction_island_auxiliary_checkpoint_invalid",
+          `Auxiliary checkpoint size is invalid: ${contributor.id}`,
+          { contributorId: contributor.id, byteLength, checkpointBytes: checkpoint.byteLength }
+        );
+      }
+      const hash = auxiliaryHash(contributor, state);
+      if (hash !== checkpoint.hash) {
+        metrics.auxiliaryHashMismatches += 1;
+        throw new GameError(
+          "physics.prediction_island_auxiliary_hash_mismatch",
+          `Auxiliary checkpoint hash does not match: ${contributor.id}`,
+          { contributorId: contributor.id, expected: checkpoint.hash, actual: hash }
+        );
+      }
+      if (contributor.validate?.(state, auxiliaryContext(tick, false)) === false) {
+        throw new GameError(
+          "physics.prediction_island_auxiliary_checkpoint_invalid",
+          `Auxiliary checkpoint validation failed: ${contributor.id}`,
+          { contributorId: contributor.id }
+        );
+      }
+    }
+  }
+
+  function restoreAuxiliary(
+    checkpoints: readonly StoredAuxiliaryCheckpoint[],
+    tick: number,
+    replay: boolean
+  ): void {
+    for (const [index, contributor] of contributors.entries()) {
+      const checkpoint = checkpoints[index]!;
+      contributor.restore(structuredClone(checkpoint.state), auxiliaryContext(tick, replay));
+      metrics.auxiliaryRestores += 1;
+    }
+  }
+
+  function resolveAuthorityAuxiliary(
+    snapshot: PhysicsPredictionIslandStateSnapshot
+  ): Map<string, unknown> | undefined {
+    const states = snapshot.auxiliary ?? [];
+    if (states.length !== contributors.length) return undefined;
+    const resolved = new Map<string, unknown>();
+    for (const state of states) {
+      if (resolved.has(state.id)) return undefined;
+      const contributor = contributorById.get(state.id);
+      if (contributor === undefined || state.version !== (contributor.version ?? "1")) {
+        return undefined;
+      }
+      try {
+        const cloned = structuredClone(state.state);
+        if (measuredAuxiliaryBytes(contributor, cloned) > contributor.maxCheckpointBytes) {
+          return undefined;
+        }
+        auxiliaryHash(contributor, cloned);
+        if (contributor.validate?.(cloned, auxiliaryContext(snapshot.tick, false)) === false) {
+          return undefined;
+        }
+        resolved.set(state.id, cloned);
+      } catch {
+        return undefined;
+      }
+    }
+    return resolved.size === contributors.length ? resolved : undefined;
+  }
+
+  function reconcileAuxiliary(
+    authority: ReadonlyMap<string, unknown>,
+    localCheckpoint: StoredIslandCheckpoint,
+    tick: number,
+    replay: boolean
+  ): boolean {
+    let corrected = false;
+    const localById = new Map(localCheckpoint.auxiliary.map((entry) => [entry.id, entry]));
+    for (const contributor of contributors) {
+      const state = authority.get(contributor.id);
+      if (state === undefined) {
+        throw new GameError(
+          "physics.prediction_island_auxiliary_authority_missing",
+          `Authority auxiliary state is missing: ${contributor.id}`
+        );
+      }
+      const authorityHash = auxiliaryHash(contributor, state);
+      corrected ||= localById.get(contributor.id)?.hash !== authorityHash;
+      if (contributor.reconcile === undefined) {
+        contributor.restore(structuredClone(state), auxiliaryContext(tick, replay));
+      } else {
+        contributor.reconcile(structuredClone(state), auxiliaryContext(tick, replay));
+      }
+      metrics.auxiliaryReconciliations += 1;
+    }
+    return corrected;
+  }
+
+  function resetAuxiliary(tick: number): void {
+    for (const contributor of contributors) {
+      contributor.reset?.(auxiliaryContext(tick, false));
+      metrics.auxiliaryResets += 1;
+    }
+  }
+
+  function disposeContributors(): void {
+    for (let index = contributors.length - 1; index >= 0; index -= 1) {
+      const contributor = contributors[index];
+      try {
+        contributor?.dispose?.();
+      } catch {
+        metrics.auxiliaryFailures += 1;
+      }
+    }
+    contributors.length = 0;
+    contributorById.clear();
   }
 
   function assertActive(): void {
@@ -864,6 +1313,91 @@ function materializeEnvironment(
   for (const collider of environment?.colliders ?? []) {
     scene.createCollider(structuredClone(collider));
   }
+}
+
+function normalizeAuxiliaryContributors(
+  values: readonly PhysicsPredictionIslandAuxiliaryContributor[] | undefined,
+  maximum: number
+): PhysicsPredictionIslandAuxiliaryContributor[] {
+  if ((values?.length ?? 0) > maximum) {
+    throw new GameError(
+      "physics.prediction_island_auxiliary_capacity",
+      `Prediction island auxiliary contributor capacity exceeded: ${maximum}`,
+      { contributors: values?.length ?? 0, maximum }
+    );
+  }
+  const ids = new Set<string>();
+  const contributors = [...(values ?? [])];
+  for (const contributor of contributors) {
+    if (!contributor.id.trim() || ids.has(contributor.id)) {
+      throw new GameError(
+        ids.has(contributor.id)
+          ? "physics.prediction_island_auxiliary_duplicate"
+          : "physics.prediction_island_auxiliary_id_invalid",
+        "Prediction island auxiliary contributors require unique non-empty ids",
+        { contributorId: contributor.id }
+      );
+    }
+    if (contributor.version !== undefined && !contributor.version.trim()) {
+      throw new GameError(
+        "physics.prediction_island_auxiliary_version_invalid",
+        `Prediction island auxiliary contributor version is invalid: ${contributor.id}`
+      );
+    }
+    if (
+      !Number.isSafeInteger(contributor.maxCheckpointBytes) ||
+      contributor.maxCheckpointBytes <= 0
+    ) {
+      throw new GameError(
+        "physics.prediction_island_auxiliary_budget_invalid",
+        `Prediction island auxiliary contributor budget is invalid: ${contributor.id}`
+      );
+    }
+    if (contributor.order !== undefined && !Number.isSafeInteger(contributor.order)) {
+      throw new GameError(
+        "physics.prediction_island_auxiliary_order_invalid",
+        `Prediction island auxiliary contributor order is invalid: ${contributor.id}`
+      );
+    }
+    ids.add(contributor.id);
+  }
+  return contributors.sort(
+    (left, right) => (left.order ?? 0) - (right.order ?? 0) || left.id.localeCompare(right.id)
+  );
+}
+
+function measuredAuxiliaryBytes(
+  contributor: PhysicsPredictionIslandAuxiliaryContributor,
+  checkpoint: unknown
+): number {
+  const bytes = contributor.measureBytes(checkpoint);
+  if (!Number.isSafeInteger(bytes) || bytes < 0) {
+    throw new GameError(
+      "physics.prediction_island_auxiliary_bytes_invalid",
+      `Auxiliary contributor returned invalid checkpoint bytes: ${contributor.id}`,
+      { contributorId: contributor.id, bytes }
+    );
+  }
+  return bytes;
+}
+
+function auxiliaryHash(
+  contributor: PhysicsPredictionIslandAuxiliaryContributor,
+  checkpoint: unknown
+): string {
+  const hash = contributor.hash(checkpoint);
+  if (typeof hash !== "string" || hash.length === 0) {
+    throw new GameError(
+      "physics.prediction_island_auxiliary_hash_invalid",
+      `Auxiliary contributor returned an invalid checkpoint hash: ${contributor.id}`,
+      { contributorId: contributor.id }
+    );
+  }
+  return hash;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function normalizeMember(
@@ -947,6 +1481,19 @@ function validStateSnapshot(snapshot: PhysicsPredictionIslandStateSnapshot): boo
       return false;
     }
     memberIds.add(member.id);
+  }
+  const auxiliaryIds = new Set<string>();
+  for (const state of snapshot.auxiliary ?? []) {
+    if (
+      typeof state.id !== "string" ||
+      state.id.length === 0 ||
+      typeof state.version !== "string" ||
+      state.version.length === 0 ||
+      auxiliaryIds.has(state.id)
+    ) {
+      return false;
+    }
+    auxiliaryIds.add(state.id);
   }
   return true;
 }

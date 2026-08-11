@@ -7,9 +7,12 @@ import type {
 import {
   createPhysicsPredictionIsland,
   type CreatePhysicsPredictionIslandOptions,
+  type PhysicsBodyCommandPayload,
   type PhysicsBodyPatch,
   type PhysicsBodyState,
   type PhysicsPredictionIsland,
+  type PhysicsPredictionIslandAuxiliaryContributor,
+  type PhysicsPredictionIslandAuxiliaryState,
   type PhysicsPredictionIslandCommand,
   type PhysicsPredictionIslandContact,
   type PhysicsPredictionIslandMemberDefinition,
@@ -41,6 +44,16 @@ export type StandardMultiplayerPhysicsArenaInputCommand =
       type: "patch";
       memberId: string;
       patch: PhysicsBodyPatch;
+    }
+  | {
+      type: "body-command";
+      memberId: string;
+      command: PhysicsBodyCommandPayload;
+    }
+  | {
+      type: "auxiliary";
+      contributorId: string;
+      payload: unknown;
     }
   | {
       type: "despawn";
@@ -85,8 +98,9 @@ export type StandardMultiplayerPhysicsArenaPredictionOptions<
   kind?: string | undefined;
   island: Omit<
     CreatePhysicsPredictionIslandOptions,
-    "generation" | "initialMembers" | "initialTick"
+    "generation" | "initialMembers" | "initialTick" | "auxiliaryContributors"
   >;
+  createAuxiliaryContributors?(): readonly PhysicsPredictionIslandAuxiliaryContributor[];
   maxCommandsPerInput?: number | undefined;
   selectFrame(
     context: MultiplayerClientReplicationSnapshotContext<TSnapshot, TInstallContext>
@@ -135,6 +149,7 @@ export type StandardMultiplayerPhysicsArenaAuthorityProjectionInput = {
   membershipRevision: number;
   definitionVersion: string;
   members: readonly PhysicsPredictionIslandMemberState[];
+  auxiliary?: readonly PhysicsPredictionIslandAuxiliaryState[] | undefined;
 };
 
 export type StandardMultiplayerPhysicsArenaAuthorityProjectionResult =
@@ -354,7 +369,10 @@ function createArenaRuntime<
         ...options.island,
         generation: frame.generation,
         initialTick: frame.tick,
-        initialMembers: definitions
+        initialMembers: definitions,
+        ...(options.createAuxiliaryContributors === undefined
+          ? {}
+          : { auxiliaryContributors: options.createAuxiliaryContributors() })
       });
       const baseline = nextIsland.hardCorrect(frame, definitions);
       if (baseline.status !== "corrected") {
@@ -451,7 +469,14 @@ export function createStandardMultiplayerPhysicsArenaAuthorityProjection(
         definitionVersion: input.definitionVersion,
         members: input.members
           .map(cloneAuthorityMember)
-          .sort((left, right) => left.id.localeCompare(right.id))
+          .sort((left, right) => left.id.localeCompare(right.id)),
+        ...(input.auxiliary === undefined
+          ? {}
+          : {
+              auxiliary: input.auxiliary
+                .map(cloneAuxiliaryState)
+                .sort((left, right) => left.id.localeCompare(right.id))
+            })
       };
       const payloadBytes = encoder.encode(JSON.stringify(frame)).byteLength;
       return payloadBytes > maxPayloadBytes
@@ -502,6 +527,22 @@ function materializeCommand(
         memberId: command.memberId,
         patch: structuredClone(command.patch)
       };
+    case "body-command":
+      return {
+        type: "body-command",
+        tick,
+        sequence,
+        memberId: command.memberId,
+        command: structuredClone(command.command)
+      };
+    case "auxiliary":
+      return {
+        type: "auxiliary",
+        tick,
+        sequence,
+        contributorId: command.contributorId,
+        payload: structuredClone(command.payload)
+      };
     case "despawn":
       return { type: "despawn", tick, sequence, memberId: command.memberId };
   }
@@ -538,7 +579,8 @@ function validClientFrame(frame: StandardMultiplayerPhysicsArenaClientFrame): bo
     nonEmptyValue(frame.definitionVersion) &&
     (frame.acknowledgedInputSequence === undefined ||
       nonNegativeSafeInteger(frame.acknowledgedInputSequence)) &&
-    validMembers(frame.members)
+    validMembers(frame.members) &&
+    validAuxiliary(frame.auxiliary)
   );
 }
 
@@ -551,7 +593,8 @@ function validAuthorityInput(
     nonNegativeSafeInteger(input.tick) &&
     nonNegativeSafeInteger(input.membershipRevision) &&
     nonEmptyValue(input.definitionVersion) &&
-    validMembers(input.members)
+    validMembers(input.members) &&
+    validAuxiliary(input.auxiliary)
   );
 }
 
@@ -562,6 +605,19 @@ function validMembers(members: readonly PhysicsPredictionIslandMemberState[]): b
       return false;
     }
     ids.add(member.id);
+  }
+  return true;
+}
+
+function validAuxiliary(
+  auxiliary: readonly PhysicsPredictionIslandAuxiliaryState[] | undefined
+): boolean {
+  const ids = new Set<string>();
+  for (const state of auxiliary ?? []) {
+    if (!nonEmptyValue(state.id) || !nonEmptyValue(state.version) || ids.has(state.id)) {
+      return false;
+    }
+    ids.add(state.id);
   }
   return true;
 }
@@ -601,6 +657,16 @@ function cloneAuthorityMember(
   return { id: member.id, body: structuredClone(body) };
 }
 
+function cloneAuxiliaryState(
+  state: PhysicsPredictionIslandAuxiliaryState
+): PhysicsPredictionIslandAuxiliaryState {
+  return {
+    id: state.id,
+    version: state.version,
+    state: structuredClone(state.state)
+  };
+}
+
 function cloneClientFrame(
   frame: StandardMultiplayerPhysicsArenaClientFrame
 ): StandardMultiplayerPhysicsArenaClientFrame {
@@ -614,6 +680,9 @@ function cloneClientFrame(
       id: member.id,
       body: structuredClone(member.body)
     })),
+    ...(frame.auxiliary === undefined
+      ? {}
+      : { auxiliary: frame.auxiliary.map(cloneAuxiliaryState) }),
     ...(frame.acknowledgedInputSequence === undefined
       ? {}
       : { acknowledgedInputSequence: frame.acknowledgedInputSequence })

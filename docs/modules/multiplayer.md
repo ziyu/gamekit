@@ -437,11 +437,13 @@ diagnostics。Session lifecycle 直接委托底层 backend；reliable ordered la
 测试、benchmark 和本地调试，不替代真实 provider 的 transport/reconnect 测试，也不拥有 authority 或 prediction clock。
 
 App Host 的 `createStandardMultiplayerPhysicsArenaPrediction(...)` 把 descriptor 与 Physics island、standard Physics
-prediction domain、membership revision、hard correction、可选 rollback contributor 和 speculative effect journal 组合
-成默认 arena adapter。应用声明 authority frame mapping、input command mapping、完整交互成员 policy、definition resolver
-和最终 writer；不手动调用 reconcile/replay 或维护 history/revision/effect settlement。对称的 authority projection helper
-从显式 membership source 生成 `islandId + generation + tick + membershipRevision + definitionVersion + members`，但 input
-ack、round/player state 和 provider wire serializer 仍由 app replication schema 拥有。
+prediction domain、membership revision、hard correction、可选 island-owned auxiliary contributor、rollback contributor 和
+speculative effect journal 组成默认 arena adapter。应用声明 authority frame mapping、input command mapping、完整交互成员 policy、
+definition resolver、可选 `createAuxiliaryContributors()` 和最终 writer；不手动调用 reconcile/replay 或维护 history/revision/
+effect settlement。Contributor factory 必须为每个 binding baseline 返回新实例，不能跨 generation/membership revision 复用已释放状态。
+对称的 authority projection helper 从显式 membership source 生成
+`islandId + generation + tick + membershipRevision + definitionVersion + members + auxiliary?`；auxiliary envelope 按稳定 id 排序，
+与 body members 一起计入 payload 预算，但 input ack、round/player state 和 provider wire serializer 仍由 app replication schema 拥有。
 
 标准 arena 接入面固定为三段：authority loop 声明 `inputDelivery: { mode: "redundant-bundle" }` 并在 fixed tick 中消费
 typed gameplay input；authority projection 把显式完整 membership 投影进 app snapshot；client 创建一次 Arena prediction
@@ -449,6 +451,12 @@ descriptor，并把它和 replication schema 一起交给 Multiplayer GameModule
 input-to-command mapping、round/score 规则和最终 presentation writer，但不实现 resend/de-dup、binding lifecycle、ack prune、
 checkpoint/history、reconcile/replay、hard correction 或 dispose 调度。普通单主体游戏继续使用 managed state transition 或
 Physics body transition；只有确实存在多人/机关/动态道具因果接触时才升级到完整 arena island。
+
+同 tick Physics command 依赖角色 motor、cooldown 或其他少量确定性状态时，应用把 typed input 映射为 `auxiliary` command，并
+注册 island contributor；island 先按稳定 contributor order 重放 auxiliary command，再推进同一个 solver step。Contributor 只捕获
+生成 Physics command 所必需的窄状态，不能把整个 World、AI blackboard、match state 或 presentation 塞进 arena checkpoint；这些
+跨域状态使用通用 rollback coordinator，或保持 authority-only。没有 contributor 的既有 consumer 保持原 body patch/body command
+路径和 wire shape，不需要迁移。
 
 Arena membership 是相互作用对象的完整因果闭包，不等同于 renderer interest set。Authority 必须发布完整 revision；
 客户端不能根据距离静默猜测。成员或 definition 变化、history/byte/replay work 溢出时安装完整 baseline 或降级
@@ -752,7 +760,8 @@ readAuthoritativeState + readAcknowledgedSequence + tracks` 回调；app 仍提�
 - 本地预测优先只配置 `inputRateHz`，managed runtime 用同一周期推进 prediction step，并用 `maxPredictionLeadInputs`（默认 8，可按 RTT/authority queue 预算调整）阻止未确认序列无限领先；如果 authority tick/ack 使用另一周期，必须显式建立一致的 simulation interval，不能让两个独立数字静默漂移。Prediction field 声明 correction metric、smooth fields、duration 和 max magnitude；managed runtime 自动调用 predict/present/reconcile 并应用 moving-target offset。不要把 prediction buffer `state()` 的 raw endpoint 直接写入 renderer，也不要对 endpoint 再做一整步向前 extrapolate。大 correction、teleport、binding/session change、hard phase transition 和 resync 直接 snap/reset prediction presentation。
 - Authority 使用 Physics backend 时，本地 prediction 不能长期使用 `position += velocity * step` 近似带 damping/碰撞的 solver。优先通过 `createPhysicsBodyPredictionTransition(...)` 复用同一 body/collider/layout definition、backend kind 与 fixed sub-step，并把 transition factory 交给 managed replication；transition 的有界 sequence checkpoint 会在权威基线匹配时复用 replay 结果，避免无意义 rewind 破坏 solver contact cache。游戏只声明 input-to-body patch 和 state binding，不手动推进 solver、调用 replay/interpolation 或释放 prediction scene。
 - 多人拥挤或动态机关持续交互时，使用标准 Physics Arena prediction descriptor，并让 authority 发布完整
-  `islandId/generation/tick/membershipRevision/definitionVersion/members`。Client 只映射本地 input 和 app presentation；
+  `islandId/generation/tick/membershipRevision/definitionVersion/members`；若注册 auxiliary contributor，还要发布同 tick 完整
+  `auxiliary` envelope。Client 只映射本地 input、创建 contributor 和 app presentation；
   不在 snapshot callback 中重建 island、按半径猜成员或在 render loop 中调用 reconcile。首个接入默认使用完整 arena
   island，只有带 authority revision、保守交互 horizon 和完整性测试的 policy 才允许拆分。
 - 为网络对象选择最窄且语义完整的策略：瞬时攻击用 lag-compensated hitscan，可重放直线弹丸用有界

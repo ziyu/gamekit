@@ -449,14 +449,17 @@ Prediction 必须按对象和因果复杂度选择策略，而不是把 render a
 多人高互动刚体 arena 通过 Multiplayer GameModule 的 provider-neutral client prediction-domain bridge 接入，而不是
 让 `createMultiplayerClientReplication(...)` 或 Multiplayer Core 理解 Physics。App Host 的标准 Physics Arena adapter
 组合 client binding lifecycle、完整 authority arena frame、prediction island、membership revision、hard correction、
-可选 rollback contributor 与 speculative effect journal；authority projection 只生成 provider-neutral island state，
-provider wire serializer 继续留在 app/backend boundary。严格逐 step prediction 使用可选的 bounded redundant input
+可选 island-owned auxiliary contributor、rollback contributor 与 speculative effect journal；authority projection 只生成
+provider-neutral island state 与显式 auxiliary state envelope，provider wire serializer 继续留在 app/backend boundary。
+严格逐 step prediction 使用可选的 bounded redundant input
 bundle 和 authority fixed-step inbox，使有损 delivery 下的 duplicate/gap/ack 仍由统一协议管理；未配置时保持现有单帧
 input 路径。真实交互集合由 authority 显式声明为完整因果闭包；缺失成员、
 definition version 不一致或 history/byte/replay 预算溢出时必须安装完整 baseline 或降级 authority-only。首选正确性基线
 是单个完整 arena island，自动 partition/merge/split 必须作为后续可选 policy，不能由客户端根据距离静默猜测。Arena
-island 与通用 World/Physics rollback contributor 不得重复捕获同一 solver state。具体决策见
-`docs/adr/0049-standard-multiplayer-physics-arena-prediction.md`。
+island 与通用 World/Physics rollback contributor 不得重复捕获同一 solver state；character motor 等决定同 tick Physics
+command 的少量状态必须作为 island auxiliary contributor 一起 capture/restore/replay/reset，不能由 app 在 reconcile 前后
+另跑一套历史。具体决策见 `docs/adr/0049-standard-multiplayer-physics-arena-prediction.md` 和
+`docs/adr/0053-arena-auxiliary-replay-contributors.md`。
 
 `@gamekit/multiplayer-core` 还提供可包裹任意 backend 的确定性 network-condition simulator，使用手动虚拟时钟、固定
 seed、选择性 message predicate 和有界 delivery queue 注入 latency、jitter、loss 与 duplicate。它只改变消息 delivery，

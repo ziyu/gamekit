@@ -22,8 +22,9 @@ character-controller -X→ input / camera / renderer / ai / multiplayer / rapier
 - `CharacterControlIntent`：玩家和 AI 共用的 move/facing/jump/dive 语义输入与稳定 sequence。
 - Pure motor：读取已编译 definition、上一状态、Physics body state 和本 tick 稳定环境观测，输出下一状态、body patch/command、
   diagnostics 与有界 trace。
-- Runtime strategy/helper：负责 ground/ceiling/step query、稳定排序、Physics 提交和 lifecycle；该层在后续工作包实现，不能由
-  app 重建另一套 timer/state machine。
+- Runtime strategy/helper：负责 ground/ceiling/step query、稳定排序、Physics 提交和 lifecycle；多人 Physics Arena 使用
+  `createCharacterMotorPredictionContributor(...)` 把该状态机接入 island，同步重演 timer/state/command，不能由 app 重建
+  另一套历史或 timer state machine。
 
 ## Definition 与 Data
 
@@ -55,13 +56,19 @@ closest/sort 规则，并把 query/rejection 数写入 diagnostics。Authority �
 语义 trace。`characterMotorStateSignature(...)` 与 `characterMotorCommandSignature(...)` 用于测试、checkpoint hash 和 replay 对照；
 它们不是网络 wire format。
 
-Motor state 的 capture/restore/reset/dispose 由标准 runtime 和 Multiplayer rollback contributor 管理。Physics island 与 motor 必须同 tick
-恢复；generation、membership 或 definition version 改变时安装完整 baseline，不能跨 stage 继承 timer。
+`createCharacterMotorPredictionContributor(...)` 只拥有 `memberId → CharacterMotorState`，消费 typed control/remove command，
+通过注入的 definition/observation resolver 调用 pure motor，再经 island 的受限 simulation facade 更新 body 和提交 body command。
+它不拥有 Physics scene、solver step、input device、AI、match state 或 presentation。Contributor 的 capture/validate/restore/reconcile/
+reset/hash/measure/dispose 由 Physics island 统一调度；authority auxiliary envelope 缺失 id、version 不匹配或状态非法时，整次
+reconcile 在写入前拒绝。Physics body checkpoint 与 motor timer 必须在同一 tick 恢复；generation、membership 或 definition version
+改变时安装完整 baseline，不能跨 stage 继承 timer。
 
 ## 集成最佳实践
 
 - App composition 先把 keyboard/gamepad/camera-relative 输入映射成 world-space intent；AI task 写入同构 intent。
 - Authority/prediction runtime 在 fixed tick 前完成 query observation，运行 pure motor，按稳定顺序提交 patch/command，再推进 Physics。
+- Arena client 通过 `createAuxiliaryContributors()` factory 为每个 binding baseline 创建新的 motor contributor，并把 control intent
+  映射成 island `auxiliary` command；不要跨 membership revision 复用已经 reset/dispose 的 contributor 实例。
 - Backend-specific strategy 只映射 probe/step/ground resolution，不拥有 gameplay timer、dive、stagger 或公共 state。
 - 新 backend 声明支持前，必须通过 shared motor fixture；Arena 之外至少保留 Physics 3D Lab controller course 作为第二真实 fixture。
 
