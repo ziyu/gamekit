@@ -68,6 +68,9 @@ describe("Rapier 3D physics backend", () => {
 
     const checkpoint = scene.captureCheckpoint?.();
     expect(checkpoint).toBeDefined();
+    const checkpointBytes = new Uint8Array(
+      (checkpoint!.payload as { bytes: Uint8Array }).bytes
+    ).slice();
     for (let tick = 0; tick < 24; tick += 1) {
       scene.step(1000 / 60);
     }
@@ -83,6 +86,12 @@ describe("Rapier 3D physics backend", () => {
     expect(secondReplay.position.y).toBeCloseTo(firstReplay.position.y, 6);
     expect(secondReplay.position.z).toBeCloseTo(firstReplay.position.z ?? Number.NaN, 6);
     expect(secondReplay.linearVelocity.y).toBeCloseTo(firstReplay.linearVelocity.y, 6);
+    scene.restoreCheckpoint?.(checkpoint!);
+    expect((checkpoint!.payload as { bytes: Uint8Array }).bytes).toEqual(checkpointBytes);
+    for (let tick = 0; tick < 24; tick += 1) {
+      scene.step(1000 / 60);
+    }
+    expect(scene.getBodyState("round.body")?.position).toEqual(secondReplay.position);
     expect(backend.capabilities().checkpoints).toMatchObject({
       captureRestore: true,
       fullScene: true,

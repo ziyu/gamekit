@@ -98,6 +98,20 @@ describe("Physics prediction island auxiliary contributors", () => {
     expect(() => createIsland(oversized)).toThrowError(/Failed to capture auxiliary contributor/);
     expect(oversized.diagnostics().disposed).toBe(true);
   });
+
+  it("uses contributor-owned command cloning without exposing retained commands", () => {
+    let clones = 0;
+    const counter = createCounterContributor({ onClone: () => (clones += 1) });
+    const island = createIsland(counter);
+    const command = auxiliaryCommand(1, 1, 4);
+    expect(island.queue(command).status).toBe("queued");
+    command.payload.delta = 40;
+    island.advanceTo(1);
+
+    expect(counter.value()).toBe(4);
+    expect(clones).toBe(2);
+    island.dispose();
+  });
 });
 
 function createIsland(contributor: PhysicsPredictionIslandAuxiliaryContributor) {
@@ -122,7 +136,9 @@ function auxiliaryCommand(tick: number, sequence: number, delta: number) {
   };
 }
 
-function createCounterContributor(options: { maxCheckpointBytes?: number } = {}) {
+function createCounterContributor(
+  options: { maxCheckpointBytes?: number; onClone?: () => void } = {}
+) {
   let value = 0;
   let disposed = false;
   return {
@@ -130,6 +146,10 @@ function createCounterContributor(options: { maxCheckpointBytes?: number } = {})
     version: "1",
     order: 10,
     maxCheckpointBytes: options.maxCheckpointBytes ?? 128,
+    cloneCommand(command: { delta: number }) {
+      options.onClone?.();
+      return { ...command };
+    },
     apply(command: { delta: number }) {
       value += command.delta;
     },

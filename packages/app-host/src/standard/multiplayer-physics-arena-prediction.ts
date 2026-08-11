@@ -752,8 +752,28 @@ function finiteRotation(value: PhysicsBodyState["rotation"]): boolean {
 function cloneAuthorityMember(
   member: PhysicsPredictionIslandMemberState
 ): PhysicsPredictionIslandMemberState {
-  const { userData: _userData, ...body } = member.body;
-  return { id: member.id, body: structuredClone(body) };
+  const body = member.body;
+  return {
+    id: member.id,
+    body: {
+      id: body.id,
+      kind: body.kind,
+      position: { ...body.position },
+      linearVelocity: { ...body.linearVelocity },
+      sleeping: body.sleeping,
+      ...(body.rotation === undefined
+        ? {}
+        : { rotation: typeof body.rotation === "number" ? body.rotation : { ...body.rotation } }),
+      ...(body.angularVelocity === undefined
+        ? {}
+        : {
+            angularVelocity:
+              typeof body.angularVelocity === "number"
+                ? body.angularVelocity
+                : { ...body.angularVelocity }
+          })
+    }
+  };
 }
 
 function cloneAuxiliaryState(

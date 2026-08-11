@@ -72,6 +72,7 @@ export type MultiplayerAuthorityHostLoopOptions<TAction, TInput, TSnapshot> = {
   inputKind?: string;
   snapshotKind?: string;
   snapshotVersion?: string;
+  snapshotIntervalTicks?: number;
   readAction?(payload: unknown, message: MultiplayerMessageEnvelope): TAction | undefined;
   readInput?(payload: unknown, message: MultiplayerMessageEnvelope): TInput | undefined;
   inputSequence?(input: TInput, message: MultiplayerMessageEnvelope): number | undefined;
@@ -167,6 +168,7 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
   const actionKind = options.actionKind ?? MULTIPLAYER_ACTION_KIND;
   const inputKind = options.inputKind ?? MULTIPLAYER_INPUT_KIND;
   const snapshotKind = options.snapshotKind ?? MULTIPLAYER_SNAPSHOT_KIND;
+  const snapshotIntervalTicks = normalizeSnapshotIntervalTicks(options.snapshotIntervalTicks);
   const maxActionsPerSourcePerTick = normalizePerSourceLimit(options.maxActionsPerSourcePerTick, 8);
   const maxQueuedActionsPerSource = normalizeQueueLimit(
     options.maxQueuedActionsPerSource,
@@ -718,6 +720,10 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       binding: options.binding.current(),
       tick: frame.tick
     };
+    if (frame.tick % snapshotIntervalTicks !== 0) {
+      diagnostics.committedTicks += 1;
+      return Promise.resolve();
+    }
     let payload: TSnapshot;
     try {
       payload = captureSnapshot(context);
@@ -920,6 +926,14 @@ function normalizeMaxInputsPerSourcePerTick(value: number | undefined): number {
   return value === undefined || !Number.isFinite(value)
     ? Number.POSITIVE_INFINITY
     : Math.max(1, Math.floor(value));
+}
+
+function normalizeSnapshotIntervalTicks(value: number | undefined): number {
+  const resolved = value ?? 1;
+  if (!Number.isSafeInteger(resolved) || resolved <= 0) {
+    throw new RangeError("Authority snapshot interval must be a positive safe integer.");
+  }
+  return resolved;
 }
 
 function normalizePerSourceLimit(value: number | undefined, defaultValue: number): number {

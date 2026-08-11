@@ -39,6 +39,52 @@ const PROJECTILE_MEMBER: PhysicsPredictionIslandMemberDefinition = {
 };
 
 describe("Physics prediction island", () => {
+  it("runs forward-only authority simulation from one reset baseline without retaining rollback history", () => {
+    const island = createPhysicsPredictionIsland({
+      backend: createMemoryPhysicsBackend({ id: "authority-forward-only", dimension: "3d" }),
+      generation: "authority.1",
+      historyMode: "initial-only",
+      initialMembers: [TARGET_MEMBER],
+      maxCommands: 8
+    });
+
+    for (let tick = 1; tick <= 6; tick += 1) {
+      expect(
+        island.queue({
+          type: "patch",
+          tick,
+          sequence: tick,
+          memberId: TARGET_MEMBER.id,
+          patch: { linearVelocity: { x: 1, y: 0, z: 0 } }
+        }).status
+      ).toBe("queued");
+      island.advanceTo(tick);
+    }
+
+    expect(island.state()).toMatchObject({ generation: "authority.1", tick: 6 });
+    expect(island.diagnostics()).toMatchObject({
+      historyMode: "initial-only",
+      historyEntries: 1,
+      commands: 0,
+      checkpointCaptures: 1
+    });
+    expect(
+      island.queue({
+        type: "patch",
+        tick: 6,
+        sequence: 7,
+        memberId: TARGET_MEMBER.id,
+        patch: { linearVelocity: { x: 2, y: 0, z: 0 } }
+      }).status
+    ).toBe("history-overflow");
+
+    island.reset("authority.2");
+    expect(island.state()).toMatchObject({ generation: "authority.2", tick: 0 });
+    expect(island.diagnostics()).toMatchObject({ historyEntries: 1, commands: 0 });
+    island.dispose();
+    expect(island.diagnostics()).toMatchObject({ historyEntries: 0, members: 0 });
+  });
+
   it("replays a late predicted spawn from one full-scene checkpoint", () => {
     const island = createPhysicsPredictionIsland({
       backend: createMemoryPhysicsBackend(),

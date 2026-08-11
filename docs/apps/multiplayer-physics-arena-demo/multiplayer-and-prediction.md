@@ -8,6 +8,11 @@ Knockout Arena 使用 server-authoritative 60 Hz Physics simulation、20 Hz auth
 应用只声明 typed snapshot/input、member/content policy、gameplay command mapping 和 presentation writer。Ack/history/replay、
 reconcile、baseline、generation reset、effect settlement 与 dispose 使用标准 Multiplayer/App Host/Physics 组合。
 
+Authority 与 Client 使用同一 island/command/auxiliary 协议，但保留策略不同：服务器采用 `historyMode: "initial-only"`，只持有
+当前 generation 的 reset baseline并释放已消费 command；客户端采用默认完整 rollback history。20 Hz frame cadence 由标准
+authority loop 的 `snapshotIntervalTicks` 管理，manual broadcast 只用于 initial sync、late join或显式resync。Arena 不在 app tick
+外另写 snapshot modulo、checkpoint ring 或 replay loop。
+
 ## Authority Ownership
 
 Authority 唯一拥有：

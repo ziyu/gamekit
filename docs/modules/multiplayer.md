@@ -355,6 +355,9 @@ client action / input
 - Local authority 不等于绕过 multiplayer contract。它只是把 transport 替换为 in-process delivery，玩法 state 仍由 authority loop 推进，并通过 snapshot/patch/result 驱动 presentation。
 - Provider-native state sync 仍可使用，例如 Colyseus Schema；但必须声明它是否是 authority source，并通过 typed native bridge 或 adapter mapping 暴露 provider-neutral diagnostics。
 - 标准 authority loop 可以把已捕获的 authoritative snapshot 委托给 app 选择的 provider publisher；publisher 只能替换 snapshot delivery，不能绕过固定 tick、app-owned simulation、capture、authority diagnostics 或 error boundary。
+- 标准 authority loop 通过 `snapshotIntervalTicks` 统一控制 snapshot capture/publish cadence，默认每 tick 发布。非到期 tick 仍完整
+  推进 simulation、ack 和 diagnostics；显式 `broadcastSnapshot()` 始终立即 capture/publish，供 initial sync、late join 和 resync。
+  App 不在 loop 外再写 modulo gate，也不为 diagnostics 重复 capture 同一 tick。
 - Client prediction、reconciliation 和 interpolation 是表现层或可回滚缓存，不是 authority state。
 - Backend adapter 不应 hard-code 具体游戏 interpolation。Colyseus、Nakama 等 provider 可以提供 state sync、server tick 和 snapshot/version source；GameKit core 提供 provider-neutral presentation timing、declared `Network*` track projection 与低成本 interpolation primitives；游戏或 demo 负责声明字段映射和 snap policy。
 

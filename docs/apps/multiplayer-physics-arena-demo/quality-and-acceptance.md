@@ -94,8 +94,8 @@ Knockout Arena只有在功能闭环、多人故障、Physics/AI性能、内容�
 
 | 指标                  | 默认目标                                                                     |
 | --------------------- | ---------------------------------------------------------------------------- |
-| Authority fixed step  | 36 member下p95≤4 ms，max≤8 ms                                                |
-| Client replay         | 12-tick replay p95≤5 ms；30-tick replay p95≤12 ms                            |
+| Authority fixed step  | 36 member主线程CPU p95≤4 ms、p99≤8 ms；wall p95/max同时报告                  |
+| Client replay         | 主线程CPU：12-tick p95≤5 ms、30-tick p95≤12 ms；wall p95/max同时报告         |
 | Snapshot payload      | 20 Hz，36 member+gameplay facts p95≤32 KiB，hard max 64 KiB                  |
 | Checkpoint            | 单checkpoint≤512 KiB                                                         |
 | History               | 单client完整arena history≤96 MiB                                             |
@@ -118,8 +118,9 @@ Knockout Arena只有在功能闭环、多人故障、Physics/AI性能、内容�
 - Animator/Audio/diagnostics production+retention。
 - Arena gameplay综合profile：character+item+Combat/GAS+AI/Nav+projection+replay。
 
-Benchmark排除一次性fixture construction但包含真实tick/runtime行为；同时记录p50/p95/max、allocation/heap、payload/checkpoint/
-history、capacity rejection和dispose retained state。
+Benchmark排除一次性fixture construction但包含真实tick/runtime行为；同步 JS/WASM 工作使用当前线程 CPU 时间作为跨负载硬门槛，
+同时记录 wall-clock p95/max、allocation/heap、payload/checkpoint/history、capacity rejection和dispose retained state。Browser frame
+继续使用真实 wall-clock，CPU 指标不能替代视觉帧验收。
 
 ## Soak
 

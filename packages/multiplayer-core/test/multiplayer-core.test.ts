@@ -394,6 +394,52 @@ describe("multiplayer authority helpers", () => {
     expect(fake.sent).toEqual([]);
   });
 
+  it("captures periodic authority snapshots at the declared cadence and keeps manual broadcast immediate", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "periodic-snapshot-host",
+      backend: fake.backend
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "host-authoritative",
+      localPeer: { id: "host", role: "host" }
+    });
+    const captured: number[] = [];
+    const published: number[] = [];
+    const loop = createMultiplayerAuthorityHostLoop<never, never, { tick: number }>({
+      runtime,
+      binding: createMultiplayerAuthorityBindingStore({
+        sessionId: "session-1",
+        mode: "host-authoritative",
+        authorityPeerId: "host"
+      }),
+      snapshotIntervalTicks: 3,
+      captureSnapshot({ tick }) {
+        captured.push(tick);
+        return { tick };
+      },
+      publishSnapshot(snapshot) {
+        published.push(snapshot.tick);
+      }
+    });
+
+    for (let tick = 0; tick < 5; tick += 1) loop.tick(16);
+    await waitFor(() => loop.diagnostics().sentSnapshots === 1);
+    expect(captured).toEqual([3]);
+    expect(published).toEqual([3]);
+    expect(loop.diagnostics()).toMatchObject({
+      tick: 5,
+      committedTicks: 5,
+      sentSnapshots: 1
+    });
+
+    await loop.broadcastSnapshot();
+    expect(captured).toEqual([3, 5]);
+    expect(published).toEqual([3, 5]);
+    expect(loop.diagnostics().sentSnapshots).toBe(2);
+  });
+
   it("splits authority ingress from simulation commit without publishing partial state", async () => {
     const fake = createFakeBackend();
     const runtime = createMultiplayerRuntime({

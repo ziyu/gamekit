@@ -10,13 +10,18 @@ import type {
   PhysicsColliderDefinition,
   PhysicsContactEvent,
   PhysicsQuery,
+  PhysicsQueryOptions,
   PhysicsQueryResult,
+  PhysicsRotation,
   PhysicsScene,
   PhysicsSceneCheckpoint,
-  PhysicsSceneConfig
+  PhysicsSceneConfig,
+  PhysicsShapeDefinition,
+  PhysicsVector
 } from "./types";
 
 export type PhysicsPredictionIslandGeneration = string | number;
+export type PhysicsPredictionIslandHistoryMode = "rollback" | "initial-only";
 
 export type PhysicsPredictionIslandMemberDefinition = {
   id: string;
@@ -65,6 +70,7 @@ export type PhysicsPredictionIslandAuxiliaryContributor<
   version?: string | undefined;
   order?: number | undefined;
   maxCheckpointBytes: number;
+  cloneCommand?(command: TCommand): TCommand;
   apply(command: TCommand, context: PhysicsPredictionIslandAuxiliaryApplyContext): void;
   capture(context: PhysicsPredictionIslandAuxiliaryContext): TCheckpoint;
   validate?(checkpoint: TCheckpoint, context: PhysicsPredictionIslandAuxiliaryContext): boolean;
@@ -177,6 +183,7 @@ export type PhysicsPredictionIslandHardCorrectResult = {
 
 export type PhysicsPredictionIslandDiagnostics = {
   backend: string;
+  historyMode: PhysicsPredictionIslandHistoryMode;
   generation: PhysicsPredictionIslandGeneration;
   tick: number;
   members: number;
@@ -229,6 +236,7 @@ export type CreatePhysicsPredictionIslandOptions = {
   initialTick?: number;
   fixedDeltaMs?: number;
   maxHistoryTicks?: number;
+  historyMode?: PhysicsPredictionIslandHistoryMode;
   maxCheckpointBytes?: number;
   maxHistoryBytes?: number;
   maxReplayTicksPerOperation?: number;
@@ -296,6 +304,14 @@ export function createPhysicsPredictionIsland(
   }
   const fixedDeltaMs = positiveNumber(options.fixedDeltaMs, DEFAULT_FIXED_DELTA_MS);
   const maxHistoryTicks = positiveInteger(options.maxHistoryTicks, DEFAULT_MAX_HISTORY_TICKS);
+  const historyMode = options.historyMode ?? "rollback";
+  if (historyMode !== "rollback" && historyMode !== "initial-only") {
+    throw new GameError(
+      "physics.prediction_island_history_mode_invalid",
+      "Physics prediction island history mode is not supported",
+      { historyMode }
+    );
+  }
   const maxCheckpointBytes = positiveInteger(
     options.maxCheckpointBytes,
     DEFAULT_MAX_CHECKPOINT_BYTES
@@ -343,11 +359,14 @@ export function createPhysicsPredictionIsland(
   let generation = options.generation;
   let currentTick = initialTick;
   let commandCount = 0;
+  let trimmedCommandsThrough = initialTick - 1;
   let historyBytes = 0;
   let disposed = false;
+  let checkpointMembers: PhysicsPredictionIslandMemberDefinition[] | undefined;
   const metrics: Omit<
     PhysicsPredictionIslandDiagnostics,
     | "backend"
+    | "historyMode"
     | "generation"
     | "tick"
     | "members"
@@ -403,11 +422,11 @@ export function createPhysicsPredictionIsland(
       return body === undefined ? undefined : cloneBodyState(body);
     },
     query(query) {
-      return structuredClone(scene.query(structuredClone(query)));
+      return scene.query(clonePhysicsQuery(query)).map(clonePhysicsQueryResult);
     },
     updateBody(memberId, patch) {
       const member = requireSimulationMember(memberId);
-      scene.updateBody(member.body.id, structuredClone(patch));
+      scene.updateBody(member.body.id, cloneBodyPatch(patch));
     },
     applyBodyCommand(memberId, command) {
       const member = members.get(memberId);
@@ -484,7 +503,7 @@ export function createPhysicsPredictionIsland(
         metrics.rejectedCommands += 1;
         return { status: "replay-budget", replayedTicks: 0, contacts: [] };
       }
-      const stored = cloneCommand(command);
+      const stored = cloneCommand(command, contributorById);
       const commands = commandsByTick.get(command.tick) ?? [];
       commands.push(stored);
       commands.sort(compareCommands);
@@ -549,7 +568,9 @@ export function createPhysicsPredictionIsland(
           correctionMagnitude,
           vectorDistance(localBody.position, authorityMember.body.position)
         );
-        scene.updateBody(definition.body.id, bodyStatePatch(authorityMember.body));
+        if (bodyStateRequiresPatch(localBody, authorityMember.body)) {
+          scene.updateBody(definition.body.id, bodyStatePatch(authorityMember.body));
+        }
       }
       let auxiliaryCorrection = false;
       try {
@@ -575,7 +596,7 @@ export function createPhysicsPredictionIsland(
       dropHistoryAfter(snapshot.tick - 1);
       storeCheckpoint(correctedCheckpoint);
       metrics.resimulations += 1;
-      const replayed = advance(targetTick, true);
+      const replayed = advance(targetTick, true, false);
       metrics.resimulatedTicks += replayed.steps;
       metrics.reconciliations += 1;
       metrics.maxCorrectionMagnitude = Math.max(
@@ -655,6 +676,7 @@ export function createPhysicsPredictionIsland(
           }
           scene.destroyBody(definition.body.id);
           members.delete(memberId);
+          checkpointMembers = undefined;
         }
         for (const authorityMember of snapshot.members) {
           let definition = members.get(authorityMember.id);
@@ -693,6 +715,7 @@ export function createPhysicsPredictionIsland(
       commandsByTick.clear();
       commandBySequence.clear();
       commandCount = 0;
+      trimmedCommandsThrough = snapshot.tick - 1;
       history.clear();
       historyOrder.length = 0;
       historyBytes = 0;
@@ -736,6 +759,7 @@ export function createPhysicsPredictionIsland(
       commandsByTick.clear();
       commandBySequence.clear();
       commandCount = 0;
+      trimmedCommandsThrough = nextTick - 1;
       history.clear();
       historyOrder.length = 0;
       historyBytes = 0;
@@ -750,6 +774,7 @@ export function createPhysicsPredictionIsland(
     diagnostics() {
       return {
         backend: options.backend.kind,
+        historyMode,
         generation,
         tick: currentTick,
         members: members.size,
@@ -767,6 +792,7 @@ export function createPhysicsPredictionIsland(
       }
       disposed = true;
       members.clear();
+      checkpointMembers = undefined;
       history.clear();
       historyOrder.length = 0;
       historyBytes = 0;
@@ -778,7 +804,11 @@ export function createPhysicsPredictionIsland(
     }
   };
 
-  function advance(targetTick: number, replay: boolean): PhysicsPredictionIslandAdvanceResult {
+  function advance(
+    targetTick: number,
+    replay: boolean,
+    collectContacts = true
+  ): PhysicsPredictionIslandAdvanceResult {
     if (!Number.isSafeInteger(targetTick) || targetTick < currentTick) {
       throw new GameError(
         "physics.prediction_island_invalid_target_tick",
@@ -796,12 +826,19 @@ export function createPhysicsPredictionIsland(
         appliedCommands += 1;
       }
       const step = scene.step(fixedDeltaMs, { tick: nextTick });
-      for (const contact of step.contacts) {
-        contacts.push({ ...contact, tick: nextTick });
+      if (collectContacts) {
+        for (const contact of step.contacts) {
+          contacts.push({ ...contact, tick: nextTick });
+        }
       }
       currentTick = nextTick;
       metrics.steps += 1;
-      storeCheckpoint(captureCheckpoint(currentTick));
+      if (historyMode === "rollback") {
+        storeCheckpoint(captureCheckpoint(currentTick));
+      } else {
+        trimCommandsThrough(currentTick);
+        trimmedCommandsThrough = currentTick;
+      }
     }
     return {
       tick: currentTick,
@@ -850,7 +887,7 @@ export function createPhysicsPredictionIsland(
             { command, replay }
           );
         }
-        scene.updateBody(member.body.id, structuredClone(command.patch));
+        scene.updateBody(member.body.id, command.patch);
         metrics.patched += 1;
         return;
       }
@@ -899,7 +936,7 @@ export function createPhysicsPredictionIsland(
         }
         try {
           contributor.apply(
-            structuredClone(command.payload),
+            cloneAuxiliaryCommand(contributor, command.payload),
             auxiliaryContext(command.tick, replay, command.sequence)
           );
         } catch (error) {
@@ -921,6 +958,7 @@ export function createPhysicsPredictionIsland(
         }
         scene.destroyBody(member.body.id);
         members.delete(command.memberId);
+        checkpointMembers = undefined;
         metrics.despawned += 1;
       }
     }
@@ -950,6 +988,7 @@ export function createPhysicsPredictionIsland(
       scene.createCollider({ ...collider, bodyId: collider.bodyId ?? normalized.body.id });
     }
     members.set(normalized.id, normalized);
+    checkpointMembers = undefined;
     if (countMetric) {
       metrics.spawned += 1;
     }
@@ -962,9 +1001,7 @@ export function createPhysicsPredictionIsland(
     return {
       tick,
       scene: checkpoint,
-      members: [...members.values()]
-        .sort((left, right) => left.id.localeCompare(right.id))
-        .map(cloneMember),
+      members: captureCheckpointMembers(),
       auxiliary,
       byteLength:
         checkpoint.byteLength + auxiliary.reduce((total, entry) => total + entry.byteLength, 0)
@@ -999,8 +1036,9 @@ export function createPhysicsPredictionIsland(
       }
     }
     const earliestTick = historyOrder[0];
-    if (earliestTick !== undefined) {
+    if (earliestTick !== undefined && earliestTick > trimmedCommandsThrough) {
       trimCommandsThrough(earliestTick);
+      trimmedCommandsThrough = earliestTick;
     }
     return history.has(checkpoint.tick);
   }
@@ -1022,18 +1060,22 @@ export function createPhysicsPredictionIsland(
     currentTick = checkpoint.tick;
     members.clear();
     for (const member of checkpoint.members) {
-      members.set(member.id, cloneMember(member));
+      members.set(member.id, member);
     }
+    checkpointMembers = checkpoint.members;
     restoreAuxiliary(checkpoint.auxiliary, checkpoint.tick, false);
   }
 
+  function captureCheckpointMembers(): PhysicsPredictionIslandMemberDefinition[] {
+    checkpointMembers ??= [...members.values()]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map(cloneMember);
+    return checkpointMembers;
+  }
+
   function dropHistoryAfter(tick: number): void {
-    for (let index = historyOrder.length - 1; index >= 0; index -= 1) {
-      const historyTick = historyOrder[index];
-      if (historyTick === undefined || historyTick <= tick) {
-        continue;
-      }
-      historyOrder.splice(index, 1);
+    while ((historyOrder.at(-1) ?? tick) > tick) {
+      const historyTick = historyOrder.pop()!;
       const checkpoint = history.get(historyTick);
       if (checkpoint !== undefined) {
         historyBytes -= checkpoint.byteLength;
@@ -1070,7 +1112,8 @@ export function createPhysicsPredictionIsland(
         })
     };
     if (contributors.length > 0) {
-      snapshot.auxiliary = captureAuxiliary(currentTick, false).map((entry) => ({
+      const auxiliary = history.get(currentTick)?.auxiliary ?? captureAuxiliary(currentTick, false);
+      snapshot.auxiliary = auxiliary.map((entry) => ({
         id: entry.id,
         version: entry.version,
         state: structuredClone(entry.state)
@@ -1502,8 +1545,39 @@ function commandSignature(command: PhysicsPredictionIslandCommand): string {
   return JSON.stringify(command);
 }
 
-function cloneCommand(command: PhysicsPredictionIslandCommand): PhysicsPredictionIslandCommand {
-  return structuredClone(command);
+function cloneCommand(
+  command: PhysicsPredictionIslandCommand,
+  contributorById: ReadonlyMap<string, PhysicsPredictionIslandAuxiliaryContributor>
+): PhysicsPredictionIslandCommand {
+  switch (command.type) {
+    case "spawn":
+      return { ...command, member: cloneMember(command.member) };
+    case "patch":
+      return { ...command, patch: cloneBodyPatch(command.patch) };
+    case "body-command":
+      return { ...command, command: cloneBodyCommandPayload(command.command) };
+    case "auxiliary": {
+      const contributor = contributorById.get(command.contributorId);
+      return {
+        ...command,
+        payload:
+          contributor === undefined
+            ? structuredClone(command.payload)
+            : cloneAuxiliaryCommand(contributor, command.payload)
+      };
+    }
+    case "despawn":
+      return { ...command };
+  }
+}
+
+function cloneAuxiliaryCommand(
+  contributor: PhysicsPredictionIslandAuxiliaryContributor,
+  command: unknown
+): unknown {
+  return contributor.cloneCommand === undefined
+    ? structuredClone(command)
+    : contributor.cloneCommand(command);
 }
 
 function materializeBodyCommand(
@@ -1512,9 +1586,9 @@ function materializeBodyCommand(
 ): PhysicsBodyCommand {
   switch (payload.type) {
     case "linear-impulse":
-      return { ...structuredClone(payload), bodyId };
+      return { ...cloneBodyCommandPayload(payload), bodyId };
     case "angular-impulse":
-      return { ...structuredClone(payload), bodyId };
+      return { ...cloneBodyCommandPayload(payload), bodyId };
   }
 }
 
@@ -1527,27 +1601,182 @@ function compareCommands(
 
 function bodyStatePatch(state: PhysicsBodyState): PhysicsBodyPatch {
   return {
-    position: structuredClone(state.position),
-    linearVelocity: structuredClone(state.linearVelocity),
+    position: cloneVector(state.position),
+    linearVelocity: cloneVector(state.linearVelocity),
     sleeping: state.sleeping,
-    ...(state.rotation === undefined ? {} : { rotation: structuredClone(state.rotation) }),
+    ...(state.rotation === undefined ? {} : { rotation: cloneRotation(state.rotation) }),
     ...(state.angularVelocity === undefined
       ? {}
-      : { angularVelocity: structuredClone(state.angularVelocity) }),
+      : { angularVelocity: cloneRotation(state.angularVelocity) }),
     ...(state.userData === undefined ? {} : { userData: structuredClone(state.userData) })
   };
+}
+
+function bodyStateRequiresPatch(local: PhysicsBodyState, authority: PhysicsBodyState): boolean {
+  return (
+    !sameVector(local.position, authority.position) ||
+    !sameVector(local.linearVelocity, authority.linearVelocity) ||
+    local.sleeping !== authority.sleeping ||
+    !sameRotation(local.rotation, authority.rotation) ||
+    !sameRotation(local.angularVelocity, authority.angularVelocity) ||
+    authority.userData !== undefined
+  );
+}
+
+function sameVector(left: PhysicsVector, right: PhysicsVector): boolean {
+  return left.x === right.x && left.y === right.y && left.z === right.z;
+}
+
+function sameRotation(
+  left: PhysicsBodyState["rotation"] | PhysicsBodyState["angularVelocity"],
+  right: PhysicsBodyState["rotation"] | PhysicsBodyState["angularVelocity"]
+): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  if (typeof left === "number" || typeof right === "number") return left === right;
+  return (
+    left.x === right.x &&
+    left.y === right.y &&
+    left.z === right.z &&
+    "w" in left === "w" in right &&
+    (!("w" in left) || !("w" in right) || left.w === right.w)
+  );
 }
 
 function cloneBodyState(state: PhysicsBodyState): PhysicsBodyState {
   return {
     ...state,
-    position: structuredClone(state.position),
-    linearVelocity: structuredClone(state.linearVelocity),
-    ...(state.rotation === undefined ? {} : { rotation: structuredClone(state.rotation) }),
+    position: cloneVector(state.position),
+    linearVelocity: cloneVector(state.linearVelocity),
+    ...(state.rotation === undefined ? {} : { rotation: cloneRotation(state.rotation) }),
     ...(state.angularVelocity === undefined
       ? {}
-      : { angularVelocity: structuredClone(state.angularVelocity) }),
+      : { angularVelocity: cloneRotation(state.angularVelocity) }),
     ...(state.userData === undefined ? {} : { userData: structuredClone(state.userData) })
+  };
+}
+
+function cloneBodyPatch(patch: PhysicsBodyPatch): PhysicsBodyPatch {
+  return {
+    ...patch,
+    ...(patch.position === undefined ? {} : { position: cloneVector(patch.position) }),
+    ...(patch.rotation === undefined ? {} : { rotation: cloneRotation(patch.rotation) }),
+    ...(patch.linearVelocity === undefined
+      ? {}
+      : { linearVelocity: cloneVector(patch.linearVelocity) }),
+    ...(patch.angularVelocity === undefined
+      ? {}
+      : { angularVelocity: cloneRotation(patch.angularVelocity) }),
+    ...(patch.userData === undefined ? {} : { userData: structuredClone(patch.userData) })
+  };
+}
+
+function cloneBodyCommandPayload(payload: PhysicsBodyCommandPayload): PhysicsBodyCommandPayload {
+  switch (payload.type) {
+    case "linear-impulse":
+      return {
+        ...payload,
+        impulse: cloneVector(payload.impulse),
+        ...(payload.point === undefined ? {} : { point: cloneVector(payload.point) })
+      };
+    case "angular-impulse":
+      return { ...payload, impulse: cloneRotation(payload.impulse) };
+  }
+}
+
+function cloneVector(vector: PhysicsVector): PhysicsVector {
+  return { x: vector.x, y: vector.y, ...(vector.z === undefined ? {} : { z: vector.z }) };
+}
+
+function cloneRotation(rotation: PhysicsRotation): PhysicsRotation {
+  return typeof rotation === "number" ? rotation : { ...rotation };
+}
+
+function clonePhysicsQuery(query: PhysicsQuery): PhysicsQuery {
+  const legacy = clonePhysicsLegacyQueryOptions(query);
+  switch (query.type) {
+    case "point":
+      return { ...query, ...legacy, point: cloneVector(query.point) };
+    case "raycast":
+      return {
+        ...query,
+        ...legacy,
+        origin: cloneVector(query.origin),
+        direction: cloneVector(query.direction)
+      };
+    case "shape-cast":
+      return {
+        ...query,
+        ...legacy,
+        shape: clonePhysicsShape(query.shape),
+        ...(query.position === undefined ? {} : { position: cloneVector(query.position) }),
+        ...(query.rotation === undefined ? {} : { rotation: cloneRotation(query.rotation) }),
+        direction: cloneVector(query.direction)
+      };
+    case "overlap":
+    case "check":
+      return {
+        ...query,
+        ...legacy,
+        shape: clonePhysicsShape(query.shape),
+        ...(query.position === undefined ? {} : { position: cloneVector(query.position) }),
+        ...(query.rotation === undefined ? {} : { rotation: cloneRotation(query.rotation) })
+      };
+    case "bounds":
+      return {
+        ...query,
+        ...legacy,
+        bounds: { min: cloneVector(query.bounds.min), max: cloneVector(query.bounds.max) }
+      };
+  }
+}
+
+function clonePhysicsLegacyQueryOptions(query: PhysicsQuery) {
+  return {
+    ...(query.filter === undefined ? {} : { filter: clonePhysicsFilter(query.filter) }),
+    ...(query.options === undefined ? {} : { options: clonePhysicsQueryOptions(query.options) })
+  };
+}
+
+function clonePhysicsQueryOptions(options: PhysicsQueryOptions): PhysicsQueryOptions {
+  return {
+    ...options,
+    ...(options.filter === undefined ? {} : { filter: clonePhysicsFilter(options.filter) }),
+    ...(options.ignoreBodies === undefined ? {} : { ignoreBodies: [...options.ignoreBodies] }),
+    ...(options.ignoreColliders === undefined
+      ? {}
+      : { ignoreColliders: [...options.ignoreColliders] }),
+    ...(options.includeBodies === undefined ? {} : { includeBodies: [...options.includeBodies] }),
+    ...(options.includeColliders === undefined
+      ? {}
+      : { includeColliders: [...options.includeColliders] })
+  };
+}
+
+function clonePhysicsFilter(filter: NonNullable<PhysicsQueryOptions["filter"]>) {
+  return {
+    ...filter,
+    ...(filter.groups === undefined ? {} : { groups: [...filter.groups] }),
+    ...(filter.collidesWith === undefined ? {} : { collidesWith: [...filter.collidesWith] })
+  };
+}
+
+function clonePhysicsShape(shape: PhysicsShapeDefinition): PhysicsShapeDefinition {
+  switch (shape.type) {
+    case "polygon":
+    case "polyline":
+      return { ...shape, points: shape.points.map(cloneVector) };
+    case "custom":
+      return { ...shape, props: structuredClone(shape.props) };
+    default:
+      return { ...shape };
+  }
+}
+
+function clonePhysicsQueryResult(result: PhysicsQueryResult): PhysicsQueryResult {
+  return {
+    ...result,
+    ...(result.point === undefined ? {} : { point: cloneVector(result.point) }),
+    ...(result.normal === undefined ? {} : { normal: cloneVector(result.normal) })
   };
 }
 

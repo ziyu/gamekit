@@ -432,7 +432,7 @@ function isCompetitive(record: Readonly<ArenaParticipantRecord>): boolean {
 }
 
 function cloneRecord(record: Readonly<ArenaParticipantRecord>): ArenaParticipantRecord {
-  return structuredClone(record);
+  return { ...record };
 }
 
 function validId(value: string): boolean {

@@ -123,6 +123,7 @@ export function createCharacterMotorPredictionContributor(
     version,
     order,
     maxCheckpointBytes,
+    cloneCommand,
     apply(command, context) {
       assertActive();
       if (!nonEmptyValue(command.memberId)) {
@@ -183,8 +184,8 @@ export function createCharacterMotorPredictionContributor(
         emittedBodyCommands += 1;
       }
       states.set(command.memberId, cloneCharacterMotorState(result.state));
-      lastDiagnostics.set(command.memberId, structuredClone(result.diagnostics));
-      lastTraces.set(command.memberId, structuredClone(result.trace));
+      lastDiagnostics.set(command.memberId, result.diagnostics);
+      lastTraces.set(command.memberId, result.trace);
       traceEntries += result.trace.length;
       appliedControls += 1;
       if (context.replay) replayedControls += 1;
@@ -298,6 +299,18 @@ export function createCharacterMotorPredictionContributor(
   }
 }
 
+function cloneCommand(command: CharacterMotorPredictionCommand): CharacterMotorPredictionCommand {
+  if (command.type === "remove") return { ...command };
+  return {
+    ...command,
+    intent: {
+      ...command.intent,
+      move: { ...command.intent.move },
+      ...(command.intent.facing === undefined ? {} : { facing: { ...command.intent.facing } })
+    }
+  };
+}
+
 function captureCheckpoint(
   states: ReadonlyMap<string, CharacterMotorState>
 ): CharacterMotorPredictionCheckpoint {
@@ -388,7 +401,7 @@ function bodyCommandPayload(
   } & Record<string, unknown>
 ): PhysicsBodyCommandPayload {
   const { bodyId: _bodyId, ...payload } = command;
-  return structuredClone(payload) as PhysicsBodyCommandPayload;
+  return payload as PhysicsBodyCommandPayload;
 }
 
 function nonEmpty(value: string, label: string): string {

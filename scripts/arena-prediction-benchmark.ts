@@ -196,6 +196,7 @@ function runArenaCase(input: {
     authoritySnapshot.members[0]!.body.position.x += 0.02;
     const startedAt = performance.now();
     const reconciliation = island.reconcile(authoritySnapshot);
+    replaySamples.push(performance.now() - startedAt);
     totalReplayedTicks += reconciliation.replayedTicks;
     const projected = projection.capture({
       islandId: ARENA_ISLAND_ID,
@@ -210,7 +211,6 @@ function runArenaCase(input: {
     }
     payloadBytes = Math.max(payloadBytes, projected.payloadBytes);
     payloadSamples.push(projected.payloadBytes);
-    replaySamples.push(performance.now() - startedAt);
     const diagnostics = island.diagnostics();
     maxHistoryBytes = Math.max(maxHistoryBytes, diagnostics.historyBytes);
     maxHistoryEntries = Math.max(maxHistoryEntries, diagnostics.historyEntries);
@@ -279,6 +279,10 @@ function queueArenaCommands(
     const body = island.body(definition.id);
     if (!body) continue;
     const phase = tick * 0.023 + index * 0.37 + round * 0.11;
+    const actor = definition.id.startsWith("player.") || definition.id.startsWith("bot.");
+    if (definition.body.kind === "dynamic" && !actor && tick % 30 !== 0) {
+      continue;
+    }
     const command: PhysicsPredictionIslandCommand =
       definition.body.kind === "kinematic"
         ? {
@@ -294,19 +298,31 @@ function queueArenaCommands(
               }
             }
           }
-        : {
-            type: "patch",
-            tick,
-            sequence: tick * 128 + index,
-            memberId: definition.id,
-            patch: {
-              linearVelocity: {
-                x: Math.sin(phase) * 2.8,
-                y: body.linearVelocity.y,
-                z: -2.4 + Math.cos(phase) * 0.5
+        : !actor
+          ? {
+              type: "body-command",
+              tick,
+              sequence: tick * 128 + index,
+              memberId: definition.id,
+              command: {
+                type: "linear-impulse",
+                impulse: { x: Math.sin(phase) * 0.4, y: 0.15, z: Math.cos(phase) * 0.4 },
+                wake: "wake"
               }
             }
-          };
+          : {
+              type: "patch",
+              tick,
+              sequence: tick * 128 + index,
+              memberId: definition.id,
+              patch: {
+                linearVelocity: {
+                  x: Math.sin(phase) * 2.8,
+                  y: body.linearVelocity.y,
+                  z: -2.4 + Math.cos(phase) * 0.5
+                }
+              }
+            };
     island.queue(command);
   }
 }

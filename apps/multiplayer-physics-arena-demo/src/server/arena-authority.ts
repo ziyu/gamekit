@@ -205,6 +205,7 @@ export function createArenaAuthorityRuntime(
     initialMembers: [...definitions, ...itemAuthority.initialMembers()],
     environment: ARENA_ENVIRONMENT,
     fixedDeltaMs: ARENA_FIXED_STEP_MS,
+    historyMode: "initial-only",
     maxHistoryTicks: 180,
     maxCheckpointBytes: 8 * 1024 * 1024,
     maxHistoryBytes: 96 * 1024 * 1024,
@@ -257,6 +258,7 @@ export function createArenaAuthorityRuntime(
   let latestPayloadBytes = 0;
   let stageInstallationPending = false;
   let disposed = false;
+  let cachedIslandState: ReturnType<PhysicsPredictionIsland["state"]> | undefined;
   let botPerceptionState = captureBotPerceptionState(0);
   const botPerception = createArenaAuthorityPerceptionSource({
     content,
@@ -281,6 +283,7 @@ export function createArenaAuthorityRuntime(
     },
     snapshotVersion: ARENA_SCHEMA_VERSION
   });
+  let latest: ArenaSnapshot | undefined;
 
   const authorityLoop: MultiplayerAuthorityHostLoop = createMultiplayerAuthorityHostLoop<
     ArenaItemAction,
@@ -293,6 +296,7 @@ export function createArenaAuthorityRuntime(
     inputKind: ARENA_INPUT_KIND,
     snapshotKind: ARENA_SNAPSHOT_KIND,
     snapshotVersion: ARENA_SCHEMA_VERSION,
+    snapshotIntervalTicks: ARENA_SNAPSHOT_INTERVAL_TICKS,
     readAction: readArenaItemAction,
     readInput: readArenaMoveInput,
     inputSequence: (input) => input.sequence,
@@ -317,7 +321,7 @@ export function createArenaAuthorityRuntime(
         participant.actorMemberId === undefined ||
         participant.status !== "active" ||
         payload.authorityEpoch !==
-          arenaParticipantCommandEpoch(island.state().generation, participant.revision) ||
+          arenaParticipantCommandEpoch(island.diagnostics().generation, participant.revision) ||
         director.snapshot().phase !== "running"
       ) {
         return {
@@ -348,7 +352,7 @@ export function createArenaAuthorityRuntime(
         participant.status === "eliminated" ||
         participant.status === "finished" ||
         payload.authorityEpoch !==
-          arenaParticipantCommandEpoch(island.state().generation, participant.revision)
+          arenaParticipantCommandEpoch(island.diagnostics().generation, participant.revision)
       ) {
         return {
           allowed: false,
@@ -366,12 +370,11 @@ export function createArenaAuthorityRuntime(
       advancePhysics(tick);
     },
     captureSnapshot() {
-      return captureSnapshot();
+      const snapshot = captureSnapshot();
+      latest = snapshot;
+      return snapshot;
     },
     async publishSnapshot(snapshot, context) {
-      if (context.tick % ARENA_SNAPSHOT_INTERVAL_TICKS !== 0) {
-        return;
-      }
       await options.runtime.send({
         channel: "reliable",
         kind: ARENA_SNAPSHOT_KIND,
@@ -382,13 +385,12 @@ export function createArenaAuthorityRuntime(
     }
   });
 
-  let latest: ArenaSnapshot | undefined = captureSnapshot();
+  latest = captureSnapshot();
 
   return {
     tick(deltaMs = ARENA_FIXED_STEP_MS) {
       if (disposed) return;
       authorityLoop.tick(deltaMs);
-      latest = captureSnapshot();
     },
     snapshot() {
       const diagnostics = authorityLoop.diagnostics();
@@ -398,7 +400,7 @@ export function createArenaAuthorityRuntime(
         round: match.round,
         tick: diagnostics.tick,
         activePeers: participants.connectedBindings().length,
-        frameMembers: island.state().members.length,
+        frameMembers: island.diagnostics().members,
         input: diagnostics,
         physics: island.diagnostics(),
         match,
@@ -413,7 +415,7 @@ export function createArenaAuthorityRuntime(
     },
     latestSnapshot() {
       if (latest === undefined) throw new Error("Knockout arena authority is disposed");
-      return structuredClone(latest);
+      return captureSnapshot();
     },
     retainedState() {
       const physics = island.diagnostics();
@@ -469,6 +471,7 @@ export function createArenaAuthorityRuntime(
       inputsByPeerId.clear();
       inputAcksByPeerId.clear();
       actorControlsByMemberId.clear();
+      cachedIslandState = undefined;
       authorityEffects.clear();
       rankingSpatialFacts.clear();
       stageEntrantParticipantIds.clear();
@@ -790,7 +793,7 @@ export function createArenaAuthorityRuntime(
     const boundsCenterZ = ((course.bounds.min.z ?? 0) + (course.bounds.max.z ?? 0)) / 2;
     const startZ = average(course.participantSpawns.map((spawn) => spawn.position.z ?? 0));
     const finishZ = finishVolume?.position.z ?? boundsCenterZ;
-    for (const member of island.state().members) {
+    for (const member of readIslandState().members) {
       if (!isArenaActor(member.id)) continue;
       const participant = participants.byActorMemberId(member.id);
       if (participant === undefined) continue;
@@ -835,7 +838,7 @@ export function createArenaAuthorityRuntime(
     const stage = content.stages[match.stageIndex]!;
     const killVolumes = stage.course.volumes.filter((volume) => volume.kind === "kill");
     const safeVolume = stage.course.volumes.find((volume) => volume.kind === "safe-zone");
-    const actors = island.state().members.flatMap((member) => {
+    const actors = readIslandState().members.flatMap((member) => {
       if (!isArenaActor(member.id)) return [];
       const participant = participants.byActorMemberId(member.id);
       if (
@@ -948,7 +951,7 @@ export function createArenaAuthorityRuntime(
       const installation = planArenaStageInstallation({
         stageIndex: director.snapshot().stageIndex,
         tick: targetTick,
-        currentMemberIds: island.state().members.map(({ id }) => id),
+        currentMemberIds: readIslandState().members.map(({ id }) => id),
         entrantActorIds,
         nextSequence
       });
@@ -1018,7 +1021,7 @@ export function createArenaAuthorityRuntime(
       stageIndex: match.stageIndex,
       tick: targetTick,
       stageStartedAtTick: match.stageStartedAtTick ?? match.startedAtTick,
-      bodies: island.state().members.map(({ body }) => body)
+      bodies: readIslandState().members.map(({ body }) => body)
     })) {
       commands.push({
         type: "body-command",
@@ -1031,6 +1034,7 @@ export function createArenaAuthorityRuntime(
 
     for (const command of commands) island.queue(command);
     const advanced = island.advanceTo(targetTick);
+    cachedIslandState = undefined;
     recordAuthorityContacts(advanced.contacts, targetTick);
   }
 
@@ -1067,7 +1071,7 @@ export function createArenaAuthorityRuntime(
 
   function captureBotPerceptionState(authorityTick: number): ArenaAuthorityPerceptionState {
     const match = director.snapshot();
-    const state = island.state();
+    const state = readIslandState();
     return {
       tick: authorityTick,
       elapsedMs: authorityTick * ARENA_FIXED_STEP_MS,
@@ -1089,7 +1093,7 @@ export function createArenaAuthorityRuntime(
 
   function queueBotDecisionActions(authorityTick: number): void {
     const actions = botDecisions.drainActions();
-    const publicItems = itemAuthority.publicItems(island.state().members);
+    const publicItems = itemAuthority.publicItems(readIslandState().members);
     for (const [index, action] of actions.entries()) {
       const memberId = action.agentId.startsWith("ai.") ? action.agentId.slice(3) : action.agentId;
       const participant = participants.byActorMemberId(memberId);
@@ -1183,7 +1187,7 @@ export function createArenaAuthorityRuntime(
       const aimLength = Math.hypot(action.aim.x, action.aim.z ?? 0);
       const aimX = aimLength <= 0.0001 ? 0 : action.aim.x / aimLength;
       const aimZ = aimLength <= 0.0001 ? -1 : (action.aim.z ?? 0) / aimLength;
-      for (const member of island.state().members) {
+      for (const member of readIslandState().members) {
         if (!isArenaActor(member.id) || member.id === sourceParticipant?.actorMemberId) continue;
         const targetParticipant = participants.byActorMemberId(member.id);
         if (targetParticipant === undefined) continue;
@@ -1231,13 +1235,13 @@ export function createArenaAuthorityRuntime(
         continue;
       const targets =
         profile.actionMode === "throw-area" && profile.areaRadius > 0
-          ? island.state().members.filter((member) => {
+          ? readIslandState().members.filter((member) => {
               if (!isArenaActor(member.id)) return false;
               const dx = member.body.position.x - itemBody.position.x;
               const dz = (member.body.position.z ?? 0) - (itemBody.position.z ?? 0);
               return Math.hypot(dx, dz) <= profile.areaRadius;
             })
-          : island.state().members.filter((member) => member.id === targetMemberId);
+          : readIslandState().members.filter((member) => member.id === targetMemberId);
       for (const target of targets) {
         const participant = participants.byActorMemberId(target.id);
         if (participant === undefined) continue;
@@ -1304,7 +1308,7 @@ export function createArenaAuthorityRuntime(
   }
 
   function captureSnapshot(): ArenaSnapshot {
-    const state = island.state();
+    const state = readIslandState();
     const match = director.snapshot();
     const winnerId =
       match.winnerParticipantId ??
@@ -1413,6 +1417,18 @@ export function createArenaAuthorityRuntime(
         activePeers: participants.connectedBindings().length
       }
     };
+  }
+
+  function readIslandState(): ReturnType<PhysicsPredictionIsland["state"]> {
+    const diagnostics = island.diagnostics();
+    if (
+      cachedIslandState === undefined ||
+      cachedIslandState.tick !== diagnostics.tick ||
+      cachedIslandState.generation !== diagnostics.generation
+    ) {
+      cachedIslandState = island.state();
+    }
+    return cachedIslandState;
   }
 }
 

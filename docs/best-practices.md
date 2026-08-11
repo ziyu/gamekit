@@ -76,6 +76,9 @@
   render distance 猜成员，也不在 app callback 中维护第二套 replay/history/hard-correction。先用单个完整 arena island
   建立正确性与性能基线，再以 authority-declared revision 和保守交互 horizon 评估分区。Island 已拥有的 solver state
   不重复进入 World/Physics rollback contributor。
+- Forward-only authority 不保留逐 tick rollback checkpoint；使用 Physics island 的 `initial-only` history 和 Multiplayer
+  authority loop 的 snapshot cadence。Client 继续使用完整 rollback history。性能门禁同时报告主线程 CPU 与 wall-clock：CPU
+  用于跨负载回归判断，wall 尖峰和真实浏览器帧时间不得删除或冒充 CPU 指标。
 - Headless 测试应能用 memory platform、memory renderer、memory save store、deterministic clock、fake asset loader 和 fake physics backend 启动主要组合路径。
 - Browser、Tauri、headless server 和 deterministic test 应优先复用同一个 GameAppDefinition。非视觉 profile 用协议兼容 fixture 满足完整 service graph，并把 production platform/backend/runtime factory 保留为显式注入点；不要为测试删掉 service 后维护第二套启动拓扑。
 

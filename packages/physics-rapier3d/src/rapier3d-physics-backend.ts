@@ -189,6 +189,8 @@ function createRapier3dPhysicsScene(
   let nextColliderId = 1;
   let activeContactCount = 0;
   let disposed = false;
+  let checkpointBodies: Rapier3dSceneCheckpointPayload["bodies"] | undefined;
+  let checkpointColliders: Rapier3dSceneCheckpointPayload["colliders"] | undefined;
 
   const assertActive = (): void => {
     if (disposed) {
@@ -219,6 +221,7 @@ function createRapier3dPhysicsScene(
         kind: definition.kind,
         ...(definition.userData === undefined ? {} : { userData: { ...definition.userData } })
       });
+      invalidateCheckpointTopology();
       return id;
     },
     updateBody(id, patch) {
@@ -246,6 +249,7 @@ function createRapier3dPhysicsScene(
         colliders.delete(collider.id);
         colliderHandles.delete(collider.collider.handle);
       }
+      invalidateCheckpointTopology();
     },
     createCollider(definition) {
       assertActive();
@@ -270,12 +274,14 @@ function createRapier3dPhysicsScene(
         ...(definition.userData === undefined ? {} : { userData: { ...definition.userData } })
       });
       colliderHandles.set(collider.handle, id);
+      invalidateCheckpointTopology();
       return id;
     },
     updateCollider(id, patch) {
       assertActive();
       const record = requireCollider(colliders, id);
       applyColliderPatch(record, patch, options.groups);
+      invalidateCheckpointTopology();
     },
     destroyCollider(id) {
       assertActive();
@@ -287,6 +293,7 @@ function createRapier3dPhysicsScene(
       world.removeCollider(record.collider, true);
       colliders.delete(id);
       colliderHandles.delete(record.collider.handle);
+      invalidateCheckpointTopology();
     },
     step(deltaMs) {
       assertActive();
@@ -339,23 +346,12 @@ function createRapier3dPhysicsScene(
       const bytes = world.takeSnapshot();
       const payload: Rapier3dSceneCheckpointPayload = {
         version: 1,
-        bytes: bytes.slice(),
+        bytes,
         nextBodyId,
         nextColliderId,
         activeContactCount,
-        bodies: [...bodies.values()].map((record) => ({
-          id: record.id,
-          handle: record.body.handle,
-          kind: record.kind,
-          ...(record.userData === undefined ? {} : { userData: { ...record.userData } })
-        })),
-        colliders: [...colliders.values()].map((record) => ({
-          id: record.id,
-          handle: record.collider.handle,
-          definition: cloneColliderDefinition(record.definition),
-          enabled: record.enabled,
-          ...(record.userData === undefined ? {} : { userData: { ...record.userData } })
-        }))
+        bodies: captureCheckpointBodies(),
+        colliders: captureCheckpointColliders()
       };
       return {
         backend,
@@ -367,7 +363,7 @@ function createRapier3dPhysicsScene(
     restoreCheckpoint(checkpoint) {
       assertActive();
       const payload = requireRapier3dCheckpoint(checkpoint, backend, sceneId);
-      const restoredWorld = RAPIER.World.restoreSnapshot(payload.bytes.slice());
+      const restoredWorld = RAPIER.World.restoreSnapshot(payload.bytes);
       eventQueue.free();
       world.free();
       world = restoredWorld;
@@ -404,6 +400,8 @@ function createRapier3dPhysicsScene(
       nextBodyId = payload.nextBodyId;
       nextColliderId = payload.nextColliderId;
       activeContactCount = payload.activeContactCount;
+      checkpointBodies = payload.bodies;
+      checkpointColliders = payload.colliders;
     },
     native() {
       return {
@@ -426,6 +424,32 @@ function createRapier3dPhysicsScene(
       world.free();
     }
   };
+
+  function invalidateCheckpointTopology(): void {
+    checkpointBodies = undefined;
+    checkpointColliders = undefined;
+  }
+
+  function captureCheckpointBodies(): Rapier3dSceneCheckpointPayload["bodies"] {
+    checkpointBodies ??= [...bodies.values()].map((record) => ({
+      id: record.id,
+      handle: record.body.handle,
+      kind: record.kind,
+      ...(record.userData === undefined ? {} : { userData: { ...record.userData } })
+    }));
+    return checkpointBodies;
+  }
+
+  function captureCheckpointColliders(): Rapier3dSceneCheckpointPayload["colliders"] {
+    checkpointColliders ??= [...colliders.values()].map((record) => ({
+      id: record.id,
+      handle: record.collider.handle,
+      definition: cloneColliderDefinition(record.definition),
+      enabled: record.enabled,
+      ...(record.userData === undefined ? {} : { userData: { ...record.userData } })
+    }));
+    return checkpointColliders;
+  }
 
   function createBodyDesc(definition: PhysicsBodyDefinition): RAPIER.RigidBodyDesc {
     const desc =

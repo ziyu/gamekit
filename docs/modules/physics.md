@@ -710,6 +710,10 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
   `createStandardMultiplayerPhysicsPredictionDomain(...)`；它统一托管 predicted identity、reconcile 状态和 hard
   correction fallback。Island 的 `hardCorrect(...)` 只接受完整、合法、容量内的 authority snapshot，先解析所有
   缺失 member definition，再以该 tick 建立新的单 checkpoint baseline 并清空旧 command/history；失败不能部分改写 scene。
+- Prediction client 使用默认 `historyMode: "rollback"` 保存完整逐 tick solver history；只向前推进且不提供 reconcile 的
+  authority 可以显式使用 `historyMode: "initial-only"`，只保留 reset baseline 并逐 tick 释放已消费 command。两种模式不能由
+  app 私下维护第二套 history。Auxiliary contributor 若提供 `cloneCommand`，必须深度隔离所有可变字段；未提供时 Core 使用
+  `structuredClone` 安全默认值。
 - Character motor、可重演 cooldown 等会改变同 tick Physics command、但不属于 solver checkpoint 的少量确定性状态，必须通过
   `PhysicsPredictionIslandAuxiliaryContributor` 注册给 island。Contributor 使用唯一 id/version 和稳定 order，提供
   capture/validate/restore/reconcile/reset/hash/measure/dispose；island 把 solver 与所有 contributor 作为一个原子 checkpoint，
@@ -750,4 +754,6 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
 - 修改 prediction island、predicted rigid projectile 或 scene checkpoint 时同时运行
   `corepack pnpm bench:projectile-prediction:check`；该基准约束完整岛 checkpoint capture、late-command restore、
   resimulation、authority hard correction、p95、history bytes/hard limit 与 dispose retained state。
+- Prediction replay 热路径在 queue 时取得 command ownership，执行时 backend adapter 不得修改或长期持有 patch；未来 history
+  截断只能从有序尾部删除。性能优化不能跳过 replay tick、checkpoint 或仍会碰撞的 member。
 - 需要后端专属能力时，通过显式 native path 使用具体 adapter 包，并把这段代码限制在 app-specific integration、Editor backend panel 或 DevTools plugin 中。

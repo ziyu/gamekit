@@ -110,7 +110,6 @@ export function createArenaBotDecisionRuntime(options: {
   let interactionIntents = 0;
   let goalSelections = 0;
   let taskFailures = 0;
-  let lastTraceSequence = 0;
   let disposed = false;
   const runtime = createAiRuntime({
     id: "arena.authority.ai",
@@ -136,6 +135,12 @@ export function createArenaBotDecisionRuntime(options: {
     failureBackoffMs: 150,
     traceRetention: { limit: 256, kindLimits: { goal: 72, task: 96, intent: 96 } },
     traceProduction: { maxEntriesPerUpdate: 64, goalScoreDetail: "winner" },
+    onTrace(trace) {
+      if (trace.label !== "ai.task_failed") return;
+      const reason = typeof trace.payload?.reason === "string" ? trace.payload.reason : "unknown";
+      taskFailures += 1;
+      taskFailuresByReason.set(reason, (taskFailuresByReason.get(reason) ?? 0) + 1);
+    },
     intentSink: {
       emit(intent) {
         intents.push(intent);
@@ -285,14 +290,6 @@ export function createArenaBotDecisionRuntime(options: {
       currentGoalByMemberId.set(binding.memberId, goalId);
       goalSelections += 1;
       goalSelectionsByGoal.set(goalId, (goalSelectionsByGoal.get(goalId) ?? 0) + 1);
-    }
-    for (const trace of runtime.traces()) {
-      if (trace.sequence <= lastTraceSequence) continue;
-      lastTraceSequence = Math.max(lastTraceSequence, trace.sequence);
-      if (trace.label !== "ai.task_failed") continue;
-      const reason = typeof trace.payload?.reason === "string" ? trace.payload.reason : "unknown";
-      taskFailures += 1;
-      taskFailuresByReason.set(reason, (taskFailuresByReason.get(reason) ?? 0) + 1);
     }
   }
 

@@ -96,8 +96,8 @@ export function projectArenaAuthorityPerceptionFrame(
     const actor: ArenaBotVisibleActor = {
       participantId: participant.id,
       memberId: participant.actorMemberId,
-      position: structuredClone(member.body.position),
-      linearVelocity: structuredClone(member.body.linearVelocity),
+      position: { ...member.body.position },
+      linearVelocity: { ...member.body.linearVelocity },
       status: visibleStatus(participant),
       instability: combat?.instability ?? 0,
       motorMode: "authority",
@@ -122,7 +122,7 @@ export function projectArenaAuthorityPerceptionFrame(
         generation: item.instanceGeneration,
         definitionId: item.definitionId,
         kind: definition.kind,
-        position: structuredClone(member.body.position),
+        position: { ...member.body.position },
         value: itemValue(definition.kind),
         contestedBy: activeActors.filter(
           (actor) => distance3(actor.position, member.body.position) <= 3.5
@@ -144,7 +144,7 @@ export function projectArenaAuthorityPerceptionFrame(
       kind: schedule.kind,
       phase: sample.phase,
       active: sample.active,
-      position: structuredClone(position),
+      position: { ...position },
       size: { ...schedule.size },
       nextTransitionTick: sample.nextTransitionTick,
       safeScale: finiteNumber(sample.patch.userData?.safeScale, 1)
@@ -234,7 +234,7 @@ function projectObjective(
   const elapsedTicks = Math.max(0, state.tick - state.stageStartedAtTick);
   return {
     id: selected.id,
-    position: structuredClone(selected.position),
+    position: { ...selected.position },
     ...(selected.routeOrder === undefined ? {} : { routeOrder: selected.routeOrder }),
     checkpointCount: ranking?.checkpointCount ?? 0,
     qualificationCount: stage.definition.qualificationCount,
