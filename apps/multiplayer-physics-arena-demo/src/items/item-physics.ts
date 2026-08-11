@@ -30,6 +30,7 @@ export function createArenaItemPhysicsMember(input: {
   item: Readonly<Pick<ArenaItemAuthorityInstance, "id" | "instanceGeneration">>;
   position: PhysicsVector;
   linearVelocity?: PhysicsVector | undefined;
+  correlationId?: string | undefined;
 }): PhysicsPredictionIslandMemberDefinition {
   const memberId = arenaItemPhysicsMemberId(input.item);
   return {
@@ -46,7 +47,8 @@ export function createArenaItemPhysicsMember(input: {
       userData: {
         itemId: input.item.id,
         itemGeneration: input.item.instanceGeneration,
-        definitionId: input.definition.id
+        definitionId: input.definition.id,
+        ...(input.correlationId === undefined ? {} : { correlationId: input.correlationId })
       }
     },
     colliders: [
@@ -84,6 +86,23 @@ export function planArenaItemRelease(input: {
   sequence: number;
   mode: "drop" | "throw";
 }): PhysicsPredictionIslandCommand {
+  return {
+    type: "spawn",
+    tick: input.tick,
+    sequence: input.sequence,
+    member: createArenaItemReleaseMember(input)
+  };
+}
+
+export function createArenaItemReleaseMember(input: {
+  definition: ArenaCompiledItemDefinition;
+  item: Readonly<Pick<ArenaItemAuthorityInstance, "id" | "instanceGeneration" | "executionId">>;
+  position: PhysicsVector;
+  aim: PhysicsVector;
+  inheritedVelocity: PhysicsVector;
+  charge: number;
+  mode: "drop" | "throw";
+}): PhysicsPredictionIslandMemberDefinition {
   const aim = normalize(input.aim);
   const charge = Math.max(0, Math.min(1, input.charge));
   const launchSpeed =
@@ -91,17 +110,13 @@ export function planArenaItemRelease(input: {
       ? Math.min(2, input.definition.launchSpeed)
       : input.definition.launchSpeed * (0.55 + charge * 0.45);
   const linearVelocity = add(input.inheritedVelocity, scale(aim, launchSpeed));
-  return {
-    type: "spawn",
-    tick: input.tick,
-    sequence: input.sequence,
-    member: createArenaItemPhysicsMember({
-      definition: input.definition,
-      item: input.item,
-      position: input.position,
-      linearVelocity
-    })
-  };
+  return createArenaItemPhysicsMember({
+    definition: input.definition,
+    item: input.item,
+    position: input.position,
+    linearVelocity,
+    ...(input.item.executionId === undefined ? {} : { correlationId: input.item.executionId })
+  });
 }
 
 function normalize(value: PhysicsVector): PhysicsVector {

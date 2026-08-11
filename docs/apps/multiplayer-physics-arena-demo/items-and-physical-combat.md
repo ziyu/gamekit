@@ -209,6 +209,12 @@ environment cause。淘汰时 Match domain 只读取 ledger 的稳定摘要：
 - Item member set 变化更新 membership revision 或使用标准 predicted lifecycle；应用不在 network callback 手写 reconcile。
 - Impact/pickup/throw cue 使用 speculative effect journal，重复 replay/duplicate snapshot 不重复播放或累计。
 
+Arena client 把 `use/drop` 的 execution/command id 直接交给标准 Physics Arena descriptor 的
+`registerPredictedMember(...)`，并使用与 authority 相同的 release member builder 计算 generation、socket position、继承速度与
+launch velocity。Authority frame 的 item/action projection 负责 correlation match 与 definition 重建；Physics body `userData`
+不会进入 wire。Pickup/use/drop 与 predicted item contact 分别以稳定 effect id 进入一个有界 journal，authority
+`itemActions`/`combat.hits` 只结算表现，不在客户端补写 owner、instability 或 hit。
+
 更完整的输入、frame、fault 与 budget 规则见 [`multiplayer-and-prediction.md`](./multiplayer-and-prediction.md)。
 
 ## Respawn 与 Stage Cleanup

@@ -4,7 +4,9 @@ import {
   createMultiplayerAuthorityHostLoop,
   createMultiplayerFixedStepInputBundle,
   createMultiplayerNetworkConditionSimulator,
+  createMultiplayerPredictedLifecycleDomain,
   createMultiplayerRuntime,
+  createMultiplayerSpeculativeEffectJournal,
   type MultiplayerFixedStepInputFrame,
   type MultiplayerNetworkConditionProfile
 } from "@gamekit/multiplayer-core";
@@ -81,6 +83,122 @@ describe("Knockout Arena deterministic network fault matrix", () => {
       }
     });
   }
+
+  it("settles predicted item spawn, action, and hit once across loss, duplicates, and gaps", async () => {
+    const simulator = createMultiplayerNetworkConditionSimulator(
+      createMemoryMultiplayerBackend({ id: "arena.item-fault" }),
+      {
+        latencyMs: 90,
+        jitterMs: 35,
+        lossPercent: 8,
+        duplicatePercent: 25,
+        seed: 404,
+        maxPendingDeliveries: 512,
+        affects: (direction, message) =>
+          direction === "outgoing" && message.kind === "arena.item-fault.snapshot"
+      }
+    );
+    const host = createMultiplayerRuntime({
+      id: "arena.item-fault.host",
+      backend: simulator.backend
+    });
+    const client = createMultiplayerRuntime({
+      id: "arena.item-fault.client",
+      backend: simulator.backend
+    });
+    await host.createSession({
+      id: "arena-item-fault",
+      authority: "host-authoritative",
+      localPeer: { id: "host", role: "host" }
+    });
+    await client.joinSession({
+      sessionId: "arena-item-fault",
+      localPeer: { id: "client", role: "client" }
+    });
+    const lifecycle = createMultiplayerPredictedLifecycleDomain<number, number>({
+      kind: "arena-item",
+      generation: "stage-1",
+      stepMs: ARENA_FIXED_STEP_MS,
+      maxPending: 8,
+      maxResolved: 32,
+      maxBindings: 8
+    });
+    const journal = createMultiplayerSpeculativeEffectJournal<number, number>({
+      generation: "stage-1",
+      maxPending: 8,
+      maxResolved: 32,
+      maxAgeTicks: 120
+    });
+    lifecycle.register({ correlationId: "throw-1", localId: "item.local.g2", tick: 10, value: 1 });
+    journal.anticipate({ effectId: "item-action:throw-1", tick: 10, value: 1 });
+    journal.anticipate({ effectId: "item-hit:throw-1:bot.0", tick: 12, value: 2 });
+    let deliveredFacts = 0;
+    const unsubscribe = client.subscribe((message) => {
+      if (message.kind !== "arena.item-fault.snapshot") return;
+      const payload = message.payload as { tick: number; settled: boolean };
+      if (!payload.settled) return;
+      deliveredFacts += 1;
+      lifecycle.sync({
+        generation: "stage-1",
+        authorityTime: payload.tick * ARENA_FIXED_STEP_MS,
+        localTime: payload.tick * ARENA_FIXED_STEP_MS,
+        authoritySpawns: [
+          { correlationId: "throw-1", authorityId: "item.0.body.g2", tick: 18, value: 2 }
+        ]
+      });
+      journal.resolve({
+        effectId: "item-action:throw-1",
+        generation: "stage-1",
+        tick: 18,
+        outcome: "confirm",
+        authority: 1
+      });
+      journal.resolve({
+        effectId: "item-hit:throw-1:bot.0",
+        generation: "stage-1",
+        tick: 20,
+        outcome: "confirm",
+        authority: 2
+      });
+    });
+
+    for (let index = 0; index < 48; index += 1) {
+      await host.send({
+        channel: "reliable",
+        kind: "arena.item-fault.snapshot",
+        payload: { tick: 18 + index * 3, settled: index >= 4 }
+      });
+      await simulator.advance(ARENA_FIXED_STEP_MS);
+    }
+    await simulator.flush();
+
+    expect(deliveredFacts).toBeGreaterThan(1);
+    expect(lifecycle.diagnostics()).toMatchObject({
+      bindings: 1,
+      spawns: { matched: 1, pending: 0 }
+    });
+    expect(journal.diagnostics()).toMatchObject({
+      confirmed: 2,
+      pending: 0,
+      duplicates: expect.any(Number)
+    });
+    expect(journal.diagnostics().duplicates).toBeGreaterThan(0);
+    expect(simulator.diagnostics()).toMatchObject({
+      droppedMessages: expect.any(Number),
+      duplicatedMessages: expect.any(Number),
+      capacityDrops: 0,
+      deliveryErrors: 0
+    });
+    expect(simulator.diagnostics().droppedMessages).toBeGreaterThan(0);
+    expect(simulator.diagnostics().duplicatedMessages).toBeGreaterThan(0);
+
+    unsubscribe();
+    lifecycle.dispose();
+    journal.dispose();
+    await client.dispose();
+    await host.dispose();
+    simulator.dispose();
+  });
 });
 
 async function runMatrixCase(profile: MultiplayerNetworkConditionProfile) {

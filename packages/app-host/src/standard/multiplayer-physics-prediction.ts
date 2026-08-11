@@ -64,7 +64,22 @@ export type StandardMultiplayerPhysicsPredictionDomain = {
     correlationId: string;
     tick: number;
     member: PhysicsPredictionIslandMemberDefinition;
-  }): void;
+  }): ReturnType<
+    MultiplayerPredictedLifecycleDomain<
+      PhysicsPredictionIslandMemberDefinition,
+      PhysicsPredictionIslandMemberState
+    >["register"]
+  >;
+  rejectPredicted(
+    correlationId: string,
+    tick: number,
+    reason?: string
+  ): ReturnType<
+    MultiplayerPredictedLifecycleDomain<
+      PhysicsPredictionIslandMemberDefinition,
+      PhysicsPredictionIslandMemberState
+    >["reject"]
+  >;
   expire(atTick: number): void;
   reconcile(
     snapshot: PhysicsPredictionIslandStateSnapshot,
@@ -114,12 +129,16 @@ export function createStandardMultiplayerPhysicsPredictionDomain(
   return {
     registerPredicted(input) {
       assertActive();
-      lifecycle.register({
+      return lifecycle.register({
         correlationId: input.correlationId,
         localId: input.member.id,
         tick: input.tick,
         value: input.member
       });
+    },
+    rejectPredicted(correlationId, tick, reason) {
+      assertActive();
+      return lifecycle.reject(correlationId, tick, reason);
     },
     expire(atTick) {
       assertActive();

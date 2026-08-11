@@ -419,6 +419,12 @@ member definition 直接从 managed predicted payload 复用，只有 authority 
 app 映射 definition。App 仍负责对象属于哪个 island、权威 payload 到 member/correlation 的 typed mapping 和 gameplay
 command，但不判断哪些 reconcile 状态需要 hard correction，也不平行维护 predicted identity。
 
+标准 Arena adapter 在这条 domain 上额外提供 event-started `registerPredictedMember(...)`。Throw/projectile 等离散事件以稳定
+correlation、prediction tick 和完整 member definition 注册一次，adapter 同时拥有 identity 与 island spawn command；duplicate
+不会再次 spawn。应用从已验证 app snapshot 的 action/item projection 实现 `resolveAuthoritySpawn(...)`，从同一 snapshot 实现
+`resolveMemberDefinition(...)`，不能依赖 authority projection 已明确剥离的 body `userData`。Reject、gap、generation reset 与
+authority member 缺失统一走 reconcile/hard correction，不能在 session callback 手删 ghost body 或重建 history。
+
 多人高互动 arena 使用 Multiplayer GameModule 的 client prediction-domain descriptor 连接 managed replication 与外部
 domain runtime。Descriptor factory 以 authority binding 为生命周期边界，接收已经校验的 snapshot、已编号 input、fixed
 tick 和 frame，并提供 reset、diagnostics、dispose 与只读 output；GameModule bridge 固定 authority → reconcile → input →
@@ -764,6 +770,9 @@ readAuthoritativeState + readAcknowledgedSequence + tracks` 回调；app 仍提�
   `auxiliary` envelope。Client 只映射本地 input、创建 contributor 和 app presentation；
   不在 snapshot callback 中重建 island、按半径猜成员或在 render loop 中调用 reconcile。首个接入默认使用完整 arena
   island，只有带 authority revision、保守交互 horizon 和完整性测试的 policy 才允许拆分。
+- Arena 中由离散 action 产生的 predicted entity 使用 descriptor 的 `registerPredictedMember(...)`；correlation 来自 action/
+  execution id，authority matching 与 definition resolver 读取 typed app snapshot。不要把玩法 identity 塞进会被 authority
+  projection 清洗的 Physics `userData`，也不要在 item/projectile session 代码里维护第二个 pending-spawn/ghost cleanup loop。
 - 为网络对象选择最窄且语义完整的策略：瞬时攻击用 lag-compensated hitscan，可重放直线弹丸用有界
   kinematic fire/finish record，复杂动态交互才用 predicted entity + prediction island，非手感关键对象保持
   authority-only。Remote entity 默认 interpolation；只有输入/history 和交互集合都明确时才预测。

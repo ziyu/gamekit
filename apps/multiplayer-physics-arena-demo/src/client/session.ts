@@ -26,6 +26,7 @@ import {
 import { compileArenaItemCatalog } from "../items/item-definition";
 import { selectArenaItemTarget } from "../items/item-interaction";
 import {
+  createArenaItemReleaseMember,
   createArenaItemPhysicsMaterial,
   createArenaItemPhysicsMember
 } from "../items/item-physics";
@@ -206,29 +207,33 @@ export async function createArenaClientSession(options: {
         acknowledgedInputSequence: snapshot.inputAcksByPeerId[peerId] ?? 0
       };
     },
-    resolveMemberDefinition(member) {
+    resolveMemberDefinition(member, _frame, snapshot) {
       const fixed = definitions.get(member.id);
       if (fixed !== undefined) return fixed;
-      const itemId = member.body.userData?.itemId;
-      const itemGeneration = member.body.userData?.itemGeneration;
-      const definitionId = member.body.userData?.definitionId;
-      if (
-        typeof itemId !== "string" ||
-        typeof itemGeneration !== "number" ||
-        !Number.isSafeInteger(itemGeneration) ||
-        itemGeneration < 1 ||
-        typeof definitionId !== "string"
-      ) {
-        return undefined;
-      }
-      const definition = itemDefinitionsById.get(definitionId);
+      const item = snapshot.items.find((candidate) => candidate.bodyMemberId === member.id);
+      if (item === undefined) return undefined;
+      const definition = itemDefinitionsById.get(item.definitionId);
       if (definition === undefined) return undefined;
       return createArenaItemPhysicsMember({
         definition,
-        item: { id: itemId, instanceGeneration: itemGeneration },
+        item: { id: item.id, instanceGeneration: item.instanceGeneration },
         position: member.body.position,
         linearVelocity: member.body.linearVelocity
       });
+    },
+    resolveAuthoritySpawn(member, _frame, snapshot) {
+      const item = snapshot.items.find((candidate) => candidate.bodyMemberId === member.id);
+      if (item === undefined) return { correlationId: member.id };
+      const action = snapshot.itemActions.find(
+        (candidate) =>
+          candidate.status === "confirmed" &&
+          candidate.itemId === item.id &&
+          candidate.itemGeneration === item.instanceGeneration
+      );
+      return {
+        correlationId: action?.executionId ?? action?.id ?? member.id,
+        tick: action?.tick ?? snapshot.frame.tick
+      };
     },
     mapInput({ input, snapshot, predictionFrame, predictionTick }) {
       const memberId = snapshot.playerIdsByPeerId[peerId];
@@ -317,6 +322,7 @@ export async function createArenaClientSession(options: {
     },
     onContacts(contacts) {
       effects.anticipateContacts(contacts, latestSnapshot?.playerIdsByPeerId[peerId]);
+      effects.anticipateItemContacts(contacts, latestSnapshot, peerId);
     }
   });
   readPredictedBody = (memberId) => arena.body(memberId);
@@ -467,7 +473,9 @@ export async function createArenaClientSession(options: {
           resimulatedTicks: arenaDiagnostics.island?.resimulatedTicks ?? 0,
           historyBytes: arenaDiagnostics.island?.historyBytes ?? 0,
           maxCheckpointBytes: arenaDiagnostics.island?.maxCheckpointBytesObserved ?? 0,
-          replayBudgetOverflows: arenaDiagnostics.island?.replayBudgetOverflows ?? 0
+          replayBudgetOverflows: arenaDiagnostics.island?.replayBudgetOverflows ?? 0,
+          predictedItemMembers: arenaDiagnostics.predictedMemberRegistrations,
+          predictedItemMemberFailures: arenaDiagnostics.predictedMemberRegistrationFailures
         },
         effects: effects.diagnostics()
       };
@@ -505,6 +513,50 @@ export async function createArenaClientSession(options: {
             );
       itemActionSequence += 1;
       const commandId = `${peerId}.item.${itemActionSequence}.${type}`;
+      const ownedItem = snapshot.items.find(
+        (item) =>
+          item.ownerParticipantId === participant.id &&
+          (item.state === "carried" || item.state === "windup")
+      );
+      const predictionTick = (arena.state()?.tick ?? snapshot.frame.tick) + 1;
+      effects.anticipateItemAction({
+        commandId,
+        tick: predictionTick,
+        ...(target?.itemId === undefined && ownedItem === undefined
+          ? {}
+          : { itemId: target?.itemId ?? ownedItem?.id })
+      });
+      if ((type === "use" || type === "drop") && ownedItem !== undefined && actor !== undefined) {
+        const definition = itemDefinitionsById.get(ownedItem.definitionId);
+        if (definition !== undefined && (type === "drop" || definition.actionMode !== "melee")) {
+          const executionId = type === "use" ? `${commandId}:execution` : undefined;
+          const itemGeneration = ownedItem.instanceGeneration + 1;
+          const member = createArenaItemReleaseMember({
+            definition,
+            item: {
+              id: ownedItem.id,
+              instanceGeneration: itemGeneration,
+              ...(executionId === undefined ? {} : { executionId })
+            },
+            position: {
+              x: actor.position.x + aim.x * 0.9,
+              y: actor.position.y + 0.65,
+              z: (actor.position.z ?? 0) + aim.z * 0.9
+            },
+            aim: { x: aim.x, y: type === "drop" ? 0.05 : 0.12, z: aim.z },
+            inheritedVelocity: actor.linearVelocity,
+            charge: type === "use" ? 1 : 0,
+            mode: type === "drop" ? "drop" : "throw"
+          });
+          const activeTick =
+            predictionTick + (type === "use" ? Math.max(0, definition.windupTicks - 1) : 0);
+          arena.registerPredictedMember({
+            correlationId: executionId ?? commandId,
+            tick: activeTick,
+            member
+          });
+        }
+      }
       await runtime.send({
         id: commandId,
         channel: "reliable",

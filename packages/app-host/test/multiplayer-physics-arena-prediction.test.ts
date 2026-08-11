@@ -41,11 +41,25 @@ const PROP: PhysicsPredictionIslandMemberDefinition = {
   }
 };
 
+const PREDICTED_PROP: PhysicsPredictionIslandMemberDefinition = {
+  ...structuredClone(PROP),
+  id: "prop-predicted",
+  body: { ...structuredClone(PROP.body), id: "prop-predicted.body" }
+};
+
+const REJECTED_PROP: PhysicsPredictionIslandMemberDefinition = {
+  ...structuredClone(PROP),
+  id: "prop-rejected",
+  body: { ...structuredClone(PROP.body), id: "prop-rejected.body" }
+};
+
 describe("standard multiplayer Physics Arena prediction", () => {
   it("installs a complete baseline, advances mapped input, and rebuilds on membership revision", () => {
     const definitions = new Map([
       [PLAYER.id, PLAYER],
-      [PROP.id, PROP]
+      [PROP.id, PROP],
+      [PREDICTED_PROP.id, PREDICTED_PROP],
+      [REJECTED_PROP.id, REJECTED_PROP]
     ]);
     const arena = createStandardMultiplayerPhysicsArenaPrediction<
       MultiplayerBridgeInstallContext,
@@ -62,6 +76,9 @@ describe("standard multiplayer Physics Arena prediction", () => {
       },
       selectFrame: ({ snapshot }) => snapshot,
       resolveMemberDefinition: (member) => definitions.get(member.id),
+      resolveAuthoritySpawn: (member) => ({
+        correlationId: member.id === PREDICTED_PROP.id ? "throw-1" : member.id
+      }),
       mapInput({ input }) {
         return [
           {
@@ -86,6 +103,21 @@ describe("standard multiplayer Physics Arena prediction", () => {
       island: { members: 1, tick: 0 }
     });
 
+    expect(
+      arena.registerPredictedMember({
+        correlationId: "throw-1",
+        tick: 1,
+        member: PREDICTED_PROP
+      })
+    ).toEqual({ status: "registered", memberId: PREDICTED_PROP.id });
+    expect(
+      arena.registerPredictedMember({
+        correlationId: "throw-1",
+        tick: 1,
+        member: PREDICTED_PROP
+      })
+    ).toEqual({ status: "duplicate", memberId: PREDICTED_PROP.id });
+
     runtime.applyInput?.({
       installContext: installContext(),
       runtime: {} as MultiplayerRuntime,
@@ -101,20 +133,65 @@ describe("standard multiplayer Physics Arena prediction", () => {
       },
       encodedInput: { sequence: 1, moveX: 2 }
     });
-    expect(arena.state()).toMatchObject({ tick: 1, members: [{ id: PLAYER.id }] });
+    expect(arena.state()).toMatchObject({
+      tick: 1,
+      members: [{ id: PLAYER.id }, { id: PREDICTED_PROP.id }]
+    });
     expect(arena.body(PLAYER.id)?.position.x).toBeGreaterThan(0);
 
     frame = authorityFrame(1, 1, 1, [
-      { ...memberState(PLAYER), body: { ...memberState(PLAYER).body, position: { x: 0.5, y: 0 } } }
+      { ...memberState(PLAYER), body: { ...memberState(PLAYER).body, position: { x: 0.5, y: 0 } } },
+      memberState(PREDICTED_PROP)
     ]);
     runtime.applyAuthoritative?.(authorityContext(frame));
     expect(arena.body(PLAYER.id)?.position.x).toBeCloseTo(0.5);
-    expect(arena.diagnostics()).toMatchObject({ reconciliations: 1 });
+    expect(arena.diagnostics()).toMatchObject({
+      reconciliations: 1,
+      predictedMemberRegistrations: 1,
+      predictedMemberRegistrationFailures: 0,
+      lastReconciliation: {
+        reconciliation: { status: "corrected" }
+      }
+    });
+    expect(
+      arena
+        .diagnostics()
+        .lastReconciliation?.lifecycle.matches.some(
+          ({ match }) =>
+            match.status === "matched" && match.authority?.authorityId === PREDICTED_PROP.id
+        )
+    ).toBe(true);
 
-    frame = authorityFrame(2, 1, 2, [memberState(PLAYER), memberState(PROP)]);
+    expect(
+      arena.registerPredictedMember({
+        correlationId: "throw-rejected",
+        tick: 2,
+        member: REJECTED_PROP
+      })
+    ).toMatchObject({ status: "registered" });
+    runtime.applyInput?.({
+      installContext: installContext(),
+      runtime: {} as MultiplayerRuntime,
+      binding: BINDING,
+      snapshot: frame,
+      frame: { delta: 16, elapsed: 32, tick: 2 },
+      input: { moveX: 0 },
+      predictionFrame: { sequence: 2, tick: 2, timestamp: 32, input: { moveX: 0 } },
+      encodedInput: { sequence: 2, moveX: 0 }
+    });
+    expect(arena.body(REJECTED_PROP.id)).toBeDefined();
+    frame = authorityFrame(2, 2, 1, [memberState(PLAYER), memberState(PREDICTED_PROP)]);
+    runtime.applyAuthoritative?.(authorityContext(frame));
+    expect(arena.body(REJECTED_PROP.id)).toBeUndefined();
+    expect(arena.diagnostics().lastReconciliation).toMatchObject({
+      reconciliation: { status: "membership-mismatch" },
+      hardCorrection: { status: "corrected" }
+    });
+
+    frame = authorityFrame(3, 2, 2, [memberState(PLAYER), memberState(PROP)]);
     runtime.applyAuthoritative?.(authorityContext(frame));
     expect(arena.state()).toMatchObject({
-      tick: 2,
+      tick: 3,
       members: [{ id: PLAYER.id }, { id: PROP.id }]
     });
     expect(arena.diagnostics()).toMatchObject({

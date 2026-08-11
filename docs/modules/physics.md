@@ -720,6 +720,9 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
   definition version；注册 auxiliary contributor 时还要发布同 tick 的完整、按 id 排序的 auxiliary state envelope。应用只提供
   member/input/presentation mapping 和 contributor factory。不要让 client 根据摄像机范围猜 island，也不要让 arena island 与
   PhysicsHandle rollback contributor 捕获同一批 body。
+- 离散 throw/projectile 需要预测 body 时，通过标准 Arena adapter 注册 correlation + tick + member；authority correlation 与
+  definition 从 typed app snapshot 解析。Physics projection 会清洗 body `userData`，业务不得把它当 wire identity。Rejected 或
+  delayed spawn 由同一 island reconcile/hard correction 清理，不在表现层直接销毁 solver body。
 - 新 backend 先通过 physics conformance tests，再补 backend-specific behavior test。真实 canvas 或 Phaser Scene 只用于少量集成测试。
 - Backend-specific shape-cast 测试必须区分世界空间 contact point 与移动 shape origin，并至少用一个非零半径/
   half-extent 断言 origin 停在 blocker 外；只断言 collider id 会遗漏整半径的穿透错误。

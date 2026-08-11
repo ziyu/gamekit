@@ -21,6 +21,7 @@ import {
 } from "@gamekit/physics-core";
 import {
   createStandardMultiplayerPhysicsPredictionDomain,
+  type StandardMultiplayerPhysicsAuthoritySpawn,
   type StandardMultiplayerPhysicsPredictionDomain,
   type StandardMultiplayerPhysicsPredictionReconcileResult
 } from "./multiplayer-physics-prediction";
@@ -84,6 +85,8 @@ export type StandardMultiplayerPhysicsArenaPredictionDiagnostics = {
   rejectedCommands: number;
   advancedTicks: number;
   contacts: number;
+  predictedMemberRegistrations: number;
+  predictedMemberRegistrationFailures: number;
   lastReconciliation?: StandardMultiplayerPhysicsPredictionReconcileResult | undefined;
   island?: ReturnType<PhysicsPredictionIsland["diagnostics"]> | undefined;
 };
@@ -107,8 +110,14 @@ export type StandardMultiplayerPhysicsArenaPredictionOptions<
   ): StandardMultiplayerPhysicsArenaClientFrame | undefined;
   resolveMemberDefinition(
     member: PhysicsPredictionIslandMemberState,
-    frame: StandardMultiplayerPhysicsArenaClientFrame
+    frame: StandardMultiplayerPhysicsArenaClientFrame,
+    snapshot: TSnapshot
   ): PhysicsPredictionIslandMemberDefinition | undefined;
+  resolveAuthoritySpawn?(
+    member: PhysicsPredictionIslandMemberState,
+    frame: StandardMultiplayerPhysicsArenaClientFrame,
+    snapshot: TSnapshot
+  ): StandardMultiplayerPhysicsAuthoritySpawn | undefined;
   mapInput(
     context: MultiplayerClientPredictionDomainInputContext<TSnapshot, TInput, TInstallContext> & {
       authorityFrame: StandardMultiplayerPhysicsArenaClientFrame;
@@ -134,6 +143,13 @@ export type StandardMultiplayerPhysicsArenaPrediction<
   frame(): StandardMultiplayerPhysicsArenaClientFrame | undefined;
   state(): PhysicsPredictionIslandStateSnapshot | undefined;
   body(memberId: string): PhysicsBodyState | undefined;
+  registerPredictedMember(input: {
+    correlationId: string;
+    tick: number;
+    member: PhysicsPredictionIslandMemberDefinition;
+  }):
+    | { status: "registered" | "duplicate"; memberId: string }
+    | { status: "unavailable" | "rejected"; memberId: string; reason: string };
   diagnostics(): StandardMultiplayerPhysicsArenaPredictionDiagnostics;
 };
 
@@ -218,6 +234,15 @@ export function createStandardMultiplayerPhysicsArenaPrediction<
     body(memberId) {
       return active?.body(memberId);
     },
+    registerPredictedMember(input) {
+      return (
+        active?.registerPredictedMember(input) ?? {
+          status: "unavailable",
+          memberId: input.member.id,
+          reason: "prediction-domain-unavailable"
+        }
+      );
+    },
     diagnostics() {
       return active?.diagnostics() ?? emptyArenaDiagnostics();
     }
@@ -260,6 +285,10 @@ function createArenaRuntime<
   let rejectedCommands = 0;
   let advancedTicks = 0;
   let contacts = 0;
+  let predictedMemberRegistrations = 0;
+  let predictedMemberRegistrationFailures = 0;
+  let predictedMemberCommandSequence = Number.MAX_SAFE_INTEGER;
+  let latestAppSnapshot: TSnapshot | undefined;
   let lastReconciliation: StandardMultiplayerPhysicsPredictionReconcileResult | undefined;
 
   return {
@@ -273,9 +302,10 @@ function createArenaRuntime<
         rejectedFrames += 1;
         return;
       }
+      latestAppSnapshot = context.snapshot;
       authorityFrames += 1;
       if (requiresBaseline(authorityFrame, next) || island === undefined || domain === undefined) {
-        installBaseline(next);
+        installBaseline(next, context.snapshot);
         return;
       }
       authorityFrame = cloneClientFrame(next);
@@ -353,11 +383,68 @@ function createArenaRuntime<
     },
     body(memberId: string) {
       return island?.body(memberId);
+    },
+    registerPredictedMember(input: {
+      correlationId: string;
+      tick: number;
+      member: PhysicsPredictionIslandMemberDefinition;
+    }) {
+      if (island === undefined || domain === undefined || status !== "active") {
+        predictedMemberRegistrationFailures += 1;
+        return {
+          status: "unavailable" as const,
+          memberId: input.member.id,
+          reason: "prediction-domain-unavailable"
+        };
+      }
+      if (island.body(input.member.id) !== undefined) {
+        return { status: "duplicate" as const, memberId: input.member.id };
+      }
+      const registration = domain.registerPredicted(input);
+      if (registration.status === "duplicate") {
+        return { status: "duplicate" as const, memberId: input.member.id };
+      }
+      if (registration.status !== "registered") {
+        predictedMemberRegistrationFailures += 1;
+        return {
+          status: "rejected" as const,
+          memberId: input.member.id,
+          reason: registration.status
+        };
+      }
+      const result = island.queue({
+        type: "spawn",
+        tick: Math.max(input.tick, island.tick() + 1),
+        sequence: predictedMemberCommandSequence,
+        member: input.member
+      });
+      predictedMemberCommandSequence -= 1;
+      if (
+        result.status !== "queued" &&
+        result.status !== "replayed" &&
+        result.status !== "duplicate"
+      ) {
+        domain.rejectPredicted(input.correlationId, input.tick, result.status);
+        predictedMemberRegistrationFailures += 1;
+        return {
+          status: "rejected" as const,
+          memberId: input.member.id,
+          reason: result.status
+        };
+      }
+      predictedMemberRegistrations += result.status === "duplicate" ? 0 : 1;
+      return {
+        status: result.status === "duplicate" ? ("duplicate" as const) : ("registered" as const),
+        memberId: input.member.id
+      };
     }
   };
 
-  function installBaseline(frame: StandardMultiplayerPhysicsArenaClientFrame): void {
-    const definitions = resolveDefinitions(options, frame);
+  function installBaseline(
+    frame: StandardMultiplayerPhysicsArenaClientFrame,
+    snapshot: TSnapshot
+  ): void {
+    const definitions = resolveDefinitions(options, frame, snapshot);
     if (definitions === undefined) {
       status = "member-definition-missing";
       rejectedFrames += 1;
@@ -387,14 +474,23 @@ function createArenaRuntime<
         stepMs: options.island.fixedDeltaMs ?? 1000 / 60,
         island: nextIsland,
         resolveAuthoritySpawn(member) {
-          return { correlationId: member.id, tick: frame.tick };
+          return (
+            options.resolveAuthoritySpawn?.(member, frame, latestAppSnapshot ?? snapshot) ?? {
+              correlationId: member.id,
+              tick: frame.tick
+            }
+          );
         },
-        resolveMemberDefinition(member, snapshot) {
-          return options.resolveMemberDefinition(member, {
-            ...frame,
-            generation: snapshot.generation,
-            tick: snapshot.tick
-          });
+        resolveMemberDefinition(member, physicsSnapshot) {
+          return options.resolveMemberDefinition(
+            member,
+            {
+              ...frame,
+              generation: physicsSnapshot.generation,
+              tick: physicsSnapshot.tick
+            },
+            latestAppSnapshot ?? snapshot
+          );
         }
       });
       domain?.dispose();
@@ -432,6 +528,8 @@ function createArenaRuntime<
       rejectedCommands,
       advancedTicks,
       contacts,
+      predictedMemberRegistrations,
+      predictedMemberRegistrationFailures,
       ...(lastReconciliation === undefined ? {} : { lastReconciliation }),
       ...(island === undefined ? {} : { island: island.diagnostics() })
     };
@@ -498,11 +596,12 @@ function resolveDefinitions<
     TInput,
     TManagedState
   >,
-  frame: StandardMultiplayerPhysicsArenaClientFrame
+  frame: StandardMultiplayerPhysicsArenaClientFrame,
+  snapshot: TSnapshot
 ): PhysicsPredictionIslandMemberDefinition[] | undefined {
   const definitions: PhysicsPredictionIslandMemberDefinition[] = [];
   for (const member of frame.members) {
-    const definition = options.resolveMemberDefinition(member, frame);
+    const definition = options.resolveMemberDefinition(member, frame, snapshot);
     if (definition === undefined || definition.id !== member.id) {
       return undefined;
     }
@@ -702,7 +801,9 @@ function emptyArenaDiagnostics(): StandardMultiplayerPhysicsArenaPredictionDiagn
     queuedCommands: 0,
     rejectedCommands: 0,
     advancedTicks: 0,
-    contacts: 0
+    contacts: 0,
+    predictedMemberRegistrations: 0,
+    predictedMemberRegistrationFailures: 0
   };
 }
 

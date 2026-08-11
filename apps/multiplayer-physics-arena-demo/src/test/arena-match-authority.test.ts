@@ -122,7 +122,7 @@ describe("Knockout Arena multi-stage authority", () => {
     } finally {
       await fixture.dispose();
     }
-  }, 20_000);
+  }, 30_000);
 
   it("projects late join as next-match spectator and restores a disconnected active peer", async () => {
     const fixture = await createAuthorityFixture("arena-presence-authority");

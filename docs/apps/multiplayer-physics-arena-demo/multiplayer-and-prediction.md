@@ -151,6 +151,12 @@ Authority snapshot 发布所有 active actor 在该 authority tick 实际消费�
   confirm/correct/cancel，不能本地累计 score/effect。
 - Item generation change 使旧 contact/fuse/finish/result stale；duplicate snapshot/action 不重复生成 member。
 
+客户端不维护私有 item replay loop。离散 action 在 authority wire lane 发送的同时，用同一个 command/execution correlation 调用
+标准 Arena descriptor 的 `registerPredictedMember(...)`；spawn command、history、match、reject 与 ghost cleanup 仍由完整 island
+owner 负责。`resolveAuthoritySpawn`/`resolveMemberDefinition` 读取已验证的 `items`/`itemActions` app projection，因为通用 Physics
+authority projection 会有意清洗 body `userData`。Action/hit 的 anticipation 进入统一 effect journal，loss、duplicate、gap 或
+generation reset 只能改变 confirm/cancel 时机，不能产生第二次消费、命中或 cue。
+
 ## Stage、淘汰与 Reset
 
 - Elimination 在 authority 同 tick提交 participant state 与 actor despawn，递增 membership revision。

@@ -4,7 +4,13 @@ import {
 } from "@gamekit/multiplayer-core";
 import type { PhysicsPredictionIslandContact } from "@gamekit/physics-core";
 
-import type { ArenaAuthorityEffectCue, ArenaSnapshot } from "../shared/protocol";
+import { arenaItemPhysicsMemberId } from "../items/item-physics";
+import type {
+  ArenaAuthorityEffectCue,
+  ArenaPublicCombatHit,
+  ArenaPublicItemAction,
+  ArenaSnapshot
+} from "../shared/protocol";
 
 type ArenaPredictedEffect =
   | {
@@ -16,7 +22,20 @@ type ArenaPredictedEffect =
       kind: "contact";
       pair: string;
       contactKind: "contact" | "trigger";
+    }
+  | {
+      kind: "item-action";
+      commandId: string;
+      itemId?: string | undefined;
+    }
+  | {
+      kind: "item-hit";
+      itemId: string;
+      itemGeneration: number;
+      targetParticipantId: string;
     };
+
+type ArenaAuthorityEffect = ArenaAuthorityEffectCue | ArenaPublicItemAction | ArenaPublicCombatHit;
 
 export type ArenaClientEffectDiagnostics = {
   presentation: {
@@ -41,6 +60,16 @@ export type ArenaClientEffectController = {
     contacts: readonly PhysicsPredictionIslandContact[],
     localMemberId: string | undefined
   ): void;
+  anticipateItemAction(input: {
+    commandId: string;
+    tick: number;
+    itemId?: string | undefined;
+  }): void;
+  anticipateItemContacts(
+    contacts: readonly PhysicsPredictionIslandContact[],
+    snapshot: ArenaSnapshot | undefined,
+    peerId: string
+  ): void;
   reconcile(snapshot: ArenaSnapshot, peerId: string): void;
   diagnostics(): ArenaClientEffectDiagnostics;
   dispose(): void;
@@ -60,7 +89,7 @@ export function createArenaClientEffectController(
   const consumedAuthorityCues = new Set<string>();
   const journal = createMultiplayerSpeculativeEffectJournal<
     ArenaPredictedEffect,
-    ArenaAuthorityEffectCue
+    ArenaAuthorityEffect
   >({
     generation: roundGeneration(initialRound),
     maxPending: 256,
@@ -126,6 +155,66 @@ export function createArenaClientEffectController(
         });
       }
     },
+    anticipateItemAction({ commandId, tick, itemId }) {
+      journal.anticipate({
+        effectId: `item-action:${commandId}`,
+        tick,
+        value: { kind: "item-action", commandId, ...(itemId === undefined ? {} : { itemId }) }
+      });
+    },
+    anticipateItemContacts(contacts, snapshot, peerId) {
+      if (snapshot === undefined) return;
+      const localParticipant = snapshot.participants.find(
+        (participant) => participant.peerId === peerId
+      );
+      if (localParticipant === undefined) return;
+      for (const contact of contacts) {
+        if (contact.phase !== "enter") continue;
+        for (const [itemBodyId, targetBodyId] of [
+          [contact.bodyA, contact.bodyB],
+          [contact.bodyB, contact.bodyA]
+        ] as const) {
+          if (itemBodyId === undefined || targetBodyId === undefined) continue;
+          const item = snapshot.items.find(
+            (candidate) =>
+              candidate.bodyMemberId === itemBodyId ||
+              ((candidate.state === "windup" ||
+                candidate.state === "released" ||
+                candidate.state === "triggered") &&
+                arenaItemPhysicsMemberId({
+                  id: candidate.id,
+                  instanceGeneration:
+                    candidate.bodyMemberId === undefined
+                      ? candidate.instanceGeneration + 1
+                      : candidate.instanceGeneration
+                }) === itemBodyId)
+          );
+          const target = snapshot.participants.find(
+            (participant) => participant.actorMemberId === targetBodyId
+          );
+          if (
+            item?.executionId === undefined ||
+            target === undefined ||
+            ((item.sourceParticipantId ?? item.ownerParticipantId) !== localParticipant.id &&
+              target.id !== localParticipant.id)
+          ) {
+            continue;
+          }
+          const itemGeneration =
+            item.bodyMemberId === undefined ? item.instanceGeneration + 1 : item.instanceGeneration;
+          journal.anticipate({
+            effectId: `item-hit:${item.executionId}:${target.id}`,
+            tick: contact.tick,
+            value: {
+              kind: "item-hit",
+              itemId: item.id,
+              itemGeneration,
+              targetParticipantId: target.id
+            }
+          });
+        }
+      }
+    },
     reconcile(snapshot, peerId) {
       const generation = roundGeneration(snapshot.frame.generation);
       if (journal.generation() !== generation) {
@@ -146,6 +235,49 @@ export function createArenaClientEffectController(
               generation,
               tick: snapshot.frame.tick,
               outcome: "confirm"
+            });
+          }
+          continue;
+        }
+        if (effect.value.kind === "item-action") {
+          const predicted = effect.value;
+          const action = snapshot.itemActions.find(
+            (candidate) => candidate.id === predicted.commandId
+          );
+          if (action?.status === "confirmed") {
+            journal.resolve({
+              effectId: effect.effectId,
+              generation,
+              tick: action.tick,
+              outcome: "confirm",
+              authority: action
+            });
+          } else if (action?.status === "rejected") {
+            journal.resolve({
+              effectId: effect.effectId,
+              generation,
+              tick: action.tick,
+              outcome: "cancel",
+              reason: action.code
+            });
+          }
+          continue;
+        }
+        if (effect.value.kind === "item-hit") {
+          const predicted = effect.value;
+          const hit = snapshot.combat.hits.find(
+            (candidate) =>
+              candidate.itemId === predicted.itemId &&
+              candidate.itemGeneration === predicted.itemGeneration &&
+              candidate.targetParticipantId === predicted.targetParticipantId
+          );
+          if (hit !== undefined) {
+            journal.resolve({
+              effectId: effect.effectId,
+              generation,
+              tick: hit.tick,
+              outcome: "confirm",
+              authority: hit
             });
           }
           continue;

@@ -80,6 +80,22 @@ authority inbox 按 peer + binding generation + sequence 去重、排序并每 t
 应用不再自行维护 snapshot callback 中的 reconcile 顺序、input replay loop、membership revision fallback、generation
 reset、history overflow fallback、effect replay 去重或 dispose 清理。
 
+### Event-started predicted member
+
+连续 input 之外的 throw、projectile、vehicle spawn 等事件也必须进入同一个 Arena prediction owner。标准 adapter 因此提供
+`registerPredictedMember({ correlationId, tick, member })`：内部 predicted lifecycle 先按 kind + generation + correlation
+注册 identity，再把 spawn 排入同一个 island command/history；重复注册返回 duplicate，冲突、过期 generation 或 command
+rejection 明确失败，应用不能另建 correlation map 或第二个 scene。
+
+Authority frame 仍只复制安全 body state，不用 `userData` 传玩法 identity。应用通过可选
+`resolveAuthoritySpawn(member, frame, appSnapshot)` 从 typed app snapshot 的 item/action/projectile projection 解析 correlation，
+并通过 `resolveMemberDefinition(member, frame, appSnapshot)` 重建 definition。两者在 baseline、reconcile 与 hard correction
+使用同一份最新已验证 app snapshot。旧的少参数 resolver 与未调用 event registration 的 consumer 保持兼容。
+
+Authority reject、snapshot gap 或 generation change 时，完整 frame reconcile/hard correction 删除未匹配 member 和未来
+command；predicted lifecycle 负责 match/reject/expire/binding 容量，speculative effect journal 负责视觉、音频和 UI 的
+confirm/cancel/replace。Gameplay item owner、hit、GAS effect 和 KO 不进入该 journal。
+
 ### Authority arena projection
 
 App Host 提供与客户端 adapter 对称的 authority projection helper。它从 authority-owned Physics scene/handle 和显式

@@ -61,6 +61,37 @@ describe("Knockout Arena speculative effects", () => {
     });
     effects.dispose();
   });
+
+  it("settles item actions and predicted hits once across duplicate and gapped snapshots", () => {
+    const presented: string[] = [];
+    const effects = createArenaClientEffectController(1, (event) => {
+      presented.push(`${event.kind}:${event.phase}`);
+    });
+    const pending = itemSnapshot(30);
+    effects.anticipateItemAction({ commandId: "peer.0.item.1.use", itemId: "item.0", tick: 30 });
+    const contact = itemContact(38);
+    effects.anticipateItemContacts([contact, contact], pending, "peer.0");
+
+    effects.reconcile(pending, "peer.0");
+    effects.reconcile(pending, "peer.0");
+    const settled = itemSnapshot(50, true);
+    effects.reconcile(settled, "peer.0");
+    effects.reconcile(settled, "peer.0");
+    effects.anticipateItemAction({ commandId: "peer.0.item.1.use", itemId: "item.0", tick: 30 });
+    effects.anticipateItemContacts([contact], pending, "peer.0");
+
+    expect(presented).toEqual([
+      "item-action:anticipate",
+      "item-hit:anticipate",
+      "item-action:confirm",
+      "item-hit:confirm"
+    ]);
+    expect(effects.diagnostics()).toMatchObject({
+      presentation: { anticipated: 2, confirmed: 2, cancelled: 0 },
+      journal: { pending: 0, duplicates: 3, confirmed: 2 }
+    });
+    effects.dispose();
+  });
 });
 
 function localContact(tick: number): PhysicsPredictionIslandContact {
@@ -74,6 +105,76 @@ function localContact(tick: number): PhysicsPredictionIslandContact {
     sensor: false,
     tick
   };
+}
+
+function itemContact(tick: number): PhysicsPredictionIslandContact {
+  return {
+    phase: "enter",
+    kind: "contact",
+    colliderA: "item.0.body.g2.collider",
+    colliderB: "bot.0.collider",
+    bodyA: "item.0.body.g2",
+    bodyB: "bot.0",
+    sensor: false,
+    tick
+  };
+}
+
+function itemSnapshot(tick: number, settled = false): ArenaSnapshot {
+  const value = snapshot(tick, 1, 9, []);
+  value.participants.push({
+    id: "bot.0",
+    kind: "bot",
+    slot: 1,
+    actorMemberId: "bot.0",
+    connected: false,
+    status: "active",
+    stageInstanceId: value.match.stageInstanceId,
+    revision: 1
+  });
+  value.items = [
+    {
+      id: "item.0",
+      definitionId: "item.foam-ball",
+      instanceGeneration: settled ? 2 : 1,
+      state: settled ? "released" : "windup",
+      ownerParticipantId: settled ? undefined : "player.0",
+      sourceParticipantId: settled ? "player.0" : undefined,
+      executionId: "peer.0.item.1.use:execution",
+      stateChangedAtTick: settled ? 38 : 30,
+      revision: settled ? 3 : 2,
+      ...(settled ? { bodyMemberId: "item.0.body.g2" } : {})
+    }
+  ];
+  value.itemActions = [
+    {
+      id: "peer.0.item.1.use",
+      participantId: "player.0",
+      type: "use",
+      status: settled ? "confirmed" : "windup",
+      code: settled ? "action-active" : "action-windup",
+      tick: settled ? 38 : 30,
+      itemId: "item.0",
+      itemGeneration: settled ? 2 : 1,
+      executionId: "peer.0.item.1.use:execution"
+    }
+  ];
+  value.combat.hits = settled
+    ? [
+        {
+          id: "hit.1",
+          sourceParticipantId: "player.0",
+          targetParticipantId: "bot.0",
+          itemId: "item.0",
+          itemGeneration: 2,
+          definitionId: "item.foam-ball",
+          tick: 39,
+          impulseMagnitude: 8,
+          instability: 0.2
+        }
+      ]
+    : [];
+  return value;
 }
 
 function snapshot(
