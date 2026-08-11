@@ -438,7 +438,7 @@ Diagnostics 使用有界、克隆后的白名单 payload。Observer failure 不�
 
 - Catalog 只在创建/替换内容时编译。
 - Emitter transform 和 Backend instance patch 使用批处理。
-- SFX concurrency、owner 和 emitter 查询使用索引，不在 burst 路径全量扫描所有历史记录。
+- SFX concurrency 使用由 Playback lifecycle 同步的有界 active view；普通 burst 不为每次事件深拷贝全部实例，依赖实时音量或 emitter scope 的策略在裁决前刷新公开状态。owner 和 emitter 查询使用索引，不扫描历史记录。
 - Music transition、Dialogue queue 和 Mix activation 分别有独立有界状态。
 - Benchmark 分开覆盖 SFX burst/variation/concurrency、Music transition、Dialogue queue/interruption、Emitter batch、Mix Snapshot 和 dispose retained state。
 
