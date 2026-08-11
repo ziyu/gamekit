@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -b && vite build",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
     "dev": "tsx src/server/dev-server.ts",
     "test": "vitest run --root ../.. --config vitest.config.ts apps/multiplayer-demo/src --passWithNoTests",
     "lint": "oxlint ."

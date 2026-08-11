@@ -166,14 +166,14 @@
 
 构建实践：
 
-- `tsc -b` 继续作为项目引用和类型检查门禁。
+- TypeScript project references 继续声明包依赖图；Turbo 负责按图构建 library package。App build 使用 `tsc -p tsconfig.json --noEmit` 只检查当前 app，不能递归 emit 引用包；需要输出自身产物的 private package 使用 `tsc -p tsconfig.json`。
 - 发布用 library bundler 输出可被 Node ESM 和主流 bundler 消费的 JS、类型声明和 CSS 产物。
 - Rolldown 系工具链优先通过 `tsdown` 试点和接入；若不能满足 package dry-run、d.ts、external、CSS 和 smoke test 门禁，再回退到直接 Rolldown 配置或其他成熟 library bundler。
 - 所有内部 `@gamekit/*` 依赖和大型第三方 runtime 在 library build 中保持 external，不把相邻包或 Phaser、React、Tauri 等 runtime 打进 facade 包。
 - package build helper 复制 CSS 或其他静态发布入口时，应在 bundler clean 和 JS/d.ts 输出完成后执行，避免 `dist` 被后续 clean 步骤清空。
-- 单包发布构建不能递归 emit project references，否则后构建的聚合包可能覆盖前序包已经 bundler 处理过的 `dist`。包内 build helper 应只检查或生成当前包产物；全仓库 `tsc -b` 留给根级 build/test 门禁。
+- 单包发布构建和 app typecheck 都不能递归 emit project references，否则并发任务可能覆盖前序包已经 bundler 处理过的 `dist`，并让其他任务读到半写入的 declaration tree。包内 build helper 只检查或生成当前包产物，app 只读 Turbo 已完成的依赖产物。
 - declaration bundler 遇到复杂类型递归时，可以为该包显式保留 tsc declaration tree，同时用 bundler 只输出入口 JS；这种例外要通过包级 build metadata 标记，并继续经过 tarball 和外部安装 smoke。
-- composite project reference 指向多入口 package 时，不能让 declaration bundler 用内部 chunk 覆盖 `tsc` 期望的 declaration tree；这类 package 应设置 `gamekitBuild.bundleDts: false`，保留与源码入口结构一致的 `.d.ts`，并用 app 的 `tsc -b` 验证跨包类型推断。
+- composite project reference 指向多入口 package 时，不能让 declaration bundler 用内部 chunk 覆盖 `tsc` 期望的 declaration tree；这类 package 应设置 `gamekitBuild.bundleDts: false`，保留与源码入口结构一致的 `.d.ts`，并用依赖 app 的只读 typecheck 和外部安装 smoke 验证跨包类型推断。
 - 发布 staging 目录每轮必须先清理目标包目录，再复制当前 `dist`，并在 staging 侧再次清理 `.tsbuildinfo`，避免固定 release 目录带入旧文件。
 - 发布验证中的 npm cache/logs 应隔离到 release 目录，避免用户级 `~/.npm` 权限或缓存状态影响 `npm pack`。
 - scoped package 通过 token fallback 发布时必须显式传递 `--access public`；仅保留 manifest `publishConfig.access` 可能会被 registry 当作 private scoped package。
