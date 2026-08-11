@@ -114,8 +114,8 @@ capture/restore/replay/reset。实现必须：
 | P4：场景与内容                   | Accepted | 3 stage、机关/表面、shared layout、Recast source/validator                        | 每场可完成；无不可达 spawn/goal                    |
 | P5：AI                           | Accepted | Arena sensors/goals/tasks/archetypes、Navigation/steering、AI trace               | bots 能晋级、拾取、攻击、避险且不作弊              |
 | P6：表现与 UX                    | Accepted | Animator、Audio、camera、HUD、spectator、results、可读 telegraph                  | 双窗口完整比赛体验，无 debug-only UI               |
-| P7：网络与性能加固               | Active   | item/pickup fault matrix、arena gameplay benchmark、soak、budget diagnostics      | 150 ms/5% loss 下整场收敛                          |
-| P8：最终验收与关闭               | Planned  | review、全仓门禁、浏览器验收、文档收口、提交记录                                  | 完成定义全部满足                                   |
+| P7：网络与性能加固               | Accepted | item/pickup fault matrix、arena gameplay benchmark、soak、budget diagnostics      | 150 ms/5% loss 下整场收敛                          |
+| P8：最终验收与关闭               | Active   | review、全仓门禁、浏览器验收、文档收口、提交记录                                  | 完成定义全部满足                                   |
 
 ## 执行协议
 
@@ -166,8 +166,8 @@ capture/restore/replay/reset。实现必须：
 | P6-04  | Accepted | P6-03        | 双浏览器完整比赛体验验收                                        | 三 stage、winner、领奖台、rematch、console 与视觉检查通过       |
 | P7-01  | Accepted | P6-04        | gameplay fault matrix 与断线/重连/late join 加固                | 0–150 ms、0–50 ms jitter、0–5% loss 与 gap/duplicate 收敛       |
 | P7-02  | Accepted | P7-01        | `bench:arena-gameplay:check` 与预算 diagnostics                 | 36-member profile 满足长期 payload/checkpoint/replay/tick 预算  |
-| P7-03  | Active   | P7-02        | 10 分钟 stage/item/bot/network/rematch soak                     | 无无界增长；dispose retained state 为 0                         |
-| P8-01  | Planned  | P7-03        | 全量 review、根级门禁、benchmark 与最终浏览器验收               | `quality-and-acceptance.md` 全部条目有可复查证据                |
+| P7-03  | Accepted | P7-02        | 10 分钟 stage/item/bot/network/rematch soak                     | 无无界增长；dispose retained state 为 0                         |
+| P8-01  | Active   | P7-03        | 全量 review、根级门禁、benchmark 与最终浏览器验收               | `quality-and-acceptance.md` 全部条目有可复查证据                |
 | P8-02  | Planned  | P8-01        | 长期文档收口、执行记录关闭和最终提交                            | 状态 `Closed`、无遗留 TODO、证据和 commit 完整                  |
 
 ## 验收记录
@@ -205,7 +205,8 @@ capture/restore/replay/reset。实现必须：
 | P6-03  | 2026-08-12 | 按“电视竞技转播+机械障碍赛”重构正式体验：纯view model统一投影lobby、三关目标/格式、倒计时、排名/存活/进度、装备、instability、spectator与stage/match领奖台；results明确authority自动next-stage/rematch且主流程不依赖telemetry。KO tracker以rolling hit/status/result identity区分item hit、environment KO、qualified和winner，late join只seed不补播；DOM只使用component API/textContent且feed固定6条。输入控制器仅在viewport focus scope采样，blur/text/controls返回neutral；键盘与standard gamepad dead-zone/edge共享semantic action，提示跟随最近设备，键盘/手柄与按钮均可循环观战目标。本机actor淘汰后仍以peer identity显示ELIMINATED，镜头只切display target。UX/input专项4/4、Arena 82/82；root test/build/lint均94/94、format通过                                                                 | `4dd7351`          |
 | P6-04  | 2026-08-12 | 双浏览器Create/Join同一`p604-clean`房间并绑定`player.0`/`player.1`；极端减员达到2 live/6 out后仍完成三关、产生CHAMPION并越过rematch，telemetry跨`m2.s3.r19`后进入下一轮Stage 1。浏览器验收发现并修复两项真实生命周期缺口：静态qualificationCount在幸存人数不足时导致authority结算崩溃；authority已despawn actor仍收到client motor control导致prediction update终止。动态有效名额、空场all-eliminated与live-member control过滤均有回归测试。迟加入为NEXT MATCH spectator且镜头PLAYER 1→PLAYER 2可循环；Stage Results清楚列出排名/QUALIFIED/OUT与自动下一关；1080p和390×844截图通过，三端console 0 application error。Arena 86/86；root test/build/lint均94/94、format通过                                                                                                                                | `81fab69`          |
 | P7-01  | 2026-08-12 | Gameplay fault matrix使用真实Arena authority、完整Physics/item/participant projection和redundant input，覆盖0/50/100/150 ms、0/20/30/50 ms jitter、0/2/5% loss、2% duplicate与snapshot gap；四档均保持tick/revision单调、同一generation、ack在预算内、inbox和network无capacity/delivery error，dispose gameplay retained为0。新增`authorityEpoch = frame generation + participant revision`并升级schema v7；150 ms延迟的断线前input/action在同peer reconnect后被拒绝，fresh epoch input正常ack 2，late join保持NEXT MATCH spectator且participant identity不复制。Authority每源inbox由24调为有界48帧以覆盖200 ms最坏单向窗口；network simulator新增`lastDeliveryError`并由第二个Memory fixture验证。Fault matrix 10/10、相关Room/item/protocol 3/3；Arena 91/91；root test/build/lint均94/94、format通过 | `6470333`          |
-| P7-02  | 2026-08-12 | ADR 0054；authority loop统一`snapshotIntervalTicks`，Arena authority使用`initial-only` Physics history且保持client完整rollback；Rapier checkpoint复用immutable topology，island使用typed clone、contributor command clone、尾部history截断、reconcile无消费contact收集与相同body patch跳过。`bench:arena-gameplay:check` 38/38：2 human+6 bot authority主线程CPU p95 2.623 ms/p99 3.514 ms，wall p95 3.716 ms；36-member replay-12 CPU/wall p95 3.555/4.754 ms，replay-30 7.753/10.579 ms；payload p95 18,299 bytes、checkpoint 69,397 bytes、history 8,557,597 bytes。确定性contract完成claim→carry→windup→release并产生Combat/GAS hit；全部dispose retained 0                                                                                                                                         | 本工作包提交时补录 |
+| P7-02  | 2026-08-12 | ADR 0054；authority loop统一`snapshotIntervalTicks`，Arena authority使用`initial-only` Physics history且保持client完整rollback；Rapier checkpoint复用immutable topology，island使用typed clone、contributor command clone、尾部history截断、reconcile无消费contact收集与相同body patch跳过。`bench:arena-gameplay:check` 38/38：2 human+6 bot authority主线程CPU p95 2.623 ms/p99 3.514 ms，wall p95 3.716 ms；36-member replay-12 CPU/wall p95 3.555/4.754 ms，replay-30 7.753/10.579 ms；payload p95 18,299 bytes、checkpoint 69,397 bytes、history 8,557,597 bytes。确定性contract完成claim→carry→windup→release并产生Combat/GAS hit；全部dispose retained 0                                                                                                                                         | `34bbeee`          |
+| P7-03  | 2026-08-12 | 新增`bench:arena-gameplay:stability`，使用真实Rapier3D、三份Recast artifact、2 human+6 authority bots与完整Arena authority连续运行36,000 tick/10虚拟分钟；网络每分钟在baseline与150 ms latency/50 ms jitter/5% loss/2% duplicate间切换，共完成8局、23个stage instance、9次fault切换和两名不同winner。713次丢包、234次重复下最大snapshot gap 12 tick，invalid snapshot、input/network capacity rejection与delivery error均为0；item状态迁移64次、公开action 41个、Combat hit 2个。Physics history始终1条/19,751 bytes、command 0，AI trace≤256、Nav route≤1；GC后heap净增长2.09 MiB/峰值2.497 MiB，authority与network dispose retained均为0。首次运行发现soak驱动器未遵守公共client的8帧prediction lead背压，按`createMultiplayerClientReplication`协议修正后重跑通过，未放宽任何容量预算                | 本工作包提交时补录 |
 
 ## 分阶段实施细节
 
@@ -298,6 +299,7 @@ corepack pnpm bench:ai:check
 corepack pnpm bench:animator:check
 corepack pnpm bench:audio:check
 corepack pnpm bench:arena-gameplay:check
+corepack pnpm bench:arena-gameplay:stability
 ```
 
 最后一条命令属于本工作流交付物，在 P7 前不存在时不得假装已运行。

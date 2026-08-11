@@ -52,6 +52,7 @@
     "bench:arena-prediction:stability": "node --expose-gc --import tsx scripts/arena-prediction-stability.ts",
     "bench:arena-gameplay": "node --expose-gc --import tsx scripts/arena-gameplay-benchmark.ts",
     "bench:arena-gameplay:check": "node --expose-gc --import tsx scripts/arena-gameplay-benchmark.ts --check",
+    "bench:arena-gameplay:stability": "node --expose-gc --import tsx scripts/arena-gameplay-stability.ts",
     "bench:navigation": "tsx scripts/navigation-benchmark.ts",
     "bench:navigation:check": "tsx scripts/navigation-benchmark.ts --check",
     "bench:navigation:grid": "tsx scripts/navigation-grid-benchmark.ts",

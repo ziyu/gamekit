@@ -136,6 +136,9 @@ Benchmark排除一次性fixture construction但包含真实tick/runtime行为；
 结束后Physics member/history/command、motor state、item map/ledger、Combat ticket、GAS execution/effect、AI memory/task、Nav route、
 effect journal、render/audio资源均回到声明的idle/disposed上限。
 
+权威玩法稳定性入口为`corepack pnpm bench:arena-gameplay:stability`；它必须使用公开输入/快照协议、真实Rapier3D与Recast，且
+客户端输入生成遵守与正式prediction runtime相同的lead和冗余bundle上限，不能以无限测试流量制造非生产容量结论。
+
 ## Content Quality
 
 每个stage/course pack通过：
