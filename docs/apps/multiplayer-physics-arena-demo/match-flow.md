@@ -7,6 +7,21 @@ winner、KO credit 和 rematch 清理；不拥有 Physics step、网络 transpor
 
 客户端只消费公开 projection。React、Three 或本地 timer 不能自行推进 phase、判定淘汰或提交 winner。
 
+## Authority 运行时所有权
+
+赛事 authority 拆成三个 app-local owner：
+
+- Participant Registry 拥有 `participantId`、slot/actor/peer 绑定、连接状态、participant status、revision 与有界 transition trace。
+  Transport peer 连接或断开只能通过 registry 改变绑定，不能直接改 Physics member 或 winner。
+- Match Director 拥有 match/round、phase/stage instance、phase deadline、winner 引用与有界 phase trace。它只输出
+  `stage-started`、`stage-completed`、`rematch-reset` action，不直接操作 Physics、Registry 或网络。
+- Stage Rule 是从 compiled stage definition 创建的无状态规则边界，消费 entrant/active participant id 与 authority elapsed tick，
+  只返回 continue 或带稳定 reason 的 complete。排名、晋级和 tie-break 在专用 ranking policy 中实现，不能塞回 director。
+
+Arena authority composition 按 `peer reconcile → elimination facts → director/rule → participant transitions → Physics commands → projection`
+的固定顺序执行 action。进入 running 的同一 tick 不评估 stage completion，必须先完成 lobby→active 转换，避免空 active set 被误判为
+全员淘汰。三个 owner 都声明容量、reset/dispose 与 diagnostics；trace 只保留有界语义转换，不记录每 tick 全量 roster。
+
 ## 身份与实例
 
 比赛相关 identity 必须区分：

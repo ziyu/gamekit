@@ -101,6 +101,21 @@ describe("Knockout Arena Room authority", () => {
         "player.1": { moveX: 0, moveZ: 0, jump: false }
       });
       expect(Object.keys(latestA.actorControlsByMemberId)).toHaveLength(8);
+
+      await waitFor(() => snapshotsA.at(-1)?.phase === "running");
+      const running = snapshotsA.at(-1)!;
+      expect(running).toMatchObject({
+        phase: "running",
+        round: 1,
+        countdownMs: 0,
+        eliminatedMemberIds: []
+      });
+      expect(running.actorControlsByMemberId["player.0"]).toMatchObject({
+        moveX: 1,
+        moveZ: -1,
+        sequence: 2
+      });
+      expect(running.frame.members).toHaveLength(14);
     } finally {
       unsubscribeA();
       unsubscribeB();
