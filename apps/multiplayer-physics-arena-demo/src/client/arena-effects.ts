@@ -127,7 +127,7 @@ export function createArenaClientEffectController(
       }
     },
     reconcile(snapshot, peerId) {
-      const generation = roundGeneration(snapshot.round);
+      const generation = roundGeneration(snapshot.frame.generation);
       if (journal.generation() !== generation) {
         journal.reset(generation);
         consumedAuthorityCues.clear();
@@ -209,6 +209,6 @@ function contactPair(colliderA: string, colliderB: string): string {
   return [colliderA, colliderB].sort().join("|");
 }
 
-function roundGeneration(round: number): string {
-  return `round.${round}`;
+function roundGeneration(generation: string | number): string {
+  return typeof generation === "number" ? `m${generation}.s1.r${generation}` : generation;
 }

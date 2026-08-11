@@ -285,7 +285,8 @@ export async function createArenaClientSession(options: {
         shouldReset(previous, next) {
           return (
             previous !== undefined &&
-            (next.round !== previous.round || next.frame.tick < previous.frame.tick)
+            (next.frame.generation !== previous.frame.generation ||
+              next.frame.tick < previous.frame.tick)
           );
         }
       },
@@ -316,7 +317,10 @@ export async function createArenaClientSession(options: {
           return { sequence: predictionFrame.sequence, ...input };
         },
         active({ snapshot }) {
-          return snapshot.phase === "running";
+          const participant = snapshot.participants.find(
+            (candidate) => candidate.peerId === peerId
+          );
+          return snapshot.phase === "running" && participant?.status === "active";
         }
       },
       applyFrame({ snapshot }) {
@@ -348,7 +352,15 @@ export async function createArenaClientSession(options: {
       return arena.state();
     },
     localMemberId() {
-      return latestSnapshot?.playerIdsByPeerId[peerId];
+      const participant = latestSnapshot?.participants.find(
+        (candidate) => candidate.peerId === peerId
+      );
+      return participant?.status === "spectator" ||
+        participant?.status === "next-match" ||
+        participant?.status === "eliminated" ||
+        participant?.status === "finished"
+        ? undefined
+        : participant?.actorMemberId;
     },
     telemetry() {
       const replicationDiagnostics = replication?.diagnostics();

@@ -64,12 +64,14 @@ type ArenaSnapshot = {
   schemaVersion: string;
   match: ArenaPublicMatchState;
   participants: ArenaParticipantProjection[];
+  stageResults: ArenaPublicStageResult[];
   items: ArenaItemProjection[];
   actions: ArenaPublicActionPhase[];
   frame: MultiplayerPhysicsArenaFrame;
   playerIdsByPeerId: Record<string, string>;
   inputAcksByPeerId: Record<string, number>;
   actorControlsByMemberId: Record<string, ArenaActorControl>;
+  eliminatedMemberIds: string[];
   effects: ArenaAuthorityEffectCue[];
   serverTime: number;
 };
@@ -80,6 +82,9 @@ member state。App schema 承载 match/item/action/ack；Physics Core 不解析�
 
 Projection 验证有限数字、唯一 id、member/item/effect 上限、definition/schema compatibility 和 payload bytes。未知或超预算
 frame 被拒绝并诊断，不能部分读取后继续 replay。
+
+`match.membershipRevision` 必须与 Physics frame 一致。Stage result 只追加 authority settlement，late join/reconnect 读取同一份
+participant/result projection 恢复当前语义状态，不从客户端缓存重建晋级或 winner。
 
 ## Prediction Island Membership
 

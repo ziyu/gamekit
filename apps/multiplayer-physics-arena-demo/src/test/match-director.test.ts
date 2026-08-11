@@ -7,7 +7,7 @@ import type { ArenaStageDefinition } from "../content/types";
 describe("Knockout Arena match director", () => {
   it("advances lobby, countdown, running, results, and rematch with stable trace", () => {
     const director = createArenaMatchDirector({
-      stageRule: createArenaStageRule(stage("final", 20)),
+      stageRules: [createArenaStageRule(stage("final", 20))],
       countdownTicks: 3,
       resultsTicks: 2,
       traceCapacity: 8
@@ -44,7 +44,7 @@ describe("Knockout Arena match director", () => {
   it("cancels countdown when the human roster becomes empty and uses stage deadlines", () => {
     const rule = createArenaStageRule(stage("qualifier", 2));
     const director = createArenaMatchDirector({
-      stageRule: rule,
+      stageRules: [rule],
       countdownTicks: 2,
       resultsTicks: 2
     });
@@ -59,6 +59,45 @@ describe("Knockout Arena match director", () => {
       actions: [{ type: "stage-completed", reason: "deadline" }]
     });
     expect(rule.diagnostics()).toMatchObject({ evaluations: 1, completions: 1 });
+    director.dispose();
+  });
+
+  it("advances three unique stage generations before opening the next match", () => {
+    const director = createArenaMatchDirector({
+      stageRules: [
+        createArenaStageRule(stage("qualifier", 1, "stage.qualifier", 2)),
+        createArenaStageRule(stage("brawl", 1, "stage.brawl", 1)),
+        createArenaStageRule(stage("final", 20, "stage.final", 1))
+      ],
+      countdownTicks: 1,
+      resultsTicks: 1
+    });
+
+    advance(director, 0, 1, ["a", "b", "c"], ["a", "b", "c"]);
+    expect(advance(director, 1, 1, ["a", "b", "c"], ["a", "b", "c"])).toMatchObject({
+      snapshot: { stageIndex: 0, stageCount: 3, stageKind: "qualifier" },
+      actions: [{ type: "stage-started", stageInstanceId: "match.1:stage.qualifier:1" }]
+    });
+    advance(director, 2, 1, ["a", "b", "c"], ["a", "b", "c"]);
+    expect(advance(director, 3, 1, ["a", "b", "c"], ["a", "b"])).toMatchObject({
+      snapshot: { phase: "countdown", stageIndex: 1, stageKind: "brawl" },
+      actions: [{ type: "stage-prepared", stageInstanceId: "match.1:stage.brawl:2" }]
+    });
+    advance(director, 4, 1, ["a", "b"], ["a", "b"]);
+    advance(director, 5, 1, ["a", "b"], ["a", "b"]);
+    expect(advance(director, 6, 1, ["a", "b"], ["b"])).toMatchObject({
+      snapshot: { phase: "countdown", stageIndex: 2, stageKind: "final" },
+      actions: [{ type: "stage-prepared", stageInstanceId: "match.1:stage.final:3" }]
+    });
+    advance(director, 7, 1, ["b"], ["b"]);
+    expect(advance(director, 8, 1, ["b"], ["b"])).toMatchObject({
+      snapshot: { phase: "results", winnerParticipantId: "b", matchId: "match.1" },
+      actions: [{ type: "stage-completed", finalStage: true, winnerParticipantId: "b" }]
+    });
+    expect(advance(director, 9, 1, ["b"], ["b"])).toMatchObject({
+      snapshot: { phase: "countdown", round: 2, stageIndex: 0 },
+      actions: [{ type: "rematch-reset", matchId: "match.2" }]
+    });
     director.dispose();
   });
 
@@ -87,12 +126,17 @@ function advance(
   return director.advance({ tick, connectedHumans, entrantParticipantIds, activeParticipantIds });
 }
 
-function stage(kind: ArenaStageDefinition["kind"], durationTicks: number): ArenaStageDefinition {
+function stage(
+  kind: ArenaStageDefinition["kind"],
+  durationTicks: number,
+  id = "stage.fixture",
+  qualificationCount = 1
+): ArenaStageDefinition {
   return {
-    id: "stage.fixture",
+    id,
     kind,
     course: { type: "arena.course", id: "course.fixture" },
-    qualificationCount: 1,
+    qualificationCount,
     durationTicks,
     itemPool: [],
     botArchetypes: []

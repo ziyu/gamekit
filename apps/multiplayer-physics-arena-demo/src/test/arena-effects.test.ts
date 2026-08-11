@@ -53,7 +53,7 @@ describe("Knockout Arena speculative effects", () => {
     expect(effects.diagnostics()).toMatchObject({
       presentation: { cancelled: 2 },
       journal: {
-        generation: "round.2",
+        generation: "m2.s1.r2",
         resets: 1,
         expired: 1,
         pending: 0
@@ -88,9 +88,35 @@ function snapshot(
     round,
     countdownMs: 0,
     roundTimeMs: tick * (1000 / 60),
+    match: {
+      matchId: `match.${round}`,
+      phaseInstanceId: `match.${round}.phase.3`,
+      stageIndex: 0,
+      stageCount: 3,
+      stageId: "stage.circuit-forge",
+      stageKind: "qualifier",
+      stageInstanceId: `match.${round}:stage.circuit-forge:1`,
+      startedAtTick: tick,
+      stageStartedAtTick: tick,
+      membershipRevision: round
+    },
+    participants: [
+      {
+        id: "player.0",
+        kind: "human-slot",
+        slot: 0,
+        actorMemberId: "player.0",
+        peerId: "peer.0",
+        connected: true,
+        status: "active",
+        stageInstanceId: `match.${round}:stage.circuit-forge:1`,
+        revision: round
+      }
+    ],
+    stageResults: [],
     frame: {
       islandId: ARENA_ISLAND_ID,
-      generation: `round.${round}`,
+      generation: `m${round}.s1.r${round}`,
       tick,
       membershipRevision: round,
       definitionVersion: ARENA_DEFINITION_VERSION,

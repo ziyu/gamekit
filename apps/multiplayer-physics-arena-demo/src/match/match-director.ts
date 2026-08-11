@@ -1,3 +1,4 @@
+import type { ArenaStageKind } from "../content/types";
 import type { ArenaMatchPhase } from "../shared/config";
 import type { ArenaStageCompletionReason, ArenaStageRule } from "./stage-rule";
 
@@ -23,7 +24,10 @@ export type ArenaMatchDirectorSnapshot = {
   round: number;
   matchId: string;
   phaseInstanceId: string;
+  stageIndex: number;
+  stageCount: number;
   stageId: string;
+  stageKind: ArenaStageKind;
   stageInstanceId: string;
   startedAtTick: number;
   stageStartedAtTick?: number | undefined;
@@ -31,14 +35,22 @@ export type ArenaMatchDirectorSnapshot = {
   winnerParticipantId?: string | undefined;
 };
 
+type ArenaStageActionIdentity = {
+  stageIndex: number;
+  stageId: string;
+  stageInstanceId: string;
+};
+
 export type ArenaMatchDirectorAction =
-  | { type: "stage-started"; stageInstanceId: string }
-  | {
+  | ({ type: "stage-prepared" } & ArenaStageActionIdentity)
+  | ({ type: "stage-started" } & ArenaStageActionIdentity)
+  | ({
       type: "stage-completed";
       reason: ArenaStageCompletionReason;
+      finalStage: boolean;
       winnerParticipantId?: string | undefined;
-    }
-  | { type: "rematch-reset"; round: number; matchId: string };
+    } & ArenaStageActionIdentity)
+  | ({ type: "rematch-reset"; round: number; matchId: string } & ArenaStageActionIdentity);
 
 export type ArenaMatchDirectorAdvanceResult = {
   snapshot: ArenaMatchDirectorSnapshot;
@@ -71,11 +83,18 @@ export type ArenaMatchDirector = {
 const DEFAULT_TRACE_CAPACITY = 128;
 
 export function createArenaMatchDirector(options: {
-  stageRule: ArenaStageRule;
+  stageRules: readonly ArenaStageRule[];
   countdownTicks: number;
   resultsTicks: number;
   traceCapacity?: number | undefined;
 }): ArenaMatchDirector {
+  const stageRules = [...options.stageRules];
+  if (
+    stageRules.length === 0 ||
+    new Set(stageRules.map((rule) => rule.id)).size !== stageRules.length
+  ) {
+    throw new Error("Arena match director requires unique stage rules");
+  }
   const countdownTicks = positiveInteger(options.countdownTicks, "countdownTicks");
   const resultsTicks = positiveInteger(options.resultsTicks, "resultsTicks");
   const traceCapacity = positiveInteger(
@@ -86,7 +105,8 @@ export function createArenaMatchDirector(options: {
   let phase: ArenaMatchPhase = "lobby";
   let round = 1;
   let matchId = matchIdentity(round);
-  let stageInstanceId = stageIdentity(matchId, options.stageRule.id);
+  let stageIndex = 0;
+  let stageInstanceId = stageIdentity(matchId, currentRule().id, stageIndex);
   let phaseInstance = 1;
   let startedAtTick = 0;
   let stageStartedAtTick: number | undefined;
@@ -117,13 +137,13 @@ export function createArenaMatchDirector(options: {
       ) {
         transition("running", "countdown-complete", input.tick);
         stageStartedAtTick = input.tick;
-        actions.push({ type: "stage-started", stageInstanceId });
+        actions.push({ type: "stage-started", ...stageActionIdentity() });
         stageStarted = true;
       }
 
       if (phase === "running" && !stageStarted) {
-        const decision = options.stageRule.evaluate({
-          elapsedTicks: input.tick - startedAtTick,
+        const decision = currentRule().evaluate({
+          elapsedTicks: input.tick - (stageStartedAtTick ?? input.tick),
           entrantParticipantIds: input.entrantParticipantIds,
           activeParticipantIds: input.activeParticipantIds
         });
@@ -132,25 +152,45 @@ export function createArenaMatchDirector(options: {
           transition("results", decision.reason, input.tick, input.tick + resultsTicks);
           actions.push({
             type: "stage-completed",
+            ...stageActionIdentity(),
             reason: decision.reason,
+            finalStage: stageIndex === stageRules.length - 1,
             ...(decision.winnerParticipantId === undefined
               ? {}
               : { winnerParticipantId: decision.winnerParticipantId })
           });
         }
       } else if (phase === "results" && deadlineTick !== undefined && input.tick >= deadlineTick) {
-        round += 1;
-        matchId = matchIdentity(round);
-        stageInstanceId = stageIdentity(matchId, options.stageRule.id);
-        stageStartedAtTick = undefined;
         winnerParticipantId = undefined;
-        transition(
-          input.connectedHumans > 0 ? "countdown" : "lobby",
-          "results-complete",
-          input.tick,
-          input.connectedHumans > 0 ? input.tick + countdownTicks : undefined
-        );
-        actions.push({ type: "rematch-reset", round, matchId });
+        stageStartedAtTick = undefined;
+        if (stageIndex < stageRules.length - 1) {
+          stageIndex += 1;
+          stageInstanceId = stageIdentity(matchId, currentRule().id, stageIndex);
+          transition(
+            input.connectedHumans > 0 ? "countdown" : "lobby",
+            "results-complete",
+            input.tick,
+            input.connectedHumans > 0 ? input.tick + countdownTicks : undefined
+          );
+          actions.push({ type: "stage-prepared", ...stageActionIdentity() });
+        } else {
+          round += 1;
+          matchId = matchIdentity(round);
+          stageIndex = 0;
+          stageInstanceId = stageIdentity(matchId, currentRule().id, stageIndex);
+          transition(
+            input.connectedHumans > 0 ? "countdown" : "lobby",
+            "results-complete",
+            input.tick,
+            input.connectedHumans > 0 ? input.tick + countdownTicks : undefined
+          );
+          actions.push({
+            type: "rematch-reset",
+            round,
+            matchId,
+            ...stageActionIdentity()
+          });
+        }
       }
 
       return { snapshot: captureSnapshot(), actions };
@@ -188,9 +228,17 @@ export function createArenaMatchDirector(options: {
       if (disposed) return;
       disposed = true;
       traces.length = 0;
-      options.stageRule.dispose();
+      for (const stageRule of stageRules) stageRule.dispose();
     }
   };
+
+  function currentRule(): ArenaStageRule {
+    return stageRules[stageIndex]!;
+  }
+
+  function stageActionIdentity(): ArenaStageActionIdentity {
+    return { stageIndex, stageId: currentRule().id, stageInstanceId };
+  }
 
   function transition(
     to: ArenaMatchPhase,
@@ -238,12 +286,16 @@ export function createArenaMatchDirector(options: {
   }
 
   function captureSnapshot(): ArenaMatchDirectorSnapshot {
+    const rule = currentRule();
     return {
       phase,
       round,
       matchId,
       phaseInstanceId: `${matchId}.phase.${phaseInstance}`,
-      stageId: options.stageRule.id,
+      stageIndex,
+      stageCount: stageRules.length,
+      stageId: rule.id,
+      stageKind: rule.kind,
       stageInstanceId,
       startedAtTick,
       ...(stageStartedAtTick === undefined ? {} : { stageStartedAtTick }),
@@ -261,8 +313,8 @@ function matchIdentity(round: number): string {
   return `match.${round}`;
 }
 
-function stageIdentity(matchId: string, stageId: string): string {
-  return `${matchId}:${stageId}:1`;
+function stageIdentity(matchId: string, stageId: string, stageIndex: number): string {
+  return `${matchId}:${stageId}:${stageIndex + 1}`;
 }
 
 function positiveInteger(value: number, path: string): number {

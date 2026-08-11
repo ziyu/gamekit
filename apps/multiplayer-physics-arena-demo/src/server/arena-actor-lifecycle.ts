@@ -37,9 +37,9 @@ export function resolveArenaActorAuthorityStep(options: {
   };
 }
 
-/** Restores the initial full island only when a new round begins. */
-export function resetArenaRoundPhysics(island: PhysicsPredictionIsland, round: number): void {
-  island.reset(`round.${round}`, island.tick());
+/** Restores the initial island for a new authority-owned stage generation. */
+export function resetArenaRoundPhysics(island: PhysicsPredictionIsland, generation: string): void {
+  island.reset(generation, island.tick());
 }
 
 function neutralControl(sequence: number): ArenaActorControlFrame {

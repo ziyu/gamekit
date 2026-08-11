@@ -195,7 +195,7 @@ export function createArenaParticipantRegistry(
       const record = records.get(participantId);
       if (record === undefined) return { status: "missing" };
       if (
-        record.kind !== "human-slot" ||
+        record.kind === "bot" ||
         !validId(peerId) ||
         !validTick(tick) ||
         [...records.values()].some(
@@ -252,13 +252,14 @@ export function createArenaParticipantRegistry(
     resetForMatch(tick) {
       assertActive();
       for (const record of orderedRecords()) {
+        const resetStatus = record.actorMemberId === undefined ? "next-match" : "lobby";
         if (record.status === "disconnected") {
-          record.resumeStatus = "lobby";
+          record.resumeStatus = resetStatus;
           record.stageInstanceId = undefined;
           record.revision += 1;
           continue;
         }
-        transitionRecord(record, "lobby", { reason: "rematch-reset", tick });
+        transitionRecord(record, resetStatus, { reason: "rematch-reset", tick });
       }
     },
     participant(participantId) {

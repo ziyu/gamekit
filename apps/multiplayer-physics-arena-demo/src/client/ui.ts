@@ -254,7 +254,7 @@ export function updateArenaUi(
 
   ui.root.dataset.phase = snapshot.phase;
   ui.phase.textContent = phaseLabel(snapshot.phase);
-  ui.round.textContent = `ROUND ${String(snapshot.round).padStart(2, "0")}`;
+  ui.round.textContent = `STAGE ${String(snapshot.match.stageIndex + 1).padStart(2, "0")} / ${String(snapshot.match.stageCount).padStart(2, "0")}`;
   const timeMs =
     snapshot.phase === "countdown"
       ? snapshot.countdownMs
@@ -274,7 +274,13 @@ export function updateArenaUi(
     localIndex < 0
       ? `-- / ${String(racers.length).padStart(2, "0")}`
       : `${String(localIndex + 1).padStart(2, "0")} / ${String(racers.length).padStart(2, "0")}`;
-  ui.roster.textContent = `${racers.length} RUNNERS · ${snapshot.eliminatedMemberIds.length} OUT`;
+  const stageEntrants = snapshot.participants.filter(
+    (participant) =>
+      participant.actorMemberId !== undefined &&
+      participant.stageInstanceId === snapshot.match.stageInstanceId
+  );
+  const qualified = snapshot.stageResults.at(-1)?.qualifiedParticipantIds.length ?? 0;
+  ui.roster.textContent = `${racers.length} LIVE · ${snapshot.eliminatedMemberIds.length} OUT${snapshot.phase === "results" ? ` · ${qualified} QUALIFIED` : ""}`;
 
   const localMember = snapshot.frame.members.find((member) => member.id === localMemberId);
   const raceProgress = Math.round(
@@ -287,12 +293,25 @@ export function updateArenaUi(
   if (snapshot.phase === "countdown") {
     ui.hint.append(
       element("strong", undefined, `ROUND ${snapshot.round}`),
-      element("span", undefined, "HOLD THE LINE")
+      element(
+        "span",
+        undefined,
+        `${snapshot.match.stageKind.toUpperCase()} · ${stageEntrants.length} ENTRANTS`
+      )
     );
   } else if (snapshot.phase === "results") {
+    const result = snapshot.stageResults.at(-1);
     ui.hint.append(
-      element("strong", undefined, snapshot.winnerId ?? "NO SURVIVOR"),
-      element("span", undefined, "TAKES THE HEAT")
+      element(
+        "strong",
+        undefined,
+        snapshot.winnerId ?? `${result?.qualifiedParticipantIds.length ?? 0} QUALIFIED`
+      ),
+      element(
+        "span",
+        undefined,
+        snapshot.winnerId === undefined ? "ADVANCE TO THE NEXT STAGE" : "TAKES THE CROWN"
+      )
     );
   } else {
     ui.hint.append(

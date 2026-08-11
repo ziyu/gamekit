@@ -153,4 +153,31 @@ describe("Knockout Arena participant registry", () => {
     expect(registry.diagnostics()).toMatchObject({ transitions: 7, invalidTransitions: 0 });
     registry.dispose();
   });
+
+  it("binds late spectators without assigning a current-stage actor", () => {
+    const registry = createArenaParticipantRegistry({ capacity: 4 });
+    registry.register({
+      id: "spectator.peer-late",
+      kind: "spectator",
+      slot: 3,
+      status: "next-match",
+      tick: 10
+    });
+
+    expect(registry.bindPeer("spectator.peer-late", "peer-late", 10)).toMatchObject({
+      status: "applied",
+      participant: {
+        connected: true,
+        status: "next-match"
+      }
+    });
+    registry.disconnectPeer("peer-late", 11);
+    expect(registry.reconnectPeer("peer-late", 12).participant).toMatchObject({
+      connected: true,
+      status: "next-match"
+    });
+    registry.resetForMatch(13);
+    expect(registry.byPeerId("peer-late")).toMatchObject({ status: "next-match" });
+    registry.dispose();
+  });
 });

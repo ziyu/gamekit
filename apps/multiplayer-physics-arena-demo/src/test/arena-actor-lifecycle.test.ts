@@ -48,10 +48,10 @@ describe("Knockout Arena actor lifecycle", () => {
       island.advanceTo(1);
       expect(island.body(actor.id)).toBeUndefined();
 
-      resetArenaRoundPhysics(island, 2);
+      resetArenaRoundPhysics(island, "m2.s1.r2");
 
       expect(island.state()).toMatchObject({
-        generation: "round.2",
+        generation: "m2.s1.r2",
         tick: 1,
         members: [{ id: actor.id, body: { position: actor.body.position } }]
       });

@@ -11,6 +11,32 @@ describe("Knockout Arena protocol", () => {
       round: 1,
       countdownMs: 0,
       roundTimeMs: 100,
+      match: {
+        matchId: "match.1",
+        phaseInstanceId: "match.1.phase.3",
+        stageIndex: 0,
+        stageCount: 3,
+        stageId: "stage.circuit-forge",
+        stageKind: "qualifier",
+        stageInstanceId: "match.1:stage.circuit-forge:1",
+        startedAtTick: 6,
+        stageStartedAtTick: 6,
+        membershipRevision: 1
+      },
+      participants: [
+        {
+          id: "player.0",
+          kind: "human-slot",
+          slot: 0,
+          actorMemberId: "player.0",
+          peerId: "peer",
+          connected: true,
+          status: "active",
+          stageInstanceId: "match.1:stage.circuit-forge:1",
+          revision: 3
+        }
+      ],
+      stageResults: [],
       frame: {
         islandId: ARENA_ISLAND_ID,
         generation: "round.1",
@@ -43,5 +69,9 @@ describe("Knockout Arena protocol", () => {
     };
     delete missingSequence.actorControlsByMemberId["player.0"]?.sequence;
     expect(readArenaSnapshot(missingSequence)).toBeUndefined();
+
+    const mismatchedRevision = structuredClone(snapshot);
+    mismatchedRevision.match.membershipRevision = 2;
+    expect(readArenaSnapshot(mismatchedRevision)).toBeUndefined();
   });
 });

@@ -36,6 +36,7 @@ import {
   createArenaCharacterIntent,
   createArenaCharacterMotorContributor
 } from "../shared/arena-control";
+import { arenaGenerationKey } from "../shared/arena-identity";
 import {
   ARENA_ENVIRONMENT,
   createArenaMemberDefinitions,
@@ -103,12 +104,12 @@ export function createArenaAuthorityRuntime(
   const definitions = createArenaMemberDefinitions();
   const content = compileArenaContent(createArenaDataRegistry());
   const participants = createArenaParticipantRegistry({
-    capacity: content.matchRule.participantCount,
+    capacity: 64,
     traceCapacity: 256
   });
   installInitialParticipants(participants, definitions);
   const director = createArenaMatchDirector({
-    stageRule: createArenaStageRule(content.stages[0]!.definition),
+    stageRules: content.stages.map((stage) => createArenaStageRule(stage.definition)),
     countdownTicks: Math.ceil(COUNTDOWN_MS / ARENA_FIXED_STEP_MS),
     resultsTicks: Math.ceil(RESULTS_DURATION_MS / ARENA_FIXED_STEP_MS),
     traceCapacity: 128
@@ -125,7 +126,7 @@ export function createArenaAuthorityRuntime(
   const characterMotor = createArenaCharacterMotorContributor();
   const island = createPhysicsPredictionIsland({
     backend: options.backend,
-    generation: `round.1`,
+    generation: arenaGenerationKey({ match: 1, stage: 1, membershipRevision: 1 }),
     initialMembers: definitions,
     environment: ARENA_ENVIRONMENT,
     fixedDeltaMs: ARENA_FIXED_STEP_MS,
@@ -159,8 +160,15 @@ export function createArenaAuthorityRuntime(
     string,
     { progress: number; progressTick: number; centerDistance: number }
   >();
+  let stageEntrantParticipantIds = new Set(
+    participants
+      .list()
+      .filter((participant) => participant.actorMemberId !== undefined)
+      .map((participant) => participant.id)
+  );
   let membershipRevision = 1;
   let latestSettlement: ArenaStageSettlement | undefined;
+  const stageResults: ArenaStageSettlement[] = [];
   let latestPayloadBytes = 0;
   let disposed = false;
   const binding = createMultiplayerAuthorityBindingStore({
@@ -202,7 +210,11 @@ export function createArenaAuthorityRuntime(
       if (
         participant === undefined ||
         !participant.connected ||
-        participant.actorMemberId === undefined
+        participant.actorMemberId === undefined ||
+        participant.status === "spectator" ||
+        participant.status === "next-match" ||
+        participant.status === "eliminated" ||
+        participant.status === "finished"
       ) {
         return {
           allowed: false,
@@ -278,6 +290,7 @@ export function createArenaAuthorityRuntime(
       actorControlsByMemberId.clear();
       authorityEffects.clear();
       rankingSpatialFacts.clear();
+      stageResults.length = 0;
     }
   };
 
@@ -303,25 +316,44 @@ export function createArenaAuthorityRuntime(
       const existing = participants.byPeerId(peer.id);
       if (existing !== undefined) {
         if (!existing.connected) participants.reconnectPeer(peer.id, authorityTick);
-        if (!inputsByPeerId.has(peer.id)) inputsByPeerId.set(peer.id, neutralInput());
-        if (!inputAcksByPeerId.has(peer.id)) inputAcksByPeerId.set(peer.id, 0);
+        if (existing.actorMemberId !== undefined) {
+          if (!inputsByPeerId.has(peer.id)) inputsByPeerId.set(peer.id, neutralInput());
+          if (!inputAcksByPeerId.has(peer.id)) inputAcksByPeerId.set(peer.id, 0);
+        }
         continue;
       }
-      if (director.snapshot().phase === "running" || director.snapshot().phase === "results") {
-        continue;
+      const match = director.snapshot();
+      const canClaimInitialSeat =
+        match.stageIndex === 0 && (match.phase === "lobby" || match.phase === "countdown");
+      const slot = canClaimInitialSeat
+        ? participants
+            .list()
+            .filter((participant) => participant.kind === "human-slot")
+            .find((participant) => participant.peerId === undefined)
+        : undefined;
+      if (slot !== undefined) {
+        const bound = participants.bindPeer(slot.id, peer.id, authorityTick);
+        if (bound.status !== "applied" && bound.status !== "unchanged") continue;
+        inputsByPeerId.set(peer.id, neutralInput());
+        inputAcksByPeerId.set(peer.id, 0);
+      } else {
+        registerLateSpectator(peer.id, authorityTick);
       }
-      const slot = participants
-        .list()
-        .filter((participant) => participant.kind === "human-slot")
-        .find((participant) => participant.peerId === undefined);
-      if (slot === undefined) continue;
-      const bound = participants.bindPeer(slot.id, peer.id, authorityTick);
-      if (bound.status !== "applied" && bound.status !== "unchanged") {
-        continue;
-      }
-      inputsByPeerId.set(peer.id, neutralInput());
-      inputAcksByPeerId.set(peer.id, 0);
     }
+  }
+
+  function registerLateSpectator(peerId: string, authorityTick: number): void {
+    const records = participants.list();
+    const participantId = `spectator.${peerId}`;
+    const registered = participants.register({
+      id: participantId,
+      kind: "spectator",
+      slot: records.reduce((highest, participant) => Math.max(highest, participant.slot), -1) + 1,
+      status: "next-match",
+      tick: authorityTick
+    });
+    if (registered.status !== "applied" && registered.status !== "conflict") return;
+    participants.bindPeer(participantId, peerId, authorityTick);
   }
 
   function advanceMatch(authorityTick: number): void {
@@ -331,27 +363,48 @@ export function createArenaAuthorityRuntime(
     }
     const entrantParticipantIds = participants
       .list()
-      .filter((participant) => participant.actorMemberId !== undefined)
+      .filter((participant) => stageEntrantParticipantIds.has(participant.id))
       .map((participant) => participant.id);
+    const activeParticipantIds = participants
+      .competitiveParticipantIds()
+      .filter((participantId) => stageEntrantParticipantIds.has(participantId));
     const result = director.advance({
       tick: authorityTick,
-      connectedHumans: participants.connectedBindings().length,
+      connectedHumans: participants
+        .list()
+        .filter((participant) => participant.kind === "human-slot" && participant.connected).length,
       entrantParticipantIds,
-      activeParticipantIds: participants.competitiveParticipantIds()
+      activeParticipantIds
     });
     for (const action of result.actions) {
       if (action.type === "stage-started") {
         activateStageParticipants(authorityTick, action.stageInstanceId);
       } else if (action.type === "stage-completed") {
         settleStageParticipants(authorityTick, action.reason, action.winnerParticipantId);
+      } else if (action.type === "stage-prepared") {
+        prepareStageParticipants(authorityTick, action.stageInstanceId, action.stageIndex);
       } else {
-        resetArenaRoundPhysics(island, action.round);
         participants.resetForMatch(authorityTick);
         membershipRevision += 1;
+        stageEntrantParticipantIds = new Set(
+          participants
+            .list()
+            .filter((participant) => participant.actorMemberId !== undefined)
+            .map((participant) => participant.id)
+        );
+        resetArenaRoundPhysics(
+          island,
+          arenaGenerationKey({
+            match: action.round,
+            stage: action.stageIndex + 1,
+            membershipRevision
+          })
+        );
         authorityEffects.clear();
         rankingSpatialFacts.clear();
         impactLedger.reset();
         latestSettlement = undefined;
+        stageResults.length = 0;
       }
     }
   }
@@ -365,9 +418,18 @@ export function createArenaAuthorityRuntime(
           tick: authorityTick,
           stageInstanceId
         });
-      } else if (participant.status === "disconnected") {
+      } else if (participant.status === "qualified") {
         participants.transition(participant.id, "active", {
-          reason: "match-started",
+          reason: "next-stage",
+          tick: authorityTick,
+          stageInstanceId
+        });
+      } else if (
+        participant.status === "disconnected" &&
+        (participant.resumeStatus === "lobby" || participant.resumeStatus === "qualified")
+      ) {
+        participants.transition(participant.id, "active", {
+          reason: participant.resumeStatus === "qualified" ? "next-stage" : "match-started",
           tick: authorityTick,
           stageInstanceId
         });
@@ -378,13 +440,61 @@ export function createArenaAuthorityRuntime(
     }
   }
 
+  function prepareStageParticipants(
+    authorityTick: number,
+    stageInstanceId: string,
+    stageIndex: number
+  ): void {
+    const nextEntrants = new Set<string>();
+    for (const participant of participants.list()) {
+      if (participant.actorMemberId === undefined) continue;
+      const qualified =
+        participant.status === "qualified" ||
+        (participant.status === "disconnected" && participant.resumeStatus === "qualified");
+      if (qualified) {
+        nextEntrants.add(participant.id);
+        continue;
+      }
+      if (
+        participant.status === "eliminated" ||
+        participant.status === "finished" ||
+        participant.status === "disconnected"
+      ) {
+        const wasDisconnected = participant.status === "disconnected";
+        participants.transition(participant.id, "spectator", {
+          reason: "spectating",
+          tick: authorityTick,
+          stageInstanceId
+        });
+        if (wasDisconnected && participant.peerId !== undefined) {
+          participants.disconnectPeer(participant.peerId, authorityTick);
+        }
+      }
+    }
+    stageEntrantParticipantIds = nextEntrants;
+    membershipRevision += 1;
+    resetArenaRoundPhysics(
+      island,
+      arenaGenerationKey({
+        match: director.snapshot().round,
+        stage: stageIndex + 1,
+        membershipRevision
+      })
+    );
+    authorityEffects.clear();
+    rankingSpatialFacts.clear();
+    impactLedger.reset();
+    latestSettlement = undefined;
+  }
+
   function settleStageParticipants(
     authorityTick: number,
     completionReason: string,
     winnerParticipantId: string | undefined
   ): void {
-    const stage = content.stages[0]!.definition;
-    const stageInstanceId = director.snapshot().stageInstanceId;
+    const match = director.snapshot();
+    const stage = content.stages[match.stageIndex]!.definition;
+    const stageInstanceId = match.stageInstanceId;
     const settlement = settleArenaStageRanking({
       stageInstanceId,
       stageKind: stage.kind,
@@ -417,6 +527,8 @@ export function createArenaAuthorityRuntime(
     }
     if (eliminated > 0) membershipRevision += 1;
     latestSettlement = settlement;
+    stageResults.push(settlement);
+    while (stageResults.length > content.stages.length) stageResults.shift();
   }
 
   function createRankingFacts(authorityTick: number): ArenaStageRankingFact[] {
@@ -424,7 +536,7 @@ export function createArenaAuthorityRuntime(
     const activeIds = new Set(participants.competitiveParticipantIds());
     return participants
       .list()
-      .filter((participant) => participant.actorMemberId !== undefined)
+      .filter((participant) => stageEntrantParticipantIds.has(participant.id))
       .map((participant) => {
         const spatial = rankingSpatialFacts.get(participant.id) ?? {
           progress: -1_000_000,
@@ -609,7 +721,12 @@ export function createArenaAuthorityRuntime(
     const participant = participants.byActorMemberId(memberId);
     const step = resolveArenaActorAuthorityStep({
       phase: director.snapshot().phase,
-      eliminated: participant?.status === "eliminated",
+      eliminated:
+        participant === undefined ||
+        !stageEntrantParticipantIds.has(participant.id) ||
+        participant.status === "eliminated" ||
+        participant.status === "spectator" ||
+        participant.status === "next-match",
       input,
       memberAvailable: body !== undefined
     });
@@ -629,6 +746,11 @@ export function createArenaAuthorityRuntime(
   function captureSnapshot(): ArenaSnapshot {
     const state = island.state();
     const match = director.snapshot();
+    const winnerId =
+      match.winnerParticipantId ??
+      (match.phase === "results" && match.stageKind === "final"
+        ? latestSettlement?.winnerParticipantId
+        : undefined);
     const result = projection.capture({
       islandId: ARENA_ISLAND_ID,
       generation: state.generation,
@@ -655,7 +777,41 @@ export function createArenaAuthorityRuntime(
         ARENA_FIXED_STEP_MS,
         authorityLoop?.diagnostics().tick ?? 0
       ),
-      ...(match.winnerParticipantId === undefined ? {} : { winnerId: match.winnerParticipantId }),
+      ...(winnerId === undefined ? {} : { winnerId }),
+      match: {
+        matchId: match.matchId,
+        phaseInstanceId: match.phaseInstanceId,
+        stageIndex: match.stageIndex,
+        stageCount: match.stageCount,
+        stageId: match.stageId,
+        stageKind: match.stageKind,
+        stageInstanceId: match.stageInstanceId,
+        startedAtTick: match.startedAtTick,
+        ...(match.stageStartedAtTick === undefined
+          ? {}
+          : { stageStartedAtTick: match.stageStartedAtTick }),
+        ...(match.deadlineTick === undefined ? {} : { deadlineTick: match.deadlineTick }),
+        membershipRevision
+      },
+      participants: participants.list().map((participant) => ({
+        id: participant.id,
+        kind: participant.kind,
+        slot: participant.slot,
+        ...(participant.actorMemberId === undefined
+          ? {}
+          : { actorMemberId: participant.actorMemberId }),
+        ...(participant.peerId === undefined ? {} : { peerId: participant.peerId }),
+        connected: participant.connected,
+        status: participant.status,
+        ...(participant.resumeStatus === undefined
+          ? {}
+          : { resumeStatus: participant.resumeStatus }),
+        ...(participant.stageInstanceId === undefined
+          ? {}
+          : { stageInstanceId: participant.stageInstanceId }),
+        revision: participant.revision
+      })),
+      stageResults: structuredClone(stageResults),
       frame: result.frame,
       playerIdsByPeerId: Object.fromEntries(
         participants
@@ -668,7 +824,16 @@ export function createArenaAuthorityRuntime(
       actorControlsByMemberId: Object.fromEntries(
         [...actorControlsByMemberId.entries()].sort(([left], [right]) => left.localeCompare(right))
       ),
-      eliminatedMemberIds: participants.eliminatedActorMemberIds(),
+      eliminatedMemberIds: definitions.flatMap((definition) => {
+        if (!isArenaActor(definition.id)) return [];
+        const participant = participants.byActorMemberId(definition.id);
+        return participant === undefined ||
+          !stageEntrantParticipantIds.has(participant.id) ||
+          participant.status === "eliminated" ||
+          participant.status === "spectator"
+          ? [definition.id]
+          : [];
+      }),
       effects: [...authorityEffects.values()].sort(
         (left, right) => left.tick - right.tick || left.id.localeCompare(right.id)
       ),

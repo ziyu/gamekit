@@ -26,6 +26,62 @@ export type ArenaAuthorityEffectCue = {
   colliderB: string;
 };
 
+export type ArenaPublicParticipantStatus =
+  | "lobby"
+  | "active"
+  | "qualified"
+  | "eliminated"
+  | "spectator"
+  | "next-match"
+  | "disconnected"
+  | "finished";
+
+export type ArenaPublicParticipantState = {
+  id: string;
+  kind: "human-slot" | "bot" | "spectator";
+  slot: number;
+  actorMemberId?: string | undefined;
+  peerId?: string | undefined;
+  connected: boolean;
+  status: ArenaPublicParticipantStatus;
+  resumeStatus?: ArenaPublicParticipantStatus | undefined;
+  stageInstanceId?: string | undefined;
+  revision: number;
+};
+
+export type ArenaPublicMatchState = {
+  matchId: string;
+  phaseInstanceId: string;
+  stageIndex: number;
+  stageCount: number;
+  stageId: string;
+  stageKind: "qualifier" | "brawl" | "final";
+  stageInstanceId: string;
+  startedAtTick: number;
+  stageStartedAtTick?: number | undefined;
+  deadlineTick?: number | undefined;
+  membershipRevision: number;
+};
+
+export type ArenaPublicStagePlacement = {
+  id: string;
+  rank: number;
+  participantId: string;
+  outcome: "qualified" | "eliminated" | "winner";
+  rankingKey: Array<number | string>;
+};
+
+export type ArenaPublicStageResult = {
+  id: string;
+  stageInstanceId: string;
+  stageKind: "qualifier" | "brawl" | "final";
+  reason: "stage-rule" | "timeout-tiebreak";
+  placements: ArenaPublicStagePlacement[];
+  qualifiedParticipantIds: string[];
+  eliminatedParticipantIds: string[];
+  winnerParticipantId?: string | undefined;
+};
+
 export type ArenaSnapshot = {
   schemaVersion: typeof ARENA_SCHEMA_VERSION;
   phase: ArenaMatchPhase;
@@ -33,6 +89,9 @@ export type ArenaSnapshot = {
   countdownMs: number;
   roundTimeMs: number;
   winnerId?: string | undefined;
+  match: ArenaPublicMatchState;
+  participants: ArenaPublicParticipantState[];
+  stageResults: ArenaPublicStageResult[];
   frame: MultiplayerPhysicsArenaFrame;
   playerIdsByPeerId: Record<string, string>;
   inputAcksByPeerId: Record<string, number>;
@@ -70,8 +129,21 @@ export function readArenaSnapshot(value: unknown): ArenaSnapshot | undefined {
     !nonNegativeFinite(value.countdownMs) ||
     !nonNegativeFinite(value.roundTimeMs) ||
     (value.winnerId !== undefined && typeof value.winnerId !== "string") ||
+    !isPublicMatchState(value.match) ||
+    value.match.membershipRevision < 1 ||
+    value.match.stageIndex >= value.match.stageCount ||
+    !Array.isArray(value.participants) ||
+    value.participants.length > 64 ||
+    !value.participants.every(isPublicParticipantState) ||
+    new Set(value.participants.map((participant) => participant.id)).size !==
+      value.participants.length ||
+    !Array.isArray(value.stageResults) ||
+    value.stageResults.length > 8 ||
+    !value.stageResults.every(isPublicStageResult) ||
+    new Set(value.stageResults.map((result) => result.id)).size !== value.stageResults.length ||
     !isRecord(value.frame) ||
     value.frame.definitionVersion !== ARENA_DEFINITION_VERSION ||
+    value.frame.membershipRevision !== value.match.membershipRevision ||
     !isRecord(value.playerIdsByPeerId) ||
     !isRecord(value.inputAcksByPeerId) ||
     !isRecord(value.actorControlsByMemberId) ||
@@ -97,6 +169,111 @@ export function readArenaSnapshot(value: unknown): ArenaSnapshot | undefined {
     return undefined;
   }
   return structuredClone(value) as ArenaSnapshot;
+}
+
+function isPublicMatchState(value: unknown): value is ArenaPublicMatchState {
+  return (
+    isRecord(value) &&
+    boundedId(value.matchId) &&
+    boundedId(value.phaseInstanceId) &&
+    nonNegativeSafeInteger(value.stageIndex) &&
+    nonNegativeSafeInteger(value.stageCount) &&
+    value.stageCount > 0 &&
+    boundedId(value.stageId) &&
+    isStageKind(value.stageKind) &&
+    boundedId(value.stageInstanceId) &&
+    nonNegativeSafeInteger(value.startedAtTick) &&
+    (value.stageStartedAtTick === undefined || nonNegativeSafeInteger(value.stageStartedAtTick)) &&
+    (value.deadlineTick === undefined || nonNegativeSafeInteger(value.deadlineTick)) &&
+    nonNegativeSafeInteger(value.membershipRevision)
+  );
+}
+
+function isPublicParticipantState(value: unknown): value is ArenaPublicParticipantState {
+  return (
+    isRecord(value) &&
+    boundedId(value.id) &&
+    (value.kind === "human-slot" || value.kind === "bot" || value.kind === "spectator") &&
+    nonNegativeSafeInteger(value.slot) &&
+    (value.actorMemberId === undefined || boundedId(value.actorMemberId)) &&
+    (value.peerId === undefined || boundedId(value.peerId)) &&
+    typeof value.connected === "boolean" &&
+    isParticipantStatus(value.status) &&
+    (value.resumeStatus === undefined || isParticipantStatus(value.resumeStatus)) &&
+    (value.stageInstanceId === undefined || boundedId(value.stageInstanceId)) &&
+    nonNegativeSafeInteger(value.revision) &&
+    value.revision > 0
+  );
+}
+
+function isPublicStageResult(value: unknown): value is ArenaPublicStageResult {
+  if (
+    !isRecord(value) ||
+    !boundedId(value.id) ||
+    !boundedId(value.stageInstanceId) ||
+    !isStageKind(value.stageKind) ||
+    (value.reason !== "stage-rule" && value.reason !== "timeout-tiebreak") ||
+    !Array.isArray(value.placements) ||
+    value.placements.length > 64 ||
+    !value.placements.every(isPublicStagePlacement) ||
+    new Set(value.placements.map((placement) => placement.id)).size !== value.placements.length ||
+    !boundedIdArray(value.qualifiedParticipantIds, 64) ||
+    !boundedIdArray(value.eliminatedParticipantIds, 64) ||
+    (value.winnerParticipantId !== undefined && !boundedId(value.winnerParticipantId))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function isPublicStagePlacement(value: unknown): value is ArenaPublicStagePlacement {
+  return (
+    isRecord(value) &&
+    boundedId(value.id) &&
+    nonNegativeSafeInteger(value.rank) &&
+    value.rank > 0 &&
+    boundedId(value.participantId) &&
+    (value.outcome === "qualified" ||
+      value.outcome === "eliminated" ||
+      value.outcome === "winner") &&
+    Array.isArray(value.rankingKey) &&
+    value.rankingKey.length <= 16 &&
+    value.rankingKey.every(
+      (entry) =>
+        (typeof entry === "number" && Number.isFinite(entry)) ||
+        (typeof entry === "string" && entry.length <= 256)
+    )
+  );
+}
+
+function isParticipantStatus(value: unknown): value is ArenaPublicParticipantStatus {
+  return (
+    value === "lobby" ||
+    value === "active" ||
+    value === "qualified" ||
+    value === "eliminated" ||
+    value === "spectator" ||
+    value === "next-match" ||
+    value === "disconnected" ||
+    value === "finished"
+  );
+}
+
+function isStageKind(value: unknown): value is ArenaPublicMatchState["stageKind"] {
+  return value === "qualifier" || value === "brawl" || value === "final";
+}
+
+function boundedIdArray(value: unknown, capacity: number): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= capacity &&
+    value.every(boundedId) &&
+    new Set(value).size === value.length
+  );
+}
+
+function boundedId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 256;
 }
 
 function readActorControlMap(

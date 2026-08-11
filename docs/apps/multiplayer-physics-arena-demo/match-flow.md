@@ -13,8 +13,8 @@ winner、KO credit 和 rematch 清理；不拥有 Physics step、网络 transpor
 
 - Participant Registry 拥有 `participantId`、slot/actor/peer 绑定、连接状态、participant status、revision 与有界 transition trace。
   Transport peer 连接或断开只能通过 registry 改变绑定，不能直接改 Physics member 或 winner。
-- Match Director 拥有 match/round、phase/stage instance、phase deadline、winner 引用与有界 phase trace。它只输出
-  `stage-started`、`stage-completed`、`rematch-reset` action，不直接操作 Physics、Registry 或网络。
+- Match Director 拥有 match/round、stage 顺序、phase/stage instance、phase deadline、winner 引用与有界 phase trace。它只输出
+  `stage-prepared`、`stage-started`、`stage-completed`、`rematch-reset` action，不直接操作 Physics、Registry 或网络。
 - Stage Rule 是从 compiled stage definition 创建的无状态规则边界，消费 entrant/active participant id 与 authority elapsed tick，
   只返回 continue 或带稳定 reason 的 complete。排名、晋级和 tie-break 在专用 ranking policy 中实现，不能塞回 director。
 
@@ -50,6 +50,9 @@ attribution。KO 使用 knockout window 内最后一个超过 threshold 的敌�
 
 旧 match 的 command、input epoch、prediction history、effect watermark 或 result 不能跨 `matchId` 复用。
 
+每个 `stage-prepared` action 创建新的 Physics generation。Generation 同时编码 match、stage 和安装时的 membership revision；
+客户端以 frame generation 作为 playback、prediction island 与 effect journal 的共同 reset identity，不能只比较 round 或本地 tick。
+
 ## 参与者状态
 
 ```ts
@@ -71,7 +74,7 @@ type ArenaParticipantStatus =
 - `active → eliminated`：离开有效场地、未进入晋级名额、forfeit 或规则淘汰。
 - `qualified → active`：下一 stage 新 generation 安装完成。
 - `eliminated/finished → spectator`：保留房间连接并可选择观战目标。
-- `spectator/next-match → lobby`：下一场 match 重新组建阵容。
+- `spectator/next-match → lobby`：下一场 match 按可用真人席位重新组建阵容；无可用席位时继续排队/观战。
 - 任意在线状态 → `disconnected`：席位进入有界 reconnect grace；超时后按 stage policy 处理。
 
 同一个 stage 内 `eliminated` 不能回到 `active`。网络重连只恢复已经存在的 authority participant 状态，不复活角色。
@@ -197,8 +200,17 @@ results vote。显示名与用户输入/辅助设置可以保留，比赛内 sco
 
 ## Authority Projection 与诊断
 
-Match projection 公开 phase、deadline、participant status、排名、stage objective、winner 和有界 result/KO feed。它不复制
-内部候选排序缓存、AI 决策、Physics contact 列表或每 tick 全量 ledger。
+Match projection 公开：
+
+- `matchId`、`phaseInstanceId`、`stageIndex/stageCount`、`stageId/kind/instanceId`、authority start/deadline tick 与
+  `membershipRevision`。
+- 有界 participant roster，包括 kind、slot、actor/peer binding、connected、status/resume status、stage instance 与 revision。
+- 每个已结算 stage 的稳定 placement、qualified/eliminated 集合、ranking key、timeout reason 与 final winner。
+- 当前 Physics frame、peer input ack、实际 actor control、离岛 actor、authority effect 与容量诊断。
+
+协议 reader 必须同时验证 schema/definition、有限数字、唯一 id、participant/result 容量，以及
+`match.membershipRevision === frame.membershipRevision`。Projection 不复制内部候选排序缓存、AI 决策、Physics contact 列表或
+每 tick 全量 ledger。
 
 诊断至少回答：
 
