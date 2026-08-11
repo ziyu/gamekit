@@ -124,6 +124,16 @@ intent；actor 因淘汰先于 task update 脱离物理岛时，task 以 `actor-
 - Portal 表达 jump/launch/moving-platform entry/exit；Task 到达 entry 后提交语义 traversal intent，Navigation 不 teleport body。
 - Route 完成、目标变化、agent 淘汰或 stage reset 时显式 release；不能累积 route/field。
 
+生产 Room 在已有 async runtime factory 内初始化 Recast WASM，并为三关一次性烘焙 artifact；同步 authority 只接收准备完成的
+Arena navigation runtime，不在 tick 内初始化或烘焙。每关持有独立标准 `NavigationRuntime`/Recast backend，共用
+`arena.bot.navigation` profile，提交和 poll 预算分别限制为每 tick 2/8，request、result、route、field、cache 和 trace 均有硬上限。
+Stage 切换先释放 wrapper 记录的 request/route，再切 active runtime；authority dispose 后 retained request/route 必须为 0。
+
+AI task 通过 AI Core 的 per-agent `NavigationQueries` 请求 route：checkpoint、finish、objective 和 safe region 使用共享 goal field，
+移动 item/opponent 使用 point path。Task state 只保存 request/route id、revision、remaining/cross-track distance、retry deadline 和
+stuck 摘要；cancel、target change、stale/missing route、agent removal 都显式 cancel/release。Navigation owner 仍是标准 runtime，
+Arena 不缓存 native polygon、field handle 或 Recast object。
+
 ## Local Steering 与 Hazard Timing
 
 Arena steering 组合：
@@ -143,6 +153,10 @@ Navigation preferred direction
 - Steering 不直接覆盖已提交 knockback/stagger；Character Controller 决定本 tick 可接受的控制量。
 - Stuck tracker 观察 authority position/progress；恢复顺序是重新投影 → 重寻路 → 短期 backoff → 有记录的 task fail，不能
   静默 teleport。
+
+当前 steering 每 tick 组合 route preferred direction、有界 2.4 m actor separation 与 warning/active hazard avoidance，并把结果归一化
+为移动 intent；近距离 active hazard 只发出 jump intent，不改 body。进度锚点移动 0.55 m 才刷新；1.25 秒无进度触发由 agent id
+稳定散列的 backoff，最多两次，随后以 `stuck` 失败并进入 AI Core failure backoff。该状态完全属于 task，stage 解绑即清除。
 
 ## Archetype
 

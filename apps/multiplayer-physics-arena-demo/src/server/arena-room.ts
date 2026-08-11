@@ -7,6 +7,8 @@ import {
 } from "@gamekit/multiplayer-colyseus/server";
 import { initRapier3dPhysicsBackend } from "@gamekit/physics-rapier3d";
 
+import { prepareArenaBotNavigationRuntime } from "../ai/navigation";
+import { ARENA_COMPILED_CONTENT } from "../content/default-content";
 import { ARENA_FIXED_STEP_MS, ARENA_MESSAGE_TYPE, arenaAuthorityPeerId } from "../shared/config";
 import {
   createArenaAuthorityRuntime,
@@ -64,9 +66,11 @@ export class KnockoutArenaRoom extends Room {
           id: `knockout.rapier3d.${sessionId}`,
           groups: { "arena-item": 0b001, "arena-actor": 0b010, "arena-world": 0b100 }
         });
+        const navigation = await prepareArenaBotNavigationRuntime(ARENA_COMPILED_CONTENT);
         const authority: ArenaAuthorityRuntime = createArenaAuthorityRuntime({
           runtime: multiplayer,
           backend,
+          navigation,
           sessionId,
           authorityPeerId
         });

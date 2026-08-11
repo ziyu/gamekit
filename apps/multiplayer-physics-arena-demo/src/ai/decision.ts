@@ -12,6 +12,7 @@ import {
   type AiUtilityInputResolver
 } from "@gamekit/ai-core";
 import { createDataRegistry, type DataPack, type DataTypeDefinition } from "@gamekit/data";
+import type { NavigationQueries } from "@gamekit/navigation-core";
 import type { PhysicsQueries } from "@gamekit/physics-core";
 
 import type { CompiledArenaContent } from "../content/registry";
@@ -26,6 +27,7 @@ import {
   createArenaBotSensorSamplers,
   type ArenaBotPerceptionSource
 } from "./perception";
+import { navigateArenaBotToFact, releaseArenaBotNavigation } from "./navigation-task";
 
 const ARENA_BOT_ACTION_QUEUE_LIMIT = 32;
 
@@ -57,6 +59,7 @@ export type ArenaBotDecisionRuntime = {
   drainActions(): ArenaBotDecisionAction[];
   scoreGoals(memberId: string): ReturnType<AiRuntime["scoreGoals"]>;
   agent(memberId: string): ReturnType<AiRuntime["getAgent"]>;
+  traces(): ReturnType<AiRuntime["traces"]>;
   snapshot(): ArenaBotDecisionSnapshot;
   dispose(): void;
 };
@@ -65,6 +68,7 @@ export function createArenaBotDecisionRuntime(options: {
   content: Readonly<CompiledArenaContent>;
   perception: ArenaBotPerceptionSource;
   physics?: PhysicsQueries | undefined;
+  navigation?: NavigationQueries | undefined;
 }): ArenaBotDecisionRuntime {
   const dataRegistry = createArenaAiDataRegistry(options.content);
   const intents: AiIntent[] = [];
@@ -78,6 +82,7 @@ export function createArenaBotDecisionRuntime(options: {
     dataRegistry,
     world: emptyWorld(),
     ...(options.physics === undefined ? {} : { physics: options.physics }),
+    ...(options.navigation === undefined ? {} : { navigation: options.navigation }),
     sensors: createArenaBotSensorSamplers(options.perception),
     inputs: createArenaUtilityInputs(),
     tasks: createArenaTaskExecutors(options.perception),
@@ -180,6 +185,9 @@ export function createArenaBotDecisionRuntime(options: {
     },
     agent(memberId) {
       return runtime.getAgent(arenaBotAgentId(memberId));
+    },
+    traces() {
+      return runtime.traces();
     },
     snapshot() {
       const snapshot = runtime.snapshot();
@@ -393,14 +401,20 @@ function createArenaUtilityInputs(): AiUtilityInputResolver[] {
 
 function createArenaTaskExecutors(source: ArenaBotPerceptionSource): AiTaskExecutor[] {
   return [
-    movementExecutor("arena.advance", source, (context) =>
-      latestFact(context, ARENA_OBJECTIVE_FACT)
+    movementExecutor(
+      "arena.advance",
+      source,
+      (context) => latestFact(context, ARENA_OBJECTIVE_FACT),
+      "field"
     ),
     surviveExecutor(source),
     interactionExecutor(source),
     attackExecutor(source),
-    movementExecutor("arena.contest-objective", source, (context) =>
-      latestFact(context, ARENA_OBJECTIVE_FACT)
+    movementExecutor(
+      "arena.contest-objective",
+      source,
+      (context) => latestFact(context, ARENA_OBJECTIVE_FACT),
+      "field"
     ),
     recoverExecutor(source)
   ];
@@ -409,15 +423,19 @@ function createArenaTaskExecutors(source: ArenaBotPerceptionSource): AiTaskExecu
 function movementExecutor(
   id: string,
   source: ArenaBotPerceptionSource,
-  target: (context: AiAgentReadContext) => AiPerceptionFact | undefined
+  target: (context: AiAgentReadContext) => AiPerceptionFact | undefined,
+  routeKind: "path" | "field"
 ): AiTaskExecutor {
   return {
     id,
     start(context) {
-      return moveTowardFact(context, source, target(context));
+      return navigateArenaBotToFact(context, source, target(context), routeKind);
     },
     update(context) {
-      return moveTowardFact(context, source, target(context));
+      return navigateArenaBotToFact(context, source, target(context), routeKind);
+    },
+    cancel(context) {
+      releaseArenaBotNavigation(context);
     }
   };
 }
@@ -430,6 +448,9 @@ function surviveExecutor(source: ArenaBotPerceptionSource): AiTaskExecutor {
     },
     update(context) {
       return moveAwayFromHazard(context, source);
+    },
+    cancel(context) {
+      releaseArenaBotNavigation(context);
     }
   };
 }
@@ -455,10 +476,12 @@ function interactionExecutor(source: ArenaBotPerceptionSource): AiTaskExecutor {
       }
       const item = nearestFact(context, ARENA_ITEM_FACT);
       if (item?.position === undefined || item.subjectId === undefined) {
+        releaseArenaBotNavigation(context);
         return { status: "failed", reason: "item-stale", safeToInterrupt: true };
       }
       const self = readSelf(source, context.agent);
       if (self === undefined) {
+        releaseArenaBotNavigation(context);
         return { status: "failed", reason: "actor-unavailable", safeToInterrupt: true };
       }
       const distance = distance2(
@@ -467,16 +490,20 @@ function interactionExecutor(source: ArenaBotPerceptionSource): AiTaskExecutor {
         item.position.x,
         item.position.y
       );
-      if (distance > 1.6) return moveTowardFact(context, source, item);
+      if (distance > 1.6) return navigateArenaBotToFact(context, source, item, "path");
       if (context.elapsed < numeric(context.state.readyAt)) {
         return { status: "running", safeToInterrupt: true, state: { ...context.state } };
       }
       context.emit({ type: "interaction", interactionId: "pickup", targetId: item.subjectId });
+      releaseArenaBotNavigation(context);
       return {
         status: "running",
         safeToInterrupt: false,
         state: { phase: "committed", targetId: item.subjectId, committedAt: context.elapsed }
       };
+    },
+    cancel(context) {
+      releaseArenaBotNavigation(context);
     }
   };
 }
@@ -502,10 +529,12 @@ function attackExecutor(source: ArenaBotPerceptionSource): AiTaskExecutor {
       }
       const opponent = nearestFact(context, ARENA_OPPONENT_FACT);
       if (opponent?.position === undefined || opponent.subjectId === undefined) {
+        releaseArenaBotNavigation(context);
         return { status: "failed", reason: "target-lost", safeToInterrupt: true };
       }
       const self = readSelf(source, context.agent);
       if (self === undefined) {
+        releaseArenaBotNavigation(context);
         return { status: "failed", reason: "actor-unavailable", safeToInterrupt: true };
       }
       const distance = distance2(
@@ -514,16 +543,20 @@ function attackExecutor(source: ArenaBotPerceptionSource): AiTaskExecutor {
         opponent.position.x,
         opponent.position.y
       );
-      if (distance > 2.8) return moveTowardFact(context, source, opponent);
+      if (distance > 2.8) return navigateArenaBotToFact(context, source, opponent, "path");
       if (context.elapsed < numeric(context.state.readyAt)) {
         return { status: "running", safeToInterrupt: true, state: { ...context.state } };
       }
       context.emit({ type: "action", actionId: "use", targetId: opponent.subjectId });
+      releaseArenaBotNavigation(context);
       return {
         status: "running",
         safeToInterrupt: false,
         state: { phase: "committed", targetId: opponent.subjectId, committedAt: context.elapsed }
       };
+    },
+    cancel(context) {
+      releaseArenaBotNavigation(context);
     }
   };
 }
@@ -536,6 +569,9 @@ function recoverExecutor(source: ArenaBotPerceptionSource): AiTaskExecutor {
     },
     update(context) {
       return recover(context);
+    },
+    cancel(context) {
+      releaseArenaBotNavigation(context);
     }
   };
 
@@ -543,8 +579,14 @@ function recoverExecutor(source: ArenaBotPerceptionSource): AiTaskExecutor {
     const impact = latestFact(context, ARENA_IMPACT_FACT);
     const direction = vector(impact?.metadata?.direction);
     if (direction === undefined) {
-      return moveTowardFact(context, source, latestFact(context, ARENA_OBJECTIVE_FACT));
+      return navigateArenaBotToFact(
+        context,
+        source,
+        latestFact(context, ARENA_OBJECTIVE_FACT),
+        "field"
+      );
     }
+    releaseArenaBotNavigation(context);
     context.emit({ type: "movement", desiredVelocity: { x: -direction.x, y: -direction.z } });
     return { status: "running", safeToInterrupt: false, state: { phase: "recover" } };
   }
@@ -553,8 +595,14 @@ function recoverExecutor(source: ArenaBotPerceptionSource): AiTaskExecutor {
 function moveAwayFromHazard(context: AiTaskContext, source: ArenaBotPerceptionSource): AiTaskStep {
   const hazard = nearestFact(context, ARENA_HAZARD_FACT);
   if (hazard?.position === undefined) {
-    return moveTowardFact(context, source, latestFact(context, ARENA_OBJECTIVE_FACT));
+    return navigateArenaBotToFact(
+      context,
+      source,
+      latestFact(context, ARENA_OBJECTIVE_FACT),
+      "field"
+    );
   }
+  releaseArenaBotNavigation(context);
   const self = readSelf(source, context.agent);
   if (self === undefined) {
     return { status: "failed", reason: "actor-unavailable", safeToInterrupt: true };
@@ -568,30 +616,6 @@ function moveAwayFromHazard(context: AiTaskContext, source: ArenaBotPerceptionSo
     context.emit({ type: "action", actionId: "jump" });
   }
   return { status: "running", safeToInterrupt: true, state: { phase: "escape" } };
-}
-
-function moveTowardFact(
-  context: AiTaskContext,
-  source: ArenaBotPerceptionSource,
-  fact: AiPerceptionFact | undefined
-): AiTaskStep {
-  if (fact?.position === undefined) {
-    return { status: "failed", reason: "target-lost", safeToInterrupt: true };
-  }
-  const self = readSelf(source, context.agent);
-  if (self === undefined) {
-    return { status: "failed", reason: "actor-unavailable", safeToInterrupt: true };
-  }
-  const direction = normalize2(
-    fact.position.x - self.position.x,
-    fact.position.y - (self.position.z ?? 0)
-  );
-  context.emit({ type: "movement", desiredVelocity: { x: direction.x, y: direction.y } });
-  return {
-    status: "running",
-    safeToInterrupt: true,
-    state: { phase: "move", targetId: fact.subjectId ?? fact.key }
-  };
 }
 
 function utility(id: string, read: AiUtilityInputResolver["read"]): AiUtilityInputResolver {

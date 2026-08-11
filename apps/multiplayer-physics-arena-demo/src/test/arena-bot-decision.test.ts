@@ -29,7 +29,7 @@ describe("Knockout Arena bot decisions", () => {
       goalId: "ai.goal.arena.sprinter.advance",
       task: { taskId: "ai.task.arena.advance", status: "running" }
     });
-    expect(leftInputs.filter(({ moveZ }) => moveZ !== 0).at(-1)).toMatchObject({
+    expect(leftInputs.find(({ moveZ }) => moveZ !== 0)).toMatchObject({
       moveX: 0,
       moveZ: -1
     });

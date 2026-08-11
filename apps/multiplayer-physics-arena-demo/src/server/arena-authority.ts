@@ -23,6 +23,7 @@ import {
   type ArenaAuthorityPerceptionState
 } from "../ai/authority-perception";
 import { createArenaBotDecisionRuntime, type ArenaBotDecisionSnapshot } from "../ai/decision";
+import type { ArenaBotNavigationRuntime, ArenaBotNavigationSnapshot } from "../ai/navigation";
 import { ARENA_COMPILED_CONTENT } from "../content/default-content";
 import { createArenaMatchDirector, type ArenaMatchDirectorSnapshot } from "../match/match-director";
 import { createArenaImpactLedger, type ArenaImpactLedgerDiagnostics } from "../match/impact-ledger";
@@ -100,6 +101,7 @@ export type ArenaAuthorityRuntimeSnapshot = {
   items: ArenaItemAuthorityCoordinatorDiagnostics["runtime"];
   combat: ArenaCombatAuthorityDiagnostics;
   ai: ArenaBotDecisionSnapshot;
+  navigation?: ArenaBotNavigationSnapshot | undefined;
   settlement?: ArenaStageSettlement | undefined;
 };
 
@@ -137,6 +139,8 @@ export type ArenaAuthorityRetainedState = {
   aiActiveTasks: number;
   aiMemoryFacts: number;
   aiPendingActions: number;
+  navigationPendingRequests: number;
+  navigationRetainedRoutes: number;
 };
 
 export type CreateArenaAuthorityRuntimeOptions = {
@@ -144,6 +148,7 @@ export type CreateArenaAuthorityRuntimeOptions = {
   backend: PhysicsBackendAdapter;
   sessionId: string;
   authorityPeerId: string;
+  navigation?: ArenaBotNavigationRuntime | undefined;
   now?: () => number;
 };
 
@@ -256,7 +261,11 @@ export function createArenaAuthorityRuntime(
     content,
     state: () => botPerceptionState
   });
-  const botDecisions = createArenaBotDecisionRuntime({ content, perception: botPerception });
+  const botDecisions = createArenaBotDecisionRuntime({
+    content,
+    perception: botPerception,
+    ...(options.navigation === undefined ? {} : { navigation: options.navigation.queries })
+  });
   const boundBotMemberIds = new Set<string>();
   let botBindingStageInstanceId = "";
   syncBotBindings();
@@ -393,6 +402,7 @@ export function createArenaAuthorityRuntime(
         items: itemAuthority.diagnostics().runtime,
         combat: combatAuthority.diagnostics(),
         ai: botDecisions.snapshot(),
+        ...(options.navigation === undefined ? {} : { navigation: options.navigation.snapshot() }),
         ...(latestSettlement === undefined ? {} : { settlement: structuredClone(latestSettlement) })
       };
     },
@@ -405,6 +415,7 @@ export function createArenaAuthorityRuntime(
       const participantDiagnostics = participants.diagnostics();
       const impacts = impactLedger.diagnostics();
       const ai = botDecisions.snapshot();
+      const navigation = options.navigation?.snapshot();
       return {
         disposed,
         participants: participantDiagnostics.participants,
@@ -431,7 +442,9 @@ export function createArenaAuthorityRuntime(
         aiAgents: ai.agents,
         aiActiveTasks: ai.activeTasks,
         aiMemoryFacts: ai.memoryFacts,
-        aiPendingActions: ai.pendingActions
+        aiPendingActions: ai.pendingActions,
+        navigationPendingRequests: navigation?.pendingRequests ?? 0,
+        navigationRetainedRoutes: navigation?.retainedRoutes ?? 0
       };
     },
     dispose() {
@@ -446,6 +459,7 @@ export function createArenaAuthorityRuntime(
       itemAuthority.dispose();
       combatAuthority.dispose();
       botDecisions.dispose();
+      options.navigation?.dispose();
       boundBotMemberIds.clear();
       inputsByPeerId.clear();
       inputAcksByPeerId.clear();
@@ -879,6 +893,7 @@ export function createArenaAuthorityRuntime(
     combatAuthority.advance(authorityTick);
     syncBotBindings();
     botPerceptionState = captureBotPerceptionState(authorityTick);
+    options.navigation?.update(ARENA_FIXED_STEP_MS, authorityTick * ARENA_FIXED_STEP_MS);
     botDecisions.update(ARENA_FIXED_STEP_MS, authorityTick * ARENA_FIXED_STEP_MS);
     queueBotDecisionActions(authorityTick);
     const targetTick = island.tick() + 1;
@@ -1016,6 +1031,7 @@ export function createArenaAuthorityRuntime(
   function syncBotBindings(): void {
     const match = director.snapshot();
     if (botBindingStageInstanceId === match.stageInstanceId) return;
+    options.navigation?.activateStage(match.stageIndex);
     for (const memberId of boundBotMemberIds) {
       botDecisions.unbind(memberId, "arena-stage-changed");
     }
