@@ -77,6 +77,22 @@ describe("Knockout Arena deterministic ranking", () => {
       rankArenaStageParticipants("brawl", [fact("a", { instability: Infinity })])
     ).toThrow("Invalid Arena ranking fact");
   });
+
+  it("settles an empty field as a no-contest result without inventing a winner", () => {
+    expect(
+      settleArenaStageRanking({
+        stageInstanceId: "match.1:stage.final:1",
+        stageKind: "final",
+        qualificationCount: 0,
+        completionReason: "all-eliminated",
+        facts: []
+      })
+    ).toMatchObject({
+      placements: [],
+      qualifiedParticipantIds: [],
+      eliminatedParticipantIds: []
+    });
+  });
 });
 
 function fact(

@@ -90,6 +90,20 @@ describe("Knockout Circuit feedback presentation", () => {
       targetMemberId: "bot.1"
     });
 
+    snapshot.phase = "countdown";
+    snapshot.participants[0]!.status = "lobby";
+    feedback.sync({
+      snapshot,
+      predictedState,
+      presentation,
+      localMemberId: "player.0",
+      deltaMs: ARENA_FIXED_STEP_MS
+    });
+    expect(feedback.snapshot().camera).toEqual({
+      mode: "playing",
+      targetMemberId: "player.0"
+    });
+
     const effect = {
       effectId: "contact:bot.0.collider|hazard.collider:contact:12",
       kind: "contact" as const,

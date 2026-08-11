@@ -40,6 +40,7 @@ import {
   createArenaClientEffectController,
   type ArenaEffectPresentationEvent
 } from "./arena-effects";
+import { selectArenaPredictionActorControls } from "./arena-prediction-controls";
 import {
   createArenaPresentationRuntime,
   type ArenaPresentationSnapshot
@@ -256,15 +257,15 @@ export async function createArenaClientSession(options: {
           predictionTick
         });
       }
-      const controlsByMemberId = structuredClone(snapshot.actorControlsByMemberId);
-      if (memberId !== undefined && !snapshot.eliminatedMemberIds.includes(memberId)) {
-        controlsByMemberId[memberId] = {
-          sequence: predictionFrame.sequence,
-          moveX: input.moveX,
-          moveZ: input.moveZ,
-          jump: input.jump
-        };
-      }
+      const controlsByMemberId = selectArenaPredictionActorControls({
+        authorityControls: snapshot.actorControlsByMemberId,
+        liveMemberIds: new Set(snapshot.frame.members.map((candidate) => candidate.id)),
+        eliminatedMemberIds: snapshot.eliminatedMemberIds,
+        playerIdsByPeerId: snapshot.playerIdsByPeerId,
+        peerId,
+        localInput: input,
+        inputSequence: predictionFrame.sequence
+      });
       return [
         ...createArenaCharacterControlCommands(controlsByMemberId).map(({ command }) => ({
           type: "auxiliary" as const,

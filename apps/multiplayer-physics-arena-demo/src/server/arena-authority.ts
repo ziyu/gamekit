@@ -38,6 +38,7 @@ import {
   type ArenaStageRankingFact,
   type ArenaStageSettlement
 } from "../match/ranking-policy";
+import { resolveArenaQualificationCount } from "../match/qualification-policy";
 import { planArenaStageConvergence } from "../match/stage-convergence";
 import { readArenaItemAction, type ArenaItemAction } from "../items/item-action";
 import {
@@ -693,12 +694,13 @@ export function createArenaAuthorityRuntime(
     const match = director.snapshot();
     const stage = content.stages[match.stageIndex]!.definition;
     const stageInstanceId = match.stageInstanceId;
+    const facts = createRankingFacts(authorityTick);
     const settlement = settleArenaStageRanking({
       stageInstanceId,
       stageKind: stage.kind,
-      qualificationCount: stage.qualificationCount,
+      qualificationCount: resolveArenaQualificationCount(stage.qualificationCount, facts.length),
       completionReason,
-      facts: createRankingFacts(authorityTick)
+      facts
     });
     if (
       winnerParticipantId !== undefined &&

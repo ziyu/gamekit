@@ -32,6 +32,11 @@ Ranking Policy 是第四个纯规则边界。它一次消费当前 stage 的 aut
 `timeout-tiebreak`。已经由 kill volume 淘汰的 participant 在排序前即失去 eligible，不会因旧 progress 重新晋级。Authority 只缓存每名
 participant 一条有界空间摘要，淘汰/成员移除后仍可用最后一条 authority fact 结算。
 
+Stage definition 中的 `qualificationCount` 是该关允许的晋级上限，不是假定参赛人数永远完整的静态前置条件。规则评估与结算必须以
+`min(configuredQualificationCount, currentEntrantCount)` 计算本次有效名额；上一关严重减员、forfeit 或连接 churn 不能让下一关等待一个
+不可能满足的名额，更不能让 authority 抛错退出。若当前关没有 entrant，规则立即以 `all-eliminated` 结束并产生无 winner 的空结算，
+随后仍沿正常 results/rematch 生命周期清理，不能伪造参赛者或 winner。
+
 Impact Ledger 与排名分离：它按 hit ticket 去重并保留有界 authority-confirmed impact，按 elimination id 原子生成一次 KO/assist
 attribution。KO 使用 knockout window 内最后一个超过 threshold 的敌对 source；assist 从 assist window 中按最近、impulse、source id
 稳定选择不同 source。没有有效 source 时必须记录 environment，不能为了积分伪造攻击者。Combat 尚未提交 impact 的阶段，ledger 仍正常

@@ -1,4 +1,5 @@
 import type { ArenaStageDefinition } from "../content/types";
+import { resolveArenaQualificationCount } from "./qualification-policy";
 
 export type ArenaStageCompletionReason =
   | "all-eliminated"
@@ -74,7 +75,11 @@ export function createArenaStageRule(definition: Readonly<ArenaStageDefinition>)
         invalidInputs += 1;
         throw new Error(`Invalid Arena stage rule input: ${definition.id}`);
       }
-      if (input.entrantParticipantIds.length > 0 && input.activeParticipantIds.length === 0) {
+      const qualificationCount = resolveArenaQualificationCount(
+        definition.qualificationCount,
+        input.entrantParticipantIds.length
+      );
+      if (input.activeParticipantIds.length === 0) {
         completions += 1;
         return { status: "complete", reason: "all-eliminated" };
       }
@@ -89,14 +94,14 @@ export function createArenaStageRule(definition: Readonly<ArenaStageDefinition>)
       if (
         definition.kind === "brawl" &&
         input.activeParticipantIds.length > 0 &&
-        input.activeParticipantIds.length <= definition.qualificationCount
+        input.activeParticipantIds.length <= qualificationCount
       ) {
         completions += 1;
         return { status: "complete", reason: "field-reduced" };
       }
       if (
         definition.kind === "qualifier" &&
-        (input.completedParticipantIds?.length ?? 0) >= definition.qualificationCount
+        (input.completedParticipantIds?.length ?? 0) >= qualificationCount
       ) {
         completions += 1;
         return { status: "complete", reason: "qualification-reached" };

@@ -60,8 +60,6 @@ async function boot(rootElement: HTMLElement): Promise<void> {
   let lastFrame: number | undefined;
   let lastUiUpdate = 0;
 
-  ui.pushLog("Three Driver ready");
-  ui.pushLog("Rapier3D client backend available");
   ui.setConnection("offline", "AUTHORITY READY · CHOOSE CREATE OR JOIN");
 
   const connect = async (intent: ArenaSessionIntent): Promise<void> => {

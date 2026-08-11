@@ -82,9 +82,6 @@ function createDriverBootContext(
     container: context.ui.viewport,
     width: measured.width || config.width || 1280,
     height: measured.height || config.height || 760,
-    ...(config.debug === undefined ? {} : { debug: config.debug }),
-    onDiagnostic(event) {
-      context.ui.pushLog(`${event.source ?? "renderer"} · ${event.type}`);
-    }
+    ...(config.debug === undefined ? {} : { debug: config.debug })
   };
 }

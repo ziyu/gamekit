@@ -155,7 +155,8 @@ function validateInput(input: {
   if (
     input.stageInstanceId.length === 0 ||
     !Number.isSafeInteger(input.qualificationCount) ||
-    input.qualificationCount <= 0 ||
+    input.qualificationCount < 0 ||
+    (input.facts.length > 0 && input.qualificationCount === 0) ||
     input.qualificationCount > input.facts.length
   ) {
     throw new Error("Invalid Arena stage settlement input");

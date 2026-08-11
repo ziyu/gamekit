@@ -253,7 +253,11 @@ function resolveCamera(
     const localParticipant = snapshot?.participants.find(
       (participant) => participant.actorMemberId === localMemberId
     );
-    if (snapshot === undefined || localParticipant?.status === "active") {
+    if (
+      snapshot === undefined ||
+      localParticipant?.status === "active" ||
+      (snapshot.phase === "countdown" && localParticipant?.status === "lobby")
+    ) {
       return { mode: "playing", targetMemberId: localMemberId };
     }
   }

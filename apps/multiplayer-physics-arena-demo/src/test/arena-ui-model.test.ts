@@ -7,6 +7,7 @@ import type { ArenaSnapshot } from "../shared/protocol";
 describe("Knockout Circuit game UX", () => {
   it("renders device-aware stage, combat and spectator state without telemetry", () => {
     const snapshot = arenaSnapshot("countdown");
+    snapshot.participants[0]!.status = "lobby";
     const countdown = buildArenaUiViewModel({
       snapshot,
       localMemberId: "player.0",
@@ -22,6 +23,7 @@ describe("Knockout Circuit game UX", () => {
       instability: 62
     });
     expect(countdown.prompts.map(({ key }) => key)).toEqual(["LS", "A", "X", "RT", "B"]);
+    expect(countdown.spectator.visible).toBe(false);
 
     snapshot.phase = "running";
     snapshot.participants[0]!.status = "eliminated";

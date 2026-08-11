@@ -212,8 +212,7 @@ export function buildArenaUiViewModel(input: {
   const watchedParticipant = snapshot.participants.find(
     ({ actorMemberId }) => actorMemberId === camera.targetMemberId
   );
-  const focusParticipant =
-    localParticipant?.status === "active" ? localParticipant : watchedParticipant;
+  const focusParticipant = camera.mode === "playing" ? localParticipant : watchedParticipant;
   const focusMemberId = focusParticipant?.actorMemberId;
   const focusCombat = snapshot.combat.actors.find(
     ({ participantId }) => participantId === focusParticipant?.id
@@ -231,6 +230,11 @@ export function buildArenaUiViewModel(input: {
     );
   const focusIndex = racers.findIndex(({ id }) => id === focusMemberId);
   const activeCount = snapshot.participants.filter(({ status }) => status === "active").length;
+  const stageEntrantCount = snapshot.participants.filter(
+    ({ actorMemberId, stageInstanceId }) =>
+      actorMemberId !== undefined && stageInstanceId === snapshot.match.stageInstanceId
+  ).length;
+  const visibleRacerCount = snapshot.phase === "running" ? activeCount : stageEntrantCount;
   const progressMember = snapshot.frame.members.find(({ id }) => id === focusMemberId);
   const progress = Math.round(
     Math.max(0, Math.min(1, (5.4 - (progressMember?.body.position.z ?? 5.4)) / 16.9)) * 100
@@ -240,9 +244,7 @@ export function buildArenaUiViewModel(input: {
     snapshot.phase === "results" && snapshot.match.deadlineTick !== undefined
       ? Math.max(0, snapshot.match.deadlineTick - snapshot.frame.tick) * ARENA_FIXED_STEP_MS
       : 0;
-  const isSpectating =
-    camera.mode === "spectator" ||
-    (localParticipant !== undefined && localParticipant.status !== "active");
+  const isSpectating = camera.mode === "spectator";
 
   return {
     phase: snapshot.phase,
@@ -265,7 +267,10 @@ export function buildArenaUiViewModel(input: {
       focusIndex < 0
         ? `-- / ${String(racers.length).padStart(2, "0")}`
         : `${String(focusIndex + 1).padStart(2, "0")} / ${String(racers.length).padStart(2, "0")}`,
-    roster: `${activeCount} LIVE · ${snapshot.eliminatedMemberIds.length} OUT`,
+    roster:
+      snapshot.phase === "countdown"
+        ? `${visibleRacerCount} ON THE GRID`
+        : `${visibleRacerCount} LIVE · ${snapshot.eliminatedMemberIds.length} OUT`,
     progress:
       snapshot.match.stageKind === "qualifier"
         ? progress
