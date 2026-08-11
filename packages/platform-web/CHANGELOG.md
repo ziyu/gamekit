@@ -1,5 +1,13 @@
 # @gamekit/platform-web
 
+## 0.1.0-alpha.6
+
+### Patch Changes
+
+- c73f533: Expose reusable headless renderer and memory asset fixtures, and add an isolated memory PlatformRuntime factory for non-visual AppProfile composition.
+- c73f533: Add reusable logical element viewport measurement and resize observation helpers with deduplication and explicit cleanup.
+  - @gamekit/platform-core@0.1.0-alpha.6
+
 ## 0.1.0-alpha.5
 
 ### Patch Changes
