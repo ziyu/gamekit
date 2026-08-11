@@ -31,8 +31,79 @@ export type ArenaStageDefinition = {
 export type ArenaCourseDefinition = {
   id: string;
   definitionVersion: string;
+  bounds: ArenaBoundsDefinition;
   spawnSet: DataRef<typeof ARENA_SPAWN_SET_TYPE>;
-  hazards: Array<DataRef<typeof ARENA_HAZARD_TYPE>>;
+  staticLayout: ArenaStaticPlacementDefinition[];
+  hazards: ArenaHazardPlacementDefinition[];
+  props: ArenaDynamicPropPlacementDefinition[];
+  volumes: ArenaGameplayVolumeDefinition[];
+  navigation: ArenaCourseNavigationDefinition;
+  presentation: ArenaCoursePresentationDefinition;
+};
+
+export type ArenaBoundsDefinition = {
+  min: PhysicsVector;
+  max: PhysicsVector;
+};
+
+export type ArenaBoxSize = {
+  width: number;
+  height: number;
+  depth: number;
+};
+
+export type ArenaStaticPlacementDefinition = {
+  id: string;
+  role: "floor" | "ramp" | "wall" | "platform" | "finish-deck";
+  position: PhysicsVector;
+  size: ArenaBoxSize;
+  rotation?: PhysicsVector | undefined;
+  material: "course" | "ice" | "mud";
+  navigationArea?: "walkable" | "slow" | "slick" | undefined;
+};
+
+export type ArenaHazardPlacementDefinition = {
+  id: string;
+  definition: DataRef<typeof ARENA_HAZARD_TYPE>;
+  position: PhysicsVector;
+  size: ArenaBoxSize;
+  axis?: "x" | "y" | "z" | undefined;
+  travel?: number | undefined;
+  strength?: number | undefined;
+};
+
+export type ArenaDynamicPropPlacementDefinition = {
+  id: string;
+  shape:
+    | { type: "sphere"; radius: number }
+    | { type: "box"; width: number; height: number; depth: number };
+  position: PhysicsVector;
+  mass: number;
+  material: "prop";
+  presentationId: string;
+};
+
+export type ArenaGameplayVolumeKind = "kill" | "checkpoint" | "finish" | "objective" | "safe-zone";
+
+export type ArenaGameplayVolumeDefinition = {
+  id: string;
+  kind: ArenaGameplayVolumeKind;
+  position: PhysicsVector;
+  size: ArenaBoxSize;
+  routeOrder?: number | undefined;
+};
+
+export type ArenaCourseNavigationDefinition = {
+  agentRadius: number;
+  agentHeight: number;
+  maxClimb: number;
+  maxSlopeDegrees: number;
+};
+
+export type ArenaCoursePresentationDefinition = {
+  themeId: "circuit-forge" | "scrap-yard" | "crown-collapse";
+  accent: string;
+  skyline: string;
 };
 
 export type ArenaHazardKind =

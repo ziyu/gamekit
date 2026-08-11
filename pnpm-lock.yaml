@@ -348,6 +348,12 @@ importers:
       '@gamekit/multiplayer-core':
         specifier: workspace:*
         version: link:../../packages/multiplayer-core
+      '@gamekit/navigation-core':
+        specifier: workspace:*
+        version: link:../../packages/navigation-core
+      '@gamekit/navigation-navmesh':
+        specifier: workspace:*
+        version: link:../../packages/navigation-navmesh
       '@gamekit/physics-core':
         specifier: workspace:*
         version: link:../../packages/physics-core

@@ -8,10 +8,10 @@ import type {
 } from "@gamekit/physics-core";
 import * as THREE from "three";
 
-import { compileArenaContent, createArenaDataRegistry } from "../content/registry";
+import { ARENA_COMPILED_CONTENT } from "../content/default-content";
 import { compileArenaItemCatalog } from "../items/item-definition";
 import { createArenaItemPhysicsMember } from "../items/item-physics";
-import { ARENA_ENVIRONMENT, arenaMemberRole } from "../shared/arena-definition";
+import { arenaMemberRole } from "../shared/arena-definition";
 import type { ArenaEffectPresentationEvent } from "./arena-effects";
 
 export type ArenaVisual = {
@@ -64,9 +64,13 @@ const COLOR = {
   white: 0xf5f7ff
 } as const;
 const ITEM_DEFINITIONS_BY_ID = new Map(
-  compileArenaItemCatalog(compileArenaContent(createArenaDataRegistry()).stages).definitions.map(
-    (definition) => [definition.id, definition]
-  )
+  compileArenaItemCatalog(ARENA_COMPILED_CONTENT.stages).definitions.map((definition) => [
+    definition.id,
+    definition
+  ])
+);
+const COURSE_PRESENTATION_PLACEMENTS = ARENA_COMPILED_CONTENT.stages.flatMap(
+  (stage) => stage.courseProjection.presentation.placements
 );
 
 export function createArenaVisual(
@@ -209,14 +213,11 @@ function createCourse(root: THREE.Group): void {
   voidDeck.position.set(0, -2.4 * UNIT, -2.5 * UNIT);
   course.add(voidDeck);
 
-  for (const body of ARENA_ENVIRONMENT.bodies ?? []) {
-    const bodyId = body.id;
-    if (!bodyId) continue;
-    const collider = (ARENA_ENVIRONMENT.colliders ?? []).find(
-      (candidate) => candidate.bodyId === bodyId
-    );
-    if (!collider || collider.shape.type !== "box") continue;
-    const role = bodyId === "course.finish" ? "finish" : bodyId.includes("ramp") ? "ramp" : "floor";
+  for (const placement of COURSE_PRESENTATION_PLACEMENTS) {
+    if (placement.role === "hazard" || placement.role === "prop" || placement.role === "volume") {
+      continue;
+    }
+    const role = placement.role === "finish-deck" ? "finish" : placement.role;
     const material = new THREE.MeshPhysicalMaterial({
       color: role === "finish" ? 0x23607b : role === "ramp" ? 0x304a78 : COLOR.track,
       roughness: 0.38,
@@ -226,14 +227,14 @@ function createCourse(root: THREE.Group): void {
     });
     const mesh = createMesh(
       new THREE.BoxGeometry(
-        collider.shape.width * UNIT,
-        collider.shape.height * UNIT,
-        (collider.shape.depth ?? 1) * UNIT
+        placement.size.width * UNIT,
+        placement.size.height * UNIT,
+        placement.size.depth * UNIT
       ),
       material,
-      `knockout.${bodyId}`
+      `knockout.${placement.sourceId}`
     );
-    applyTransform(mesh, body.position ?? { x: 0, y: 0, z: 0 }, body.rotation);
+    applyTransform(mesh, placement.position, placement.rotation);
     course.add(mesh);
   }
 

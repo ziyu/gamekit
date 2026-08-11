@@ -40,6 +40,70 @@ describe("Knockout Arena content and identity", () => {
     expect(content.stages.every((stage) => stage.bots.length === 3)).toBe(true);
   });
 
+  it("projects one deterministic course definition into aligned Physics, Navigation and Presentation facts", () => {
+    const authority = compileArenaContent(createArenaDataRegistry());
+    const client = compileArenaContent(createArenaDataRegistry());
+
+    expect(client.definitionVersion).toBe(authority.definitionVersion);
+    expect(client.physicsEnvironment).toEqual(authority.physicsEnvironment);
+    expect(client.stages.map(({ courseProjection }) => courseProjection.layoutSignature)).toEqual(
+      authority.stages.map(({ courseProjection }) => courseProjection.layoutSignature)
+    );
+    expect(client.stages.map(({ courseProjection }) => courseProjection.scheduleSignature)).toEqual(
+      authority.stages.map(({ courseProjection }) => courseProjection.scheduleSignature)
+    );
+
+    for (const stage of authority.stages) {
+      const projection = stage.courseProjection;
+      const physicsSourceIds = new Set(
+        (projection.physicsEnvironment.bodies ?? []).map((body) => body.userData?.sourceId)
+      );
+      const presentationSourceIds = new Set(
+        projection.presentation.placements.map((placement) => placement.sourceId)
+      );
+      const navigationSourceIds = new Set(
+        projection.navigation.source.triangles.flatMap((triangle) =>
+          (triangle.tags ?? [])
+            .filter((tag) => tag.startsWith("source:"))
+            .map((tag) => tag.slice("source:".length))
+        )
+      );
+      for (const placement of stage.course.staticLayout) {
+        expect(physicsSourceIds.has(placement.id)).toBe(true);
+        expect(presentationSourceIds.has(placement.id)).toBe(true);
+        if (placement.navigationArea !== undefined) {
+          expect(navigationSourceIds.has(placement.id)).toBe(true);
+        }
+      }
+      expect(projection.validationProbes.length).toBeGreaterThan(0);
+      expect(projection.navigation.source.version).toBe(stage.course.definitionVersion);
+      expect(projection.memberDefinitions.map(({ id }) => id)).toEqual(
+        projection.memberDefinitions.map(({ id }) => id).sort()
+      );
+    }
+  });
+
+  it("changes the gameplay signature when an authored placement changes", () => {
+    const changedPack = structuredClone(arenaContentPack);
+    const courseEntry = changedPack.entries.find(
+      (entry) => entry.type === ARENA_COURSE_TYPE && entry.id === "course.circuit-forge"
+    );
+    if (courseEntry === undefined) throw new Error("Missing circuit course fixture");
+    const course = courseEntry.data as {
+      definitionVersion: string;
+      staticLayout: Array<{ position: { x: number } }>;
+    };
+    course.definitionVersion = "course.circuit-forge.v2";
+    course.staticLayout[0]!.position.x += 0.5;
+
+    const baseline = compileArenaContent(createArenaDataRegistry());
+    const changed = compileArenaContent(createArenaDataRegistry({ packs: [changedPack] }));
+    expect(changed.definitionVersion).not.toBe(baseline.definitionVersion);
+    expect(changed.stages[0]?.courseProjection.layoutSignature).not.toBe(
+      baseline.stages[0]?.courseProjection.layoutSignature
+    );
+  });
+
   it("reports duplicate documents and dangling references deterministically", () => {
     const registry = createArenaDataRegistry({ packs: [] });
     const duplicate: DataPack = {

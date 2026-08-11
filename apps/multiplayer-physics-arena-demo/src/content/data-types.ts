@@ -83,14 +83,31 @@ function courseDataType(): DataTypeDefinition<ArenaCourseDefinition> {
     references(document) {
       return [
         ref(document.data.spawnSet, "spawnSet"),
-        ...document.data.hazards.map((hazard, index) => ref(hazard, `hazards[${index}]`))
+        ...document.data.hazards.map((hazard, index) =>
+          ref(hazard.definition, `hazards[${index}].definition`)
+        )
       ];
     },
     validate(document) {
+      const course = document.data;
       return [
         ...matchingId(document),
-        ...nonBlank(document, document.data.definitionVersion, "definitionVersion"),
-        ...uniqueRefs(document, document.data.hazards, "hazards")
+        ...nonBlank(document, course.definitionVersion, "definitionVersion"),
+        ...nonBlank(document, course.presentation.themeId, "presentation.themeId"),
+        ...nonBlank(document, course.presentation.accent, "presentation.accent"),
+        ...nonBlank(document, course.presentation.skyline, "presentation.skyline"),
+        ...positive(document, course.navigation.agentRadius, "navigation.agentRadius"),
+        ...positive(document, course.navigation.agentHeight, "navigation.agentHeight"),
+        ...nonNegative(document, course.navigation.maxClimb, "navigation.maxClimb"),
+        ...positive(document, course.navigation.maxSlopeDegrees, "navigation.maxSlopeDegrees"),
+        ...nonEmpty(document, course.staticLayout, "staticLayout"),
+        ...nonEmpty(document, course.volumes, "volumes"),
+        ...uniqueRefs(
+          document,
+          course.hazards.map(({ definition }) => definition),
+          "hazards"
+        ),
+        ...uniqueCoursePlacementIds(document)
       ];
     }
   };
@@ -401,6 +418,31 @@ function uniqueRefs(
       );
     }
     seen.add(key);
+  }
+  return diagnostics;
+}
+
+function uniqueCoursePlacementIds(document: DataDocument<ArenaCourseDefinition>): DataDiagnostic[] {
+  const placements = [
+    ...document.data.staticLayout.map(({ id }) => ({ id, path: "staticLayout" })),
+    ...document.data.hazards.map(({ id }) => ({ id, path: "hazards" })),
+    ...document.data.props.map(({ id }) => ({ id, path: "props" })),
+    ...document.data.volumes.map(({ id }) => ({ id, path: "volumes" }))
+  ];
+  const seen = new Set<string>();
+  const diagnostics: DataDiagnostic[] = [];
+  for (const [index, placement] of placements.entries()) {
+    if (seen.has(placement.id)) {
+      diagnostics.push(
+        diagnostic(
+          document,
+          "arena.course_duplicate_placement",
+          `Duplicate course placement id: ${placement.id}`,
+          `${placement.path}[${index}]`
+        )
+      );
+    }
+    seen.add(placement.id);
   }
   return diagnostics;
 }

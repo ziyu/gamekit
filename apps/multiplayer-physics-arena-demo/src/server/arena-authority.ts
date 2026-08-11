@@ -17,7 +17,7 @@ import {
   type PhysicsVector
 } from "@gamekit/physics-core";
 
-import { compileArenaContent, createArenaDataRegistry } from "../content/registry";
+import { ARENA_COMPILED_CONTENT } from "../content/default-content";
 import { createArenaMatchDirector, type ArenaMatchDirectorSnapshot } from "../match/match-director";
 import { createArenaImpactLedger, type ArenaImpactLedgerDiagnostics } from "../match/impact-ledger";
 import {
@@ -140,7 +140,7 @@ export function createArenaAuthorityRuntime(
 ): ArenaAuthorityRuntime {
   const now = options.now ?? (() => Date.now());
   const definitions = createArenaMemberDefinitions();
-  const content = compileArenaContent(createArenaDataRegistry());
+  const content = ARENA_COMPILED_CONTENT;
   const participants = createArenaParticipantRegistry({
     capacity: 64,
     traceCapacity: 256
@@ -194,6 +194,8 @@ export function createArenaAuthorityRuntime(
       gravity: { x: 0, y: -18, z: 0 },
       materialDefinitions: [
         { id: "course", friction: 0.85, restitution: 0.05 },
+        { id: "ice", friction: 0.08, restitution: 0.04 },
+        { id: "mud", friction: 0.98, restitution: 0.01 },
         { id: "actor", friction: 0.55, restitution: 0.08, density: 1 },
         { id: "prop", friction: 0.65, restitution: 0.45, density: 0.7 },
         { id: "hazard", friction: 0.45, restitution: 0.3 },
@@ -826,14 +828,11 @@ export function createArenaAuthorityRuntime(
     }
 
     const angle = authorityTick * 0.028;
-    queuePatch("hazard.sweeper", {
+    queuePatch("circuit.sweeper", {
       rotation: { x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) }
     });
-    queuePatch("platform.left", {
+    queuePatch("circuit.moving-bridge", {
       position: { x: -5.8, y: 1.2 + Math.sin(authorityTick * 0.025) * 1.15, z: -8.7 }
-    });
-    queuePatch("platform.right", {
-      position: { x: 5.8, y: 1.2 + Math.sin(authorityTick * 0.025 + Math.PI) * 1.15, z: -8.7 }
     });
 
     for (const command of commands) island.queue(command);

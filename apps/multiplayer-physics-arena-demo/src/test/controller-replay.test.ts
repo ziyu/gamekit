@@ -122,6 +122,8 @@ function createHarness(): {
       gravity: { x: 0, y: -18, z: 0 },
       materialDefinitions: [
         { id: "course", friction: 0.85, restitution: 0.05 },
+        { id: "ice", friction: 0.08, restitution: 0.04 },
+        { id: "mud", friction: 0.98, restitution: 0.01 },
         { id: "actor", friction: 0.55, restitution: 0.08, density: 1 }
       ]
     }

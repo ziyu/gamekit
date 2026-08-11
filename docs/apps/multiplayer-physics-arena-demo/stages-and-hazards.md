@@ -13,24 +13,21 @@ Navigation source 和 presentation placement。它不推进 match phase、不裁
 ```ts
 type ArenaCourseDefinition = {
   id: string;
-  version: string;
-  stageKind: "qualifier" | "brawl" | "final";
+  definitionVersion: string;
   bounds: ArenaBoundsDefinition;
-  spawns: ArenaSpawnSet;
-  staticLayout: DataRef<"physics.layout">;
-  navigation: DataRef<"navigation.layout">;
-  checkpoints?: ArenaCheckpointDefinition[];
-  finish?: ArenaFinishDefinition;
-  hazards: ArenaHazardPlacement[];
-  surfaces: ArenaSurfacePlacement[];
-  volumes: ArenaGameplayVolume[];
-  props: ArenaDynamicPropPlacement[];
-  items: ArenaItemSpawnPlacement[];
-  presentation: DataRef<"arena.course-presentation">;
+  spawnSet: DataRef<"arena.spawn-set">;
+  staticLayout: ArenaStaticPlacementDefinition[];
+  hazards: ArenaHazardPlacementDefinition[];
+  props: ArenaDynamicPropPlacementDefinition[];
+  volumes: ArenaGameplayVolumeDefinition[];
+  navigation: ArenaCourseNavigationDefinition;
+  presentation: ArenaCoursePresentationDefinition;
 };
 ```
 
-`version` 进入 arena frame definition version。Authority/client 内容版本不一致时拒绝 baseline，不使用近似 layout 继续 replay。
+`definitionVersion` 与编译后的 layout/schedule signature 一起进入 arena frame definition version。Authority/client 内容版本不一致时拒绝
+baseline，不使用近似 layout 继续 replay。Checkpoint、finish、item 等语义通过带 stable placement id 的 volume/spawn placement
+表达，避免同一空间事实再维护一份旁路坐标。
 
 ## Shared Projection
 
@@ -43,6 +40,10 @@ Course compiler 产生：
 - content validation probes 和 stable source ids。
 
 Compiler 必须纯化、可重复、稳定排序；同一 definition + seed 产生相同 id、placement 和 schedule signature。
+
+默认 DataPack 只编译一次并缓存为 immutable runtime content；authority、prediction、protocol compatibility、Navigation 与 Three
+presentation 都消费该编译结果。三关 static Physics environment 可以在 match 建立时合并，stage-specific member/schedule 仍按 stage
+generation 安装，不能退回各端手写一套 course 常量。
 
 ## Circuit Forge 资格赛
 

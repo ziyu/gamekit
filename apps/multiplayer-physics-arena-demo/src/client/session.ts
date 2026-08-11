@@ -17,7 +17,7 @@ import type {
 } from "@gamekit/physics-core";
 import { createKootaWorld } from "@gamekit/world-koota";
 
-import { compileArenaContent, createArenaDataRegistry } from "../content/registry";
+import { ARENA_COMPILED_CONTENT } from "../content/default-content";
 import { type ArenaItemActionType } from "../items/item-action";
 import {
   createArenaItemCarryContributor,
@@ -154,9 +154,7 @@ export async function createArenaClientSession(options: {
     localPlayerId: peerId
   });
   const definitions = createArenaDefinitionMap();
-  const itemCatalog = compileArenaItemCatalog(
-    compileArenaContent(createArenaDataRegistry()).stages
-  );
+  const itemCatalog = compileArenaItemCatalog(ARENA_COMPILED_CONTENT.stages);
   const itemDefinitionsById = new Map(
     itemCatalog.definitions.map((definition) => [definition.id, definition])
   );
@@ -191,6 +189,8 @@ export async function createArenaClientSession(options: {
         gravity: { x: 0, y: -18, z: 0 },
         materialDefinitions: [
           { id: "course", friction: 0.85, restitution: 0.05 },
+          { id: "ice", friction: 0.08, restitution: 0.04 },
+          { id: "mud", friction: 0.98, restitution: 0.01 },
           { id: "actor", friction: 0.55, restitution: 0.08, density: 1 },
           { id: "prop", friction: 0.65, restitution: 0.45, density: 0.7 },
           { id: "hazard", friction: 0.45, restitution: 0.3 },
@@ -295,27 +295,16 @@ export async function createArenaClientSession(options: {
         }),
         {
           type: "patch" as const,
-          memberId: "hazard.sweeper",
+          memberId: "circuit.sweeper",
           patch: {
             rotation: { x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) }
           }
         },
         {
           type: "patch" as const,
-          memberId: "platform.left",
+          memberId: "circuit.moving-bridge",
           patch: {
             position: { x: -5.8, y: 1.2 + Math.sin(predictionTick * 0.025) * 1.15, z: -8.7 }
-          }
-        },
-        {
-          type: "patch" as const,
-          memberId: "platform.right",
-          patch: {
-            position: {
-              x: 5.8,
-              y: 1.2 + Math.sin(predictionTick * 0.025 + Math.PI) * 1.15,
-              z: -8.7
-            }
           }
         }
       ];

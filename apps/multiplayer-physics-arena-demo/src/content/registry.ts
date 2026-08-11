@@ -1,4 +1,11 @@
 import { createDataRegistry, type DataPack, type DataRegistry } from "@gamekit/data";
+import type { PhysicsPredictionIslandEnvironment } from "@gamekit/physics-core";
+import {
+  compileArenaCourse,
+  mergeArenaCourseEnvironments,
+  stableArenaContentSignature,
+  type CompiledArenaCourse
+} from "./course-compiler";
 import { createArenaDataTypes } from "./data-types";
 import { ARENA_DEFAULT_MATCH_RULE_ID, arenaContentPack } from "./pack";
 import {
@@ -31,12 +38,15 @@ export type CompiledArenaStage = {
   hazards: ArenaHazardDefinition[];
   items: ArenaItemDefinition[];
   bots: ArenaBotArchetypeDefinition[];
+  courseProjection: CompiledArenaCourse;
 };
 
 export type CompiledArenaContent = {
   matchRule: ArenaMatchRuleDefinition;
   stages: CompiledArenaStage[];
   motorProfiles: ArenaMotorProfileDefinition[];
+  definitionVersion: string;
+  physicsEnvironment: PhysicsPredictionIslandEnvironment;
 };
 
 export function createArenaDataRegistry(
@@ -63,25 +73,39 @@ export function compileArenaContent(
       ARENA_SPAWN_SET_TYPE,
       course.spawnSet.id
     );
+    const hazards = course.hazards.map((placement) =>
+      registry.getValue<ArenaHazardDefinition>(ARENA_HAZARD_TYPE, placement.definition.id)
+    );
     return {
       definition,
       course,
       spawnSet,
-      hazards: course.hazards.map((hazard) =>
-        registry.getValue<ArenaHazardDefinition>(ARENA_HAZARD_TYPE, hazard.id)
-      ),
+      hazards,
       items: definition.itemPool.map((item) =>
         registry.getValue<ArenaItemDefinition>(ARENA_ITEM_TYPE, item.id)
       ),
       bots: definition.botArchetypes.map((bot) =>
         registry.getValue<ArenaBotArchetypeDefinition>(ARENA_BOT_ARCHETYPE_TYPE, bot.id)
-      )
+      ),
+      courseProjection: compileArenaCourse({ course, spawnSet, hazards })
     };
   });
   validateMatchTopology(matchRule, stages);
+  const definitionVersion = stableArenaContentSignature(
+    stages.map(({ definition, courseProjection }) => ({
+      stageId: definition.id,
+      courseVersion: courseProjection.definitionVersion,
+      layoutSignature: courseProjection.layoutSignature,
+      scheduleSignature: courseProjection.scheduleSignature
+    }))
+  );
   return {
     matchRule: structuredClone(matchRule),
     stages: structuredClone(stages),
+    definitionVersion,
+    physicsEnvironment: mergeArenaCourseEnvironments(
+      stages.map(({ courseProjection }) => courseProjection)
+    ),
     motorProfiles: structuredClone(
       registry.list<ArenaMotorProfileDefinition>(ARENA_MOTOR_PROFILE_TYPE).map(({ data }) => data)
     )

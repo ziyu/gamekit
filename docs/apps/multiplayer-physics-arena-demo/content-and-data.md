@@ -56,6 +56,9 @@ Arena DataPack
 DataRegistry、不解析DataRef、不合并JSON。
 
 同一placement/source id连接Physics collider、Navigation blocker/area和presentation object；模块不直接互读native state。
+Course compiler同时产出match级static Physics environment、stage member definitions、Recast-compatible NavMesh source/layout、
+backend-neutral presentation placement、validation probes、layout signature和hazard schedule signature。默认内容通过单一缓存实例共享，
+网络frame的definition version由这些signature派生，不另写手工版本常量。
 
 ## Match 与 Stage Content Profile
 

@@ -10,12 +10,16 @@ import {
   ARENA_STAGE_TYPE,
   type ArenaBotArchetypeDefinition,
   type ArenaCourseDefinition,
+  type ArenaDynamicPropPlacementDefinition,
+  type ArenaGameplayVolumeDefinition,
   type ArenaHazardDefinition,
+  type ArenaHazardPlacementDefinition,
   type ArenaItemDefinition,
   type ArenaMatchRuleDefinition,
   type ArenaMotorProfileDefinition,
   type ArenaSpawnPointDefinition,
   type ArenaSpawnSetDefinition,
+  type ArenaStaticPlacementDefinition,
   type ArenaStageDefinition
 } from "./types";
 
@@ -116,27 +120,201 @@ const spawnSets: ArenaSpawnSetDefinition[] = [
     }
   ]),
   spawnSet("spawn.scrap", [
-    ...participantPoints(6, 4.2),
-    ...itemPoints(["item.foam-ball", "item.energy-block", "item.blast-orb", "item.foam-hammer"])
+    ...participantPoints(6, 6, 36),
+    ...itemPoints(
+      ["item.foam-ball", "item.energy-block", "item.blast-orb", "item.foam-hammer"],
+      36,
+      -0.5
+    )
   ]),
   spawnSet("spawn.crown", [
-    ...participantPoints(3, 3.4),
-    ...itemPoints(["item.foam-ball", "item.foam-hammer"])
+    ...participantPoints(3, 5, 72),
+    ...itemPoints(["item.foam-ball", "item.foam-hammer"], 72, -1)
   ])
 ];
 
 const courses: ArenaCourseDefinition[] = [
-  course("course.circuit-forge", "spawn.circuit", [
-    "hazard.circuit.sweeper",
-    "hazard.circuit.platform",
-    "hazard.circuit.piston"
-  ]),
-  course("course.scrap-yard", "spawn.scrap", [
-    "hazard.scrap.conveyor",
-    "hazard.scrap.wind",
-    "hazard.scrap.bounce"
-  ]),
-  course("course.crown-collapse", "spawn.crown", ["hazard.crown.floor", "hazard.crown.zone"])
+  course("course.circuit-forge", "spawn.circuit", {
+    bounds: { min: { x: -12, y: -6, z: -15 }, max: { x: 12, y: 8, z: 8 } },
+    staticLayout: [
+      staticBox("circuit.floor", "floor", 0, -0.5, -2.5, 22, 1, 25, "course", "walkable"),
+      staticBox("circuit.ramp-left", "ramp", -7.8, 0.45, -7.2, 4.5, 0.9, 4.8, "course", "walkable"),
+      staticBox("circuit.ramp-right", "ramp", 7.8, 0.45, -7.2, 4.5, 0.9, 4.8, "course", "walkable"),
+      staticBox(
+        "circuit.finish-deck",
+        "finish-deck",
+        0,
+        0.7,
+        -12.4,
+        8,
+        1.4,
+        2.4,
+        "course",
+        "walkable"
+      )
+    ],
+    hazards: [
+      hazardPlacement(
+        "circuit.sweeper",
+        "hazard.circuit.sweeper",
+        0,
+        1,
+        -2,
+        13,
+        0.55,
+        0.55,
+        "y",
+        0,
+        9
+      ),
+      hazardPlacement(
+        "circuit.moving-bridge",
+        "hazard.circuit.platform",
+        -5.8,
+        1.2,
+        -9,
+        4.2,
+        0.5,
+        3.2,
+        "y",
+        2.3,
+        0
+      ),
+      hazardPlacement(
+        "circuit.piston-gate",
+        "hazard.circuit.piston",
+        0,
+        1.3,
+        -5.7,
+        2.2,
+        2.6,
+        1.2,
+        "x",
+        7.2,
+        12
+      )
+    ],
+    props: [
+      propSphere("circuit.prop.ball", 0, 1.1, 0, 0.85, 0.8, "presentation.prop-ball"),
+      propBox(
+        "circuit.prop.block-left",
+        -3.2,
+        1,
+        -4,
+        1.4,
+        1.4,
+        1.4,
+        1.4,
+        "presentation.prop-block"
+      ),
+      propBox("circuit.prop.block-right", 3.2, 1, -4, 1.4, 1.4, 1.4, 1.4, "presentation.prop-block")
+    ],
+    volumes: [
+      volume("circuit.kill", "kill", 0, -4.5, -3, 28, 3, 34),
+      volume("circuit.checkpoint.1", "checkpoint", 0, 1.2, 0, 20, 3, 1.5, 1),
+      volume("circuit.checkpoint.2", "checkpoint", 0, 1.2, -7.5, 20, 4, 1.5, 2),
+      volume("circuit.finish", "finish", 0, 1.8, -12.4, 8, 3, 1.2, 3)
+    ],
+    navigation: navigationProfile(),
+    presentation: { themeId: "circuit-forge", accent: "#44e6ff", skyline: "orbital-forge" }
+  }),
+  course("course.scrap-yard", "spawn.scrap", {
+    bounds: { min: { x: 23, y: -6, z: -14 }, max: { x: 49, y: 9, z: 13 } },
+    staticLayout: [
+      staticBox("scrap.floor", "floor", 36, -0.5, 0, 23, 1, 23, "mud", "slow"),
+      staticBox("scrap.ring-north", "platform", 36, 0.35, -7.8, 12, 0.7, 3.5, "course", "walkable"),
+      staticBox("scrap.ring-south", "platform", 36, 0.35, 7.8, 12, 0.7, 3.5, "course", "walkable"),
+      staticBox("scrap.ring-west", "platform", 28.2, 0.35, 0, 3.5, 0.7, 12, "course", "walkable"),
+      staticBox("scrap.ring-east", "platform", 43.8, 0.35, 0, 3.5, 0.7, 12, "course", "walkable")
+    ],
+    hazards: [
+      hazardPlacement(
+        "scrap.outer-conveyor",
+        "hazard.scrap.conveyor",
+        36,
+        0.15,
+        8.4,
+        15,
+        0.3,
+        2.8,
+        "x",
+        0,
+        5.5
+      ),
+      hazardPlacement(
+        "scrap.fan-tunnel",
+        "hazard.scrap.wind",
+        28.5,
+        1.8,
+        -1,
+        4,
+        3.6,
+        8,
+        "x",
+        0,
+        10
+      ),
+      hazardPlacement(
+        "scrap.launch-pad",
+        "hazard.scrap.bounce",
+        42.5,
+        0.2,
+        -4.8,
+        3.2,
+        0.4,
+        3.2,
+        "y",
+        0,
+        13
+      )
+    ],
+    props: [
+      propBox("scrap.prop.heavy-a", 33, 1.1, 1, 1.7, 1.7, 1.7, 4.5, "presentation.scrap-crate"),
+      propBox("scrap.prop.heavy-b", 39, 1.1, 1, 1.7, 1.7, 1.7, 4.5, "presentation.scrap-crate"),
+      propSphere("scrap.prop.roller-a", 31, 1, -5.5, 0.95, 2.4, "presentation.scrap-roller"),
+      propSphere("scrap.prop.roller-b", 41, 1, 5.5, 0.95, 2.4, "presentation.scrap-roller")
+    ],
+    volumes: [
+      volume("scrap.kill", "kill", 36, -4.5, 0, 32, 3, 32),
+      volume("scrap.objective", "objective", 36, 1.4, 0, 8, 3, 8),
+      volume("scrap.safe-zone", "safe-zone", 36, 1.4, 0, 20, 3, 20)
+    ],
+    navigation: navigationProfile(),
+    presentation: { themeId: "scrap-yard", accent: "#ffcf4b", skyline: "salvage-bay" }
+  }),
+  course("course.crown-collapse", "spawn.crown", {
+    bounds: { min: { x: 59, y: -7, z: -13 }, max: { x: 85, y: 9, z: 13 } },
+    staticLayout: [
+      staticBox("crown.center", "platform", 72, 0, 0, 7, 0.8, 7, "course", "walkable"),
+      staticBox("crown.north", "platform", 72, 0, -6.2, 9, 0.8, 4.2, "ice", "slick"),
+      staticBox("crown.south", "platform", 72, 0, 6.2, 9, 0.8, 4.2, "ice", "slick"),
+      staticBox("crown.west", "platform", 65.8, 0, 0, 4.2, 0.8, 9, "ice", "slick"),
+      staticBox("crown.east", "platform", 78.2, 0, 0, 4.2, 0.8, 9, "ice", "slick")
+    ],
+    hazards: [
+      hazardPlacement(
+        "crown.collapse-band",
+        "hazard.crown.floor",
+        72,
+        0.35,
+        0,
+        19,
+        0.7,
+        3.2,
+        "z",
+        8,
+        0
+      ),
+      hazardPlacement("crown.shrinking-zone", "hazard.crown.zone", 72, 1.4, 0, 21, 3, 21, "x", 7, 8)
+    ],
+    props: [propSphere("crown.prop.core", 72, 1.1, 0, 1, 3.2, "presentation.crown-core")],
+    volumes: [
+      volume("crown.kill", "kill", 72, -5, 0, 32, 4, 32),
+      volume("crown.safe-zone", "safe-zone", 72, 1.3, 0, 20, 3, 20)
+    ],
+    navigation: navigationProfile(),
+    presentation: { themeId: "crown-collapse", accent: "#ff5b55", skyline: "champion-vault" }
+  })
 ];
 
 const stages: ArenaStageDefinition[] = [
@@ -272,30 +450,154 @@ function spawnSet(id: string, points: ArenaSpawnPointDefinition[]): ArenaSpawnSe
   return { id, points };
 }
 
-function participantPoints(count: number, z: number): ArenaSpawnPointDefinition[] {
-  return Array.from({ length: count }, (_, index) => ({
+function participantPoints(count: number, z: number, centerX = 0): ArenaSpawnPointDefinition[] {
+  const halfSpan = Math.min(4.8, ((count - 1) * 1.7) / 2);
+  const orderedOffsets = Array.from(
+    { length: count },
+    (_, index) => -halfSpan + (index / Math.max(1, count - 1)) * halfSpan * 2
+  );
+  if (orderedOffsets.length >= 2) {
+    const left = orderedOffsets.shift()!;
+    const right = orderedOffsets.pop()!;
+    orderedOffsets.unshift(left, right);
+  }
+  return orderedOffsets.map((offset, index) => ({
     id: `participant.${index}`,
     kind: "participant" as const,
-    position: { x: (index - (count - 1) / 2) * 1.7, y: 1.3, z }
+    position: { x: centerX + offset, y: 1.3, z }
   }));
 }
 
-function itemPoints(ids: string[]): ArenaSpawnPointDefinition[] {
+function itemPoints(ids: string[], centerX = 0, z = -1.5): ArenaSpawnPointDefinition[] {
   return ids.map((id, index) => ({
     id: `item.${index}`,
     kind: "item",
-    position: { x: (index - (ids.length - 1) / 2) * 2.4, y: 1.2, z: -1.5 },
+    position: { x: centerX + (index - (ids.length - 1) / 2) * 2.4, y: 1.2, z },
     definition: ref(ARENA_ITEM_TYPE, id)
   }));
 }
 
-function course(id: string, spawnSetId: string, hazardIds: string[]): ArenaCourseDefinition {
+function course(
+  id: string,
+  spawnSetId: string,
+  definition: Omit<ArenaCourseDefinition, "id" | "definitionVersion" | "spawnSet">
+): ArenaCourseDefinition {
   return {
     id,
     definitionVersion: `${id}.v1`,
     spawnSet: ref(ARENA_SPAWN_SET_TYPE, spawnSetId),
-    hazards: hazardIds.map((hazardId) => ref(ARENA_HAZARD_TYPE, hazardId))
+    ...definition
   };
+}
+
+function staticBox(
+  id: string,
+  role: ArenaStaticPlacementDefinition["role"],
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+  height: number,
+  depth: number,
+  material: ArenaStaticPlacementDefinition["material"],
+  navigationArea?: ArenaStaticPlacementDefinition["navigationArea"]
+): ArenaStaticPlacementDefinition {
+  return {
+    id,
+    role,
+    position: { x, y, z },
+    size: { width, height, depth },
+    material,
+    ...(navigationArea === undefined ? {} : { navigationArea })
+  };
+}
+
+function hazardPlacement(
+  id: string,
+  definitionId: string,
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+  height: number,
+  depth: number,
+  axis: ArenaHazardPlacementDefinition["axis"],
+  travel: number,
+  strength: number
+): ArenaHazardPlacementDefinition {
+  return {
+    id,
+    definition: ref(ARENA_HAZARD_TYPE, definitionId),
+    position: { x, y, z },
+    size: { width, height, depth },
+    axis,
+    travel,
+    strength
+  };
+}
+
+function propSphere(
+  id: string,
+  x: number,
+  y: number,
+  z: number,
+  radius: number,
+  mass: number,
+  presentationId: string
+): ArenaDynamicPropPlacementDefinition {
+  return {
+    id,
+    shape: { type: "sphere", radius },
+    position: { x, y, z },
+    mass,
+    material: "prop",
+    presentationId
+  };
+}
+
+function propBox(
+  id: string,
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+  height: number,
+  depth: number,
+  mass: number,
+  presentationId: string
+): ArenaDynamicPropPlacementDefinition {
+  return {
+    id,
+    shape: { type: "box", width, height, depth },
+    position: { x, y, z },
+    mass,
+    material: "prop",
+    presentationId
+  };
+}
+
+function volume(
+  id: string,
+  kind: ArenaGameplayVolumeDefinition["kind"],
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+  height: number,
+  depth: number,
+  routeOrder?: number
+): ArenaGameplayVolumeDefinition {
+  return {
+    id,
+    kind,
+    position: { x, y, z },
+    size: { width, height, depth },
+    ...(routeOrder === undefined ? {} : { routeOrder })
+  };
+}
+
+function navigationProfile(): ArenaCourseDefinition["navigation"] {
+  return { agentRadius: 0.52, agentHeight: 1.89, maxClimb: 0.45, maxSlopeDegrees: 46 };
 }
 
 function stage(

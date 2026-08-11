@@ -23,6 +23,8 @@
     "@gamekit/gas": "workspace:*",
     "@gamekit/multiplayer-colyseus": "workspace:*",
     "@gamekit/multiplayer-core": "workspace:*",
+    "@gamekit/navigation-core": "workspace:*",
+    "@gamekit/navigation-navmesh": "workspace:*",
     "@gamekit/physics-core": "workspace:*",
     "@gamekit/physics-rapier3d": "workspace:*",
     "@gamekit/platform-core": "workspace:*",

@@ -5,107 +5,79 @@ import type {
   PhysicsVector
 } from "@gamekit/physics-core";
 
-import {
-  ARENA_ACTOR_COUNT,
-  ARENA_BOT_COUNT,
-  ARENA_MAX_HUMANS,
-  arenaBotMemberId,
-  arenaPlayerMemberId
-} from "./config";
+import { ARENA_COMPILED_CONTENT } from "../content/default-content";
 
-export type ArenaMemberRole = "player" | "bot" | "prop" | "sweeper" | "platform";
+import { ARENA_BOT_COUNT, ARENA_MAX_HUMANS, arenaBotMemberId, arenaPlayerMemberId } from "./config";
 
-const ACTOR_SPAWNS: readonly PhysicsVector[] = [
-  { x: -4.8, y: 1.3, z: 5.4 },
-  { x: 4.8, y: 1.3, z: 5.4 },
-  { x: -7.2, y: 1.3, z: 3.1 },
-  { x: -2.4, y: 1.3, z: 3.1 },
-  { x: 2.4, y: 1.3, z: 3.1 },
-  { x: 7.2, y: 1.3, z: 3.1 },
-  { x: -4, y: 1.3, z: 0.8 },
-  { x: 4, y: 1.3, z: 0.8 }
-];
+export type ArenaMemberRole = "player" | "bot" | "prop" | "sweeper" | "platform" | "hazard";
 
-export const ARENA_ENVIRONMENT: PhysicsPredictionIslandEnvironment = {
-  bodies: [
-    { id: "course.floor", kind: "static", position: { x: 0, y: -0.5, z: 0 } },
-    { id: "course.ramp-left", kind: "static", position: { x: -7.8, y: 0.5, z: -6 } },
-    { id: "course.ramp-right", kind: "static", position: { x: 7.8, y: 0.5, z: -6 } },
-    { id: "course.finish", kind: "static", position: { x: 0, y: 1.2, z: -11.5 } }
-  ],
-  colliders: [
-    {
-      id: "course.floor.collider",
-      bodyId: "course.floor",
-      shape: { type: "box", width: 21, height: 1, depth: 25 },
-      material: "course"
-    },
-    {
-      id: "course.ramp-left.collider",
-      bodyId: "course.ramp-left",
-      shape: { type: "box", width: 4.5, height: 1, depth: 5 },
-      material: "course"
-    },
-    {
-      id: "course.ramp-right.collider",
-      bodyId: "course.ramp-right",
-      shape: { type: "box", width: 4.5, height: 1, depth: 5 },
-      material: "course"
-    },
-    {
-      id: "course.finish.collider",
-      bodyId: "course.finish",
-      shape: { type: "box", width: 8, height: 1, depth: 2.2 },
-      material: "course"
-    }
-  ]
-};
-
-export function createArenaMemberDefinitions(): PhysicsPredictionIslandMemberDefinition[] {
-  const members: PhysicsPredictionIslandMemberDefinition[] = [];
-  for (let slot = 0; slot < ARENA_MAX_HUMANS; slot += 1) {
-    members.push(createActorDefinition(arenaPlayerMemberId(slot), ACTOR_SPAWNS[slot]!));
-  }
-  for (let slot = 0; slot < ARENA_BOT_COUNT; slot += 1) {
-    members.push(
-      createActorDefinition(arenaBotMemberId(slot), ACTOR_SPAWNS[slot + ARENA_MAX_HUMANS]!)
+const ARENA_CONTENT = ARENA_COMPILED_CONTENT;
+const ACTOR_IDS = [
+  ...Array.from({ length: ARENA_MAX_HUMANS }, (_, slot) => arenaPlayerMemberId(slot)),
+  ...Array.from({ length: ARENA_BOT_COUNT }, (_, slot) => arenaBotMemberId(slot))
+] as const;
+const CONTENT_MEMBER_ROLES = new Map<string, ArenaMemberRole>();
+for (const stage of ARENA_CONTENT.stages) {
+  const hazardsById = new Map(stage.hazards.map((hazard) => [hazard.id, hazard]));
+  for (const placement of stage.course.hazards) {
+    const kind = hazardsById.get(placement.definition.id)?.kind;
+    CONTENT_MEMBER_ROLES.set(
+      placement.id,
+      kind === "rotating-sweeper" ? "sweeper" : kind === "moving-platform" ? "platform" : "hazard"
     );
   }
-  members.push(
-    createDynamicBox("prop.cube.0", { x: -3.2, y: 1.1, z: -2.5 }),
-    createDynamicBox("prop.cube.1", { x: 3.2, y: 1.1, z: -2.5 }),
-    createDynamicSphere("prop.ball.0", { x: 0, y: 1.2, z: -4.8 }),
-    createKinematicBox("hazard.sweeper", { x: 0, y: 1, z: -1.5 }, 13, 0.55, 0.55),
-    createKinematicBox("platform.left", { x: -5.8, y: 1, z: -8.7 }, 4, 0.55, 3.2),
-    createKinematicBox("platform.right", { x: 5.8, y: 1, z: -8.7 }, 4, 0.55, 3.2)
+  for (const prop of stage.course.props) CONTENT_MEMBER_ROLES.set(prop.id, "prop");
+}
+
+export const ARENA_ENVIRONMENT: PhysicsPredictionIslandEnvironment = structuredClone(
+  ARENA_CONTENT.physicsEnvironment
+);
+
+export const ARENA_CONTENT_DEFINITION_VERSION = ARENA_CONTENT.definitionVersion;
+
+export function createArenaMemberDefinitions(
+  stageIndex = 0
+): PhysicsPredictionIslandMemberDefinition[] {
+  const stage = requireStage(stageIndex);
+  const actors = stage.courseProjection.participantSpawns.map((spawn, slot) =>
+    createActorDefinition(ACTOR_IDS[slot]!, spawn.position)
   );
-  return members;
+  return structuredClone([...actors, ...stage.courseProjection.memberDefinitions]);
 }
 
 export function createArenaDefinitionMap(): ReadonlyMap<
   string,
   PhysicsPredictionIslandMemberDefinition
 > {
-  return new Map(createArenaMemberDefinitions().map((member) => [member.id, member]));
+  const definitions = new Map(
+    createArenaMemberDefinitions(0).map((member) => [member.id, structuredClone(member)])
+  );
+  for (const stage of ARENA_CONTENT.stages) {
+    for (const member of stage.courseProjection.memberDefinitions) {
+      definitions.set(member.id, structuredClone(member));
+    }
+  }
+  return definitions;
 }
 
 export function arenaMemberRole(id: string): ArenaMemberRole {
   if (id.startsWith("player.")) return "player";
   if (id.startsWith("bot.")) return "bot";
-  if (id.startsWith("hazard.")) return "sweeper";
-  if (id.startsWith("platform.")) return "platform";
-  return "prop";
+  return CONTENT_MEMBER_ROLES.get(id) ?? "prop";
 }
 
-export function arenaActorSpawn(id: string): PhysicsVector {
-  if (id.startsWith("player.")) {
-    return structuredClone(ACTOR_SPAWNS[Number(id.slice("player.".length))] ?? ACTOR_SPAWNS[0]!);
-  }
-  if (id.startsWith("bot.")) {
-    const slot = Number(id.slice("bot.".length)) + ARENA_MAX_HUMANS;
-    return structuredClone(ACTOR_SPAWNS[slot] ?? ACTOR_SPAWNS[ARENA_ACTOR_COUNT - 1]!);
-  }
-  return { x: 0, y: 2, z: 5 };
+export function arenaActorSpawn(id: string, stageIndex = 0): PhysicsVector {
+  const slot = id.startsWith("player.")
+    ? Number(id.slice("player.".length))
+    : id.startsWith("bot.")
+      ? Number(id.slice("bot.".length)) + ARENA_MAX_HUMANS
+      : -1;
+  const spawns = requireStage(stageIndex).courseProjection.participantSpawns;
+  return structuredClone(spawns[slot]?.position ?? spawns[0]?.position ?? { x: 0, y: 2, z: 5 });
+}
+
+export function arenaCourseProjection(stageIndex: number) {
+  return structuredClone(requireStage(stageIndex).courseProjection);
 }
 
 export function isArenaActor(id: string): boolean {
@@ -140,56 +112,10 @@ function createActorDefinition(
   };
 }
 
-function createDynamicBox(
-  id: string,
-  position: PhysicsVector
-): PhysicsPredictionIslandMemberDefinition {
-  return {
-    id,
-    body: { id, kind: "dynamic", position, damping: { linear: 0.8, angular: 0.8 } },
-    colliders: [
-      {
-        id: `${id}.collider`,
-        shape: { type: "box", width: 1.5, height: 1.5, depth: 1.5 },
-        material: "prop"
-      }
-    ]
-  };
-}
-
-function createDynamicSphere(
-  id: string,
-  position: PhysicsVector
-): PhysicsPredictionIslandMemberDefinition {
-  return {
-    id,
-    body: { id, kind: "dynamic", position, damping: { linear: 0.5, angular: 0.4 } },
-    colliders: [
-      {
-        id: `${id}.collider`,
-        shape: { type: "sphere", radius: 0.9 },
-        material: "prop"
-      }
-    ]
-  };
-}
-
-function createKinematicBox(
-  id: string,
-  position: PhysicsVector,
-  width: number,
-  height: number,
-  depth: number
-): PhysicsPredictionIslandMemberDefinition {
-  return {
-    id,
-    body: { id, kind: "kinematic", position },
-    colliders: [
-      {
-        id: `${id}.collider`,
-        shape: { type: "box", width, height, depth },
-        material: "hazard"
-      }
-    ]
-  };
+function requireStage(stageIndex: number) {
+  const stage = ARENA_CONTENT.stages[stageIndex];
+  if (stage === undefined) {
+    throw new Error(`arena.course_stage_index: ${stageIndex} is outside compiled content`);
+  }
+  return stage;
 }
