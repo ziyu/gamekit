@@ -3,6 +3,8 @@ import { GameError } from "@gamekit/core";
 import type {
   PhysicsBackendAdapter,
   PhysicsBackendCapabilities,
+  PhysicsBodyCommand,
+  PhysicsBodyCommandResult,
   PhysicsBodyDefinition,
   PhysicsBodyId,
   PhysicsBodyKind,
@@ -118,6 +120,12 @@ export function createRapier3dPhysicsBackend(
           fullScene: true,
           deterministicReplay: true
         },
+        bodyCommands: {
+          linearImpulse: true,
+          applicationPoint: true,
+          angularImpulse: true,
+          wakePolicy: true
+        },
         custom: {
           wasm: "compat",
           backend: "rapier3d",
@@ -217,6 +225,10 @@ function createRapier3dPhysicsScene(
       assertActive();
       const record = requireBody(bodies, id);
       applyBodyPatch(record, patch);
+    },
+    applyBodyCommand(command) {
+      assertActive();
+      return applyRapier3dBodyCommand(bodies.get(command.bodyId), command);
     },
     destroyBody(id) {
       assertActive();
@@ -669,6 +681,73 @@ function applyBodyPatch(record: Rapier3dBodyRecord, patch: PhysicsBodyPatch): vo
   if (patch.userData !== undefined) {
     record.userData = { ...patch.userData };
   }
+}
+
+function applyRapier3dBodyCommand(
+  record: Rapier3dBodyRecord | undefined,
+  command: PhysicsBodyCommand
+): PhysicsBodyCommandResult {
+  if (record === undefined) {
+    return bodyCommandResult(command, "body-missing", `Missing physics body: ${command.bodyId}`);
+  }
+  if (record.kind !== "dynamic") {
+    return bodyCommandResult(
+      command,
+      "body-kind-mismatch",
+      `Physics body command requires a dynamic body: ${command.bodyId}`
+    );
+  }
+  const wake = command.wake !== "preserve";
+  try {
+    if (command.type === "linear-impulse") {
+      const impulse = cloneVector3(command.impulse, "body.command.impulse");
+      if (command.point === undefined) {
+        record.body.applyImpulse(impulse, wake);
+      } else {
+        record.body.applyImpulseAtPoint(
+          impulse,
+          cloneVector3(command.point, "body.command.point"),
+          wake
+        );
+      }
+    } else {
+      if (
+        typeof command.impulse === "number" ||
+        "w" in command.impulse ||
+        command.impulse.z === undefined
+      ) {
+        return bodyCommandResult(
+          command,
+          "invalid-command",
+          "Rapier 3D angular impulse must be a three-dimensional vector"
+        );
+      }
+      record.body.applyTorqueImpulse(
+        cloneVector3(command.impulse, "body.command.angularImpulse"),
+        wake
+      );
+    }
+  } catch (error) {
+    return bodyCommandResult(
+      command,
+      "invalid-command",
+      error instanceof Error ? error.message : "Invalid Rapier 3D body command"
+    );
+  }
+  return bodyCommandResult(command, "applied");
+}
+
+function bodyCommandResult(
+  command: PhysicsBodyCommand,
+  status: PhysicsBodyCommandResult["status"],
+  reason?: string
+): PhysicsBodyCommandResult {
+  return {
+    status,
+    bodyId: command.bodyId,
+    commandType: command.type,
+    ...(reason === undefined ? {} : { reason })
+  };
 }
 
 function applyColliderPatch(

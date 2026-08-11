@@ -3,6 +3,8 @@ import { GameError } from "@gamekit/core";
 import type {
   PhysicsBackendAdapter,
   PhysicsBackendCapabilities,
+  PhysicsBodyCommand,
+  PhysicsBodyCommandResult,
   PhysicsBodyDefinition,
   PhysicsBodyId,
   PhysicsBodyKind,
@@ -118,6 +120,12 @@ export function createRapier2dPhysicsBackend(
           fullScene: true,
           deterministicReplay: true
         },
+        bodyCommands: {
+          linearImpulse: true,
+          applicationPoint: true,
+          angularImpulse: true,
+          wakePolicy: true
+        },
         custom: {
           wasm: "compat",
           backend: "rapier2d",
@@ -216,6 +224,10 @@ function createRapier2dPhysicsScene(
       assertActive();
       const record = requireBody(bodies, id);
       applyBodyPatch(record, patch);
+    },
+    applyBodyCommand(command) {
+      assertActive();
+      return applyRapier2dBodyCommand(bodies.get(command.bodyId), command);
     },
     destroyBody(id) {
       assertActive();
@@ -666,6 +678,76 @@ function applyBodyPatch(record: Rapier2dBodyRecord, patch: PhysicsBodyPatch): vo
   if (patch.userData !== undefined) {
     record.userData = { ...patch.userData };
   }
+}
+
+function applyRapier2dBodyCommand(
+  record: Rapier2dBodyRecord | undefined,
+  command: PhysicsBodyCommand
+): PhysicsBodyCommandResult {
+  if (record === undefined) {
+    return bodyCommandResult(command, "body-missing", `Missing physics body: ${command.bodyId}`);
+  }
+  if (record.kind !== "dynamic") {
+    return bodyCommandResult(
+      command,
+      "body-kind-mismatch",
+      `Physics body command requires a dynamic body: ${command.bodyId}`
+    );
+  }
+  const wake = command.wake !== "preserve";
+  try {
+    if (command.type === "linear-impulse") {
+      const impulse = finiteVector2(command.impulse, "body.command.impulse");
+      if (command.point === undefined) {
+        record.body.applyImpulse(impulse, wake);
+      } else {
+        record.body.applyImpulseAtPoint(
+          impulse,
+          finiteVector2(command.point, "body.command.point"),
+          wake
+        );
+      }
+    } else {
+      if (typeof command.impulse !== "number" || !Number.isFinite(command.impulse)) {
+        return bodyCommandResult(
+          command,
+          "invalid-command",
+          "Rapier 2D angular impulse must be a finite number"
+        );
+      }
+      record.body.applyTorqueImpulse(command.impulse, wake);
+    }
+  } catch (error) {
+    return bodyCommandResult(
+      command,
+      "invalid-command",
+      error instanceof Error ? error.message : "Invalid Rapier 2D body command"
+    );
+  }
+  return bodyCommandResult(command, "applied");
+}
+
+function finiteVector2(vector: PhysicsVector, path: string): RAPIER.Vector {
+  if (!Number.isFinite(vector.x) || !Number.isFinite(vector.y)) {
+    throw new GameError("physics.rapier_vector_invalid", "Rapier 2D vector must be finite", {
+      path,
+      vector
+    });
+  }
+  return cloneVector2(vector, path);
+}
+
+function bodyCommandResult(
+  command: PhysicsBodyCommand,
+  status: PhysicsBodyCommandResult["status"],
+  reason?: string
+): PhysicsBodyCommandResult {
+  return {
+    status,
+    bodyId: command.bodyId,
+    commandType: command.type,
+    ...(reason === undefined ? {} : { reason })
+  };
 }
 
 function applyColliderPatch(
