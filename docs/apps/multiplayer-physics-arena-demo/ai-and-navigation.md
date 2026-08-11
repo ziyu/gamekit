@@ -106,6 +106,15 @@ item-stale、claim-rejected、path-failed/stale、stuck、action-rejected、unsa
 
 Committed use/throw 受 `safe-point` interrupt policy 约束；AI 不能因为 utility 分数瞬间变化而每 tick取消/重启 windup。
 
+Authority 组合只创建一个 AI Core runtime，并由 Arena DataPack 注册六类 goal 与共享 task executor。Utility 输出的
+`movement`/`jump` intent 统一归一化为 `ArenaMoveInput`，继续经过与玩家相同的 `CharacterControlIntent` 和 Motor；`pickup`/`use`
+intent 则转换为稳定 command id 的 `ArenaItemAction`，继续经过同一 target generation、claim、owner、windup 与 Combat 校验。
+Authority 不再保留脚本巡航或 Bot 专用速度写入路径；未连接的人类 slot 使用 neutral input，也不会隐式变成 Bot。
+
+Perception source 每个 authority tick 捕获一次有界 read model，并按 actor 缓存个性化 objective frame；同一 tick 的五类 sensor
+与 task 读取同一份事实。Stage instance 改变时先 unbind 旧 agent，再按新 entrant/archetype 绑定，清空 memory、task 和 pending
+intent；actor 因淘汰先于 task update 脱离物理岛时，task 以 `actor-unavailable` 安全失败，不能抛错或重生实体。
+
 ## Navigation
 
 - Circuit Forge 使用 Recast/static navmesh 或明确 portal，按 character profile radius/height/slope/area 求 route。

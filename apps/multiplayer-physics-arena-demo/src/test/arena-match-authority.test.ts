@@ -122,7 +122,11 @@ describe("Knockout Arena multi-stage authority", () => {
         itemActions: 0,
         itemExecutions: 0,
         combatHits: 0,
-        combatKnockbacks: 0
+        combatKnockbacks: 0,
+        aiAgents: 0,
+        aiActiveTasks: 0,
+        aiMemoryFacts: 0,
+        aiPendingActions: 0
       });
       expect(() => fixture.authority.latestSnapshot()).toThrow(
         "Knockout arena authority is disposed"

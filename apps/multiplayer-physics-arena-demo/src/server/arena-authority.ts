@@ -17,6 +17,12 @@ import {
   type PhysicsVector
 } from "@gamekit/physics-core";
 
+import {
+  arenaBotArchetypeForMember,
+  createArenaAuthorityPerceptionSource,
+  type ArenaAuthorityPerceptionState
+} from "../ai/authority-perception";
+import { createArenaBotDecisionRuntime, type ArenaBotDecisionSnapshot } from "../ai/decision";
 import { ARENA_COMPILED_CONTENT } from "../content/default-content";
 import { createArenaMatchDirector, type ArenaMatchDirectorSnapshot } from "../match/match-director";
 import { createArenaImpactLedger, type ArenaImpactLedgerDiagnostics } from "../match/impact-ledger";
@@ -93,6 +99,7 @@ export type ArenaAuthorityRuntimeSnapshot = {
   impacts: ArenaImpactLedgerDiagnostics;
   items: ArenaItemAuthorityCoordinatorDiagnostics["runtime"];
   combat: ArenaCombatAuthorityDiagnostics;
+  ai: ArenaBotDecisionSnapshot;
   settlement?: ArenaStageSettlement | undefined;
 };
 
@@ -126,6 +133,10 @@ export type ArenaAuthorityRetainedState = {
   itemExecutions: number;
   combatHits: number;
   combatKnockbacks: number;
+  aiAgents: number;
+  aiActiveTasks: number;
+  aiMemoryFacts: number;
+  aiPendingActions: number;
 };
 
 export type CreateArenaAuthorityRuntimeOptions = {
@@ -240,6 +251,15 @@ export function createArenaAuthorityRuntime(
   let latestPayloadBytes = 0;
   let stageInstallationPending = false;
   let disposed = false;
+  let botPerceptionState = captureBotPerceptionState(0);
+  const botPerception = createArenaAuthorityPerceptionSource({
+    content,
+    state: () => botPerceptionState
+  });
+  const botDecisions = createArenaBotDecisionRuntime({ content, perception: botPerception });
+  const boundBotMemberIds = new Set<string>();
+  let botBindingStageInstanceId = "";
+  syncBotBindings();
   const binding = createMultiplayerAuthorityBindingStore({
     sessionId: options.sessionId,
     mode: "server-authoritative",
@@ -372,6 +392,7 @@ export function createArenaAuthorityRuntime(
         impacts: impactLedger.diagnostics(),
         items: itemAuthority.diagnostics().runtime,
         combat: combatAuthority.diagnostics(),
+        ai: botDecisions.snapshot(),
         ...(latestSettlement === undefined ? {} : { settlement: structuredClone(latestSettlement) })
       };
     },
@@ -383,6 +404,7 @@ export function createArenaAuthorityRuntime(
       const physics = island.diagnostics();
       const participantDiagnostics = participants.diagnostics();
       const impacts = impactLedger.diagnostics();
+      const ai = botDecisions.snapshot();
       return {
         disposed,
         participants: participantDiagnostics.participants,
@@ -405,7 +427,11 @@ export function createArenaAuthorityRuntime(
           itemAuthority.diagnostics().publicActions + itemAuthority.diagnostics().pendingActions,
         itemExecutions: itemAuthority.diagnostics().pendingExecutions,
         combatHits: combatAuthority.diagnostics().hits,
-        combatKnockbacks: combatAuthority.diagnostics().pendingKnockbacks
+        combatKnockbacks: combatAuthority.diagnostics().pendingKnockbacks,
+        aiAgents: ai.agents,
+        aiActiveTasks: ai.activeTasks,
+        aiMemoryFacts: ai.memoryFacts,
+        aiPendingActions: ai.pendingActions
       };
     },
     dispose() {
@@ -419,6 +445,8 @@ export function createArenaAuthorityRuntime(
       impactLedger.dispose();
       itemAuthority.dispose();
       combatAuthority.dispose();
+      botDecisions.dispose();
+      boundBotMemberIds.clear();
       inputsByPeerId.clear();
       inputAcksByPeerId.clear();
       actorControlsByMemberId.clear();
@@ -849,6 +877,10 @@ export function createArenaAuthorityRuntime(
 
   function advancePhysics(authorityTick: number): void {
     combatAuthority.advance(authorityTick);
+    syncBotBindings();
+    botPerceptionState = captureBotPerceptionState(authorityTick);
+    botDecisions.update(ARENA_FIXED_STEP_MS, authorityTick * ARENA_FIXED_STEP_MS);
+    queueBotDecisionActions(authorityTick);
     const targetTick = island.tick() + 1;
     const commands: PhysicsPredictionIslandCommand[] = [];
     let commandIndex = 0;
@@ -919,8 +951,7 @@ export function createArenaAuthorityRuntime(
       const memberId = arenaPlayerMemberId(slot);
       const participant = participants.byActorMemberId(memberId);
       const peerId = participant?.connected ? participant.peerId : undefined;
-      const input =
-        peerId === undefined ? botInput(authorityTick, slot) : inputsByPeerId.get(peerId);
+      const input = peerId === undefined ? neutralInput() : inputsByPeerId.get(peerId);
       const control = queueActorMotion(
         queueCharacterControl,
         queueDespawn,
@@ -942,7 +973,7 @@ export function createArenaAuthorityRuntime(
         queueCharacterControl,
         queueDespawn,
         memberId,
-        botInput(authorityTick, slot + 2)
+        botDecisions.inputFor(memberId, authorityTick)
       );
       actorControlsByMemberId.set(memberId, control);
       itemAuthority.queueCarryModifier({
@@ -980,6 +1011,108 @@ export function createArenaAuthorityRuntime(
     for (const command of commands) island.queue(command);
     const advanced = island.advanceTo(targetTick);
     recordAuthorityContacts(advanced.contacts, targetTick);
+  }
+
+  function syncBotBindings(): void {
+    const match = director.snapshot();
+    if (botBindingStageInstanceId === match.stageInstanceId) return;
+    for (const memberId of boundBotMemberIds) {
+      botDecisions.unbind(memberId, "arena-stage-changed");
+    }
+    boundBotMemberIds.clear();
+    for (const participant of participants.list()) {
+      if (
+        participant.kind !== "bot" ||
+        participant.actorMemberId === undefined ||
+        !stageEntrantParticipantIds.has(participant.id)
+      ) {
+        continue;
+      }
+      const archetype = arenaBotArchetypeForMember(
+        content,
+        match.stageIndex,
+        participant.actorMemberId
+      );
+      botDecisions.bind({
+        memberId: participant.actorMemberId,
+        participantId: participant.id,
+        archetypeId: archetype.id
+      });
+      boundBotMemberIds.add(participant.actorMemberId);
+    }
+    botBindingStageInstanceId = match.stageInstanceId;
+  }
+
+  function captureBotPerceptionState(authorityTick: number): ArenaAuthorityPerceptionState {
+    const match = director.snapshot();
+    const state = island.state();
+    return {
+      tick: authorityTick,
+      elapsedMs: authorityTick * ARENA_FIXED_STEP_MS,
+      stageIndex: match.stageIndex,
+      stageStartedAtTick: match.stageStartedAtTick ?? match.startedAtTick,
+      participants: participants.list(),
+      members: state.members,
+      items: itemAuthority.publicItems(state.members),
+      combat: combatAuthority.publicActors(),
+      impacts: impactLedger.entries(),
+      ranking: [...rankingSpatialFacts].map(([participantId, fact]) => ({
+        participantId,
+        checkpointCount: fact.checkpointCount,
+        finished: fact.finished,
+        objectiveScore: fact.objectiveScore
+      }))
+    };
+  }
+
+  function queueBotDecisionActions(authorityTick: number): void {
+    const actions = botDecisions.drainActions();
+    const publicItems = itemAuthority.publicItems(island.state().members);
+    for (const [index, action] of actions.entries()) {
+      const memberId = action.agentId.startsWith("ai.") ? action.agentId.slice(3) : action.agentId;
+      const participant = participants.byActorMemberId(memberId);
+      if (participant?.status !== "active") continue;
+      if (action.type === "interaction" && action.interactionId === "pickup") {
+        const item = publicItems.find(({ id }) => id === action.targetId);
+        if (item === undefined) continue;
+        itemAuthority.queueAction(participant.id, {
+          type: "interact",
+          commandId: `${director.snapshot().stageInstanceId}:ai:${memberId}:${authorityTick}:${index}`,
+          inputSequence: authorityTick,
+          aimX: 0,
+          aimZ: -1,
+          charge: 0,
+          targetItemId: item.id,
+          targetItemGeneration: item.instanceGeneration
+        });
+        continue;
+      }
+      if (action.type !== "action" || action.actionId !== "use") continue;
+      const aim = botActionAim(participant.id, action.targetId);
+      itemAuthority.queueAction(participant.id, {
+        type: "use",
+        commandId: `${director.snapshot().stageInstanceId}:ai:${memberId}:${authorityTick}:${index}`,
+        inputSequence: authorityTick,
+        aimX: aim.x,
+        aimZ: aim.z,
+        charge: 1
+      });
+    }
+  }
+
+  function botActionAim(sourceParticipantId: string, targetParticipantId?: string | undefined) {
+    const source = participants.participant(sourceParticipantId);
+    const target =
+      targetParticipantId === undefined ? undefined : participants.participant(targetParticipantId);
+    const sourceBody =
+      source?.actorMemberId === undefined ? undefined : island.body(source.actorMemberId);
+    const targetBody =
+      target?.actorMemberId === undefined ? undefined : island.body(target.actorMemberId);
+    if (sourceBody === undefined || targetBody === undefined) return { x: 0, z: -1 };
+    const x = targetBody.position.x - sourceBody.position.x;
+    const z = (targetBody.position.z ?? 0) - (sourceBody.position.z ?? 0);
+    const length = Math.hypot(x, z);
+    return length <= 0.001 ? { x: 0, z: -1 } : { x: x / length, z: z / length };
   }
 
   function recordAuthorityContacts(
@@ -1282,16 +1415,6 @@ function installInitialParticipants(
 
 function neutralInput(): ArenaMoveInput {
   return { sequence: 0, moveX: 0, moveZ: 0, jump: false };
-}
-
-function botInput(tick: number, slot: number): ArenaMoveInput {
-  const weave = Math.sin(tick * 0.024 + slot * 1.7);
-  return {
-    sequence: tick,
-    moveX: weave * 0.55,
-    moveZ: -0.9,
-    jump: tick % (110 + slot * 7) === 0
-  };
 }
 
 export function arenaMemberDefinitionsById(

@@ -87,7 +87,7 @@ export type ArenaBotPerceptionFrame = {
 
 /** Authority-only read model. Implementations must not expose client input or future schedule facts. */
 export type ArenaBotPerceptionSource = {
-  frame(): ArenaBotPerceptionFrame;
+  frame(agent?: AiAgentBinding | undefined): ArenaBotPerceptionFrame;
   profileFor(agent: AiAgentBinding): ArenaBotSkillProfileDefinition;
 };
 
@@ -105,7 +105,7 @@ function opponentSampler(source: ArenaBotPerceptionSource): AiSensorSampler {
   return {
     id: "arena.opponents",
     sample(context) {
-      const frame = source.frame();
+      const frame = source.frame(context.agent);
       const profile = source.profileFor(context.agent);
       const self = selfActor(frame, context.agent);
       if (self === undefined || self.status !== "active") return [];
@@ -151,7 +151,7 @@ function itemSampler(source: ArenaBotPerceptionSource): AiSensorSampler {
   return {
     id: "arena.items",
     sample(context) {
-      const frame = source.frame();
+      const frame = source.frame(context.agent);
       const profile = source.profileFor(context.agent);
       const self = selfActor(frame, context.agent);
       if (self === undefined || self.status !== "active" || self.carriedItemId !== undefined) {
@@ -192,7 +192,7 @@ function hazardSampler(source: ArenaBotPerceptionSource): AiSensorSampler {
   return {
     id: "arena.hazards",
     sample(context) {
-      const frame = source.frame();
+      const frame = source.frame(context.agent);
       const profile = source.profileFor(context.agent);
       const self = selfActor(frame, context.agent);
       if (self === undefined || self.status !== "active") return [];
@@ -236,7 +236,7 @@ function objectiveSampler(source: ArenaBotPerceptionSource): AiSensorSampler {
   return {
     id: "arena.objective",
     sample(context) {
-      const frame = source.frame();
+      const frame = source.frame(context.agent);
       const profile = source.profileFor(context.agent);
       const self = selfActor(frame, context.agent);
       if (self === undefined || self.status !== "active") return [];
@@ -268,7 +268,7 @@ function impactSampler(source: ArenaBotPerceptionSource): AiSensorSampler {
   return {
     id: "arena.impacts",
     sample(context) {
-      const frame = source.frame();
+      const frame = source.frame(context.agent);
       const profile = source.profileFor(context.agent);
       const self = selfActor(frame, context.agent);
       if (self === undefined) return [];
