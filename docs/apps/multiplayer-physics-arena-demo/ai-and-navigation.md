@@ -203,5 +203,10 @@ Archetype 只调整 definition/utility/task args，不复制专属 update loop�
 DevTools 选中 bot 时可查看 perception summary、memory count、goal scores、active goal/commitment、task phase、target、route、
 last intent、stuck state、scheduler class、budget delay 和 fail reason。正式客户端不接收完整明细。
 
+Authority diagnostics 提供两层有界投影：聚合层记录 movement/jump/action/interaction intent、goal selection、task failure 计数和
+按 goal/reason 的稳定计数；agent 层只记录 member/participant/archetype、scheduler、memory count、delayed decisions、active
+goal/task phase、target id 和 route id。它不包含 perception fact payload、完整 goal score、blackboard、route points、Physics handle
+或客户端 input。网络 `ArenaSnapshot` 不复制这两层明细，正式观战者只能看到已经提交的 control/item/combat/match 事实。
+
 契约覆盖 deterministic selection/tie-break、goal hysteresis、safe-point interrupt、item stale/claim reject、path stale、hazard
 avoidance、stuck recovery、stage reset、agent removal、checkpoint/restore、trace budget 和 8/12 bot authority profile。

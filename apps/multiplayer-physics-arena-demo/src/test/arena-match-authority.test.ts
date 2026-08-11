@@ -3,12 +3,14 @@ import { createMultiplayerRuntime } from "@gamekit/multiplayer-core";
 import { createMemoryPhysicsBackend } from "@gamekit/physics-core";
 import { describe, expect, it } from "vitest";
 
+import { prepareArenaBotNavigationRuntime } from "../ai/navigation";
+import { ARENA_COMPILED_CONTENT } from "../content/default-content";
 import { createArenaAuthorityRuntime } from "../server/arena-authority";
 import { arenaPlayerMemberId } from "../shared/config";
 
 describe("Knockout Arena multi-stage authority", () => {
   it("keeps eliminated actors out of later generations and publishes all stage results", async () => {
-    const fixture = await createAuthorityFixture("arena-stage-authority");
+    const fixture = await createAuthorityFixture("arena-stage-authority", true);
     try {
       advanceUntil(fixture.authority, (snapshot) => snapshot.phase === "running", 240);
       const qualifier = fixture.authority.latestSnapshot();
@@ -73,6 +75,31 @@ describe("Knockout Arena multi-stage authority", () => {
       expect(
         finalResult.participants.filter((participant) => participant.status === "finished")
       ).toHaveLength(1);
+      const ai = fixture.authority.snapshot().ai;
+      expect(ai.behavior).toMatchObject({
+        movementIntents: expect.any(Number),
+        jumpIntents: expect.any(Number),
+        actionIntents: expect.any(Number),
+        interactionIntents: expect.any(Number),
+        goalSelections: expect.any(Number)
+      });
+      expect(ai.behavior.movementIntents).toBeGreaterThan(0);
+      expect(ai.behavior.jumpIntents).toBeGreaterThan(0);
+      expect(ai.behavior.actionIntents).toBeGreaterThan(0);
+      expect(ai.behavior.interactionIntents).toBeGreaterThan(0);
+      expect(Object.keys(ai.behavior.goalSelectionsByGoal)).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(".sprinter."),
+          expect.stringContaining(".brawler."),
+          expect.stringContaining(".opportunist.")
+        ])
+      );
+      expect(fixture.authority.snapshot().navigation).toMatchObject({
+        activeStageIndex: 2,
+        stageChanges: 2,
+        artifacts: 3
+      });
+      expect(JSON.stringify(finalResult)).not.toContain("goalSelectionsByGoal");
 
       advanceUntil(
         fixture.authority,
@@ -192,7 +219,7 @@ describe("Knockout Arena multi-stage authority", () => {
   });
 });
 
-async function createAuthorityFixture(id: string) {
+async function createAuthorityFixture(id: string, withNavigation = false) {
   const multiplayer = createMemoryMultiplayerBackend({ id });
   const sessionId = `${id}.session`;
   const authorityPeerId = `${id}.server`;
@@ -220,9 +247,13 @@ async function createAuthorityFixture(id: string) {
     sessionId,
     localPeer: { id: "peer.primary", displayName: "Primary Bean", role: "client" }
   });
+  const navigation = withNavigation
+    ? await prepareArenaBotNavigationRuntime(ARENA_COMPILED_CONTENT)
+    : undefined;
   const authority = createArenaAuthorityRuntime({
     runtime: host,
     backend: createZeroGravityMemoryPhysicsBackend(id),
+    ...(navigation === undefined ? {} : { navigation }),
     sessionId,
     authorityPeerId,
     now: () => 1_000

@@ -41,13 +41,38 @@ export type ArenaBotDecisionAction = Extract<AiIntent, { type: "action" | "inter
 
 export type ArenaBotDecisionSnapshot = {
   agents: number;
+  agentDetails: ArenaBotDecisionAgentSnapshot[];
   activeTasks: number;
   memoryFacts: number;
   delayedDecisions: number;
   delayedSensorSamples: number;
   traceEntries: number;
   pendingActions: number;
+  behavior: {
+    movementIntents: number;
+    jumpIntents: number;
+    actionIntents: number;
+    interactionIntents: number;
+    goalSelections: number;
+    taskFailures: number;
+    goalSelectionsByGoal: Record<string, number>;
+    taskFailuresByReason: Record<string, number>;
+  };
   disposed: boolean;
+};
+
+export type ArenaBotDecisionAgentSnapshot = {
+  memberId: string;
+  participantId: string;
+  archetypeId: string;
+  schedulerClassId: string;
+  memoryFacts: number;
+  delayedDecisions: number;
+  goalId?: string | undefined;
+  taskId?: string | undefined;
+  taskPhase?: string | undefined;
+  targetId?: string | undefined;
+  routeId?: string | undefined;
 };
 
 export type ArenaBotDecisionRuntime = {
@@ -76,6 +101,16 @@ export function createArenaBotDecisionRuntime(options: {
   const actions: ArenaBotDecisionAction[] = [];
   const bindingsByMemberId = new Map<string, ArenaBotBinding>();
   const memberIdByAgentId = new Map<string, string>();
+  const currentGoalByMemberId = new Map<string, string>();
+  const goalSelectionsByGoal = new Map<string, number>();
+  const taskFailuresByReason = new Map<string, number>();
+  let movementIntents = 0;
+  let jumpIntents = 0;
+  let actionIntents = 0;
+  let interactionIntents = 0;
+  let goalSelections = 0;
+  let taskFailures = 0;
+  let lastTraceSequence = 0;
   let disposed = false;
   const runtime = createAiRuntime({
     id: "arena.authority.ai",
@@ -139,6 +174,7 @@ export function createArenaBotDecisionRuntime(options: {
       runtime.unbind(agentId, reason);
       bindingsByMemberId.delete(memberId);
       memberIdByAgentId.delete(agentId);
+      currentGoalByMemberId.delete(memberId);
       controlsByMemberId.delete(memberId);
     },
     has(memberId) {
@@ -152,6 +188,7 @@ export function createArenaBotDecisionRuntime(options: {
         const memberId = memberIdByAgentId.get(intent.agentId);
         if (memberId === undefined) continue;
         if (intent.type === "movement") {
+          movementIntents += 1;
           const length = Math.hypot(intent.desiredVelocity.x, intent.desiredVelocity.y);
           controlsByMemberId.set(memberId, {
             moveX: length <= 0.001 ? 0 : intent.desiredVelocity.x / length,
@@ -160,15 +197,19 @@ export function createArenaBotDecisionRuntime(options: {
           });
         } else if (intent.type === "action") {
           if (intent.actionId === "jump") {
+            jumpIntents += 1;
             const control = controlsByMemberId.get(memberId) ?? neutralControl();
             controlsByMemberId.set(memberId, { ...control, jump: true });
           } else {
+            actionIntents += 1;
             enqueueAction(intent);
           }
         } else if (intent.type === "interaction") {
+          interactionIntents += 1;
           enqueueAction(intent);
         }
       }
+      captureBehaviorTransitions();
     },
     inputFor(memberId, tick) {
       const control = controlsByMemberId.get(memberId) ?? neutralControl();
@@ -193,12 +234,25 @@ export function createArenaBotDecisionRuntime(options: {
       const snapshot = runtime.snapshot();
       return {
         agents: snapshot.agents.length,
+        agentDetails: [...bindingsByMemberId.values()]
+          .sort((left, right) => left.memberId.localeCompare(right.memberId))
+          .map((binding) => projectAgent(binding)),
         activeTasks: snapshot.activeTasks,
         memoryFacts: snapshot.memoryFacts,
         delayedDecisions: snapshot.delayedDecisions,
         delayedSensorSamples: snapshot.delayedSensorSamples,
         traceEntries: snapshot.traceEntries,
         pendingActions: actions.length,
+        behavior: {
+          movementIntents,
+          jumpIntents,
+          actionIntents,
+          interactionIntents,
+          goalSelections,
+          taskFailures,
+          goalSelectionsByGoal: orderedRecord(goalSelectionsByGoal),
+          taskFailuresByReason: orderedRecord(taskFailuresByReason)
+        },
         disposed
       };
     },
@@ -210,6 +264,7 @@ export function createArenaBotDecisionRuntime(options: {
       actions.length = 0;
       bindingsByMemberId.clear();
       memberIdByAgentId.clear();
+      currentGoalByMemberId.clear();
       controlsByMemberId.clear();
     }
   };
@@ -221,6 +276,40 @@ export function createArenaBotDecisionRuntime(options: {
   function enqueueAction(action: ArenaBotDecisionAction): void {
     if (actions.length === ARENA_BOT_ACTION_QUEUE_LIMIT) actions.shift();
     actions.push(structuredClone(action));
+  }
+
+  function captureBehaviorTransitions(): void {
+    for (const binding of bindingsByMemberId.values()) {
+      const goalId = runtime.getAgent(arenaBotAgentId(binding.memberId))?.goalId;
+      if (goalId === undefined || currentGoalByMemberId.get(binding.memberId) === goalId) continue;
+      currentGoalByMemberId.set(binding.memberId, goalId);
+      goalSelections += 1;
+      goalSelectionsByGoal.set(goalId, (goalSelectionsByGoal.get(goalId) ?? 0) + 1);
+    }
+    for (const trace of runtime.traces()) {
+      if (trace.sequence <= lastTraceSequence) continue;
+      lastTraceSequence = Math.max(lastTraceSequence, trace.sequence);
+      if (trace.label !== "ai.task_failed") continue;
+      const reason = typeof trace.payload?.reason === "string" ? trace.payload.reason : "unknown";
+      taskFailures += 1;
+      taskFailuresByReason.set(reason, (taskFailuresByReason.get(reason) ?? 0) + 1);
+    }
+  }
+
+  function projectAgent(binding: ArenaBotBinding): ArenaBotDecisionAgentSnapshot {
+    const agent = runtime.getAgent(arenaBotAgentId(binding.memberId));
+    const taskState = agent?.task?.state;
+    return {
+      ...structuredClone(binding),
+      schedulerClassId: agent?.schedulerClassId ?? "unbound",
+      memoryFacts: agent?.memorySize ?? 0,
+      delayedDecisions: agent?.delayedDecisions ?? 0,
+      ...(agent?.goalId === undefined ? {} : { goalId: agent.goalId }),
+      ...(agent?.task?.taskId === undefined ? {} : { taskId: agent.task.taskId }),
+      ...(typeof taskState?.phase !== "string" ? {} : { taskPhase: taskState.phase }),
+      ...(typeof taskState?.targetId !== "string" ? {} : { targetId: taskState.targetId }),
+      ...(typeof taskState?.routeId !== "string" ? {} : { routeId: taskState.routeId })
+    };
   }
 }
 
@@ -746,4 +835,8 @@ function vector(value: unknown): { x: number; y: number; z: number } | undefined
   const record = value as Record<string, unknown>;
   if (![record.x, record.y, record.z].every((item) => typeof item === "number")) return undefined;
   return { x: Number(record.x), y: Number(record.y), z: Number(record.z) };
+}
+
+function orderedRecord(values: ReadonlyMap<string, number>): Record<string, number> {
+  return Object.fromEntries([...values].sort(([left], [right]) => left.localeCompare(right)));
 }
