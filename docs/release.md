@@ -51,8 +51,12 @@ Version PR 是唯一应该把 package version 推进到下一版的 PR。合并�
 
 - PR 标题是 `Version GameKit packages`。
 - 改动来自 Changesets action 或 `corepack pnpm release:version`。
+- `corepack pnpm test:release-state` 通过：所有非私有 `packages/*` 都在同一个 Changesets fixed
+  group 中，且 manifest version 与 `packages/core` 完全一致。
 - `.changeset/pre.json` 仍能被 `corepack pnpm format` 接受。
 - lockfile 只体现版本和 workspace 依赖更新。
+- CI 和 `Release Verify` 都在 Version PR 的当前 commit 上成功；`action_required`、skipped 或只在
+  前一个功能 PR 上成功都不能替代 Version PR 验证。
 - 没有混入功能代码、release script 修复或文档治理改动。
 
 如果 Version PR 里混入无关改动，先修 Release workflow 或重新创建 Version PR，不要把
@@ -75,7 +79,8 @@ Version PR 是唯一应该把 package version 推进到下一版的 PR。合并�
 - `packages`：可选的逗号分隔 slug，例如 `core,event-bus`。空值表示当前可发布包集合。
 
 手动触发后仍必须检查 npm registry、GitHub Release 和 workflow 日志。不要用手动 workflow
-绕过 Version PR 来做日常版本推进。
+绕过 Version PR 来做日常版本推进。backfill 必须从与目标版本对应的 commit/tag 运行；发布入口会
+拒绝把当前 workspace 的其他版本静默改写成输入版本。
 
 ## Release Verify
 
@@ -105,12 +110,14 @@ corepack pnpm verify:release:gamekits
 
 `GAMEKITS_RELEASE_WAVE=all` 会自动发现 `packages/` 下所有非私有包，不依赖手工维护的发布包总表。
 Wave 1/2/3 仍负责选择各自的 smoke 入口，但每个 wave 的 tarball 集合都会包含完整内部依赖闭包，避免
-干净环境把尚未发布的相邻包错误解析到 npm registry。
+干净环境把尚未发布的相邻包错误解析到 npm registry。验证开始前会先检查 public package 集合、
+Changesets fixed group 和 workspace version；任何漏配或版本漂移都会在构建 tarball 前失败。
 
 提交发布相关改动前仍要跑仓库根目录验证：
 
 ```bash
 corepack pnpm test
+corepack pnpm test:release-state
 corepack pnpm build
 corepack pnpm lint
 corepack pnpm format

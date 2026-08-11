@@ -1,6 +1,6 @@
 # @gamekit/multiplayer-colyseus
 
-## 0.1.0-alpha.4
+## 0.1.0-alpha.5
 
 ### Minor Changes
 
@@ -17,7 +17,7 @@
 - Updated dependencies [42c830b]
 - Updated dependencies [c2b4371]
 - Updated dependencies [116b3bd]
-  - @gamekit/multiplayer-core@0.1.0-alpha.4
+  - @gamekit/multiplayer-core@0.1.0-alpha.5
 
 ## 0.1.0-alpha.3
 

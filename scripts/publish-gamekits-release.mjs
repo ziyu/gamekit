@@ -1,19 +1,29 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   parseAdditionalDistTags,
   resolveRequiredDistTags,
   validateDistTagPolicy
 } from "./release-dist-tags.mjs";
+import {
+  assertLockstepWorkspaceState,
+  assertPreparedReleaseState
+} from "./release-workspace-state.mjs";
 
-const version = process.env.GAMEKITS_RELEASE_VERSION ?? "0.1.0-alpha.0";
+const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const workspaceVersion = JSON.parse(
+  readFileSync(join(root, "packages", "core", "package.json"), "utf8")
+).version;
+const version = process.env.GAMEKITS_RELEASE_VERSION ?? workspaceVersion;
 const releaseDir = process.env.GAMEKITS_RELEASE_DIR ?? "/private/tmp/gamekits-wave2-release";
 const registry = process.env.GAMEKITS_NPM_REGISTRY ?? "https://registry.npmjs.org";
 const distTag = process.env.GAMEKITS_NPM_TAG ?? "alpha";
 const additionalDistTags = parseAdditionalDistTags(process.env.GAMEKITS_NPM_ADDITIONAL_TAGS);
 validateDistTagPolicy({ additionalDistTags, distTag, version });
+assertLockstepWorkspaceState({ releaseVersion: version, root });
 const packages = resolvePackages();
 const trustedPublisher = hasTrustedPublisherEnvironment();
 const token = resolveToken();
@@ -22,6 +32,12 @@ const publishedNames = [];
 if (packages.length === 0) {
   throw new Error("No packages to publish.");
 }
+
+assertPreparedReleaseState({
+  packageSlugs: packages,
+  releaseDir,
+  releaseVersion: version
+});
 
 if (!trustedPublisher && !token) {
   throw new Error(
