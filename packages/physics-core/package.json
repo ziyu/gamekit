@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
     }
   },
   "scripts": {
@@ -29,5 +33,12 @@
   "sideEffects": false,
   "publishConfig": {
     "access": "public"
+  },
+  "gamekitBuild": {
+    "bundleDts": false,
+    "entries": [
+      "src/index.ts",
+      "src/testing/index.ts"
+    ]
   }
 }

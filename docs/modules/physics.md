@@ -256,6 +256,7 @@ export type PhysicsScene<TNative = unknown> = {
 
   createBody(definition: PhysicsBodyDefinition): PhysicsBodyId;
   updateBody(id: PhysicsBodyId, patch: PhysicsBodyPatch): void;
+  applyBodyCommand?(command: PhysicsBodyCommand): PhysicsBodyCommandResult;
   destroyBody(id: PhysicsBodyId): void;
 
   createCollider(definition: PhysicsColliderDefinition): PhysicsColliderId;
@@ -293,6 +294,20 @@ Adapter 规则：
 - `PhysicsSceneConfig.materialDefinitions` 是 scene-local material registry。Adapter 必须把 collider 的 friction、
   restitution、density 和 combine rule 映射到底层 solver；未知 material id 必须报错。高速动态 body 通过
   `continuousCollisionDetection` 显式启用 backend CCD，不能靠放大 collider 掩盖 tunneling。
+
+## Body Command
+
+`PhysicsBodyPatch` 表达 position、rotation、velocity、gravity 或 sleeping 的目标状态；一次性 solver 操作使用
+`PhysicsBodyCommand`，不能用 velocity 覆盖伪装 impulse。首个稳定 command 包含 linear impulse、可选 world-space application
+point、angular impulse 和 `wake` / `preserve` policy。
+
+Backend 通过 `capabilities().bodyCommands` 分别声明 linear impulse、application point、angular impulse 和 wake policy，并通过
+可选的 `PhysicsScene.applyBodyCommand(...)` 执行。返回值必须明确区分 `applied`、`body-missing`、`invalid-command`、
+`unsupported` 和 `body-kind-mismatch`；dimension 或 body kind 不匹配不能静默近似。
+
+Prediction island 通过 `body-command` command variant 把 member id 映射成 scene body id，继续复用 tick、sequence、stable
+sorting、duplicate/conflict、history 和 replay budget。同一 duplicate sequence 不得再次施加 impulse；checkpoint restore 后必须按
+相同顺序得到同一结果。具体决策见 `docs/adr/0051-backend-neutral-physics-body-commands.md`。
 
 ## GameModule 集成
 
@@ -663,6 +678,9 @@ Physics module 应默认使用 fixed timestep 和稳定 system order，减少不
 - 单主体 prediction transition 覆盖静态碰撞、checkpoint hit/miss、hard reset、history limit 和 dispose。
 - 声明 prediction-island capability 的 backend 额外覆盖多 dynamic body 交互、完整 checkpoint restore、
   spawn/despawn replay、partial-member rejection、history overflow 和 retained-state cleanup。
+- 声明 body-command capability 的 backend 必须通过 `@gamekit/physics-core/testing` 的共享 conformance，覆盖 missing/static
+  rejection、linear/angular impulse、application point、wake policy 与 checkpoint replay；backend adapter 只能补专属误差容限和
+  native capability 测试，不能复制另一套 contract。
 
 Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Phaser Scene 绑定、Matter compound body 等。
 
@@ -711,6 +729,9 @@ Adapter 专属测试再覆盖底层库能力，例如 Rapier WASM 初始化、Ph
 - 高频移动、碰撞和查询留在 physics/world system 内；不要把每帧 contact manifold、position patch 或 query result 全量发到 EventBus、React UI 或 DevTools UI。
 - Renderer/camera 可以读取 interpolation store 的 transient sample；碰撞、能力目标、AI、Save 和 multiplayer authority 仍只读取 World / PhysicsScene 权威 transform。
 - 物理 prediction 的 input mapping 可以表达期望 velocity/kinematic target 和非物理 state 更新，但不能在游戏层再次调用 backend `step()`、维护 solver cache 或手写碰撞近似。单主体匹配 checkpoint 只表示公开 body 基线一致，用于避免无意义 replay；它不是完整 solver 存档。Backend 未承诺 deterministic 时仍保留 reconciliation；correction 是安全网，不是长期模型差异的替代品。
+- Character motor、Combat knockback、道具投掷和机关冲击通过 `PhysicsBodyCommand` 提交 impulse；业务代码只声明物理量与稳定
+  correlation，不读取 native mass/handle 自己换算 velocity。Kinematic target 继续使用显式 position/rotation patch，直到独立
+  capability 证明需要新的 command。
 - 可见 projectile 会被 blocker、target、bounce 或 expire 改变轨迹时，presentation 不能只沿初始 velocity 前进。
   简单可重放弹丸使用 Combat 的 kinematic fire/finish record 与同一 Physics sweep；复杂动态交互对象使用
   prediction island；Physics Core 不决定 damage 或 authority hit confirmation。

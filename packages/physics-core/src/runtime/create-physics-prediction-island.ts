@@ -1,6 +1,8 @@
 import { GameError } from "@gamekit/core";
 import type {
   PhysicsBackendAdapter,
+  PhysicsBodyCommand,
+  PhysicsBodyCommandPayload,
   PhysicsBodyDefinition,
   PhysicsBodyPatch,
   PhysicsBodyState,
@@ -37,6 +39,13 @@ export type PhysicsPredictionIslandCommand =
       sequence: number;
       memberId: string;
       patch: PhysicsBodyPatch;
+    }
+  | {
+      type: "body-command";
+      tick: number;
+      sequence: number;
+      memberId: string;
+      command: PhysicsBodyCommandPayload;
     }
   | {
       type: "despawn";
@@ -113,6 +122,8 @@ export type PhysicsPredictionIslandDiagnostics = {
   commands: number;
   spawned: number;
   patched: number;
+  bodyCommandsApplied: number;
+  bodyCommandsRejected: number;
   despawned: number;
   steps: number;
   checkpointCaptures: number;
@@ -252,6 +263,8 @@ export function createPhysicsPredictionIsland(
   > = {
     spawned: 0,
     patched: 0,
+    bodyCommandsApplied: 0,
+    bodyCommandsRejected: 0,
     despawned: 0,
     steps: 0,
     checkpointCaptures: 0,
@@ -648,6 +661,38 @@ export function createPhysicsPredictionIsland(
         metrics.patched += 1;
         return;
       }
+      case "body-command": {
+        const member = members.get(command.memberId);
+        if (member === undefined) {
+          metrics.bodyCommandsRejected += 1;
+          throw new GameError(
+            "physics.prediction_island_member_missing",
+            `Prediction island member is missing: ${command.memberId}`,
+            { command, replay }
+          );
+        }
+        if (scene.applyBodyCommand === undefined) {
+          metrics.bodyCommandsRejected += 1;
+          throw new GameError(
+            "physics.prediction_island_body_command_unsupported",
+            `Physics backend does not support body commands: ${options.backend.kind}`,
+            { command, replay, backend: options.backend.kind }
+          );
+        }
+        const result = scene.applyBodyCommand(
+          materializeBodyCommand(member.body.id, command.command)
+        );
+        if (result.status !== "applied") {
+          metrics.bodyCommandsRejected += 1;
+          throw new GameError(
+            "physics.prediction_island_body_command_rejected",
+            `Physics prediction island body command was rejected: ${result.status}`,
+            { command, replay, result }
+          );
+        }
+        metrics.bodyCommandsApplied += 1;
+        return;
+      }
       case "despawn": {
         const member = members.get(command.memberId);
         if (member === undefined) {
@@ -912,6 +957,18 @@ function commandSignature(command: PhysicsPredictionIslandCommand): string {
 
 function cloneCommand(command: PhysicsPredictionIslandCommand): PhysicsPredictionIslandCommand {
   return structuredClone(command);
+}
+
+function materializeBodyCommand(
+  bodyId: string,
+  payload: PhysicsBodyCommandPayload
+): PhysicsBodyCommand {
+  switch (payload.type) {
+    case "linear-impulse":
+      return { ...structuredClone(payload), bodyId };
+    case "angular-impulse":
+      return { ...structuredClone(payload), bodyId };
+  }
 }
 
 function compareCommands(

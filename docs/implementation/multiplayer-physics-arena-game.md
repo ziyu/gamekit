@@ -138,8 +138,8 @@ capture/restore/replay/reset。实现必须：
 | P0-02  | Accepted | P0-01        | 14-member 当前基线与 36-member 目标 profile 测量工具            | authority、payload、checkpoint/history、replay 指标可重复输出   |
 | P0-03  | Accepted | P0-01        | Arena DataType、稳定 identity/generation 与内容校验骨架         | 无效引用/重复 id/非法 generation 的确定性 fixture               |
 | P0-04  | Accepted | P0-02、P0-03 | P0 兼容 review、文档证据和阶段关闭                              | 现有 Multiplayer Demo、Outpost、Arena tests 与根级门禁通过      |
-| P1-01  | Active   | P0-04        | Physics body command 协议、排序/拒绝诊断与 memory backend       | command conformance 覆盖 impulse、point、wake、duplicate/replay |
-| P1-02  | Planned  | P1-01        | Rapier2D/3D body command 映射                                   | 两个 adapter 通过同一 conformance；native capability 有诊断     |
+| P1-01  | Accepted | P0-04        | Physics body command 协议、排序/拒绝诊断与 memory backend       | command conformance 覆盖 impulse、point、wake、duplicate/replay |
+| P1-02  | Active   | P1-01        | Rapier2D/3D body command 映射                                   | 两个 adapter 通过同一 conformance；native capability 有诊断     |
 | P1-03  | Planned  | P1-02        | `@gamekit/character-controller` pure motor、Data 与 diagnostics | ground/coyote/buffer/slope/step/platform/dive/stagger 单元契约  |
 | P1-04  | Planned  | P1-03        | 标准 Arena auxiliary replay contributor                         | Physics 与 motor 同 tick capture/restore/replay/reset/dispose   |
 | P1-05  | Planned  | P1-04        | Arena 与 Physics 3D Lab 接入共享 controller                     | 玩家/AI 同 intent；旧无状态 consumer 兼容                       |
@@ -172,12 +172,13 @@ capture/restore/replay/reset。实现必须：
 
 ## 验收记录
 
-| 工作包 | 验收时间   | 证据                                                                                                                                                                                                                             | Commit             |
-| ------ | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| P0-01  | 2026-08-11 | ADR 0051/0052/0053；GitNexus：island HIGH（16 symbols/10 direct/1 flow），Arena adapter LOW（4 symbols/1 flow）；Physics 3D Lab 可作为第二 fixture 且不引入反向依赖                                                              | `25a996c`          |
-| P0-02  | 2026-08-11 | `bench:arena-prediction:check` 34 budgets passed；14-member authority p95 0.431 ms / replay-12 p95 3.927 ms；36-member authority p95 0.923 ms / replay-30 p95 11.686 ms / snapshot p95 14,242 bytes；dispose retained 0          | `6ed1807`          |
-| P0-03  | 2026-08-11 | 8 app-local DataTypes、三 stage baseline compiler、stable generation/participant/actor/item/claim/execution/hit/KO identity；duplicate/missing ref/illegal generation fixtures；Arena 19 tests passed                            | `5b55195`          |
-| P0-04  | 2026-08-11 | root test 92/92、build 50/50、lint 92/92、format passed；Arena regression guard 校准为 p95/capacity/correctness 门并连续两次 31/31 passed；wall-clock max 保留报告，最终 5 ms/12 ms replay 与 8 ms authority max 仍由 P7/P8 验收 | 本工作包提交时补录 |
+| 工作包 | 验收时间   | 证据                                                                                                                                                                                                                                       | Commit             |
+| ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| P0-01  | 2026-08-11 | ADR 0051/0052/0053；GitNexus：island HIGH（16 symbols/10 direct/1 flow），Arena adapter LOW（4 symbols/1 flow）；Physics 3D Lab 可作为第二 fixture 且不引入反向依赖                                                                        | `25a996c`          |
+| P0-02  | 2026-08-11 | `bench:arena-prediction:check` 34 budgets passed；14-member authority p95 0.431 ms / replay-12 p95 3.927 ms；36-member authority p95 0.923 ms / replay-30 p95 11.686 ms / snapshot p95 14,242 bytes；dispose retained 0                    | `6ed1807`          |
+| P0-03  | 2026-08-11 | 8 app-local DataTypes、三 stage baseline compiler、stable generation/participant/actor/item/claim/execution/hit/KO identity；duplicate/missing ref/illegal generation fixtures；Arena 19 tests passed                                      | `5b55195`          |
+| P0-04  | 2026-08-11 | root test 92/92、build 50/50、lint 92/92、format passed；Arena regression guard 校准为 p95/capacity/correctness 门并连续两次 31/31 passed；wall-clock max 保留报告，最终 5 ms/12 ms replay 与 8 ms authority max 仍由 P7/P8 验收           | `b3ee4e3`          |
+| P1-01  | 2026-08-11 | Physics Core 32/32；memory 2D/3D shared conformance、explicit rejection、wake/point/angular/checkpoint、island sort/duplicate/replay；root test 92/92、build 50/50、lint 92/92、format；physics/projectile/Arena/checkpoint budgets passed | 本工作包提交时补录 |
 
 ## 分阶段实施细节
 

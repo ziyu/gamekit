@@ -57,6 +57,43 @@ export type PhysicsBodyPatch = {
   userData?: Record<string, unknown>;
 };
 
+export type PhysicsBodyCommandWakePolicy = "wake" | "preserve";
+
+export type PhysicsLinearImpulseCommandPayload = {
+  type: "linear-impulse";
+  impulse: PhysicsVector;
+  point?: PhysicsVector | undefined;
+  wake?: PhysicsBodyCommandWakePolicy | undefined;
+};
+
+export type PhysicsAngularImpulseCommandPayload = {
+  type: "angular-impulse";
+  impulse: PhysicsRotation;
+  wake?: PhysicsBodyCommandWakePolicy | undefined;
+};
+
+export type PhysicsBodyCommandPayload =
+  | PhysicsLinearImpulseCommandPayload
+  | PhysicsAngularImpulseCommandPayload;
+
+export type PhysicsBodyCommand = PhysicsBodyCommandPayload & {
+  bodyId: PhysicsBodyId;
+};
+
+export type PhysicsBodyCommandEnvelope = {
+  tick: number;
+  sequence: number;
+  correlationId?: string | undefined;
+  command: PhysicsBodyCommand;
+};
+
+export type PhysicsBodyCommandResult = {
+  status: "applied" | "body-missing" | "invalid-command" | "unsupported" | "body-kind-mismatch";
+  bodyId: PhysicsBodyId;
+  commandType: PhysicsBodyCommand["type"];
+  reason?: string | undefined;
+};
+
 export type PhysicsShapeDefinition =
   | { type: "circle"; radius: number }
   | { type: "box"; width: number; height: number; depth?: number }
@@ -132,6 +169,12 @@ export type PhysicsBackendCapabilities = {
   queries: Array<PhysicsQuery["type"]>;
   deterministic?: boolean;
   checkpoints?: PhysicsCheckpointCapability;
+  bodyCommands?: {
+    linearImpulse: boolean;
+    applicationPoint: boolean;
+    angularImpulse: boolean;
+    wakePolicy: boolean;
+  };
   custom?: Record<string, boolean | string | number>;
 };
 
@@ -358,6 +401,7 @@ export type PhysicsScene<TNative = unknown> = {
   readonly id: PhysicsSceneId;
   createBody(definition: PhysicsBodyDefinition): PhysicsBodyId;
   updateBody(id: PhysicsBodyId, patch: PhysicsBodyPatch): void;
+  applyBodyCommand?(command: PhysicsBodyCommand): PhysicsBodyCommandResult;
   destroyBody(id: PhysicsBodyId): void;
   createCollider(definition: PhysicsColliderDefinition): PhysicsColliderId;
   updateCollider(id: PhysicsColliderId, patch: PhysicsColliderPatch): void;
