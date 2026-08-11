@@ -196,4 +196,5 @@ queued command、snapshot bytes、history ticks/bytes、checkpoint bytes、singl
 
 Telemetry 至少显示：binding/session/input epoch、authority/client tick、ack/lead、RTT/jitter/loss、generation/revision/member、
 snapshot bytes/age、checkpoint/history/replay、correction/hard correction、item predicted lifecycle、effect settlement、rejected
-input/frame/command 和 dispose retained state。正式 HUD不显示这些底层指标。
+input/frame/command 和 dispose retained state。Dispose 诊断必须可证明 participant、Physics history/command、input、effect、ranking、
+result 与 cached snapshot 均已释放。正式 HUD不显示这些底层指标。

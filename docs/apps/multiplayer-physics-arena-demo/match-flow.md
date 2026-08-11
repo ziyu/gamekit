@@ -198,6 +198,9 @@ Rematch 创建新 `matchId`、seed、stage instances、input epoch 和 Physics g
 ticket、GAS execution/effect、AI memory/path、prediction history、effect journal、Animator binding、Audio instance 和
 results vote。显示名与用户输入/辅助设置可以保留，比赛内 score、instability、item 与 qualification 不能带入。
 
+Authority 必须提供可在 dispose 后读取的 retained-state 诊断；participant、Physics member/history/command、impact、input/ack、
+actor control、effect、ranking fact、stage entrant/result 与最后 snapshot 均应归零。不能用“对象已不可调用”代替资源释放证据。
+
 ## Authority Projection 与诊断
 
 Match projection 公开：

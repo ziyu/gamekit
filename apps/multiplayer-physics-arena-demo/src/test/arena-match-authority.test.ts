@@ -65,6 +65,54 @@ describe("Knockout Arena multi-stage authority", () => {
       expect(
         finalResult.participants.filter((participant) => participant.status === "finished")
       ).toHaveLength(1);
+
+      advanceUntil(
+        fixture.authority,
+        (snapshot) => snapshot.round === 2 && snapshot.phase === "countdown",
+        360
+      );
+      const rematch = fixture.authority.latestSnapshot();
+      expect(rematch).toMatchObject({
+        round: 2,
+        match: {
+          matchId: "match.2",
+          stageIndex: 0,
+          stageKind: "qualifier",
+          membershipRevision: rematch.frame.membershipRevision
+        },
+        stageResults: [],
+        eliminatedMemberIds: []
+      });
+      expect(rematch.winnerId).toBeUndefined();
+      expect(rematch.frame.generation).not.toBe(finalResult.frame.generation);
+      expect(actorIds(rematch)).toHaveLength(8);
+      expect(
+        rematch.participants.filter(
+          (participant) => participant.actorMemberId !== undefined && participant.status === "lobby"
+        )
+      ).toHaveLength(8);
+
+      fixture.authority.dispose();
+      expect(fixture.authority.retainedState()).toEqual({
+        disposed: true,
+        participants: 0,
+        physicsMembers: 0,
+        physicsHistoryEntries: 0,
+        physicsCommands: 0,
+        impactEntries: 0,
+        impactAttributions: 0,
+        inputs: 0,
+        inputAcks: 0,
+        actorControls: 0,
+        authorityEffects: 0,
+        rankingFacts: 0,
+        stageEntrants: 0,
+        stageResults: 0,
+        latestSnapshots: 0
+      });
+      expect(() => fixture.authority.latestSnapshot()).toThrow(
+        "Knockout arena authority is disposed"
+      );
     } finally {
       await fixture.dispose();
     }

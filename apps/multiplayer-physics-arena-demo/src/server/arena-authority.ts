@@ -81,7 +81,26 @@ export type ArenaAuthorityRuntime = {
   tick(deltaMs?: number): void;
   snapshot(): ArenaAuthorityRuntimeSnapshot;
   latestSnapshot(): ArenaSnapshot;
+  retainedState(): ArenaAuthorityRetainedState;
   dispose(): void;
+};
+
+export type ArenaAuthorityRetainedState = {
+  disposed: boolean;
+  participants: number;
+  physicsMembers: number;
+  physicsHistoryEntries: number;
+  physicsCommands: number;
+  impactEntries: number;
+  impactAttributions: number;
+  inputs: number;
+  inputAcks: number;
+  actorControls: number;
+  authorityEffects: number;
+  rankingFacts: number;
+  stageEntrants: number;
+  stageResults: number;
+  latestSnapshots: number;
 };
 
 export type CreateArenaAuthorityRuntimeOptions = {
@@ -248,7 +267,7 @@ export function createArenaAuthorityRuntime(
     }
   });
 
-  let latest = captureSnapshot();
+  let latest: ArenaSnapshot | undefined = captureSnapshot();
 
   return {
     tick(deltaMs = ARENA_FIXED_STEP_MS) {
@@ -274,7 +293,30 @@ export function createArenaAuthorityRuntime(
       };
     },
     latestSnapshot() {
+      if (latest === undefined) throw new Error("Knockout arena authority is disposed");
       return structuredClone(latest);
+    },
+    retainedState() {
+      const physics = island.diagnostics();
+      const participantDiagnostics = participants.diagnostics();
+      const impacts = impactLedger.diagnostics();
+      return {
+        disposed,
+        participants: participantDiagnostics.participants,
+        physicsMembers: physics.members,
+        physicsHistoryEntries: physics.historyEntries,
+        physicsCommands: physics.commands,
+        impactEntries: impacts.entries,
+        impactAttributions: impacts.attributions,
+        inputs: inputsByPeerId.size,
+        inputAcks: inputAcksByPeerId.size,
+        actorControls: actorControlsByMemberId.size,
+        authorityEffects: authorityEffects.size,
+        rankingFacts: rankingSpatialFacts.size,
+        stageEntrants: stageEntrantParticipantIds.size,
+        stageResults: stageResults.length,
+        latestSnapshots: latest === undefined ? 0 : 1
+      };
     },
     dispose() {
       if (disposed) return;
@@ -290,7 +332,10 @@ export function createArenaAuthorityRuntime(
       actorControlsByMemberId.clear();
       authorityEffects.clear();
       rankingSpatialFacts.clear();
+      stageEntrantParticipantIds.clear();
       stageResults.length = 0;
+      latestSettlement = undefined;
+      latest = undefined;
     }
   };
 
