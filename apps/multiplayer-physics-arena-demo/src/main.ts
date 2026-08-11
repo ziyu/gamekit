@@ -4,6 +4,9 @@ import { createConfiguredAppHost } from "@gamekit/app-host";
 import type { ThreeRendererNative } from "@gamekit/driver-three";
 import { initRapier3dPhysicsBackend } from "@gamekit/physics-rapier3d";
 
+import { createArenaGameAudio } from "./client/arena-audio-content";
+import { createArenaFeedbackRuntime } from "./client/arena-feedback";
+import { createArenaWebAudioBackend } from "./client/arena-web-audio-backend";
 import type { ArenaItemActionType } from "./items/item-action";
 import { createArenaDefinitionMap } from "./shared/arena-definition";
 import { createArenaVisual } from "./client/arena-visual";
@@ -46,6 +49,8 @@ async function boot(rootElement: HTMLElement): Promise<void> {
   const renderer = requireValue(context.renderer, "Three renderer");
   const native = renderer.native() as ThreeRendererNative;
   const visual = createArenaVisual(native, createArenaDefinitionMap());
+  const audio = createArenaGameAudio(createArenaWebAudioBackend());
+  const feedback = createArenaFeedbackRuntime(audio);
   const serverConfig = await loadArenaServerConfig();
   let session: ArenaClientSession | undefined;
   const input = createKeyboardInput(ui.viewport, (action) => void session?.itemAction(action));
@@ -63,6 +68,7 @@ async function boot(rootElement: HTMLElement): Promise<void> {
     ui.setBusy(true);
     ui.setConnection("connecting", `${intent.toUpperCase()} · NEGOTIATING ROOM`);
     try {
+      await feedback.unlock();
       await session?.dispose();
       session = undefined;
       const physicsBackend = await initRapier3dPhysicsBackend({
@@ -77,6 +83,7 @@ async function boot(rootElement: HTMLElement): Promise<void> {
         physicsBackend,
         readInput: input.sample,
         onEffect(event) {
+          feedback.effect(event);
           visual.effect(event);
           ui.showEffect(event);
           ui.pushLog(`${event.kind.toUpperCase()} · ${event.phase.toUpperCase()}`);
@@ -119,19 +126,28 @@ async function boot(rootElement: HTMLElement): Promise<void> {
     lastFrame = now;
     configured.host.tick(delta, now);
     session?.tick(delta);
-    visual.update(
-      session?.predictedState(),
-      session?.localMemberId(),
-      delta,
-      session?.presentation()
-    );
+    const predictedState = session?.predictedState();
+    const presentation = session?.presentation() ?? { generation: 0, actors: [] };
+    feedback.sync({
+      snapshot: session?.snapshot(),
+      predictedState,
+      presentation,
+      localMemberId: session?.localMemberId(),
+      deltaMs: delta
+    });
+    const feedbackSnapshot = feedback.snapshot();
+    visual.update(predictedState, session?.localMemberId(), delta, presentation, feedbackSnapshot);
     if (now - lastUiUpdate >= 100) {
-      updateArenaUi(
-        ui,
-        session?.snapshot(),
-        session?.localMemberId(),
-        session?.telemetry() ?? { status: "offline" }
-      );
+      updateArenaUi(ui, session?.snapshot(), session?.localMemberId(), {
+        ...(session?.telemetry() ?? { status: "offline" }),
+        feedback: feedback.diagnostics(),
+        audio: {
+          unlock: feedbackSnapshot.audio.unlock,
+          active: feedbackSnapshot.audio.activePlaybackInstances,
+          native: feedbackSnapshot.audio.nativePlaybackCount,
+          emitters: feedbackSnapshot.audio.spatial.emitters.length
+        }
+      });
       lastUiUpdate = now;
     }
     frameHandle = requestAnimationFrame(frame);
@@ -145,6 +161,8 @@ async function boot(rootElement: HTMLElement): Promise<void> {
       resizeObserver.disconnect();
       input.dispose();
       visual.destroy();
+      feedback.dispose();
+      audio.dispose();
       void session?.dispose();
       void configured.host.dispose();
     },

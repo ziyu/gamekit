@@ -17,6 +17,7 @@
     "@gamekit/animator-core": "workspace:*",
     "@gamekit/app-host": "workspace:*",
     "@gamekit/asset": "workspace:*",
+    "@gamekit/audio-core": "workspace:*",
     "@gamekit/character-controller": "workspace:*",
     "@gamekit/combat": "workspace:*",
     "@gamekit/data": "workspace:*",

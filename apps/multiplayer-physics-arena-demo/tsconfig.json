@@ -12,6 +12,7 @@
     { "path": "../../packages/animator-core" },
     { "path": "../../packages/app-host" },
     { "path": "../../packages/asset" },
+    { "path": "../../packages/audio-core" },
     { "path": "../../packages/character-controller" },
     { "path": "../../packages/driver-core" },
     { "path": "../../packages/driver-three" },

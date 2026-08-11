@@ -13,6 +13,7 @@ import { compileArenaItemCatalog } from "../items/item-definition";
 import { createArenaItemPhysicsMember } from "../items/item-physics";
 import { arenaMemberRole } from "../shared/arena-definition";
 import type { ArenaEffectPresentationEvent } from "./arena-effects";
+import type { ArenaFeedbackSnapshot } from "./arena-feedback";
 import type { ArenaPresentationSnapshot, ArenaPresentedActorState } from "./arena-presentation";
 
 export type ArenaVisual = {
@@ -20,7 +21,8 @@ export type ArenaVisual = {
     state: PhysicsPredictionIslandStateSnapshot | undefined,
     localMemberId?: string,
     deltaMs?: number,
-    presentation?: ArenaPresentationSnapshot
+    presentation?: ArenaPresentationSnapshot,
+    feedback?: ArenaFeedbackSnapshot
   ): void;
   effect(event: ArenaEffectPresentationEvent): void;
   destroy(): void;
@@ -51,6 +53,7 @@ type ArenaFx = {
 };
 
 const UNIT = 32;
+const MAX_VISUAL_EFFECTS = 48;
 const CAMERA_IDLE_POSITION = new THREE.Vector3(0, 8.4 * UNIT, 14.5 * UNIT);
 const CAMERA_IDLE_TARGET = new THREE.Vector3(0, 0.8 * UNIT, -3.8 * UNIT);
 const COLOR = {
@@ -86,6 +89,7 @@ export function createArenaVisual(
   const camera = new THREE.PerspectiveCamera(54, 16 / 9, 0.5, 5_000);
   const cameraTarget = CAMERA_IDLE_TARGET.clone();
   let localVisual: MemberVisual | undefined;
+  let cameraVisual: MemberVisual | undefined;
   let cameraShake = 0;
   let elapsedMs = 0;
 
@@ -97,10 +101,11 @@ export function createArenaVisual(
   configureRenderer(native.renderer);
 
   return {
-    update(state, localMemberId, deltaMs = 1000 / 60, presentation) {
+    update(state, localMemberId, deltaMs = 1000 / 60, presentation, feedback) {
       const safeDeltaMs = Math.min(50, Math.max(0, deltaMs));
       elapsedMs += safeDeltaMs;
       localVisual = undefined;
+      cameraVisual = undefined;
       if (state) {
         const presentedActors = new Map(
           presentation?.actors.map((actor) => [actor.memberId, actor]) ?? []
@@ -121,7 +126,13 @@ export function createArenaVisual(
             presentedActors.get(member.id)
           );
           setLocalPresentation(visual, local);
+          updateHazardPresentation(
+            visual,
+            feedback?.hazards.find((hazard) => hazard.memberId === member.id)?.phase,
+            state.tick
+          );
           if (local) localVisual = visual;
+          if (member.id === feedback?.camera.targetMemberId) cameraVisual = visual;
         }
         for (const [id, visual] of members) {
           if (retained.has(id)) continue;
@@ -132,19 +143,27 @@ export function createArenaVisual(
       }
       updateEffects(effects, safeDeltaMs);
       cameraShake = Math.max(0, cameraShake - safeDeltaMs * 0.0018 * UNIT);
-      updateCamera(camera, cameraTarget, localVisual, safeDeltaMs, elapsedMs, cameraShake);
+      updateCamera(
+        camera,
+        cameraTarget,
+        cameraVisual ?? localVisual,
+        safeDeltaMs,
+        elapsedMs,
+        cameraShake
+      );
       renderScene(native, camera);
     },
     effect(event) {
       const existingIndex = effects.findIndex((effect) => effect.effectId === event.effectId);
       if (existingIndex >= 0) removeEffect(effects, existingIndex);
       if (event.phase === "cancel") return;
-      const origin = localVisual?.root.position ?? cameraTarget;
+      const origin = localVisual?.root.position ?? cameraVisual?.root.position ?? cameraTarget;
       effects.push(createEffect(root, event, origin));
+      while (effects.length > MAX_VISUAL_EFFECTS) removeEffect(effects, 0);
       if (event.kind === "contact" && event.phase === "confirm") {
-        cameraShake = Math.max(cameraShake, 0.22 * UNIT);
+        cameraShake = Math.min(0.3 * UNIT, Math.max(cameraShake, 0.22 * UNIT));
       } else if (event.kind === "jump" && event.phase === "confirm") {
-        cameraShake = Math.max(cameraShake, 0.07 * UNIT);
+        cameraShake = Math.min(0.3 * UNIT, Math.max(cameraShake, 0.07 * UNIT));
       }
     },
     destroy() {
@@ -727,6 +746,25 @@ function setLocalPresentation(visual: MemberVisual, local: boolean): void {
   for (const material of visual.glowMaterials) {
     material.emissiveIntensity = local ? 0.52 : visual.role === "bot" ? 0.05 : 0.14;
   }
+}
+
+function updateHazardPresentation(
+  visual: MemberVisual,
+  phase: ArenaFeedbackSnapshot["hazards"][number]["phase"] | undefined,
+  tick: number
+): void {
+  if (phase === undefined || (visual.role !== "sweeper" && visual.role !== "platform")) return;
+  const pulse = 0.5 + Math.sin(tick * 0.22) * 0.5;
+  const intensity =
+    phase === "warning"
+      ? 0.45 + pulse * 0.55
+      : phase === "active"
+        ? 1.2
+        : phase === "recovery"
+          ? 0.2
+          : 0.08;
+  for (const material of visual.glowMaterials) material.emissiveIntensity = intensity;
+  visual.model.scale.setScalar(phase === "warning" ? 1 + pulse * 0.035 : 1);
 }
 
 function updateCamera(

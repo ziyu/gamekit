@@ -327,6 +327,9 @@ importers:
       '@gamekit/asset':
         specifier: workspace:*
         version: link:../../packages/asset
+      '@gamekit/audio-core':
+        specifier: workspace:*
+        version: link:../../packages/audio-core
       '@gamekit/character-controller':
         specifier: workspace:*
         version: link:../../packages/character-controller

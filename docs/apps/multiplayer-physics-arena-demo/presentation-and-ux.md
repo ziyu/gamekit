@@ -105,6 +105,10 @@ Spatial emitter跟随presented actor/item/hazard；逻辑event identity与native
 concurrency、cooldown和voice stealing；重复 replay/late join不重放过期one-shot。用户可独立调整music/SFX/UI、动态范围、
 震动与高频冲击音强度。
 
+Arena 的浏览器组合层在 Driver 没有 Audio slice 时绑定 app-owned WebAudio backend；backend只执行已编译的 authored/synth key、
+gain、pan、fade和voice lifecycle。Catalog、music transition、SFX dedupe/concurrency、空间 identity、逻辑/native预算和diagnostics
+仍由 Audio Core持有。用户手势只调用`GameAudio.unlock()`，不让 gameplay 直接操作`AudioContext`。
+
 ## Camera
 
 ### Playing Camera
@@ -120,6 +124,8 @@ concurrency、cooldown和voice stealing；重复 replay/late join不重放过期
 - 默认选择仍active且可见的participant；用户可以上/下一目标或自由查看声明的arena camera anchor。
 - 观战不提供隐藏item respawn、AI blackboard或未公开hazard随机结果。
 - Target淘汰/disconnect/stage reset时使用稳定fallback，不把旧actor重新生成。
+- Playing/spectator/broadcast target由统一feedback frame给出；Three camera只平滑追随该display target，不能反向改变participant、
+  input、Physics transform或ranking。
 
 ### Broadcast Camera
 
