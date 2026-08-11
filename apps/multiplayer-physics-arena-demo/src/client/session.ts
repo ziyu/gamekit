@@ -41,6 +41,10 @@ import {
   type ArenaEffectPresentationEvent
 } from "./arena-effects";
 import {
+  createArenaPresentationRuntime,
+  type ArenaPresentationSnapshot
+} from "./arena-presentation";
+import {
   ARENA_BROWSER_CONFIG_PATH,
   ARENA_ACTION_KIND,
   ARENA_DEFINITION_VERSION,
@@ -70,6 +74,7 @@ export type ArenaClientSession = {
   tick(deltaMs: number): void;
   snapshot(): ArenaSnapshot | undefined;
   predictedState(): PhysicsPredictionIslandStateSnapshot | undefined;
+  presentation(): ArenaPresentationSnapshot;
   localMemberId(): string | undefined;
   telemetry(): Record<string, unknown>;
   itemAction(type: ArenaItemActionType): Promise<void>;
@@ -161,7 +166,11 @@ export async function createArenaClientSession(options: {
   );
   let latestSnapshot: ArenaSnapshot | undefined;
   let replication: MultiplayerClientReplicationView<ArenaSnapshot, ArenaControlState> | undefined;
-  const effects = createArenaClientEffectController(1, options.onEffect);
+  const presentation = createArenaPresentationRuntime();
+  const effects = createArenaClientEffectController(1, (event) => {
+    presentation.effect(event);
+    options.onEffect?.(event);
+  });
 
   let readPredictedBody: (memberId: string) => PhysicsBodyState | undefined = () => undefined;
   let latestInput: ArenaClientInput = { moveX: 0, moveZ: -1, jump: false };
@@ -422,6 +431,12 @@ export async function createArenaClientSession(options: {
     runtime,
     tick(deltaMs) {
       game.tick(deltaMs);
+      presentation.sync({
+        snapshot: latestSnapshot,
+        predictedState: arena.state(),
+        localMemberId: resolveLocalMemberId(latestSnapshot, peerId),
+        deltaMs
+      });
     },
     snapshot() {
       return latestSnapshot;
@@ -429,16 +444,11 @@ export async function createArenaClientSession(options: {
     predictedState() {
       return arena.state();
     },
+    presentation() {
+      return presentation.snapshot();
+    },
     localMemberId() {
-      const participant = latestSnapshot?.participants.find(
-        (candidate) => candidate.peerId === peerId
-      );
-      return participant?.status === "spectator" ||
-        participant?.status === "next-match" ||
-        participant?.status === "eliminated" ||
-        participant?.status === "finished"
-        ? undefined
-        : participant?.actorMemberId;
+      return resolveLocalMemberId(latestSnapshot, peerId);
     },
     telemetry() {
       const replicationDiagnostics = replication?.diagnostics();
@@ -471,7 +481,8 @@ export async function createArenaClientSession(options: {
           predictedItemMembers: arenaDiagnostics.predictedMemberRegistrations,
           predictedItemMemberFailures: arenaDiagnostics.predictedMemberRegistrationFailures
         },
-        effects: effects.diagnostics()
+        effects: effects.diagnostics(),
+        presentation: presentation.diagnostics()
       };
     },
     async itemAction(type) {
@@ -576,10 +587,24 @@ export async function createArenaClientSession(options: {
     async dispose() {
       game.dispose();
       effects.dispose();
+      presentation.dispose();
       binding.close("Knockout client disposed");
       await runtime.dispose();
     }
   };
+}
+
+function resolveLocalMemberId(
+  snapshot: ArenaSnapshot | undefined,
+  peerId: string
+): string | undefined {
+  const participant = snapshot?.participants.find((candidate) => candidate.peerId === peerId);
+  return participant?.status === "spectator" ||
+    participant?.status === "next-match" ||
+    participant?.status === "eliminated" ||
+    participant?.status === "finished"
+    ? undefined
+    : participant?.actorMemberId;
 }
 
 function normalizedAim(input: ArenaClientInput): { x: number; z: number } {

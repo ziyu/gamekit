@@ -64,6 +64,46 @@ describe("Knockout Circuit presentation", () => {
     }
   });
 
+  it("consumes semantic Animator state instead of rebuilding gameplay mode in Three", () => {
+    const native = fakeNative(vi.fn());
+    const visual = createArenaVisual(native, createArenaDefinitionMap());
+    const state = arenaState();
+    const presentation = {
+      generation: 1,
+      sourceGeneration: state.generation,
+      actors: [
+        {
+          memberId: "player.0",
+          participantId: "player.0",
+          generation: 1,
+          tick: state.tick,
+          local: true,
+          horizontalSpeed: 0,
+          normalizedSpeed: 0,
+          verticalVelocity: 0,
+          facingYaw: Math.PI / 2,
+          instability: 1,
+          grounded: true,
+          carrying: false,
+          baseState: "eliminated" as const
+        }
+      ]
+    };
+    for (let frame = 0; frame < 24; frame += 1) {
+      visual.update(state, "player.0", 16, presentation);
+    }
+
+    const model = native.scene.getObjectByName("player.0.runner-model")!;
+    expect(model.rotation.z).toBeGreaterThan(1.4);
+    expect(model.scale.y).toBeLessThan(0.8);
+    const facing = new THREE.Vector3(0, 0, -1)
+      .applyQuaternion(model.getWorldQuaternion(new THREE.Quaternion()))
+      .setY(0)
+      .normalize();
+    expect(facing.x).toBeLessThan(-0.99);
+    visual.destroy();
+  });
+
   it("bounds speculative effect presentation and removes expired particles", () => {
     const native = fakeNative(vi.fn());
     const visual = createArenaVisual(native, createArenaDefinitionMap());

@@ -13,12 +13,14 @@ import { compileArenaItemCatalog } from "../items/item-definition";
 import { createArenaItemPhysicsMember } from "../items/item-physics";
 import { arenaMemberRole } from "../shared/arena-definition";
 import type { ArenaEffectPresentationEvent } from "./arena-effects";
+import type { ArenaPresentationSnapshot, ArenaPresentedActorState } from "./arena-presentation";
 
 export type ArenaVisual = {
   update(
     state: PhysicsPredictionIslandStateSnapshot | undefined,
     localMemberId?: string,
-    deltaMs?: number
+    deltaMs?: number,
+    presentation?: ArenaPresentationSnapshot
   ): void;
   effect(event: ArenaEffectPresentationEvent): void;
   destroy(): void;
@@ -95,11 +97,14 @@ export function createArenaVisual(
   configureRenderer(native.renderer);
 
   return {
-    update(state, localMemberId, deltaMs = 1000 / 60) {
+    update(state, localMemberId, deltaMs = 1000 / 60, presentation) {
       const safeDeltaMs = Math.min(50, Math.max(0, deltaMs));
       elapsedMs += safeDeltaMs;
       localVisual = undefined;
       if (state) {
+        const presentedActors = new Map(
+          presentation?.actors.map((actor) => [actor.memberId, actor]) ?? []
+        );
         const retained = new Set<string>();
         for (const member of state.members) {
           const definition = definitions.get(member.id) ?? resolveItemMemberDefinition(member);
@@ -107,7 +112,14 @@ export function createArenaVisual(
           retained.add(member.id);
           const visual = ensureMemberMesh(root, members, definition);
           const local = member.id === localMemberId;
-          updateMemberVisual(visual, member.body, state.tick, safeDeltaMs, local);
+          updateMemberVisual(
+            visual,
+            member.body,
+            state.tick,
+            safeDeltaMs,
+            local,
+            presentedActors.get(member.id)
+          );
           setLocalPresentation(visual, local);
           if (local) localVisual = visual;
         }
@@ -637,7 +649,8 @@ function updateMemberVisual(
   body: PhysicsBodyState,
   tick: number,
   deltaMs: number,
-  local: boolean
+  local: boolean,
+  presented?: ArenaPresentedActorState
 ): void {
   const alpha = visual.initialized ? 1 - Math.exp(-deltaMs / (local ? 38 : 72)) : 1;
   const actor = visual.role === "player" || visual.role === "bot";
@@ -648,23 +661,59 @@ function updateMemberVisual(
   if (!actor) return;
 
   const velocity = body.linearVelocity;
-  const horizontalSpeed = Math.hypot(velocity.x, velocity.z ?? 0);
-  const stride = Math.min(1, horizontalSpeed / 6.4);
-  if (horizontalSpeed > 0.12) {
-    const targetYaw = Math.atan2(-velocity.x, -(velocity.z ?? 0));
+  const horizontalSpeed = presented?.horizontalSpeed ?? Math.hypot(velocity.x, velocity.z ?? 0);
+  const stride = Math.min(1, presented?.normalizedSpeed ?? horizontalSpeed / 6.4);
+  const targetYaw =
+    presented?.facingYaw ??
+    (horizontalSpeed > 0.12 ? Math.atan2(-velocity.x, -(velocity.z ?? 0)) : visual.root.rotation.y);
+  if (horizontalSpeed > 0.12 || presented !== undefined) {
     visual.root.rotation.y = lerpAngle(visual.root.rotation.y, targetYaw, alpha * 0.7);
   }
   const step = tick * 0.42;
-  visual.model.position.y = Math.abs(Math.sin(step)) * stride * 0.055 * UNIT;
-  visual.model.rotation.x = THREE.MathUtils.lerp(
-    visual.model.rotation.x,
-    Math.min(0.18, stride * 0.14),
+  const baseState = presented?.baseState ?? (horizontalSpeed > 0.18 ? "run" : "idle");
+  const running = baseState === "run";
+  visual.model.position.y = THREE.MathUtils.lerp(
+    visual.model.position.y,
+    running ? Math.abs(Math.sin(step)) * stride * 0.055 * UNIT : 0,
     alpha
   );
+  const baseTilt =
+    baseState === "dive"
+      ? 1.08
+      : baseState === "fall"
+        ? -0.12
+        : baseState === "jump"
+          ? 0.1
+          : running
+            ? Math.min(0.18, stride * 0.14)
+            : 0;
+  visual.model.rotation.x = THREE.MathUtils.lerp(visual.model.rotation.x, baseTilt, alpha);
   for (const [index, limb] of visual.limbs.entries()) {
     const side = index % 2 === 0 ? 1 : -1;
-    limb.rotation.x = Math.sin(step + (side * Math.PI) / 2) * stride * 0.42;
+    const isArm = index % 2 === 0;
+    const actionRaised =
+      isArm &&
+      (presented?.carrying === true ||
+        presented?.actionClip?.includes("windup") === true ||
+        presented?.actionClip?.includes("item-action") === true);
+    const limbTarget = actionRaised
+      ? -1.05
+      : running
+        ? Math.sin(step + (side * Math.PI) / 2) * stride * 0.42
+        : 0;
+    limb.rotation.x = THREE.MathUtils.lerp(limb.rotation.x, limbTarget, alpha);
   }
+  const reaction = presented?.reactionClip?.includes("impact") === true;
+  const stagger = baseState === "stagger";
+  const eliminated = baseState === "eliminated";
+  const targetRoll = eliminated
+    ? Math.PI / 2
+    : reaction || stagger
+      ? Math.sin(tick * 0.9) * (reaction ? 0.28 : 0.16)
+      : 0;
+  visual.model.rotation.z = THREE.MathUtils.lerp(visual.model.rotation.z, targetRoll, alpha);
+  const targetScaleY = eliminated ? 0.72 : baseState === "recovery" ? 0.86 : 1;
+  visual.model.scale.y = THREE.MathUtils.lerp(visual.model.scale.y, targetScaleY, alpha);
   if (visual.localRing) visual.localRing.rotation.z = tick * 0.035;
   if (visual.marker) {
     visual.marker.position.y = (1.55 + Math.sin(tick * 0.08) * 0.08) * UNIT;

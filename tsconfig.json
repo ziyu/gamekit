@@ -30,6 +30,7 @@
     { "path": "./packages/test-utils" },
     { "path": "./apps/multiplayer-demo" },
     { "path": "./apps/multiplayer-outpost-siege-demo" },
+    { "path": "./apps/multiplayer-physics-arena-demo" },
     { "path": "./apps/sandbox" },
     { "path": "./apps/abyss-delve" },
     { "path": "./apps/three-demo" },

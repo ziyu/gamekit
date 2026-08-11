@@ -14,7 +14,9 @@
   "dependencies": {
     "@colyseus/core": "^0.17.44",
     "@gamekit/ai-core": "workspace:*",
+    "@gamekit/animator-core": "workspace:*",
     "@gamekit/app-host": "workspace:*",
+    "@gamekit/asset": "workspace:*",
     "@gamekit/character-controller": "workspace:*",
     "@gamekit/combat": "workspace:*",
     "@gamekit/data": "workspace:*",

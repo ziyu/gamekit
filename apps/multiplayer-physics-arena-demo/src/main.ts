@@ -119,7 +119,12 @@ async function boot(rootElement: HTMLElement): Promise<void> {
     lastFrame = now;
     configured.host.tick(delta, now);
     session?.tick(delta);
-    visual.update(session?.predictedState(), session?.localMemberId(), delta);
+    visual.update(
+      session?.predictedState(),
+      session?.localMemberId(),
+      delta,
+      session?.presentation()
+    );
     if (now - lastUiUpdate >= 100) {
       updateArenaUi(
         ui,

@@ -49,6 +49,21 @@ impact/stagger/qualified/eliminated。Authority action phase是时间源；marke
 
 Remote/late join 按 phase start tick seek 当前动作位置，不从第一帧重播已经过期的 windup、throw 或 KO reaction。
 
+### Animator 集成契约
+
+Arena client 维护一个独立 presented-state runtime。它把 prediction island 的 body/motor auxiliary state 与 authority 的
+participant、item、combat、match projection 合并为每个 actor 唯一的动画语义帧；Three playback adapter 只解释该帧，不再
+自行推断 grounded、stagger、carry 或 elimination gameplay 状态。
+
+- Base/action/reaction graph 和 clip mapping 由 app DataPack 定义，业务代码不依赖 Three animation native type。
+- Continuous parameter 可随预测帧更新；authority action phase 以 execution id、start tick、duration 和 stage generation 同步。
+- Stage generation 变化必须 reset controller；actor 离开 membership 必须 unbind，并释放 retained playback frame。
+- 本地预测通过 motor/base state即时反馈；replay-sensitive action/reaction one-shot只消费 effect journal 已结算的 stable
+  identity，presentation consumer不另造业务去重规则。
+- Late join 直接 seek 当前 phase progress；seek 不补发已经越过的 marker。脚步、拖尾等 marker只能产生表现，不提交命中、
+  release、KO 或 stage result。
+- Playback adapter 的 controller、frame、marker history、one-shot queue 和 trace 都有硬上限，dispose 后 retained state 为零。
+
 ## 道具与机关表现
 
 - World item 使用 instance/generation visual identity；predicted spawn 与 authority takeover不能复制 mesh。

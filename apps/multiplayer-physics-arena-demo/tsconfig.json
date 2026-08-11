@@ -9,7 +9,9 @@
   "include": ["src"],
   "references": [
     { "path": "../../packages/ai-core" },
+    { "path": "../../packages/animator-core" },
     { "path": "../../packages/app-host" },
+    { "path": "../../packages/asset" },
     { "path": "../../packages/character-controller" },
     { "path": "../../packages/driver-core" },
     { "path": "../../packages/driver-three" },
