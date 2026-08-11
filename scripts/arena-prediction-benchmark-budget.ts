@@ -21,22 +21,31 @@ type Budget = {
 };
 
 const BUDGETS: Budget[] = [
-  ...caseBudgets("rapier3d-arena-rollback", 16, 128, 12, {
-    p95MsPerRound: 8,
-    maxMsPerRound: 32,
-    payloadBytes: 16 * 1024,
-    maxHistoryBytes: 16 * 1024 * 1024,
+  ...caseBudgets("rapier3d-arena-rollback", "current-14", 14, 128, 12, {
+    authorityStepP95Ms: 4,
+    authorityStepMaxMs: 8,
+    replayP95Ms: 5,
+    replayMaxMs: 20,
+    snapshotPayloadP95Bytes: 32 * 1024,
+    snapshotPayloadMaxBytes: 64 * 1024,
+    historyMaxBytes: 96 * 1024 * 1024,
     maxCheckpointBytes: 256 * 1024
   }),
-  ...caseBudgets("rapier3d-arena-rollback", 32, 128, 30, {
-    p95MsPerRound: 25,
-    maxMsPerRound: 50,
-    payloadBytes: 16 * 1024,
-    maxHistoryBytes: 24 * 1024 * 1024,
+  ...caseBudgets("rapier3d-arena-rollback", "target-36", 36, 128, 30, {
+    authorityStepP95Ms: 4,
+    authorityStepMaxMs: 8,
+    replayP95Ms: 12,
+    replayMaxMs: 30,
+    snapshotPayloadP95Bytes: 32 * 1024,
+    snapshotPayloadMaxBytes: 64 * 1024,
+    historyMaxBytes: 96 * 1024 * 1024,
     maxCheckpointBytes: 512 * 1024
   }),
-  ...caseBudgets("rapier3d-arena-rollback", 64, 32, 0, {
-    payloadBytes: 32 * 1024,
+  ...caseBudgets("rapier3d-arena-rollback", "capacity-64", 64, 32, 0, {
+    authorityStepP95Ms: 8,
+    authorityStepMaxMs: 16,
+    snapshotPayloadP95Bytes: 64 * 1024,
+    snapshotPayloadMaxBytes: 128 * 1024,
     maxHistoryBytes: 32 * 1024 * 1024,
     maxCheckpointBytes: 1024 * 1024
   })
@@ -75,12 +84,13 @@ export function arenaPredictionBenchmarkBudgetCount(): number {
 
 function caseBudgets(
   suite: string,
+  profile: string,
   members: number,
   simulatedTicks: number,
   rollbackTicks: number,
   timingAndMemory: Record<string, number>
 ): Budget[] {
-  const where = { members, simulatedTicks, rollbackTicks };
+  const where = { profile, members, simulatedTicks, rollbackTicks };
   return [
     ...Object.entries(timingAndMemory).map(([metric, maximum]) => ({
       suite,

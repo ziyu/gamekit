@@ -25,12 +25,45 @@ import {
 
 const checkEnabled = process.argv.includes("--check");
 const backend = await initRapier3dPhysicsBackend({ id: "benchmark.arena.rapier3d" });
+const CURRENT_PROFILE: ArenaBenchmarkProfile = {
+  id: "current-14",
+  actors: 8,
+  dynamicMembers: 3,
+  kinematicMembers: 3
+};
+const TARGET_PROFILE: ArenaBenchmarkProfile = {
+  id: "target-36",
+  actors: 8,
+  dynamicMembers: 16,
+  kinematicMembers: 12
+};
+const CAPACITY_PROFILE: ArenaBenchmarkProfile = {
+  id: "capacity-64",
+  actors: 8,
+  dynamicMembers: 32,
+  kinematicMembers: 24
+};
 const suite: ArenaPredictionBenchmarkSuite = {
   suite: "rapier3d-arena-rollback",
   cases: [
-    runArenaCase({ members: 16, simulatedTicks: 128, rollbackTicks: 12, rounds: 24 }),
-    runArenaCase({ members: 32, simulatedTicks: 128, rollbackTicks: 30, rounds: 24 }),
-    runArenaCase({ members: 64, simulatedTicks: 32, rollbackTicks: 0, rounds: 6 })
+    runArenaCase({
+      profile: CURRENT_PROFILE,
+      simulatedTicks: 128,
+      rollbackTicks: 12,
+      rounds: 24
+    }),
+    runArenaCase({
+      profile: TARGET_PROFILE,
+      simulatedTicks: 128,
+      rollbackTicks: 30,
+      rounds: 24
+    }),
+    runArenaCase({
+      profile: CAPACITY_PROFILE,
+      simulatedTicks: 32,
+      rollbackTicks: 0,
+      rounds: 6
+    })
   ]
 };
 const suites = [suite];
@@ -46,11 +79,12 @@ console.log(
         timing: "wall-clock performance.now",
         fixtureConstruction: "excluded from each measured round",
         measuredWork:
-          "authoritative rewind, pending command replay, and authority frame projection after a prebuilt history",
+          "fixed-step authority simulation with 20 Hz projection, authoritative rewind, pending command replay, and authority frame projection after a prebuilt history",
         reports: [
-          "p50/p95/max",
-          "payload bytes",
-          "history/checkpoint bytes",
+          "authority step p50/p95/max",
+          "replay p50/p95/max",
+          "snapshot payload p50/p95/max",
+          "history p50/p95/max and checkpoint max bytes",
           "hard correction failures",
           "dispose retained state"
         ]
@@ -74,17 +108,20 @@ console.log(
 if (failures.length > 0) process.exitCode = 1;
 
 function runArenaCase(input: {
-  members: number;
+  profile: ArenaBenchmarkProfile;
   simulatedTicks: number;
   rollbackTicks: number;
   rounds: number;
 }): ArenaPredictionBenchmarkCase {
-  const definitions = createStressDefinitions(input.members);
+  const definitions = createStressDefinitions(input.profile);
   const projection = createStandardMultiplayerPhysicsArenaAuthorityProjection({
     maxMembers: 64,
     maxPayloadBytes: 128 * 1024
   });
-  const samples: number[] = [];
+  const authorityStepSamples: number[] = [];
+  const replaySamples: number[] = [];
+  const payloadSamples: number[] = [];
+  const historyBytesSamples: number[] = [];
   let payloadBytes = 0;
   let maxHistoryBytes = 0;
   let maxHistoryEntries = 0;
@@ -107,7 +144,7 @@ function runArenaCase(input: {
       maxHistoryBytes: 64 * 1024 * 1024,
       maxReplayTicksPerOperation: input.simulatedTicks,
       maxMembers: 64,
-      maxCommands: input.members * (input.simulatedTicks + 8),
+      maxCommands: definitions.length * (input.simulatedTicks + 8),
       scene: {
         dimension: "3d",
         gravity: { x: 0, y: -18, z: 0 },
@@ -120,10 +157,31 @@ function runArenaCase(input: {
       }
     });
     const rollbackAt = input.simulatedTicks - input.rollbackTicks;
+    const warmupTicks = Math.min(16, Math.max(1, Math.floor(input.simulatedTicks / 4)));
     let authoritySnapshot: PhysicsPredictionIslandStateSnapshot | undefined;
     for (let tick = 1; tick <= input.simulatedTicks; tick += 1) {
+      const authorityStartedAt = performance.now();
       queueArenaCommands(island, definitions, tick, round);
       island.advanceTo(tick);
+      if (tick % 3 === 0) {
+        const authorityProjection = projection.capture({
+          islandId: ARENA_ISLAND_ID,
+          generation: round + 1,
+          tick,
+          membershipRevision: round + 1,
+          definitionVersion: ARENA_DEFINITION_VERSION,
+          members: island.state().members
+        });
+        if (authorityProjection.status !== "captured") {
+          throw new Error(`Arena authority projection failed: ${authorityProjection.status}`);
+        }
+        payloadBytes = Math.max(payloadBytes, authorityProjection.payloadBytes);
+        payloadSamples.push(authorityProjection.payloadBytes);
+      }
+      if (tick > warmupTicks) {
+        authorityStepSamples.push(performance.now() - authorityStartedAt);
+        historyBytesSamples.push(island.diagnostics().historyBytes);
+      }
       if (tick === rollbackAt) authoritySnapshot = island.state();
     }
     if (authoritySnapshot === undefined) throw new Error("Missing Arena rollback snapshot.");
@@ -147,7 +205,8 @@ function runArenaCase(input: {
       throw new Error(`Arena benchmark projection failed: ${projected.status}`);
     }
     payloadBytes = Math.max(payloadBytes, projected.payloadBytes);
-    samples.push(performance.now() - startedAt);
+    payloadSamples.push(projected.payloadBytes);
+    replaySamples.push(performance.now() - startedAt);
     const diagnostics = island.diagnostics();
     maxHistoryBytes = Math.max(maxHistoryBytes, diagnostics.historyBytes);
     maxHistoryEntries = Math.max(maxHistoryEntries, diagnostics.historyEntries);
@@ -166,16 +225,35 @@ function runArenaCase(input: {
     retainedAfterDispose += disposed.members + disposed.historyEntries + disposed.commands;
   }
 
-  const stats = summarize(samples);
+  const authorityStats = summarize(authorityStepSamples);
+  const replayStats = summarize(replaySamples);
+  const payloadStats = summarize(payloadSamples);
+  const historyStats = summarize(historyBytesSamples);
   return {
-    members: input.members,
+    profile: input.profile.id,
+    members: definitions.length,
+    actors: input.profile.actors,
+    dynamicMembers: input.profile.dynamicMembers,
+    kinematicMembers: input.profile.kinematicMembers,
     simulatedTicks: input.simulatedTicks,
     rollbackTicks: input.rollbackTicks,
     rounds: input.rounds,
-    p50MsPerRound: stats.p50,
-    p95MsPerRound: stats.p95,
-    maxMsPerRound: stats.max,
+    authorityStepP50Ms: authorityStats.p50,
+    authorityStepP95Ms: authorityStats.p95,
+    authorityStepMaxMs: authorityStats.max,
+    replayP50Ms: replayStats.p50,
+    replayP95Ms: replayStats.p95,
+    replayMaxMs: replayStats.max,
+    p50MsPerRound: replayStats.p50,
+    p95MsPerRound: replayStats.p95,
+    maxMsPerRound: replayStats.max,
+    snapshotPayloadP50Bytes: payloadStats.p50,
+    snapshotPayloadP95Bytes: payloadStats.p95,
+    snapshotPayloadMaxBytes: payloadStats.max,
     payloadBytes,
+    historyP50Bytes: historyStats.p50,
+    historyP95Bytes: historyStats.p95,
+    historyMaxBytes: historyStats.max,
     maxHistoryBytes,
     maxHistoryEntries,
     maxCheckpointBytes,
@@ -229,23 +307,47 @@ function queueArenaCommands(
   }
 }
 
-function createStressDefinitions(count: number): PhysicsPredictionIslandMemberDefinition[] {
-  const definitions = createArenaMemberDefinitions();
-  const template = definitions.find((definition) => definition.id === "bot.0");
-  if (!template) throw new Error("Arena benchmark requires bot.0 definition.");
-  for (let index = definitions.length; index < count; index += 1) {
-    const id = `stress.${index}`;
-    definitions.push({
+function createStressDefinitions(
+  profile: ArenaBenchmarkProfile
+): PhysicsPredictionIslandMemberDefinition[] {
+  const base = createArenaMemberDefinitions();
+  const actors = base.filter(
+    (definition) => definition.id.startsWith("player.") || definition.id.startsWith("bot.")
+  );
+  const dynamicMembers = base.filter(
+    (definition) => definition.body.kind === "dynamic" && !actors.includes(definition)
+  );
+  const kinematicMembers = base.filter((definition) => definition.body.kind === "kinematic");
+  if (
+    profile.actors > actors.length ||
+    dynamicMembers.length === 0 ||
+    kinematicMembers.length === 0
+  ) {
+    throw new Error(`Arena benchmark profile cannot be materialized: ${profile.id}`);
+  }
+  return [
+    ...structuredClone(actors.slice(0, profile.actors)),
+    ...createProfileMembers("dynamic", dynamicMembers, profile.dynamicMembers),
+    ...createProfileMembers("kinematic", kinematicMembers, profile.kinematicMembers)
+  ];
+}
+
+function createProfileMembers(
+  kind: "dynamic" | "kinematic",
+  templates: readonly PhysicsPredictionIslandMemberDefinition[],
+  count: number
+): PhysicsPredictionIslandMemberDefinition[] {
+  const result = structuredClone(templates.slice(0, count));
+  for (let index = result.length; index < count; index += 1) {
+    const template = templates[index % templates.length]!;
+    const id = `benchmark.${kind}.${index}`;
+    result.push({
       ...structuredClone(template),
       id,
       body: {
         ...structuredClone(template.body),
         id,
-        position: {
-          x: ((index % 8) - 3.5) * 1.4,
-          y: 1.4 + Math.floor(index / 16) * 1.2,
-          z: 4 - Math.floor(index / 8) * 1.7
-        }
+        position: benchmarkMemberPosition(kind, index)
       },
       colliders: template.colliders?.map((collider, colliderIndex) => ({
         ...structuredClone(collider),
@@ -253,7 +355,20 @@ function createStressDefinitions(count: number): PhysicsPredictionIslandMemberDe
       }))
     });
   }
-  return definitions.slice(0, count);
+  return result;
+}
+
+function benchmarkMemberPosition(
+  kind: "dynamic" | "kinematic",
+  index: number
+): { x: number; y: number; z: number } {
+  const column = index % 8;
+  const row = Math.floor(index / 8);
+  return {
+    x: (column - 3.5) * 2.2,
+    y: kind === "dynamic" ? 1.4 + (row % 2) * 1.1 : 0.8 + (row % 2) * 0.35,
+    z: 3.5 - row * 3
+  };
 }
 
 function summarize(samples: readonly number[]): { p50: number; p95: number; max: number } {
@@ -273,3 +388,10 @@ function percentile(sorted: readonly number[], ratio: number): number {
 function round(value: number): number {
   return Math.round(value * 1_000) / 1_000;
 }
+
+type ArenaBenchmarkProfile = {
+  id: string;
+  actors: number;
+  dynamicMembers: number;
+  kinematicMembers: number;
+};

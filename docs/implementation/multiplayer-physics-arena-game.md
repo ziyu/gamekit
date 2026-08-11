@@ -135,8 +135,8 @@ capture/restore/replay/reset。实现必须：
 | 工作包 | 状态     | 依赖         | 交付边界                                                        | 独立验收门                                                      |
 | ------ | -------- | ------------ | --------------------------------------------------------------- | --------------------------------------------------------------- |
 | P0-01  | Accepted | —            | 三个公共缺口的影响分析、ADR 与 API/所有权草图                   | Physics、Multiplayer/App Host、第二 fixture 边界 review         |
-| P0-02  | Active   | P0-01        | 14-member 当前基线与 36-member 目标 profile 测量工具            | authority、payload、checkpoint/history、replay 指标可重复输出   |
-| P0-03  | Planned  | P0-01        | Arena DataType、稳定 identity/generation 与内容校验骨架         | 无效引用/重复 id/非法 generation 的确定性 fixture               |
+| P0-02  | Accepted | P0-01        | 14-member 当前基线与 36-member 目标 profile 测量工具            | authority、payload、checkpoint/history、replay 指标可重复输出   |
+| P0-03  | Active   | P0-01        | Arena DataType、稳定 identity/generation 与内容校验骨架         | 无效引用/重复 id/非法 generation 的确定性 fixture               |
 | P0-04  | Planned  | P0-02、P0-03 | P0 兼容 review、文档证据和阶段关闭                              | 现有 Multiplayer Demo、Outpost、Arena tests 与根级门禁通过      |
 | P1-01  | Planned  | P0-04        | Physics body command 协议、排序/拒绝诊断与 memory backend       | command conformance 覆盖 impulse、point、wake、duplicate/replay |
 | P1-02  | Planned  | P1-01        | Rapier2D/3D body command 映射                                   | 两个 adapter 通过同一 conformance；native capability 有诊断     |
@@ -172,9 +172,10 @@ capture/restore/replay/reset。实现必须：
 
 ## 验收记录
 
-| 工作包 | 验收时间   | 证据                                                                                                                                                                | Commit             |
-| ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| P0-01  | 2026-08-11 | ADR 0051/0052/0053；GitNexus：island HIGH（16 symbols/10 direct/1 flow），Arena adapter LOW（4 symbols/1 flow）；Physics 3D Lab 可作为第二 fixture 且不引入反向依赖 | 本工作包提交时补录 |
+| 工作包 | 验收时间   | 证据                                                                                                                                                                                                                    | Commit             |
+| ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| P0-01  | 2026-08-11 | ADR 0051/0052/0053；GitNexus：island HIGH（16 symbols/10 direct/1 flow），Arena adapter LOW（4 symbols/1 flow）；Physics 3D Lab 可作为第二 fixture 且不引入反向依赖                                                     | `25a996c`          |
+| P0-02  | 2026-08-11 | `bench:arena-prediction:check` 34 budgets passed；14-member authority p95 0.431 ms / replay-12 p95 3.927 ms；36-member authority p95 0.923 ms / replay-30 p95 11.686 ms / snapshot p95 14,242 bytes；dispose retained 0 | 本工作包提交时补录 |
 
 ## 分阶段实施细节
 
