@@ -1,0 +1,120 @@
+import { createDataRegistry, type DataPack, type DataRegistry } from "@gamekit/data";
+import { createArenaDataTypes } from "./data-types";
+import { ARENA_DEFAULT_MATCH_RULE_ID, arenaContentPack } from "./pack";
+import {
+  ARENA_BOT_ARCHETYPE_TYPE,
+  ARENA_COURSE_TYPE,
+  ARENA_HAZARD_TYPE,
+  ARENA_ITEM_TYPE,
+  ARENA_MATCH_RULE_TYPE,
+  ARENA_MOTOR_PROFILE_TYPE,
+  ARENA_SPAWN_SET_TYPE,
+  ARENA_STAGE_TYPE,
+  type ArenaBotArchetypeDefinition,
+  type ArenaCourseDefinition,
+  type ArenaHazardDefinition,
+  type ArenaItemDefinition,
+  type ArenaMatchRuleDefinition,
+  type ArenaMotorProfileDefinition,
+  type ArenaSpawnSetDefinition,
+  type ArenaStageDefinition
+} from "./types";
+
+export type CreateArenaDataRegistryOptions = {
+  packs?: DataPack[] | undefined;
+};
+
+export type CompiledArenaStage = {
+  definition: ArenaStageDefinition;
+  course: ArenaCourseDefinition;
+  spawnSet: ArenaSpawnSetDefinition;
+  hazards: ArenaHazardDefinition[];
+  items: ArenaItemDefinition[];
+  bots: ArenaBotArchetypeDefinition[];
+};
+
+export type CompiledArenaContent = {
+  matchRule: ArenaMatchRuleDefinition;
+  stages: CompiledArenaStage[];
+  motorProfiles: ArenaMotorProfileDefinition[];
+};
+
+export function createArenaDataRegistry(
+  options: CreateArenaDataRegistryOptions = {}
+): DataRegistry {
+  const registry = createDataRegistry();
+  for (const definition of createArenaDataTypes()) registry.registerType(definition);
+  for (const pack of options.packs ?? [arenaContentPack]) registry.registerPack(pack);
+  return registry;
+}
+
+export function compileArenaContent(
+  registry: DataRegistry,
+  matchRuleId = ARENA_DEFAULT_MATCH_RULE_ID
+): CompiledArenaContent {
+  const matchRule = registry.getValue<ArenaMatchRuleDefinition>(ARENA_MATCH_RULE_TYPE, matchRuleId);
+  const stages = matchRule.stages.map(({ id }) => {
+    const definition = registry.getValue<ArenaStageDefinition>(ARENA_STAGE_TYPE, id);
+    const course = registry.getValue<ArenaCourseDefinition>(
+      ARENA_COURSE_TYPE,
+      definition.course.id
+    );
+    const spawnSet = registry.getValue<ArenaSpawnSetDefinition>(
+      ARENA_SPAWN_SET_TYPE,
+      course.spawnSet.id
+    );
+    return {
+      definition,
+      course,
+      spawnSet,
+      hazards: course.hazards.map((hazard) =>
+        registry.getValue<ArenaHazardDefinition>(ARENA_HAZARD_TYPE, hazard.id)
+      ),
+      items: definition.itemPool.map((item) =>
+        registry.getValue<ArenaItemDefinition>(ARENA_ITEM_TYPE, item.id)
+      ),
+      bots: definition.botArchetypes.map((bot) =>
+        registry.getValue<ArenaBotArchetypeDefinition>(ARENA_BOT_ARCHETYPE_TYPE, bot.id)
+      )
+    };
+  });
+  validateMatchTopology(matchRule, stages);
+  return {
+    matchRule: structuredClone(matchRule),
+    stages: structuredClone(stages),
+    motorProfiles: structuredClone(
+      registry.list<ArenaMotorProfileDefinition>(ARENA_MOTOR_PROFILE_TYPE).map(({ data }) => data)
+    )
+  };
+}
+
+function validateMatchTopology(
+  matchRule: ArenaMatchRuleDefinition,
+  stages: readonly CompiledArenaStage[]
+): void {
+  const expectedKinds: ArenaStageDefinition["kind"][] = ["qualifier", "brawl", "final"];
+  if (stages.length !== expectedKinds.length) {
+    throw new Error("arena.content_stage_count: standard match requires exactly three stages");
+  }
+  let entrants = matchRule.participantCount;
+  for (const [index, stage] of stages.entries()) {
+    if (stage.definition.kind !== expectedKinds[index]) {
+      throw new Error(`arena.content_stage_order: unexpected stage kind at index ${index}`);
+    }
+    if (stage.definition.qualificationCount >= entrants) {
+      throw new Error(`arena.content_qualification: ${stage.definition.id} must reduce entrants`);
+    }
+    const participantSpawns = stage.spawnSet.points.filter(
+      (point) => point.kind === "participant"
+    ).length;
+    if (participantSpawns < entrants) {
+      throw new Error(
+        `arena.content_spawn_capacity: ${stage.spawnSet.id} has ${participantSpawns}, requires ${entrants}`
+      );
+    }
+    entrants = stage.definition.qualificationCount;
+  }
+  if (entrants !== 1) {
+    throw new Error("arena.content_final_winner: final stage must qualify exactly one winner");
+  }
+}

@@ -13,6 +13,7 @@ authority/client共享的稳定事实，不把玩法数值散落在session、ren
 | `arena.match-rule`      | stage序列、participant/晋级/timeout/rematch policy       | stage refs、ranking policy         |
 | `arena.stage`           | stage kind、course、deadline、member/item/hazard profile | course、item set、bot policy       |
 | `arena.course`          | bounds、spawn、static layout、Nav、placement集合         | Physics/Nav/presentation refs      |
+| `arena.spawn-set`       | participant/item/hazard placement与stage入口容量         | item、hazard与placement refs       |
 | `arena.hazard`          | simulation kind、schedule、impact/warning/presentation   | body/material/effect/audio refs    |
 | `arena.surface`         | traction/braking/conveyor与表现映射                      | physics material、audio/VFX        |
 | `arena.volume`          | kill/objective/finish/wind/safe等语义                    | rule/effect/profile refs           |
