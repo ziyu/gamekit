@@ -1,5 +1,16 @@
 # @gamekit/driver-three
 
+## 0.1.0-alpha.6
+
+### Patch Changes
+
+- Updated dependencies [c6fdda9]
+  - @gamekit/asset@0.1.0-alpha.6
+  - @gamekit/driver-core@0.1.0-alpha.6
+  - @gamekit/core@0.1.0-alpha.6
+  - @gamekit/renderer-core@0.1.0-alpha.6
+  - @gamekit/camera-core@0.1.0-alpha.6
+
 ## 0.1.0-alpha.5
 
 ### Patch Changes
