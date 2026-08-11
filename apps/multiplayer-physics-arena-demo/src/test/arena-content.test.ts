@@ -26,7 +26,7 @@ describe("Knockout Arena content and identity", () => {
     const registry = createArenaDataRegistry();
     const content = compileArenaContent(registry);
 
-    expect(createArenaDataTypes()).toHaveLength(8);
+    expect(createArenaDataTypes()).toHaveLength(9);
     expect(registry.snapshot()).toMatchObject({ packs: [arenaContentPack.id] });
     expect(content.matchRule.id).toBe(ARENA_DEFAULT_MATCH_RULE_ID);
     expect(content.stages.map((stage) => stage.definition.kind)).toEqual([
@@ -36,8 +36,18 @@ describe("Knockout Arena content and identity", () => {
     ]);
     expect(content.stages.map((stage) => stage.definition.qualificationCount)).toEqual([6, 3, 1]);
     expect(content.motorProfiles.map(({ id }) => id)).toEqual(["motor.standard"]);
+    expect(content.botProfiles.map(({ id }) => id)).toEqual([
+      "bot.profile.brawler",
+      "bot.profile.opportunist",
+      "bot.profile.sprinter"
+    ]);
     expect(content.stages[1]?.items).toHaveLength(4);
     expect(content.stages.every((stage) => stage.bots.length === 3)).toBe(true);
+    expect(content.stages[0]?.bots.map(({ role }) => role)).toEqual([
+      "sprinter",
+      "brawler",
+      "opportunist"
+    ]);
   });
 
   it("projects one deterministic course definition into aligned Physics, Navigation and Presentation facts", () => {

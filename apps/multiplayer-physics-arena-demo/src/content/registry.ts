@@ -10,6 +10,7 @@ import { createArenaDataTypes } from "./data-types";
 import { ARENA_DEFAULT_MATCH_RULE_ID, arenaContentPack } from "./pack";
 import {
   ARENA_BOT_ARCHETYPE_TYPE,
+  ARENA_BOT_PROFILE_TYPE,
   ARENA_COURSE_TYPE,
   ARENA_HAZARD_TYPE,
   ARENA_ITEM_TYPE,
@@ -18,6 +19,7 @@ import {
   ARENA_SPAWN_SET_TYPE,
   ARENA_STAGE_TYPE,
   type ArenaBotArchetypeDefinition,
+  type ArenaBotSkillProfileDefinition,
   type ArenaCourseDefinition,
   type ArenaHazardDefinition,
   type ArenaItemDefinition,
@@ -45,6 +47,7 @@ export type CompiledArenaStage = {
 export type CompiledArenaContent = {
   matchRule: ArenaMatchRuleDefinition;
   stages: CompiledArenaStage[];
+  botProfiles: ArenaBotSkillProfileDefinition[];
   motorProfiles: ArenaMotorProfileDefinition[];
   definitionVersion: string;
   physicsEnvironment: PhysicsPredictionIslandEnvironment;
@@ -92,17 +95,25 @@ export function compileArenaContent(
     };
   });
   validateMatchTopology(matchRule, stages);
-  const definitionVersion = stableArenaContentSignature(
-    stages.map(({ definition, courseProjection }) => ({
+  const botProfiles = registry
+    .list<ArenaBotSkillProfileDefinition>(ARENA_BOT_PROFILE_TYPE)
+    .map(({ data }) => data)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const definitionVersion = stableArenaContentSignature({
+    stages: stages.map(({ definition, bots, courseProjection }) => ({
       stageId: definition.id,
+      definition,
+      bots,
       courseVersion: courseProjection.definitionVersion,
       layoutSignature: courseProjection.layoutSignature,
       scheduleSignature: courseProjection.scheduleSignature
-    }))
-  );
+    })),
+    botProfiles
+  });
   const content: CompiledArenaContent = {
     matchRule: structuredClone(matchRule),
     stages: structuredClone(stages),
+    botProfiles: structuredClone(botProfiles),
     definitionVersion,
     physicsEnvironment: mergeArenaCourseEnvironments(
       stages.map(({ courseProjection }) => courseProjection)

@@ -1,6 +1,7 @@
 import type { DataPack, DataRef } from "@gamekit/data";
 import {
   ARENA_BOT_ARCHETYPE_TYPE,
+  ARENA_BOT_PROFILE_TYPE,
   ARENA_COURSE_TYPE,
   ARENA_HAZARD_TYPE,
   ARENA_ITEM_TYPE,
@@ -9,6 +10,7 @@ import {
   ARENA_SPAWN_SET_TYPE,
   ARENA_STAGE_TYPE,
   type ArenaBotArchetypeDefinition,
+  type ArenaBotSkillProfileDefinition,
   type ArenaCourseDefinition,
   type ArenaDynamicPropPlacementDefinition,
   type ArenaGameplayVolumeDefinition,
@@ -92,10 +94,56 @@ export const ARENA_STANDARD_MOTOR_PROFILE: ArenaMotorProfileDefinition = {
 
 const motorProfiles: ArenaMotorProfileDefinition[] = [ARENA_STANDARD_MOTOR_PROFILE];
 
+const botProfiles: ArenaBotSkillProfileDefinition[] = [
+  botProfile("bot.profile.sprinter", 7, 6, 12, 90, 24, 18, 3, 3, 90, 0.12, 0.35, 0.68, 45, 24),
+  botProfile("bot.profile.brawler", 10, 8, 16, 120, 32, 16, 4, 4, 72, 0.08, 0.88, 0.72, 60, 30),
+  botProfile(
+    "bot.profile.opportunist",
+    13,
+    10,
+    18,
+    150,
+    36,
+    20,
+    4,
+    5,
+    108,
+    0.18,
+    0.62,
+    0.42,
+    42,
+    36
+  )
+];
+
 const botArchetypes: ArenaBotArchetypeDefinition[] = [
-  bot("bot.sprinter", 7, 0.12, 0.35, 0.68, ["item.foam-ball"]),
-  bot("bot.brawler", 10, 0.08, 0.88, 0.72, ["item.foam-hammer", "item.energy-block"]),
-  bot("bot.opportunist", 13, 0.18, 0.62, 0.42, ["item.blast-orb", "item.foam-ball"])
+  bot("bot.sprinter", "sprinter", "bot.profile.sprinter", ["item.foam-ball"], {
+    advance: 1.35,
+    survive: 1,
+    acquireItem: 0.55,
+    attack: 0.35,
+    objective: 0.9
+  }),
+  bot("bot.brawler", "brawler", "bot.profile.brawler", ["item.foam-hammer", "item.energy-block"], {
+    advance: 0.75,
+    survive: 1.1,
+    acquireItem: 1,
+    attack: 1.45,
+    objective: 1
+  }),
+  bot(
+    "bot.opportunist",
+    "opportunist",
+    "bot.profile.opportunist",
+    ["item.blast-orb", "item.foam-ball"],
+    {
+      advance: 0.9,
+      survive: 1.15,
+      acquireItem: 1.4,
+      attack: 1.05,
+      objective: 1.2
+    }
+  )
 ];
 
 const hazards: ArenaHazardDefinition[] = [
@@ -351,6 +399,7 @@ export const arenaContentPack: DataPack = {
   namespace: "knockout-arena",
   entries: [
     ...motorProfiles.map((data) => entry(ARENA_MOTOR_PROFILE_TYPE, data)),
+    ...botProfiles.map((data) => entry(ARENA_BOT_PROFILE_TYPE, data)),
     ...items.map((data) => entry(ARENA_ITEM_TYPE, data)),
     ...botArchetypes.map((data) => entry(ARENA_BOT_ARCHETYPE_TYPE, data)),
     ...hazards.map((data) => entry(ARENA_HAZARD_TYPE, data)),
@@ -422,20 +471,54 @@ function actionItem(
 
 function bot(
   id: string,
-  reactionTicks: number,
-  aimErrorRadians: number,
-  aggression: number,
-  riskTolerance: number,
-  preferredItems: string[]
+  role: ArenaBotArchetypeDefinition["role"],
+  profileId: string,
+  preferredItems: string[],
+  goalWeights: ArenaBotArchetypeDefinition["goalWeights"]
 ): ArenaBotArchetypeDefinition {
   return {
     id,
+    role,
+    profile: ref(ARENA_BOT_PROFILE_TYPE, profileId),
     motor: ref(ARENA_MOTOR_PROFILE_TYPE, "motor.standard"),
+    preferredItems: preferredItems.map((itemId) => ref(ARENA_ITEM_TYPE, itemId)),
+    goalWeights
+  };
+}
+
+function botProfile(
+  id: string,
+  reactionTicks: number,
+  perceptionIntervalTicks: number,
+  decisionIntervalTicks: number,
+  memoryTicks: number,
+  memoryLimit: number,
+  perceptionRadius: number,
+  maxOpponents: number,
+  maxItems: number,
+  hazardLookaheadTicks: number,
+  aimErrorRadians: number,
+  aggression: number,
+  riskTolerance: number,
+  commitmentTicks: number,
+  recoveryTicks: number
+): ArenaBotSkillProfileDefinition {
+  return {
+    id,
     reactionTicks,
+    perceptionIntervalTicks,
+    decisionIntervalTicks,
+    memoryTicks,
+    memoryLimit,
+    perceptionRadius,
+    maxOpponents,
+    maxItems,
+    hazardLookaheadTicks,
     aimErrorRadians,
     aggression,
     riskTolerance,
-    preferredItems: preferredItems.map((itemId) => ref(ARENA_ITEM_TYPE, itemId))
+    commitmentTicks,
+    recoveryTicks
   };
 }
 

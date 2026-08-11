@@ -28,6 +28,11 @@ AI 不直接设置 body transform/velocity、扣 instability、分配 item owner
 Participant 淘汰、stage generation change、match reset 或 authority dispose 时，AI binding、memory、task、path/route 和 pending
 interaction 必须同步清理。
 
+Skill profile 与 archetype 是两类 Data：`arena.bot-profile` 只定义 reaction/perception/decision interval、memory TTL/limit、
+perception radius/candidate limit、hazard lookahead、aim error、aggression、risk、commitment 与 recovery；
+`arena.bot-archetype` 通过 DataRef 组合 skill profile、character motor、preferred item 和 goal weight。Sprinter、Brawler、
+Opportunist 共享同一 runtime/sensor/task 实现，不能在 authority update 中各写一套分支。
+
 ## Perception
 
 ### Opponent Sensor
@@ -54,6 +59,11 @@ collapse state 和 winner convergence。
 
 读取最近受击 source/direction/severity、stagger/recovery 与有界 threat memory。它不读取完整 authority impact ledger 或其他
 participant 的隐藏归因窗口。
+
+五类 Arena sampler 使用 AI Core `AiSensorSampler`/`AiPerceptionFact`：`arena.opponent`、`arena.item`、`arena.hazard`、
+`arena.objective`、`arena.impact`。Source contract 只接受当前 authority tick 的 actor/item/hazard/objective/impact read model；opponent
+候选按距离与 participant id 稳定排序并经过 Physics raycast，item/hazard 候选按 profile 硬上限截断。Fact TTL 来自 skill profile，
+实际 retain/prune/checkpoint/dispose 继续由 AI Core bounded memory 负责。
 
 ## Memory 与 Shared Facts
 

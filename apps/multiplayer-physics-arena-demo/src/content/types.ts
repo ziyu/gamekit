@@ -7,6 +7,7 @@ export const ARENA_COURSE_TYPE = "arena.course";
 export const ARENA_HAZARD_TYPE = "arena.hazard";
 export const ARENA_ITEM_TYPE = "arena.item";
 export const ARENA_MOTOR_PROFILE_TYPE = "arena.character-motor";
+export const ARENA_BOT_PROFILE_TYPE = "arena.bot-profile";
 export const ARENA_BOT_ARCHETYPE_TYPE = "arena.bot-archetype";
 export const ARENA_SPAWN_SET_TYPE = "arena.spawn-set";
 
@@ -182,14 +183,37 @@ export type ArenaMotorProfileDefinition = {
   jumpBufferTicks: number;
 };
 
-export type ArenaBotArchetypeDefinition = {
+export type ArenaBotSkillProfileDefinition = {
   id: string;
-  motor: DataRef<typeof ARENA_MOTOR_PROFILE_TYPE>;
   reactionTicks: number;
+  perceptionIntervalTicks: number;
+  decisionIntervalTicks: number;
+  memoryTicks: number;
+  memoryLimit: number;
+  perceptionRadius: number;
+  maxOpponents: number;
+  maxItems: number;
+  hazardLookaheadTicks: number;
   aimErrorRadians: number;
   aggression: number;
   riskTolerance: number;
+  commitmentTicks: number;
+  recoveryTicks: number;
+};
+
+export type ArenaBotArchetypeDefinition = {
+  id: string;
+  role: "sprinter" | "brawler" | "opportunist";
+  profile: DataRef<typeof ARENA_BOT_PROFILE_TYPE>;
+  motor: DataRef<typeof ARENA_MOTOR_PROFILE_TYPE>;
   preferredItems: Array<DataRef<typeof ARENA_ITEM_TYPE>>;
+  goalWeights: {
+    advance: number;
+    survive: number;
+    acquireItem: number;
+    attack: number;
+    objective: number;
+  };
 };
 
 export type ArenaSpawnKind = "participant" | "item" | "hazard";
@@ -213,5 +237,6 @@ export type ArenaContentDefinition =
   | ArenaHazardDefinition
   | ArenaItemDefinition
   | ArenaMotorProfileDefinition
+  | ArenaBotSkillProfileDefinition
   | ArenaBotArchetypeDefinition
   | ArenaSpawnSetDefinition;

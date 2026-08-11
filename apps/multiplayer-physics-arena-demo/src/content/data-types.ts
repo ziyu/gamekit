@@ -6,6 +6,7 @@ import type {
 } from "@gamekit/data";
 import {
   ARENA_BOT_ARCHETYPE_TYPE,
+  ARENA_BOT_PROFILE_TYPE,
   ARENA_COURSE_TYPE,
   ARENA_HAZARD_TYPE,
   ARENA_ITEM_TYPE,
@@ -14,6 +15,7 @@ import {
   ARENA_SPAWN_SET_TYPE,
   ARENA_STAGE_TYPE,
   type ArenaBotArchetypeDefinition,
+  type ArenaBotSkillProfileDefinition,
   type ArenaCourseDefinition,
   type ArenaHazardDefinition,
   type ArenaItemDefinition,
@@ -31,6 +33,7 @@ export function createArenaDataTypes(): Array<DataTypeDefinition<any>> {
     hazardDataType(),
     itemDataType(),
     motorProfileDataType(),
+    botProfileDataType(),
     botArchetypeDataType(),
     spawnSetDataType()
   ];
@@ -297,17 +300,49 @@ function botArchetypeDataType(): DataTypeDefinition<ArenaBotArchetypeDefinition>
     references(document) {
       return [
         ref(document.data.motor, "motor"),
+        ref(document.data.profile, "profile"),
         ...document.data.preferredItems.map((item, index) => ref(item, `preferredItems[${index}]`))
       ];
     },
     validate(document) {
       return [
         ...matchingId(document),
-        ...nonNegativeInteger(document, document.data.reactionTicks, "reactionTicks"),
+        ...uniqueRefs(document, document.data.preferredItems, "preferredItems"),
+        ...nonNegative(document, document.data.goalWeights.advance, "goalWeights.advance"),
+        ...nonNegative(document, document.data.goalWeights.survive, "goalWeights.survive"),
+        ...nonNegative(document, document.data.goalWeights.acquireItem, "goalWeights.acquireItem"),
+        ...nonNegative(document, document.data.goalWeights.attack, "goalWeights.attack"),
+        ...nonNegative(document, document.data.goalWeights.objective, "goalWeights.objective")
+      ];
+    }
+  };
+}
+
+function botProfileDataType(): DataTypeDefinition<ArenaBotSkillProfileDefinition> {
+  return {
+    type: ARENA_BOT_PROFILE_TYPE,
+    getTags: () => ["arena", "bot", "skill-profile"],
+    validate(document) {
+      return [
+        ...matchingId(document),
+        ...positiveInteger(document, document.data.reactionTicks, "reactionTicks"),
+        ...positiveInteger(
+          document,
+          document.data.perceptionIntervalTicks,
+          "perceptionIntervalTicks"
+        ),
+        ...positiveInteger(document, document.data.decisionIntervalTicks, "decisionIntervalTicks"),
+        ...positiveInteger(document, document.data.memoryTicks, "memoryTicks"),
+        ...positiveInteger(document, document.data.memoryLimit, "memoryLimit"),
+        ...positive(document, document.data.perceptionRadius, "perceptionRadius"),
+        ...positiveInteger(document, document.data.maxOpponents, "maxOpponents"),
+        ...positiveInteger(document, document.data.maxItems, "maxItems"),
+        ...nonNegativeInteger(document, document.data.hazardLookaheadTicks, "hazardLookaheadTicks"),
         ...nonNegative(document, document.data.aimErrorRadians, "aimErrorRadians"),
         ...ratio(document, document.data.aggression, "aggression"),
         ...ratio(document, document.data.riskTolerance, "riskTolerance"),
-        ...uniqueRefs(document, document.data.preferredItems, "preferredItems")
+        ...positiveInteger(document, document.data.commitmentTicks, "commitmentTicks"),
+        ...positiveInteger(document, document.data.recoveryTicks, "recoveryTicks")
       ];
     }
   };

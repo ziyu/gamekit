@@ -8,6 +8,7 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../../packages/ai-core" },
     { "path": "../../packages/app-host" },
     { "path": "../../packages/character-controller" },
     { "path": "../../packages/driver-core" },
