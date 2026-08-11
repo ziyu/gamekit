@@ -439,7 +439,8 @@ hold-last/neutral gap policy 处理超过等待预算的缺口。App 只编码�
 `createMultiplayerNetworkConditionSimulator(...)` 是 provider-neutral 的确定性故障注入 wrapper。它可以包裹 Memory、
 Colyseus 测试桥或其他 backend，用手动 `advance(...)` / `flush()`、固定 seed、direction/message predicate 和有界 pending
 queue 模拟 latency、jitter、loss 与 duplicate，并输出 scheduled/delivered/drop/duplicate/capacity/error/connection
-diagnostics。Session lifecycle 直接委托底层 backend；reliable ordered lane 中未丢弃的消息保持顺序。该 helper 只服务
+diagnostics；delivery 失败同时保留 `lastDeliveryError`，使 listener decode、底层 send 和 session 生命周期错误可定位而不只剩计数。
+Session lifecycle 直接委托底层 backend；reliable ordered lane 中未丢弃的消息保持顺序。该 helper 只服务
 测试、benchmark 和本地调试，不替代真实 provider 的 transport/reconnect 测试，也不拥有 authority 或 prediction clock。
 
 App Host 的 `createStandardMultiplayerPhysicsArenaPrediction(...)` 把 descriptor 与 Physics island、standard Physics

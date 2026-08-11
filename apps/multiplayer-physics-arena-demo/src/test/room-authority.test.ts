@@ -13,6 +13,7 @@ import {
   ARENA_SNAPSHOT_KIND,
   arenaPlayerMemberId
 } from "../shared/config";
+import { arenaParticipantCommandEpoch } from "../shared/arena-identity";
 import { readArenaSnapshot, type ArenaSnapshot } from "../shared/protocol";
 import { KnockoutArenaRoom } from "../server/arena-room";
 
@@ -48,21 +49,50 @@ describe("Knockout Arena Room authority", () => {
             snapshot.playerIdsByPeerId["bean-b"] === arenaPlayerMemberId(1)
         )
       );
+      const inputEpochA = commandEpoch(snapshotsA.at(-1)!, "bean-a");
+      const inputEpochB = commandEpoch(snapshotsB.at(-1)!, "bean-b");
 
       await Promise.all([
         clientA.send({
           channel: "reliable",
           kind: ARENA_INPUT_KIND,
           payload: createMultiplayerFixedStepInputBundle([
-            { sequence: 1, payload: { sequence: 1, moveX: 1, moveZ: 0, jump: false } },
-            { sequence: 2, payload: { sequence: 2, moveX: 1, moveZ: -1, jump: false } }
+            {
+              sequence: 1,
+              payload: {
+                sequence: 1,
+                moveX: 1,
+                moveZ: 0,
+                jump: false,
+                authorityEpoch: inputEpochA
+              }
+            },
+            {
+              sequence: 2,
+              payload: {
+                sequence: 2,
+                moveX: 1,
+                moveZ: -1,
+                jump: false,
+                authorityEpoch: inputEpochA
+              }
+            }
           ])
         }),
         clientB.send({
           channel: "reliable",
           kind: ARENA_INPUT_KIND,
           payload: createMultiplayerFixedStepInputBundle([
-            { sequence: 1, payload: { sequence: 1, moveX: -1, moveZ: 0, jump: false } }
+            {
+              sequence: 1,
+              payload: {
+                sequence: 1,
+                moveX: -1,
+                moveZ: 0,
+                jump: false,
+                authorityEpoch: inputEpochB
+              }
+            }
           ])
         })
       ]);
@@ -149,6 +179,12 @@ function captureSnapshot(message: MultiplayerMessageEnvelope, snapshots: ArenaSn
   if (message.kind !== ARENA_SNAPSHOT_KIND) return;
   const snapshot = readArenaSnapshot(message.payload);
   if (snapshot) snapshots.push(snapshot);
+}
+
+function commandEpoch(snapshot: ArenaSnapshot, peerId: string): string {
+  const participant = snapshot.participants.find((candidate) => candidate.peerId === peerId);
+  if (participant === undefined) throw new Error(`Missing participant for ${peerId}`);
+  return arenaParticipantCommandEpoch(snapshot.frame.generation, participant.revision);
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {

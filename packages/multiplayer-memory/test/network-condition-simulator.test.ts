@@ -64,3 +64,43 @@ describe("multiplayer network-condition simulator", () => {
     expect(simulator.diagnostics()).toMatchObject({ disposed: true, pendingDeliveries: 0 });
   });
 });
+
+describe("multiplayer network-condition simulator delivery diagnostics", () => {
+  it("retains the last delivery failure reason", async () => {
+    const simulator = createMultiplayerNetworkConditionSimulator(
+      createMemoryMultiplayerBackend({ id: "network-simulator.failure" }),
+      { latencyMs: 10, seed: 7 }
+    );
+    const host = createMultiplayerRuntime({
+      id: "network-simulator.failure.host",
+      backend: simulator.backend
+    });
+    const client = createMultiplayerRuntime({
+      id: "network-simulator.failure.client",
+      backend: simulator.backend
+    });
+    client.subscribe((message) => {
+      if (message.kind === "game.snapshot") throw new Error("snapshot decode failed");
+    });
+    await host.createSession({ id: "network-simulator-failure", localPeer: { id: "host" } });
+    await client.joinSession({
+      sessionId: "network-simulator-failure",
+      localPeer: { id: "client" }
+    });
+    await host.send({
+      channel: "reliable",
+      kind: "game.snapshot",
+      payload: { tick: 1 }
+    });
+    await simulator.advance(10);
+
+    expect(simulator.diagnostics()).toMatchObject({
+      deliveryErrors: 1,
+      lastDeliveryError: "snapshot decode failed"
+    });
+
+    await client.dispose();
+    await host.dispose();
+    simulator.dispose();
+  });
+});

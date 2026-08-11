@@ -98,6 +98,11 @@ item generation、impulse 和命中后的 instability，两者各有 64 条硬�
 `match.membershipRevision` 必须与 Physics frame 一致。Stage result 只追加 authority settlement，late join/reconnect 读取同一份
 participant/result projection 恢复当前语义状态，不从客户端缓存重建晋级或 winner。
 
+每条客户端 continuous input 与离散 item action 都携带 `authorityEpoch = frame generation + participant revision`。Server 在进入
+gameplay owner 前同时核对 peer binding、participant status 和 epoch；disconnect/reconnect、stage reset 或 membership churn 前发送但
+延迟到达的 command 必须被拒绝，不能因同一个 peer id 恢复连接而重新生效。Input sequence 仍用于同一 epoch 内的连续 ack/redundant
+bundle 去重，epoch 不替代 sequence；schema/version negotiation 必须阻止不发送 epoch 的旧客户端进入当前 authority。
+
 ## Prediction Island Membership
 
 完整因果集合包括：
@@ -162,7 +167,7 @@ generation reset 只能改变 confirm/cancel 时机，不能产生第二次消�
 - Elimination 在 authority 同 tick提交 participant state 与 actor despawn，递增 membership revision。
 - 淘汰 actor 不 teleport 到 spawn，也不继续接收 input/motor command。
 - Stage transition 使用新 generation、definition version 和 qualified member set，清除旧 command/history/effect/item lifecycle。
-- New match 使用新 match id/seed/input epoch，恢复完整 participant baseline；rematch 不能复用旧 stage generation。
+- New match 使用新 match id/seed/input/action authority epoch，恢复完整 participant baseline；rematch 不能复用旧 stage generation。
 - Playback `shouldReset`、prediction domain reset 与 effect journal reset使用同一 stage/match identity，不能各自猜测。
 
 ## Snapshot Playback 与 Presentation

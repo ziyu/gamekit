@@ -31,6 +31,7 @@ import {
   createArenaItemPhysicsMember
 } from "../items/item-physics";
 import { ARENA_ENVIRONMENT, createArenaDefinitionMap } from "../shared/arena-definition";
+import { arenaParticipantCommandEpoch } from "../shared/arena-identity";
 import {
   ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
   createArenaCharacterControlCommands,
@@ -402,7 +403,18 @@ export async function createArenaClientSession(options: {
         },
         encodeInput({ input, predictionFrame }) {
           latestInputSequence = predictionFrame.sequence;
-          return { sequence: predictionFrame.sequence, ...input };
+          const participant = latestSnapshot?.participants.find(
+            (candidate) => candidate.peerId === peerId
+          );
+          const authorityEpoch =
+            latestSnapshot === undefined || participant === undefined
+              ? undefined
+              : arenaParticipantCommandEpoch(latestSnapshot.frame.generation, participant.revision);
+          return {
+            sequence: predictionFrame.sequence,
+            ...input,
+            ...(authorityEpoch === undefined ? {} : { authorityEpoch })
+          };
         },
         active({ snapshot }) {
           const participant = snapshot.participants.find(
@@ -576,6 +588,10 @@ export async function createArenaClientSession(options: {
           aimX: aim.x,
           aimZ: aim.z,
           charge: type === "use" ? 1 : 0,
+          authorityEpoch: arenaParticipantCommandEpoch(
+            snapshot.frame.generation,
+            participant.revision
+          ),
           ...(target === undefined
             ? {}
             : {

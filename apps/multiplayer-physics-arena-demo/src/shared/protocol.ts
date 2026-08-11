@@ -165,7 +165,8 @@ export function readArenaMoveInput(value: unknown): ArenaMoveInput | undefined {
     !nonNegativeSafeInteger(value.sequence) ||
     !axis(value.moveX) ||
     !axis(value.moveZ) ||
-    typeof value.jump !== "boolean"
+    typeof value.jump !== "boolean" ||
+    (value.authorityEpoch !== undefined && !boundedId(value.authorityEpoch))
   ) {
     return undefined;
   }
@@ -173,7 +174,8 @@ export function readArenaMoveInput(value: unknown): ArenaMoveInput | undefined {
     sequence: value.sequence,
     moveX: value.moveX,
     moveZ: value.moveZ,
-    jump: value.jump
+    jump: value.jump,
+    ...(value.authorityEpoch === undefined ? {} : { authorityEpoch: value.authorityEpoch })
   };
 }
 

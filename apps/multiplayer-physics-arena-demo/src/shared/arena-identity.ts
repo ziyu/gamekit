@@ -17,6 +17,17 @@ export function arenaGenerationKey(generation: ArenaGeneration): string {
   return `m${value.match}.s${value.stage}.r${value.membershipRevision}`;
 }
 
+export function arenaParticipantCommandEpoch(
+  generation: string | number,
+  participantRevision: number
+): string {
+  const generationKey =
+    typeof generation === "string"
+      ? segment(generation, "generation")
+      : nonNegativeInteger(generation, "generation");
+  return `${generationKey}.p${nonNegativeInteger(participantRevision, "participantRevision")}`;
+}
+
 export function arenaParticipantId(sessionId: string, seat: number): string {
   return `participant.${segment(sessionId, "sessionId")}.${nonNegativeInteger(seat, "seat")}`;
 }

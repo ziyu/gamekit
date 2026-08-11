@@ -9,6 +9,7 @@ export type ArenaItemAction = {
   aimX: number;
   aimZ: number;
   charge: number;
+  authorityEpoch?: string | undefined;
   targetItemId?: string | undefined;
   targetItemGeneration?: number | undefined;
 };
@@ -26,6 +27,7 @@ export function readArenaItemAction(
     !axis(value.aimX) ||
     !axis(value.aimZ) ||
     !inclusiveRatio(value.charge) ||
+    (value.authorityEpoch !== undefined && !boundedId(value.authorityEpoch)) ||
     (value.targetItemId !== undefined && !boundedId(value.targetItemId)) ||
     (value.targetItemGeneration !== undefined &&
       !positiveSafeInteger(value.targetItemGeneration)) ||
@@ -40,6 +42,7 @@ export function readArenaItemAction(
     aimX: value.aimX,
     aimZ: value.aimZ,
     charge: value.charge,
+    ...(value.authorityEpoch === undefined ? {} : { authorityEpoch: value.authorityEpoch }),
     ...(value.targetItemId === undefined ? {} : { targetItemId: value.targetItemId }),
     ...(value.targetItemGeneration === undefined
       ? {}

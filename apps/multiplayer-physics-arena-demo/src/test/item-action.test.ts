@@ -12,10 +12,15 @@ describe("Arena item action protocol", () => {
         aimX: 0.5,
         aimZ: -0.5,
         charge: 0,
+        authorityEpoch: "m1.s1.r1.p2",
         targetItemId: "item.instance.1",
         targetItemGeneration: 2
       })
-    ).toMatchObject({ type: "interact", commandId: "item.command.1" });
+    ).toMatchObject({
+      type: "interact",
+      commandId: "item.command.1",
+      authorityEpoch: "m1.s1.r1.p2"
+    });
     expect(
       readArenaItemAction({
         type: "interact",

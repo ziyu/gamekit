@@ -7,6 +7,7 @@ import { createMemoryPhysicsBackend } from "@gamekit/physics-core";
 import { describe, expect, it } from "vitest";
 
 import { createArenaAuthorityRuntime } from "../server/arena-authority";
+import { arenaParticipantCommandEpoch } from "../shared/arena-identity";
 import { ARENA_ACTION_KIND, ARENA_INPUT_KIND } from "../shared/config";
 
 describe("Knockout Arena item authority integration", () => {
@@ -21,8 +22,8 @@ describe("Knockout Arena item authority integration", () => {
       for (let sequence = 1; sequence <= 90; sequence += 1) {
         inputSequence = sequence;
         await Promise.all([
-          sendInput(fixture.clientA, sequence, 0.58, -0.82),
-          sendInput(fixture.clientB, sequence, -0.58, -0.82)
+          sendInput(fixture.authority, fixture.clientA, "peer.a", sequence, 0.58, -0.82),
+          sendInput(fixture.authority, fixture.clientB, "peer.b", sequence, -0.58, -0.82)
         ]);
         fixture.authority.tick();
         const snapshot = fixture.authority.latestSnapshot();
@@ -49,9 +50,36 @@ describe("Knockout Arena item authority integration", () => {
       const worldItem = beforeClaim.items[0]!;
       expect(worldItem).toMatchObject({ state: "world", instanceGeneration: 1 });
       await Promise.all([
-        sendAction(fixture.clientA, "peer.a", "claim", inputSequence, 0.58, -0.82, worldItem),
-        sendAction(fixture.clientA, "peer.a", "claim", inputSequence, 0.58, -0.82, worldItem),
-        sendAction(fixture.clientB, "peer.b", "claim", inputSequence, -0.58, -0.82, worldItem)
+        sendAction(
+          fixture.authority,
+          fixture.clientA,
+          "peer.a",
+          "claim",
+          inputSequence,
+          0.58,
+          -0.82,
+          worldItem
+        ),
+        sendAction(
+          fixture.authority,
+          fixture.clientA,
+          "peer.a",
+          "claim",
+          inputSequence,
+          0.58,
+          -0.82,
+          worldItem
+        ),
+        sendAction(
+          fixture.authority,
+          fixture.clientB,
+          "peer.b",
+          "claim",
+          inputSequence,
+          -0.58,
+          -0.82,
+          worldItem
+        )
       ]);
       fixture.authority.tick();
 
@@ -69,7 +97,15 @@ describe("Knockout Arena item authority integration", () => {
       const owner = ownerPeerId === "peer.a" ? fixture.clientA : fixture.clientB;
       const ownerAimX = ownerPeerId === "peer.a" ? 0.58 : -0.58;
 
-      await sendAction(owner, ownerPeerId!, "drop", inputSequence + 1, ownerAimX, -0.82);
+      await sendAction(
+        fixture.authority,
+        owner,
+        ownerPeerId!,
+        "drop",
+        inputSequence + 1,
+        ownerAimX,
+        -0.82
+      );
       fixture.authority.tick();
       const dropped = fixture.authority.latestSnapshot();
       expect(dropped.items[0]).toMatchObject({
@@ -83,6 +119,7 @@ describe("Knockout Arena item authority integration", () => {
       ).toBe(true);
 
       await sendAction(
+        fixture.authority,
         owner,
         ownerPeerId!,
         "reclaim",
@@ -97,7 +134,15 @@ describe("Knockout Arena item authority integration", () => {
         instanceGeneration: 2
       });
 
-      await sendAction(owner, ownerPeerId!, "use", inputSequence + 3, ownerAimX, -0.82);
+      await sendAction(
+        fixture.authority,
+        owner,
+        ownerPeerId!,
+        "use",
+        inputSequence + 3,
+        ownerAimX,
+        -0.82
+      );
       fixture.authority.tick();
       expect(fixture.authority.latestSnapshot().items[0]?.state).toBe("windup");
       for (let index = 0; index < 9; index += 1) fixture.authority.tick();
@@ -173,7 +218,9 @@ function createClient(
 }
 
 async function sendInput(
+  authority: ReturnType<typeof createArenaAuthorityRuntime>,
   runtime: ReturnType<typeof createMultiplayerRuntime>,
+  peerId: string,
   sequence: number,
   moveX: number,
   moveZ: number
@@ -182,12 +229,22 @@ async function sendInput(
     channel: "reliable",
     kind: ARENA_INPUT_KIND,
     payload: createMultiplayerFixedStepInputBundle([
-      { sequence, payload: { sequence, moveX, moveZ, jump: false } }
+      {
+        sequence,
+        payload: {
+          sequence,
+          moveX,
+          moveZ,
+          jump: false,
+          authorityEpoch: commandEpoch(authority, peerId)
+        }
+      }
     ])
   });
 }
 
 async function sendAction(
+  authority: ReturnType<typeof createArenaAuthorityRuntime>,
   runtime: ReturnType<typeof createMultiplayerRuntime>,
   peerId: string,
   label: "claim" | "drop" | "reclaim" | "use",
@@ -210,11 +267,22 @@ async function sendAction(
       aimX,
       aimZ,
       charge: type === "use" ? 1 : 0,
+      authorityEpoch: commandEpoch(authority, peerId),
       ...(target === undefined
         ? {}
         : { targetItemId: target.id, targetItemGeneration: target.instanceGeneration })
     }
   });
+}
+
+function commandEpoch(
+  authority: ReturnType<typeof createArenaAuthorityRuntime>,
+  peerId: string
+): string {
+  const snapshot = authority.latestSnapshot();
+  const participant = snapshot.participants.find((candidate) => candidate.peerId === peerId);
+  if (participant === undefined) throw new Error(`Missing participant for ${peerId}`);
+  return arenaParticipantCommandEpoch(snapshot.frame.generation, participant.revision);
 }
 
 function advanceUntil(

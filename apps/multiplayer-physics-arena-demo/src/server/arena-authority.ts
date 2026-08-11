@@ -46,7 +46,7 @@ import {
   createArenaCharacterIntent,
   createArenaCharacterMotorContributor
 } from "../shared/arena-control";
-import { arenaGenerationKey } from "../shared/arena-identity";
+import { arenaGenerationKey, arenaParticipantCommandEpoch } from "../shared/arena-identity";
 import {
   planArenaHazardBodyCommands,
   planArenaStageInstallation,
@@ -299,7 +299,7 @@ export function createArenaAuthorityRuntime(
     inputDelivery: {
       mode: "redundant-bundle",
       maxSources: ARENA_MAX_HUMANS,
-      maxBufferedFramesPerSource: 24,
+      maxBufferedFramesPerSource: 48,
       maxGapTicks: 2,
       gapPolicy: "hold-last"
     },
@@ -316,6 +316,8 @@ export function createArenaAuthorityRuntime(
         !participant.connected ||
         participant.actorMemberId === undefined ||
         participant.status !== "active" ||
+        payload.authorityEpoch !==
+          arenaParticipantCommandEpoch(island.state().generation, participant.revision) ||
         director.snapshot().phase !== "running"
       ) {
         return {
@@ -344,7 +346,9 @@ export function createArenaAuthorityRuntime(
         participant.status === "spectator" ||
         participant.status === "next-match" ||
         participant.status === "eliminated" ||
-        participant.status === "finished"
+        participant.status === "finished" ||
+        payload.authorityEpoch !==
+          arenaParticipantCommandEpoch(island.state().generation, participant.revision)
       ) {
         return {
           allowed: false,

@@ -2,7 +2,7 @@ import { ARENA_COMPILED_CONTENT } from "../content/default-content";
 
 export const ARENA_ROOM_NAME = "gamekit-knockout-circuit";
 export const ARENA_BROWSER_CONFIG_PATH = "/__gamekit/knockout-config";
-export const ARENA_SCHEMA_VERSION = "knockout-arena.v6";
+export const ARENA_SCHEMA_VERSION = "knockout-arena.v7";
 export const ARENA_DEFINITION_VERSION = ARENA_COMPILED_CONTENT.definitionVersion;
 export const ARENA_ISLAND_ID = "knockout.full-arena";
 export const ARENA_FIXED_STEP_MS = 1000 / 60;
@@ -26,7 +26,7 @@ export type ArenaActorControl = {
 };
 
 export type ArenaActorControlFrame = ArenaActorControl & { sequence: number };
-export type ArenaMoveInput = ArenaActorControlFrame;
+export type ArenaMoveInput = ArenaActorControlFrame & { authorityEpoch?: string | undefined };
 
 export function arenaAuthorityPeerId(sessionId: string): string {
   return `${sessionId}.server`;

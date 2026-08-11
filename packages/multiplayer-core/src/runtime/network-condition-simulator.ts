@@ -30,6 +30,7 @@ export type MultiplayerNetworkConditionSimulatorDiagnostics = {
   duplicatedMessages: number;
   capacityDrops: number;
   deliveryErrors: number;
+  lastDeliveryError?: string | undefined;
   maxPendingDeliveries: number;
   activeConnections: number;
   disposed: boolean;
@@ -74,6 +75,7 @@ export function createMultiplayerNetworkConditionSimulator(
   let nextConnectionId = 0;
   let activeConnections = 0;
   let disposed = false;
+  let lastDeliveryError: string | undefined;
   const pending: ScheduledDelivery[] = [];
   const lastOrderedDueAt = new Map<string, number>();
   const metrics = {
@@ -248,8 +250,9 @@ export function createMultiplayerNetworkConditionSimulator(
       try {
         await due.deliver();
         metrics.deliveredMessages += 1;
-      } catch {
+      } catch (error) {
         metrics.deliveryErrors += 1;
+        lastDeliveryError = error instanceof Error ? error.message : String(error);
       }
     }
   }
@@ -300,6 +303,7 @@ export function createMultiplayerNetworkConditionSimulator(
       nowMs,
       pendingDeliveries: pending.length,
       ...metrics,
+      ...(lastDeliveryError === undefined ? {} : { lastDeliveryError }),
       activeConnections,
       disposed
     };
