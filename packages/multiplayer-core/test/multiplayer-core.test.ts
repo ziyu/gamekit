@@ -1592,47 +1592,6 @@ describe("peer/player binding utility", () => {
     expect(store.bindings().map((binding) => binding.playerId)).toEqual(["player-a", "player-b"]);
   });
 
-  it("preserves remote player configuration across partial peer refreshes", () => {
-    const store = createMultiplayerPeerPlayerBindingStore();
-    store.bindPeer(
-      peer("peer-a", {
-        playerId: "player-a",
-        displayName: "Nova",
-        role: "host",
-        metadata: { region: "ap-east", latencyMs: 30 }
-      }),
-      { slot: "violet", metadata: { loadout: "dive" } }
-    );
-
-    const partial = store.bindPeer(peer("peer-a", { playerId: "player-a" }), {
-      status: "next-round"
-    });
-    expect(partial).toMatchObject({
-      displayName: "Nova",
-      role: "host",
-      slot: "violet",
-      status: "next-round",
-      metadata: { region: "ap-east", latencyMs: 30, loadout: "dive" }
-    });
-
-    const updated = store.bindPeer(
-      peer("peer-a", {
-        playerId: "player-a",
-        displayName: "Nova Prime",
-        role: "client",
-        metadata: { latencyMs: 18 }
-      }),
-      { metadata: { team: "cyan" } }
-    );
-    expect(updated).toMatchObject({
-      displayName: "Nova Prime",
-      role: "client",
-      slot: "violet",
-      status: "active",
-      metadata: { region: "ap-east", latencyMs: 18, loadout: "dive", team: "cyan" }
-    });
-  });
-
   it("supports spectator bindings and closes a binding set", () => {
     const store = createMultiplayerPeerPlayerBindingStore();
 

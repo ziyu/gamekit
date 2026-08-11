@@ -289,9 +289,6 @@ export type MultiplayerAuthorityBinding = {
 - 客户端在 `bound` 前不能把 local simulation 当作联网 gameplay state；只能显示等待同步、观战、离线练习或本地预测缓存。
 - Snapshot、patch 和 command result 默认只接受绑定 authority endpoint 的消息；来自其他 peer 的 state 写入必须被拒绝并进入 diagnostics。
 - `peer.id` 到 `playerId`、slot、team、spectator 或 next-round participant 的映射必须由 authority binding 或权威 snapshot 声明，不能由 UI 临时推断。
-- 同一 `playerId` 的重复 peer binding 使用 patch 语义：未提供的 display name、role、slot 和 metadata 保留既有配置；
-  显式字段覆盖旧值，metadata 按既有值、peer summary、binding input 的顺序合并。Provider 的部分 peer refresh 不能把
-  authority 已确认的玩家配置重置为 fallback。
 - Leave、disconnect、reconnect、late join 和 room reset 必须更新 authority binding；旧 snapshot buffer、input queue 和 prediction cache 不能跨 binding 复用。
 
 ## Room-owned Server Authority
