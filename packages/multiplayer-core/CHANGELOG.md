@@ -1,6 +1,6 @@
 # @gamekit/multiplayer-core
 
-## 0.1.0-alpha.4
+## 0.1.0-alpha.5
 
 ### Minor Changes
 

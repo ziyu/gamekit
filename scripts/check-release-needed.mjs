@@ -7,6 +7,7 @@ import {
   resolveRequiredDistTags,
   validateDistTagPolicy
 } from "./release-dist-tags.mjs";
+import { assertLockstepWorkspaceState } from "./release-workspace-state.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const sentinelManifest = JSON.parse(readFileSync(join(root, "packages/core/package.json"), "utf8"));
@@ -15,6 +16,7 @@ const registry = process.env.GAMEKITS_NPM_REGISTRY ?? "https://registry.npmjs.or
 const distTag = process.env.GAMEKITS_NPM_TAG ?? inferDistTag(version);
 const additionalDistTags = parseAdditionalDistTags(process.env.GAMEKITS_NPM_ADDITIONAL_TAGS);
 validateDistTagPolicy({ additionalDistTags, distTag, version });
+assertLockstepWorkspaceState({ releaseVersion: version, root });
 const packageNames = resolvePackageNames();
 
 const missingPackages = [];

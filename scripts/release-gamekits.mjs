@@ -8,6 +8,7 @@ import {
   parseAdditionalDistTags,
   validateDistTagPolicy
 } from "./release-dist-tags.mjs";
+import { assertLockstepWorkspaceState } from "./release-workspace-state.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageVersion = JSON.parse(
@@ -20,6 +21,7 @@ const distTag = process.env.GAMEKITS_NPM_TAG ?? inferDistTag(releaseVersion);
 const additionalDistTags = parseAdditionalDistTags(process.env.GAMEKITS_NPM_ADDITIONAL_TAGS);
 
 validateDistTagPolicy({ additionalDistTags, distTag, version: releaseVersion });
+assertLockstepWorkspaceState({ releaseVersion, root });
 
 function run(command, args, options = {}) {
   execFileSync(command, args, {

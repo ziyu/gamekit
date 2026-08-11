@@ -13,6 +13,10 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  assertLockstepWorkspaceState,
+  assertPreparedReleaseState
+} from "./release-workspace-state.mjs";
 
 type PackageManifest = {
   name: string;
@@ -41,6 +45,7 @@ const workspaceVersion = (
   JSON.parse(readFileSync(join(root, "packages/core/package.json"), "utf8")) as PackageManifest
 ).version;
 const releaseVersion = process.env.GAMEKITS_RELEASE_VERSION ?? workspaceVersion;
+assertLockstepWorkspaceState({ releaseVersion, root });
 const releaseDir =
   process.env.GAMEKITS_RELEASE_DIR ?? mkdtempSync(join(tmpdir(), "gamekits-release-"));
 const shouldCleanReleaseDir = process.env.GAMEKITS_RELEASE_DIR === undefined;
@@ -96,7 +101,7 @@ const wave3PackageSlugs = ["react-ui", "devtools-ui"];
 
 const allPackageSlugs = discoverPublishablePackageSlugs();
 
-const releaseWave = process.env.GAMEKITS_RELEASE_WAVE ?? "1";
+const releaseWave = process.env.GAMEKITS_RELEASE_WAVE ?? "all";
 const installOffline = process.env.GAMEKITS_RELEASE_OFFLINE === "1";
 
 const smokeSource = `
@@ -806,6 +811,12 @@ function preparePackage(slug: string, packagesDir: string): string {
   const sourceDist = join(sourceDir, "dist");
   const targetDist = join(targetDir, "dist");
 
+  if (manifest.version !== releaseVersion) {
+    throw new Error(
+      `${manifest.name} has workspace version ${manifest.version}; expected lockstep release version ${releaseVersion}.`
+    );
+  }
+
   if (!existsSync(sourceDist)) {
     throw new Error(`Missing dist for ${manifest.name}. Run build before release verification.`);
   }
@@ -881,6 +892,11 @@ try {
     const tarball = join(packDir, output.split("\n").at(-1)!);
     assertTarballContents(tarball);
     return tarball;
+  });
+  assertPreparedReleaseState({
+    packageSlugs,
+    releaseDir,
+    releaseVersion
   });
 
   const localTarballDependencies = Object.fromEntries(
