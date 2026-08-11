@@ -1,5 +1,9 @@
 import { defineGameModule } from "@gamekit/core";
 import type { GameInstallContext } from "@gamekit/game-runtime";
+import {
+  createMultiplayerSpeculativeEffectJournal,
+  type MultiplayerSpeculativeEffectJournal
+} from "@gamekit/multiplayer-core";
 
 import type { OutpostReplicatedWeaponState } from "../../domain";
 
@@ -66,6 +70,10 @@ type PendingRifleAnticipation = {
   anticipatedAt: number;
 };
 
+type RifleAnticipationResolution = {
+  elapsed: number;
+};
+
 const DEFAULT_CUE_HISTORY_LIMIT = 32;
 const DEFAULT_ANTICIPATION_TIMEOUT_MS = 1_000;
 const DEFAULT_MAX_PENDING_ANTICIPATIONS = 8;
@@ -90,8 +98,8 @@ export function createOutpostClientPlayerPresentation(
   );
   const fireIntervalMs = positiveNumber(options.fireIntervalMs, undefined, "fireIntervalMs");
   const cues: OutpostPlayerPresentationCue[] = [];
-  const pending: PendingRifleAnticipation[] = [];
   let initialized = false;
+  let effectGeneration = 0;
   let cueSequence = 0;
   let lastInputFireSequence = 0;
   let lastAuthorityShotSequence = 0;
@@ -103,6 +111,7 @@ export function createOutpostClientPlayerPresentation(
   let rejectedShots = 0;
   let expiredShots = 0;
   let currentFrame = emptyPresentationFrame();
+  const effects = createRifleEffectJournal();
 
   return {
     update(frame) {
@@ -141,28 +150,29 @@ export function createOutpostClientPlayerPresentation(
       }
       if (
         frame.elapsed < nextAnticipationAt ||
-        pending.length >= maxPendingAnticipations ||
-        weapon.magazine <= pending.length ||
+        pendingAnticipations().length >= maxPendingAnticipations ||
+        weapon.magazine <= pendingAnticipations().length ||
         (weapon.phase !== "ready" && weapon.phase !== "reloading")
       ) {
         return;
       }
 
+      const pending = pendingAnticipations();
       const predictedShotSequence = lastAuthorityShotSequence + pending.length + 1;
       const correlationId = `${options.playerId}.rifle.${predictedShotSequence}`;
       if (pending.some((candidate) => candidate.correlationId === correlationId)) {
         return;
       }
-      pending.push({ correlationId, predictedShotSequence, anticipatedAt: frame.elapsed });
+      const anticipated = effects.anticipate({
+        effectId: correlationId,
+        tick: effectTick(frame.elapsed),
+        value: { correlationId, predictedShotSequence, anticipatedAt: frame.elapsed }
+      });
+      if (anticipated.status !== "anticipated") {
+        return;
+      }
       queuedFireEdge = false;
       nextAnticipationAt = frame.elapsed + fireIntervalMs;
-      anticipatedShots += 1;
-      appendCue({
-        phase: "anticipated",
-        correlationId,
-        predictedShotSequence,
-        at: frame.elapsed
-      });
     },
     cuesAfter(sequence) {
       return cues.filter((cue) => cue.sequence > sequence).map(cloneCue);
@@ -173,7 +183,7 @@ export function createOutpostClientPlayerPresentation(
     snapshot() {
       return {
         cueWatermark: cueSequence,
-        pendingAnticipations: pending.length,
+        pendingAnticipations: effects.diagnostics().pending,
         anticipatedShots,
         confirmedShots,
         rejectedShots,
@@ -193,19 +203,81 @@ export function createOutpostClientPlayerPresentation(
       rejectedShots = 0;
       expiredShots = 0;
       currentFrame = emptyPresentationFrame();
+      effectGeneration += 1;
+      effects.reset(effectGeneration);
       cues.length = 0;
-      pending.length = 0;
     }
   };
 
+  function createRifleEffectJournal(): MultiplayerSpeculativeEffectJournal<
+    PendingRifleAnticipation,
+    RifleAnticipationResolution
+  > {
+    return createMultiplayerSpeculativeEffectJournal({
+      generation: effectGeneration,
+      maxPending: maxPendingAnticipations,
+      maxResolved: cueHistoryLimit,
+      maxAgeTicks: Math.max(1, Math.ceil(anticipationTimeoutMs)),
+      clonePredicted: (value) => ({ ...value }),
+      cloneAuthority: (value) => ({ ...value }),
+      hooks: {
+        onAnticipate(effect) {
+          anticipatedShots += 1;
+          appendCue({
+            phase: "anticipated",
+            correlationId: effect.value.correlationId,
+            predictedShotSequence: effect.value.predictedShotSequence,
+            at: effect.value.anticipatedAt
+          });
+        },
+        onConfirm({ effect, authority, tick }) {
+          confirmedShots += 1;
+          appendCue({
+            phase: "confirmed",
+            correlationId: effect.value.correlationId,
+            predictedShotSequence: effect.value.predictedShotSequence,
+            at: authority?.elapsed ?? tick
+          });
+        },
+        onCancel({ effect, reason, detail, tick }) {
+          if (
+            reason === "generation-changed" ||
+            reason === "explicit-reset" ||
+            reason === "disposed"
+          ) {
+            return;
+          }
+          const expired =
+            reason === "expired" ||
+            reason === "capacity" ||
+            detail === "authority-timeout" ||
+            detail === "correlation-chain-invalidated";
+          if (expired) {
+            expiredShots += 1;
+          } else {
+            rejectedShots += 1;
+          }
+          appendCue({
+            phase: expired ? "expired" : "rejected",
+            correlationId: effect.value.correlationId,
+            predictedShotSequence: effect.value.predictedShotSequence,
+            at: tick,
+            ...(detail === undefined ? {} : { reason: detail })
+          });
+        }
+      }
+    });
+  }
+
   function reconcileAuthority(elapsed: number, weapon: OutpostReplicatedWeaponState): void {
     if (weapon.shotSequence < lastAuthorityShotSequence) {
-      pending.length = 0;
+      resetEffects();
       queuedFireEdge = false;
       lastAuthorityShotSequence = weapon.shotSequence;
     } else if (weapon.shotSequence > lastAuthorityShotSequence) {
       const correlated = weapon.lastShotCorrelationId;
       if (correlated !== undefined) {
+        const pending = pendingAnticipations();
         const index = pending.findIndex((candidate) => candidate.correlationId === correlated);
         if (index >= 0) {
           for (let count = 0; count <= index; count += 1) {
@@ -213,7 +285,10 @@ export function createOutpostClientPlayerPresentation(
           }
         }
       }
-      while (pending[0] !== undefined && pending[0].predictedShotSequence <= weapon.shotSequence) {
+      while (
+        pendingAnticipations()[0] !== undefined &&
+        pendingAnticipations()[0]!.predictedShotSequence <= weapon.shotSequence
+      ) {
         confirmPending(0, elapsed);
       }
       lastAuthorityShotSequence = weapon.shotSequence;
@@ -227,71 +302,75 @@ export function createOutpostClientPlayerPresentation(
     if (feedback.action !== "rifle" || feedback.correlationId === undefined) {
       return;
     }
+    const pending = pendingAnticipations();
     const index = pending.findIndex(
       (candidate) => candidate.correlationId === feedback.correlationId
     );
     if (index < 0) {
       return;
     }
-    const invalidated = pending.splice(index);
+    const invalidated = pending.slice(index);
     const rejected = invalidated.shift();
     if (!rejected) {
       return;
     }
-    rejectedShots += 1;
-    appendCue({
-      phase: "rejected",
-      correlationId: rejected.correlationId,
-      predictedShotSequence: rejected.predictedShotSequence,
-      at: elapsed,
+    effects.resolve({
+      effectId: rejected.correlationId,
+      generation: effectGeneration,
+      tick: effectTick(elapsed),
+      outcome: "cancel",
       reason: feedback.reason
     });
     for (const dependent of invalidated) {
-      expiredShots += 1;
-      appendCue({
-        phase: "expired",
-        correlationId: dependent.correlationId,
-        predictedShotSequence: dependent.predictedShotSequence,
-        at: elapsed,
+      effects.resolve({
+        effectId: dependent.correlationId,
+        generation: effectGeneration,
+        tick: effectTick(elapsed),
+        outcome: "cancel",
         reason: "correlation-chain-invalidated"
       });
     }
   }
 
   function confirmPending(index: number, elapsed: number): void {
-    const [confirmed] = pending.splice(index, 1);
+    const confirmed = pendingAnticipations()[index];
     if (!confirmed) {
       return;
     }
-    confirmedShots += 1;
-    appendCue({
-      phase: "confirmed",
-      correlationId: confirmed.correlationId,
-      predictedShotSequence: confirmed.predictedShotSequence,
-      at: elapsed
+    effects.resolve({
+      effectId: confirmed.correlationId,
+      generation: effectGeneration,
+      tick: effectTick(elapsed),
+      outcome: "confirm",
+      authority: { elapsed }
     });
   }
 
   function expireStaleAnticipations(elapsed: number): void {
+    const pending = pendingAnticipations();
     const first = pending[0];
     if (first === undefined || elapsed - first.anticipatedAt < anticipationTimeoutMs) {
       return;
     }
-    const invalidated = pending.splice(0);
-    for (let index = 0; index < invalidated.length; index += 1) {
-      const expired = invalidated[index];
-      if (!expired) {
-        continue;
-      }
-      expiredShots += 1;
-      appendCue({
-        phase: "expired",
-        correlationId: expired.correlationId,
-        predictedShotSequence: expired.predictedShotSequence,
-        at: elapsed,
+    for (let index = 0; index < pending.length; index += 1) {
+      const expired = pending[index]!;
+      effects.resolve({
+        effectId: expired.correlationId,
+        generation: effectGeneration,
+        tick: effectTick(elapsed),
+        outcome: "cancel",
         reason: index === 0 ? "authority-timeout" : "correlation-chain-invalidated"
       });
     }
+  }
+
+  function pendingAnticipations(): PendingRifleAnticipation[] {
+    return effects.pending().map((effect) => effect.value);
+  }
+
+  function resetEffects(): void {
+    effectGeneration += 1;
+    effects.reset(effectGeneration);
   }
 
   function appendCue(
@@ -310,12 +389,19 @@ export function createOutpostClientPlayerPresentation(
   }
 
   function clearTransientState(fireSequence: number): void {
+    const resetRequired = initialized || effects.diagnostics().pending > 0;
     initialized = false;
     lastInputFireSequence = fireSequence;
     nextAnticipationAt = 0;
     queuedFireEdge = false;
-    pending.length = 0;
+    if (resetRequired) {
+      resetEffects();
+    }
   }
+}
+
+function effectTick(elapsed: number): number {
+  return Math.max(0, Math.floor(elapsed));
 }
 
 export function createOutpostClientPlayerPresentationModule(options: {

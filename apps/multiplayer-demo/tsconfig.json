@@ -11,6 +11,7 @@
     { "path": "../../packages/game-runtime" },
     { "path": "../../packages/multiplayer-core" },
     { "path": "../../packages/multiplayer-colyseus" },
+    { "path": "../../packages/multiplayer-memory" },
     { "path": "../../packages/world-koota" }
   ]
 }

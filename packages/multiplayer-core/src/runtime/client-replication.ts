@@ -27,6 +27,22 @@ import type {
   MultiplayerRuntime
 } from "./types";
 
+export type MultiplayerClientReplicationSchemaBinding<TSnapshot, TState, TInstallContext> = {
+  readonly id: string;
+  readonly version: string;
+  readonly tracks?: readonly SnapshotPresentationTrack<TSnapshot>[] | undefined;
+  readSnapshot(payload: unknown, message: MultiplayerMessageEnvelope): TSnapshot | undefined;
+  toBufferEntry(
+    ctx: MultiplayerClientReplicationSnapshotContext<TSnapshot, TInstallContext>
+  ): SnapshotBufferEntry<TSnapshot>;
+  readAuthoritativeState(
+    ctx: MultiplayerClientPredictionReadContext<TSnapshot, TInstallContext>
+  ): TState | undefined;
+  readAcknowledgedSequence(
+    ctx: MultiplayerClientPredictionReadContext<TSnapshot, TInstallContext>
+  ): number | undefined;
+};
+
 export type MultiplayerClientReplicationSystemFrame = {
   delta?: number;
   elapsed?: number;
@@ -79,7 +95,7 @@ export type MultiplayerClientPredictionOptions<TSnapshot, TInput, TState, TInsta
   encodeInput(
     ctx: MultiplayerClientPredictionEncodeContext<TSnapshot, TInput, TInstallContext>
   ): unknown;
-  readAuthoritativeState(
+  readAuthoritativeState?(
     ctx: MultiplayerClientPredictionReadContext<TSnapshot, TInstallContext>
   ): TState | undefined;
   readAcknowledgedSequence?(
@@ -108,11 +124,12 @@ export type MultiplayerClientReplicationOptions<
 > = {
   id?: string;
   snapshotKind?: string;
+  schema?: MultiplayerClientReplicationSchemaBinding<TSnapshot, TState, TInstallContext>;
   snapshotSource?: MultiplayerClientReplicationSnapshotSource;
   authority?: MultiplayerClientReplicationAuthorityOptions;
   playback?: SnapshotPlaybackOptions<TSnapshot>;
   tracks?: Iterable<SnapshotPresentationTrack<TSnapshot>>;
-  readSnapshot(payload: unknown, message: MultiplayerMessageEnvelope): TSnapshot | undefined;
+  readSnapshot?(payload: unknown, message: MultiplayerMessageEnvelope): TSnapshot | undefined;
   toBufferEntry?(
     ctx: MultiplayerClientReplicationSnapshotContext<TSnapshot, TInstallContext>
   ): SnapshotBufferEntry<TSnapshot>;
@@ -198,9 +215,16 @@ export function createMultiplayerClientReplication<
   input: CreateMultiplayerClientReplicationOptions<TSnapshot, TInput, TState, TInstallContext>
 ): MultiplayerClientReplicationRuntime<TSnapshot, TState> {
   const { runtime, installContext, options } = input;
+  const readSnapshot = options.readSnapshot ?? options.schema?.readSnapshot;
+  if (readSnapshot === undefined) {
+    throw new Error("Client replication requires readSnapshot or a replication schema binding.");
+  }
   const snapshotKind = options.snapshotKind ?? DEFAULT_SNAPSHOT_KIND;
   const playback = createSnapshotPlayback<TSnapshot>(options.playback);
-  const projector = createSnapshotPresentationProjector<TSnapshot>(options.tracks ?? []);
+  const projector = createSnapshotPresentationProjector<TSnapshot>([
+    ...(options.schema?.tracks ?? []),
+    ...(options.tracks ?? [])
+  ]);
   const predictionOptions = options.prediction;
   const inputRateHz = normalizePositiveNumber(
     predictionOptions?.inputRateHz,
@@ -268,7 +292,7 @@ export function createMultiplayerClientReplication<
       rejectSnapshot(decision.code);
       return "rejected";
     }
-    const snapshot = options.readSnapshot(message.payload, message);
+    const snapshot = readSnapshot(message.payload, message);
     if (snapshot === undefined) {
       rejectSnapshot("invalid-snapshot");
       return "rejected";
@@ -284,7 +308,10 @@ export function createMultiplayerClientReplication<
       binding,
       message,
       snapshot,
-      entry: options.toBufferEntry?.(context) ?? defaultBufferEntry(snapshot, message)
+      entry:
+        options.toBufferEntry?.(context) ??
+        options.schema?.toBufferEntry(context) ??
+        defaultBufferEntry(snapshot, message)
     };
     return "accepted";
   };
@@ -456,8 +483,17 @@ export function createMultiplayerClientReplication<
       snapshot,
       frame
     };
-    const authoritativeState = predictionOptions.readAuthoritativeState(context);
-    const acknowledgedSequence = predictionOptions.readAcknowledgedSequence?.(context);
+    const readAuthoritativeState =
+      predictionOptions.readAuthoritativeState ?? options.schema?.readAuthoritativeState;
+    if (readAuthoritativeState === undefined) {
+      throw new Error(
+        "Client prediction requires readAuthoritativeState or a replication schema binding."
+      );
+    }
+    const authoritativeState = readAuthoritativeState(context);
+    const acknowledgedSequence =
+      predictionOptions.readAcknowledgedSequence?.(context) ??
+      options.schema?.readAcknowledgedSequence(context);
     if (acknowledgedSequence !== undefined) {
       nextInputSequence = Math.max(nextInputSequence, acknowledgedSequence);
     }

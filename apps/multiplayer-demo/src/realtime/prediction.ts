@@ -95,18 +95,18 @@ export function createRealtimeArenaPlayerPrediction(): RealtimeArenaPlayerPredic
     snapshot: RealtimeArenaSnapshot,
     playerId: string
   ): MultiplayerPredictionBuffer<RealtimeArenaPredictedPlayer, RealtimeInputFrame> | undefined {
-    const authoritative = readPredictedPlayer(snapshot, playerId);
+    const authoritative = readRealtimeArenaPredictedPlayer(snapshot, playerId);
     if (!authoritative) {
       return undefined;
     }
-    context = readPredictionContext(snapshot);
+    context = readRealtimeArenaPredictionContext(snapshot);
     if (!buffer || activePlayerId !== playerId) {
       activePlayerId = playerId;
       buffer = createMultiplayerPredictionBuffer({
         initialState: authoritative,
-        cloneState,
+        cloneState: cloneRealtimeArenaPredictedPlayer,
         applyInput(state, input) {
-          return applyPredictionInput(state, input, context);
+          return applyRealtimeArenaPredictionInput(state, input, context);
         },
         presentation,
         predictionStepMs: REALTIME_ARENA_TICK_MS
@@ -130,7 +130,7 @@ export function createRealtimeArenaPlayerPrediction(): RealtimeArenaPlayerPredic
         input: frame,
         timestamp: frame.clientTime
       });
-      const inputLead = calculateInputLead(currentBuffer.diagnostics());
+      const inputLead = calculateRealtimeArenaInputLead(currentBuffer.diagnostics());
       latestDiagnostics = {
         ...latestDiagnostics,
         ...(inputLead === undefined ? {} : { inputLead })
@@ -144,13 +144,13 @@ export function createRealtimeArenaPlayerPrediction(): RealtimeArenaPlayerPredic
         return undefined;
       }
 
-      const authoritative = readPredictedPlayer(payload.snapshot, playerId);
+      const authoritative = readRealtimeArenaPredictedPlayer(payload.snapshot, playerId);
       if (!authoritative) {
         resetPrediction();
         return undefined;
       }
 
-      context = readPredictionContext(payload.snapshot);
+      context = readRealtimeArenaPredictionContext(payload.snapshot);
       const acknowledgedSequence =
         payload.inputAcksByPeerId[peerId] ??
         payload.snapshot.players.find((player) => player.id === playerId)?.lastInputSequence;
@@ -178,7 +178,7 @@ export function createRealtimeArenaPlayerPrediction(): RealtimeArenaPlayerPredic
       }
 
       const roundTripTimeMs = readRoundTripTime(acknowledgedSequence, timing.frameTime);
-      const inputLead = calculateInputLead(currentBuffer.diagnostics());
+      const inputLead = calculateRealtimeArenaInputLead(currentBuffer.diagnostics());
       latestDiagnostics = {
         snapshotAgeMs: Math.max(0, timing.wallTime - payload.serverTime),
         ...(acknowledgedSequence === undefined ? {} : { inputAckSequence: acknowledgedSequence }),
@@ -203,7 +203,7 @@ export function createRealtimeArenaPlayerPrediction(): RealtimeArenaPlayerPredic
       resetPrediction();
     },
     diagnostics() {
-      const coreDiagnostics = buffer?.diagnostics() ?? emptyPredictionDiagnostics();
+      const coreDiagnostics = buffer?.diagnostics() ?? emptyRealtimeArenaPredictionDiagnostics();
       return {
         ...coreDiagnostics,
         ...latestDiagnostics
@@ -250,7 +250,7 @@ export function createRealtimeArenaPlayerPrediction(): RealtimeArenaPlayerPredic
   }
 }
 
-function readPredictedPlayer(
+export function readRealtimeArenaPredictedPlayer(
   snapshot: RealtimeArenaSnapshot,
   playerId: string
 ): RealtimeArenaPredictedPlayer | undefined {
@@ -268,7 +268,9 @@ function readPredictedPlayer(
   };
 }
 
-function readPredictionContext(snapshot: RealtimeArenaSnapshot): PredictionContext {
+export function readRealtimeArenaPredictionContext(
+  snapshot: RealtimeArenaSnapshot
+): PredictionContext {
   return {
     bounds: { ...snapshot.bounds },
     rules: { ...snapshot.rules },
@@ -276,7 +278,9 @@ function readPredictionContext(snapshot: RealtimeArenaSnapshot): PredictionConte
   };
 }
 
-function cloneState(state: RealtimeArenaPredictedPlayer): RealtimeArenaPredictedPlayer {
+export function cloneRealtimeArenaPredictedPlayer(
+  state: RealtimeArenaPredictedPlayer
+): RealtimeArenaPredictedPlayer {
   return {
     playerId: state.playerId,
     position: { ...state.position },
@@ -286,7 +290,7 @@ function cloneState(state: RealtimeArenaPredictedPlayer): RealtimeArenaPredicted
   };
 }
 
-function applyPredictionInput(
+export function applyRealtimeArenaPredictionInput(
   state: RealtimeArenaPredictedPlayer,
   input: RealtimeInputFrame,
   context: PredictionContext | undefined
@@ -337,7 +341,9 @@ function advancePredictionState(
   return state;
 }
 
-function calculateInputLead(diagnostics: MultiplayerPredictionDiagnostics): number | undefined {
+export function calculateRealtimeArenaInputLead(
+  diagnostics: MultiplayerPredictionDiagnostics
+): number | undefined {
   if (
     diagnostics.lastPredictedSequence === undefined ||
     diagnostics.lastAcknowledgedSequence === undefined
@@ -348,7 +354,7 @@ function calculateInputLead(diagnostics: MultiplayerPredictionDiagnostics): numb
   return Math.max(0, diagnostics.lastPredictedSequence - diagnostics.lastAcknowledgedSequence);
 }
 
-function emptyPredictionDiagnostics(): MultiplayerPredictionDiagnostics {
+export function emptyRealtimeArenaPredictionDiagnostics(): MultiplayerPredictionDiagnostics {
   return {
     predictedInputs: 0,
     rejectedInputs: 0,
@@ -435,10 +441,6 @@ function normalizeVector(vector: NetworkVector2): NetworkVector2 {
     x: vector.x / length,
     y: vector.y / length
   };
-}
-
-function distance(a: NetworkVector2, b: NetworkVector2): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function clamp(value: number, min: number, max: number): number {

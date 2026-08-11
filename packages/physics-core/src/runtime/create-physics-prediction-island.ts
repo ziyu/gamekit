@@ -84,6 +84,12 @@ export type PhysicsPredictionIslandReconcileResult = {
   replayedTicks: number;
 };
 
+export type PhysicsPredictionIslandHardCorrectResult = {
+  status: "corrected" | "member-definition-missing" | "member-capacity" | "invalid-snapshot";
+  correctedMembers: number;
+  missingMemberIds: string[];
+};
+
 export type PhysicsPredictionIslandDiagnostics = {
   backend: string;
   generation: PhysicsPredictionIslandGeneration;
@@ -108,6 +114,8 @@ export type PhysicsPredictionIslandDiagnostics = {
   conflictingCommands: number;
   rejectedCommands: number;
   maxCorrectionMagnitude: number;
+  hardCorrections: number;
+  hardCorrectionFailures: number;
   disposed: boolean;
 };
 
@@ -128,6 +136,10 @@ export type PhysicsPredictionIsland = {
   queue(command: PhysicsPredictionIslandCommand): PhysicsPredictionIslandQueueResult;
   advanceTo(targetTick: number): PhysicsPredictionIslandAdvanceResult;
   reconcile(snapshot: PhysicsPredictionIslandStateSnapshot): PhysicsPredictionIslandReconcileResult;
+  hardCorrect(
+    snapshot: PhysicsPredictionIslandStateSnapshot,
+    definitions?: readonly PhysicsPredictionIslandMemberDefinition[]
+  ): PhysicsPredictionIslandHardCorrectResult;
   state(): PhysicsPredictionIslandStateSnapshot;
   body(memberId: string): PhysicsBodyState | undefined;
   tick(): number;
@@ -220,7 +232,9 @@ export function createPhysicsPredictionIsland(
     duplicateCommands: 0,
     conflictingCommands: 0,
     rejectedCommands: 0,
-    maxCorrectionMagnitude: 0
+    maxCorrectionMagnitude: 0,
+    hardCorrections: 0,
+    hardCorrectionFailures: 0
   };
 
   try {
@@ -289,8 +303,8 @@ export function createPhysicsPredictionIsland(
         metrics.historyOverflows += 1;
         return { status: "history-overflow", correctionMagnitude: 0, replayedTicks: 0 };
       }
-      const localMemberIds = [...checkpoint.members.map((member) => member.id)].sort();
-      const authorityMemberIds = [...snapshot.members.map((member) => member.id)].sort();
+      const localMemberIds = checkpoint.members.map((member) => member.id).sort();
+      const authorityMemberIds = snapshot.members.map((member) => member.id).sort();
       if (!sameStrings(localMemberIds, authorityMemberIds)) {
         metrics.membershipMismatches += 1;
         return { status: "membership-mismatch", correctionMagnitude: 0, replayedTicks: 0 };
@@ -331,6 +345,80 @@ export function createPhysicsPredictionIsland(
         status: correctionMagnitude > 0.000_001 ? "corrected" : "confirmed",
         correctionMagnitude,
         replayedTicks: replayed.steps
+      };
+    },
+    hardCorrect(snapshot, definitions = []) {
+      assertActive();
+      if (!validStateSnapshot(snapshot)) {
+        metrics.hardCorrectionFailures += 1;
+        return {
+          status: "invalid-snapshot",
+          correctedMembers: 0,
+          missingMemberIds: []
+        };
+      }
+      if (snapshot.members.length > maxMembers) {
+        metrics.hardCorrectionFailures += 1;
+        return {
+          status: "member-capacity",
+          correctedMembers: 0,
+          missingMemberIds: []
+        };
+      }
+      const availableDefinitions = new Map<string, PhysicsPredictionIslandMemberDefinition>();
+      for (const member of initialCheckpoint.members) {
+        availableDefinitions.set(member.id, cloneMember(member));
+      }
+      for (const member of members.values()) {
+        availableDefinitions.set(member.id, cloneMember(member));
+      }
+      for (const member of definitions) {
+        const normalized = normalizeMember(member);
+        availableDefinitions.set(normalized.id, normalized);
+      }
+      const missingMemberIds = snapshot.members
+        .filter((member) => !availableDefinitions.has(member.id))
+        .map((member) => member.id)
+        .sort();
+      if (missingMemberIds.length > 0) {
+        metrics.hardCorrectionFailures += 1;
+        return {
+          status: "member-definition-missing",
+          correctedMembers: 0,
+          missingMemberIds
+        };
+      }
+
+      restoreCheckpoint(initialCheckpoint);
+      const desiredIds = new Set(snapshot.members.map((member) => member.id));
+      for (const [memberId, definition] of members) {
+        if (desiredIds.has(memberId)) {
+          continue;
+        }
+        scene.destroyBody(definition.body.id);
+        members.delete(memberId);
+      }
+      for (const authorityMember of snapshot.members) {
+        let definition = members.get(authorityMember.id);
+        if (definition === undefined) {
+          definition = availableDefinitions.get(authorityMember.id)!;
+          spawnMember(definition, false);
+        }
+        scene.updateBody(definition.body.id, bodyStatePatch(authorityMember.body));
+      }
+      generation = snapshot.generation;
+      currentTick = snapshot.tick;
+      commandsByTick.clear();
+      commandBySequence.clear();
+      commandCount = 0;
+      history.clear();
+      historyOrder.length = 0;
+      storeCheckpoint(captureCheckpoint(currentTick));
+      metrics.hardCorrections += 1;
+      return {
+        status: "corrected",
+        correctedMembers: snapshot.members.length,
+        missingMemberIds: []
       };
     },
     state() {
@@ -674,6 +762,25 @@ function validateCommand(command: PhysicsPredictionIslandCommand): void {
       { command }
     );
   }
+}
+
+function validStateSnapshot(snapshot: PhysicsPredictionIslandStateSnapshot): boolean {
+  if (
+    !Number.isSafeInteger(snapshot.tick) ||
+    snapshot.tick < 0 ||
+    (typeof snapshot.generation === "string" && snapshot.generation.length === 0) ||
+    (typeof snapshot.generation === "number" && !Number.isSafeInteger(snapshot.generation))
+  ) {
+    return false;
+  }
+  const memberIds = new Set<string>();
+  for (const member of snapshot.members) {
+    if (member.id.length === 0 || member.body.id.length === 0 || memberIds.has(member.id)) {
+      return false;
+    }
+    memberIds.add(member.id);
+  }
+  return true;
 }
 
 function commandSignature(command: PhysicsPredictionIslandCommand): string {

@@ -1,8 +1,16 @@
 import { performance } from "node:perf_hooks";
+import {
+  createStandardMultiplayerPhysicsRollbackContributor,
+  createStandardMultiplayerWorldRollbackContributor
+} from "../packages/app-host/src";
 import { createDataRegistry, type DataPack } from "../packages/data/src";
 import { createEventBus } from "../packages/event-bus/src";
 import { createGasDataTypes, createGasRuntime, createGasTraceStore } from "../packages/gas/src";
 import { createGame } from "../packages/game-runtime/src";
+import {
+  createMultiplayerRngRollbackContributor,
+  createMultiplayerRollbackCoordinator
+} from "../packages/multiplayer-core/src";
 import {
   PhysicsBodyComponent,
   PhysicsTransformComponent,
@@ -13,6 +21,7 @@ import {
 } from "../packages/physics-core/src";
 import { createTcaRuntime, createTcaTraceStore, type TcaRule } from "../packages/tca/src";
 import { createKootaWorld } from "../packages/world-koota/src";
+import { createWorldCheckpointController, defineComponent } from "../packages/world/src";
 import {
   checkCheckpointBudgets,
   checkpointBudgetCount,
@@ -23,7 +32,8 @@ function main(): void {
   const suites = [
     runTcaCheckpointBenchmark(),
     runGasCheckpointBenchmark(),
-    runPhysicsCheckpointBenchmark()
+    runPhysicsCheckpointBenchmark(),
+    runMultiplayerRollbackBenchmark()
   ];
   const checkEnabled = process.argv.includes("--check");
   const failures = checkEnabled ? checkCheckpointBudgets(suites) : [];
@@ -31,7 +41,14 @@ function main(): void {
     JSON.stringify(
       {
         benchmark: "gameplay-checkpoint",
-        packages: ["@gamekit/tca", "@gamekit/gas", "@gamekit/physics-core"],
+        packages: [
+          "@gamekit/tca",
+          "@gamekit/gas",
+          "@gamekit/physics-core",
+          "@gamekit/multiplayer-core",
+          "@gamekit/app-host",
+          "@gamekit/world"
+        ],
         suites,
         ...(checkEnabled
           ? {
@@ -226,6 +243,106 @@ function runPhysicsCheckpointBenchmark(): CheckpointBenchmarkSuite {
         captureMs: round(captureMs),
         restoreAndTickMs: round(restoreMs),
         msPerCapture: round(captureMs / cycles),
+        msPerRestoreAndTick: round(restoreMs / cycles)
+      }
+    ]
+  };
+}
+
+const RollbackStateComponent = defineComponent<{ value: number }>({
+  id: "benchmark.rollback-state",
+  create: (data) => ({ value: data?.value ?? 0 })
+});
+
+function runMultiplayerRollbackBenchmark(): CheckpointBenchmarkSuite {
+  const entities = 1_000;
+  const cycles = 20;
+  const world = createKootaWorld();
+  for (let index = 0; index < entities; index += 1) {
+    const entityId = world.spawn();
+    world.add(entityId, RollbackStateComponent, { value: index });
+    world.add(entityId, PhysicsBodyComponent, {
+      definition: { kind: "dynamic" }
+    });
+    world.add(entityId, PhysicsTransformComponent, {
+      position: { x: index, y: 0 }
+    });
+    world.add(entityId, PhysicsVelocityComponent, {
+      linear: { x: 1, y: 0 }
+    });
+  }
+  const handle = createPhysicsHandle({ id: "multiplayer-rollback-benchmark.physics" });
+  const game = createGame({
+    modules: [
+      createPhysicsModule({
+        backend: createMemoryPhysicsBackend(),
+        fixedDeltaMs: 50,
+        scene: { gravity: { x: 0, y: 0 } },
+        eventPolicy: { emitContacts: false },
+        handle
+      })
+    ],
+    world,
+    eventBus: createEventBus({ clock: () => 1 }),
+    seed: "multiplayer-rollback-benchmark"
+  });
+  game.start();
+  game.tick(50);
+  const worldCheckpoint = createWorldCheckpointController({
+    world,
+    components: [RollbackStateComponent],
+    selectEntities: () => world.query([RollbackStateComponent])
+  });
+  const coordinator = createMultiplayerRollbackCoordinator({
+    generation: 1,
+    contributors: [
+      createStandardMultiplayerWorldRollbackContributor({ controller: worldCheckpoint }),
+      createMultiplayerRngRollbackContributor(game.rng),
+      createStandardMultiplayerPhysicsRollbackContributor({ handle })
+    ],
+    maxHistoryTicks: cycles,
+    maxCheckpointBytes: 2 * 1024 * 1024,
+    maxHistoryBytes: 16 * 1024 * 1024
+  });
+
+  let checksum = 0;
+  let checkpointBytes = 0;
+  const captureStart = performance.now();
+  for (let cycle = 0; cycle <= cycles; cycle += 1) {
+    const result = coordinator.capture(cycle);
+    if (result.status !== "captured") {
+      throw new Error(`Multiplayer rollback capture failed: ${result.status}`);
+    }
+    checkpointBytes = result.bytes;
+    checksum += result.bytes;
+  }
+  const captureMs = performance.now() - captureStart;
+  const retained = coordinator.diagnostics();
+  const restoreStart = performance.now();
+  for (let cycle = 0; cycle < cycles; cycle += 1) {
+    const result = coordinator.restore(cycles);
+    if (result.status !== "restored") {
+      throw new Error(`Multiplayer rollback restore failed: ${result.status}`);
+    }
+    game.tick(50);
+  }
+  const restoreMs = performance.now() - restoreStart;
+  coordinator.dispose();
+  game.dispose();
+
+  return {
+    suite: "multiplayer-rollback-checkpoint",
+    cases: [
+      {
+        entities,
+        cycles,
+        checksum,
+        checkpointBytes,
+        historyBytes: retained.historyBytes,
+        retainedCheckpoints: retained.checkpoints,
+        captureMs: round(captureMs),
+        restoreAndTickMs: round(restoreMs),
+        msPerCapture: round(captureMs / (cycles + 1)),
         msPerRestoreAndTick: round(restoreMs / cycles)
       }
     ]

@@ -670,6 +670,9 @@ importers:
       '@gamekit/ui-core':
         specifier: workspace:*
         version: link:../ui-core
+      '@gamekit/world':
+        specifier: workspace:*
+        version: link:../world
 
   packages/asset:
     dependencies:

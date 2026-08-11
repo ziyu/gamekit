@@ -2,9 +2,10 @@ import { schema, type SchemaType } from "@colyseus/schema";
 import type { ColyseusNativeStateUpdate } from "@gamekit/multiplayer-colyseus";
 
 import type { OutpostClientAuthoritySnapshot } from "../gameplay/client-shadow-runtime";
+import { OUTPOST_COLYSEUS_SCHEMA_VERSION } from "../gameplay/constants";
 import type { OutpostMatchAuthoritySnapshot } from "./match-authority";
 
-export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v10";
+export { OUTPOST_COLYSEUS_SCHEMA_VERSION };
 export const OUTPOST_COLYSEUS_SOURCE_ENDPOINT_ID = "outpost.colyseus-schema";
 const MAX_COMBAT_CUES = 64;
 const MAX_PROJECTILE_RECORDS = 128;

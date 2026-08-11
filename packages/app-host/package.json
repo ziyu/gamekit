@@ -37,7 +37,8 @@
     "@gamekit/renderer-core": "workspace:*",
     "@gamekit/save": "workspace:*",
     "@gamekit/tca": "workspace:*",
-    "@gamekit/ui-core": "workspace:*"
+    "@gamekit/ui-core": "workspace:*",
+    "@gamekit/world": "workspace:*"
   },
   "files": [
     "dist"

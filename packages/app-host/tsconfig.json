@@ -26,6 +26,7 @@
     { "path": "../renderer-core" },
     { "path": "../save" },
     { "path": "../tca" },
-    { "path": "../ui-core" }
+    { "path": "../ui-core" },
+    { "path": "../world" }
   ]
 }

@@ -1,11 +1,15 @@
 import {
   createColyseusMultiplayerBackend,
+  type ColyseusMultiplayerNative,
+  type ColyseusNativeStateUpdate,
   type ColyseusNativeStateBridgeDiagnostics
 } from "@gamekit/multiplayer-colyseus";
 import {
   createMultiplayerAuthorityBindingStore,
   createMultiplayerAuthorityReceiver,
   createMultiplayerRuntime,
+  type MultiplayerAuthorityBindingStore,
+  type MultiplayerClientReplicationSnapshotSource,
   type MultiplayerMessageEnvelope,
   type MultiplayerRuntime
 } from "@gamekit/multiplayer-core";
@@ -44,6 +48,8 @@ export type MultiplayerDemoClientOptions = {
 
 export type MultiplayerDemoClient = {
   runtime: MultiplayerRuntime;
+  authorityBinding: MultiplayerAuthorityBindingStore;
+  snapshotSource?: MultiplayerClientReplicationSnapshotSource | undefined;
   peerId: string;
   authoritativePath: RealtimeArenaAuthorityPath;
   messages: MultiplayerMessageEnvelope[];
@@ -105,6 +111,9 @@ export function createMultiplayerDemoClient(
     snapshotVersion: REALTIME_ARENA_SCHEMA_VERSION,
     localPlayerId: peerId
   });
+  const snapshotSource = schemaStateSync
+    ? createRealtimeArenaColyseusSnapshotSource(backend.native())
+    : undefined;
   const receiver = schemaStateSync
     ? undefined
     : createMultiplayerAuthorityReceiver<RealtimeArenaSnapshotPayload>({
@@ -147,6 +156,8 @@ export function createMultiplayerDemoClient(
 
   return {
     runtime,
+    authorityBinding,
+    ...(snapshotSource === undefined ? {} : { snapshotSource }),
     peerId,
     authoritativePath,
     messages,
@@ -211,6 +222,53 @@ export function createMultiplayerDemoClient(
       unsubscribe();
       await runtime.dispose();
     }
+  };
+}
+
+function createRealtimeArenaColyseusSnapshotSource(
+  native: ColyseusMultiplayerNative
+): MultiplayerClientReplicationSnapshotSource {
+  let latest: MultiplayerMessageEnvelope | undefined;
+  return {
+    subscribe(listener) {
+      return native.subscribeState((update) => {
+        const message = toRealtimeArenaSnapshotMessage(update);
+        if (message === undefined) {
+          return;
+        }
+        latest = message;
+        listener(message);
+      });
+    },
+    current() {
+      return latest;
+    }
+  };
+}
+
+function toRealtimeArenaSnapshotMessage(
+  update: ColyseusNativeStateUpdate<unknown>
+): MultiplayerMessageEnvelope | undefined {
+  if (
+    update.sourcePeerId === undefined ||
+    update.stateVersion === undefined ||
+    update.tick === undefined ||
+    update.version !== REALTIME_ARENA_SCHEMA_VERSION ||
+    update.timestamp === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    id: `multiplayer-demo.schema.${update.sessionId}.${update.stateVersion}`,
+    sessionId: update.sessionId,
+    channel: REALTIME_ARENA_CHANNEL,
+    kind: REALTIME_ARENA_SNAPSHOT_KIND,
+    sourcePeerId: update.sourcePeerId,
+    sequence: update.stateVersion,
+    tick: update.tick,
+    schemaVersion: update.version,
+    timestamp: update.timestamp,
+    payload: update.state
   };
 }
 

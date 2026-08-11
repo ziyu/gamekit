@@ -14,11 +14,11 @@ import { createGame, type GameInstallContext, type GameRuntime } from "@gamekit/
 import { GAS_ABILITY_TYPE, type GasAbilityDefinition } from "@gamekit/gas";
 import {
   createMultiplayerModule,
+  defineMultiplayerReplicationEntityPresentation,
+  defineMultiplayerReplicationSchema,
   definePredictionAngleStateField,
   definePredictionStatePresentation,
   definePredictionVector2StateField,
-  defineSnapshotAngleTrack,
-  defineSnapshotVector2Track,
   type MultiplayerClientReplicationDiagnostics,
   type MultiplayerClientReplicationSnapshotSource,
   type MultiplayerClientReplicationView,
@@ -67,7 +67,11 @@ import {
   type OutpostRenderTargetWriter
 } from "../presentation";
 import { OutpostGameplayObject, OutpostPresentation } from "./components";
-import { OUTPOST_ARENA, OUTPOST_NETWORK_TIMING } from "./constants";
+import {
+  OUTPOST_ARENA,
+  OUTPOST_COLYSEUS_SCHEMA_VERSION,
+  OUTPOST_NETWORK_TIMING
+} from "./constants";
 import {
   clearOutpostTransientInput,
   createOutpostInputState,
@@ -122,6 +126,63 @@ export type OutpostClientAuthoritySnapshot = {
   combat: OutpostReplicatedCombatState;
   inputAcksByPeerId: Record<string, number>;
 };
+
+const outpostPlayerPresentation = defineMultiplayerReplicationEntityPresentation<
+  OutpostClientAuthoritySnapshot,
+  OutpostClientPlayerSnapshot
+>({
+  id: "outpost.players",
+  select: (snapshot) => snapshot.players,
+  identity: (player) => player.networkEntityId,
+  generation: (player) => player.generation,
+  fields: [
+    {
+      id: "position",
+      kind: "vector2",
+      snapDistance: 160,
+      read: (player) => ({ x: player.x, y: player.y })
+    },
+    { id: "facing", kind: "angle-radians", read: (player) => player.facing }
+  ]
+});
+
+const outpostActorPresentation = defineMultiplayerReplicationEntityPresentation<
+  OutpostClientAuthoritySnapshot,
+  OutpostReplicatedActor
+>({
+  id: "outpost.actors",
+  select: nonPlayerActors,
+  identity: (actor) => actor.networkEntityId,
+  generation: (actor) => actor.generation,
+  fields: [
+    {
+      id: "position",
+      kind: "vector2",
+      snapDistance: 160,
+      read: (actor) => ({ x: actor.x, y: actor.y })
+    },
+    { id: "facing", kind: "angle-radians", read: (actor) => actor.facing }
+  ]
+});
+
+const outpostProjectilePresentation = defineMultiplayerReplicationEntityPresentation<
+  OutpostClientAuthoritySnapshot,
+  OutpostReplicatedProjectile
+>({
+  id: "outpost.projectiles",
+  select: (snapshot) => snapshot.combat.projectiles,
+  identity: (projectile) => projectile.networkEntityId,
+  generation: (projectile) => projectile.generation,
+  fields: [
+    {
+      id: "position",
+      kind: "vector2",
+      snapDistance: 160,
+      read: (projectile) => ({ x: projectile.x, y: projectile.y })
+    },
+    { id: "facing", kind: "angle-radians", read: (projectile) => projectile.facing }
+  ]
+});
 
 export type OutpostClientShadowSnapshot = {
   mode: "remote-authority-shadow";
@@ -447,6 +508,37 @@ function createClientReplicationModule(
   });
   const physicsTransition = createOutpostPredictionTransitionFactory(state, playerDefinition);
   const fallbackPosition = { x: 0, y: 0 };
+  const replicationSchema = defineMultiplayerReplicationSchema<
+    OutpostClientAuthoritySnapshot,
+    { playerId: string; peerId?: string | undefined },
+    OutpostClientPlayerSnapshot
+  >({
+    id: "outpost.client-authority",
+    version: OUTPOST_COLYSEUS_SCHEMA_VERSION,
+    decode: readOutpostClientAuthoritySnapshot,
+    tick: (snapshot) => snapshot.tick,
+    time: (snapshot) => snapshot.tick * OUTPOST_NETWORK_TIMING.tickMs,
+    presentation: [
+      outpostPlayerPresentation,
+      outpostActorPresentation,
+      outpostProjectilePresentation
+    ],
+    local: {
+      select: (snapshot, identity) =>
+        snapshot.players.find((player) => player.playerId === identity.playerId),
+      acknowledgedSequence: (snapshot, identity) =>
+        identity.peerId === undefined ? undefined : snapshot.inputAcksByPeerId[identity.peerId]
+    }
+  }).bindClient<OutpostPredictedPlayerState, GameInstallContext>({
+    identity({ runtime }) {
+      const peerId = runtime.localPeer()?.id;
+      return {
+        playerId: state.localPlayerId,
+        ...(peerId === undefined ? {} : { peerId })
+      };
+    },
+    state: (player) => predictedStateFromSnapshot(player)
+  });
   return createMultiplayerModule<
     GameInstallContext,
     OutpostClientAuthoritySnapshot,
@@ -457,6 +549,7 @@ function createClientReplicationModule(
     runtime: multiplayer,
     clientReplication: {
       id: "outpost.client.replication",
+      schema: replicationSchema,
       ...(snapshotSource === undefined ? {} : { snapshotSource }),
       playback: {
         interpolationDelayMs: 50,
@@ -478,50 +571,6 @@ function createClientReplicationModule(
               playerGenerationChanged(previous, next))
           );
         }
-      },
-      tracks: [
-        defineSnapshotVector2Track<OutpostClientAuthoritySnapshot>({
-          snapDistance: 160,
-          selectInto(snapshot, writer) {
-            for (const player of snapshot.players) {
-              writer.add(playerPositionKey(player), { x: player.x, y: player.y });
-            }
-            for (const actor of snapshot.combat.actors) {
-              if (actor.kind !== "player") {
-                writer.add(combatObjectPositionKey(actor), { x: actor.x, y: actor.y });
-              }
-            }
-            for (const projectile of snapshot.combat.projectiles) {
-              writer.add(combatObjectPositionKey(projectile), {
-                x: projectile.x,
-                y: projectile.y
-              });
-            }
-          }
-        }),
-        defineSnapshotAngleTrack<OutpostClientAuthoritySnapshot>({
-          selectInto(snapshot, writer) {
-            for (const player of snapshot.players) {
-              writer.add(playerFacingKey(player), player.facing);
-            }
-            for (const actor of snapshot.combat.actors) {
-              if (actor.kind !== "player") {
-                writer.add(combatObjectFacingKey(actor), actor.facing);
-              }
-            }
-            for (const projectile of snapshot.combat.projectiles) {
-              writer.add(combatObjectFacingKey(projectile), projectile.facing);
-            }
-          }
-        })
-      ],
-      readSnapshot: readOutpostClientAuthoritySnapshot,
-      toBufferEntry({ snapshot, message }) {
-        return {
-          snapshot,
-          tick: snapshot.tick,
-          receivedAt: message.timestamp
-        };
       },
       applyAuthoritative({ installContext, snapshot }) {
         applyAuthoritativeSnapshot(
@@ -567,16 +616,6 @@ function createClientReplicationModule(
         },
         encodeInput({ input, predictionFrame }) {
           return { sequence: predictionFrame.sequence, ...input };
-        },
-        readAuthoritativeState({ snapshot }) {
-          const player = snapshot.players.find(
-            (candidate) => candidate.playerId === state.localPlayerId
-          );
-          return player === undefined ? undefined : predictedStateFromSnapshot(player);
-        },
-        readAcknowledgedSequence({ runtime, snapshot }) {
-          const peerId = runtime.localPeer()?.id;
-          return peerId === undefined ? undefined : snapshot.inputAcksByPeerId[peerId];
         },
         active({ snapshot }) {
           return snapshot.phase === "running";
@@ -1108,23 +1147,41 @@ function toPredictionColliderDefinition(data: PhysicsColliderData, bodyId: strin
 }
 
 function playerPositionKey(player: OutpostClientPlayerSnapshot): string {
-  return `entity:${player.networkEntityId}:${player.generation}:position`;
+  return String(outpostPlayerPresentation.key("position", player));
 }
 
 function playerFacingKey(player: OutpostClientPlayerSnapshot): string {
-  return `entity:${player.networkEntityId}:${player.generation}:facing`;
+  return String(outpostPlayerPresentation.key("facing", player));
 }
 
 function combatObjectPositionKey(
   object: OutpostReplicatedActor | OutpostReplicatedProjectile
 ): string {
-  return `entity:${object.networkEntityId}:${object.generation}:position`;
+  return String(
+    "kind" in object
+      ? outpostActorPresentation.key("position", object)
+      : outpostProjectilePresentation.key("position", object)
+  );
 }
 
 function combatObjectFacingKey(
   object: OutpostReplicatedActor | OutpostReplicatedProjectile
 ): string {
-  return `entity:${object.networkEntityId}:${object.generation}:facing`;
+  return String(
+    "kind" in object
+      ? outpostActorPresentation.key("facing", object)
+      : outpostProjectilePresentation.key("facing", object)
+  );
+}
+
+function* nonPlayerActors(
+  snapshot: OutpostClientAuthoritySnapshot
+): Iterable<OutpostReplicatedActor> {
+  for (const actor of snapshot.combat.actors) {
+    if (actor.kind !== "player") {
+      yield actor;
+    }
+  }
 }
 
 function materializeClientPlayer(

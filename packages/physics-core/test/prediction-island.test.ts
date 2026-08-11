@@ -153,4 +153,76 @@ describe("Physics prediction island", () => {
     });
     island.dispose();
   });
+
+  it("installs an authority snapshot as a new bounded baseline after rollback recovery fails", () => {
+    const authorityOnlyMember: PhysicsPredictionIslandMemberDefinition = {
+      id: "authority-only",
+      body: {
+        id: "authority-only.body",
+        kind: "dynamic",
+        position: { x: 30, y: 4 },
+        gravityScale: 0
+      }
+    };
+    const island = createPhysicsPredictionIsland({
+      backend: createMemoryPhysicsBackend(),
+      generation: 1,
+      initialMembers: [TARGET_MEMBER],
+      maxHistoryTicks: 2,
+      maxMembers: 4
+    });
+    island.advanceTo(8);
+    const authoritySnapshot = {
+      generation: 2,
+      tick: 12,
+      members: [
+        {
+          id: "target",
+          body: { ...island.body("target")!, position: { x: 15, y: 2 } }
+        },
+        {
+          id: "authority-only",
+          body: {
+            id: "authority-only.body",
+            kind: "dynamic" as const,
+            position: { x: 30, y: 4 },
+            rotation: 0,
+            linearVelocity: { x: 1, y: 0 },
+            angularVelocity: 0,
+            sleeping: false
+          }
+        }
+      ]
+    };
+
+    expect(island.reconcile(authoritySnapshot).status).toBe("stale-generation");
+    expect(island.hardCorrect(authoritySnapshot)).toEqual({
+      status: "member-definition-missing",
+      correctedMembers: 0,
+      missingMemberIds: ["authority-only"]
+    });
+    expect(island.hardCorrect(authoritySnapshot, [authorityOnlyMember])).toEqual({
+      status: "corrected",
+      correctedMembers: 2,
+      missingMemberIds: []
+    });
+    expect(island.state()).toMatchObject({
+      generation: 2,
+      tick: 12,
+      members: [
+        { id: "authority-only", body: { position: { x: 30, y: 4 } } },
+        { id: "target", body: { position: { x: 15, y: 2 } } }
+      ]
+    });
+    expect(island.diagnostics()).toMatchObject({
+      generation: 2,
+      tick: 12,
+      members: 2,
+      commands: 0,
+      historyEntries: 1,
+      hardCorrections: 1,
+      hardCorrectionFailures: 1
+    });
+    island.dispose();
+  });
 });

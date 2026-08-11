@@ -62,6 +62,36 @@ const BUDGETS: CheckpointBudget[] = [
     where: { entities: 1_000, cycles: 20 },
     metric: "msPerRestoreAndTick",
     maximum: 50
+  },
+  {
+    suite: "multiplayer-rollback-checkpoint",
+    where: { entities: 1_000, cycles: 20 },
+    metric: "msPerCapture",
+    maximum: 100
+  },
+  {
+    suite: "multiplayer-rollback-checkpoint",
+    where: { entities: 1_000, cycles: 20 },
+    metric: "msPerRestoreAndTick",
+    maximum: 100
+  },
+  {
+    suite: "multiplayer-rollback-checkpoint",
+    where: { entities: 1_000, cycles: 20 },
+    metric: "checkpointBytes",
+    maximum: 2_097_152
+  },
+  {
+    suite: "multiplayer-rollback-checkpoint",
+    where: { entities: 1_000, cycles: 20 },
+    metric: "historyBytes",
+    maximum: 16_777_216
+  },
+  {
+    suite: "multiplayer-rollback-checkpoint",
+    where: { entities: 1_000, cycles: 20 },
+    metric: "retainedCheckpoints",
+    maximum: 21
   }
 ];
 
