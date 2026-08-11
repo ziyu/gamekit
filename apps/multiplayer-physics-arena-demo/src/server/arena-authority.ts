@@ -38,6 +38,7 @@ import {
   createArenaCharacterMotorContributor
 } from "../shared/arena-control";
 import { arenaGenerationKey } from "../shared/arena-identity";
+import { planArenaStageInstallation, sampleArenaStageHazards } from "../shared/arena-stage-course";
 import {
   ARENA_ENVIRONMENT,
   createArenaMemberDefinitions,
@@ -213,7 +214,14 @@ export function createArenaAuthorityRuntime(
   const authorityEffects = new Map<string, ArenaAuthorityEffectCue>();
   const rankingSpatialFacts = new Map<
     string,
-    { progress: number; progressTick: number; centerDistance: number }
+    {
+      progress: number;
+      progressTick: number;
+      centerDistance: number;
+      checkpointCount: number;
+      finished: boolean;
+      objectiveScore: number;
+    }
   >();
   let stageEntrantParticipantIds = new Set(
     participants
@@ -225,6 +233,7 @@ export function createArenaAuthorityRuntime(
   let latestSettlement: ArenaStageSettlement | undefined;
   const stageResults: ArenaStageSettlement[] = [];
   let latestPayloadBytes = 0;
+  let stageInstallationPending = false;
   let disposed = false;
   const binding = createMultiplayerAuthorityBindingStore({
     sessionId: options.sessionId,
@@ -497,7 +506,10 @@ export function createArenaAuthorityRuntime(
         .list()
         .filter((participant) => participant.kind === "human-slot" && participant.connected).length,
       entrantParticipantIds,
-      activeParticipantIds
+      activeParticipantIds,
+      completedParticipantIds: [...rankingSpatialFacts]
+        .filter(([, fact]) => fact.finished)
+        .map(([participantId]) => participantId)
     });
     for (const action of result.actions) {
       if (action.type === "stage-started") {
@@ -521,6 +533,7 @@ export function createArenaAuthorityRuntime(
           membershipRevision
         };
         resetArenaRoundPhysics(island, arenaGenerationKey(generation));
+        stageInstallationPending = true;
         installStageItems(action.stageIndex, action.stageInstanceId, authorityTick, generation);
         authorityEffects.clear();
         rankingSpatialFacts.clear();
@@ -602,6 +615,7 @@ export function createArenaAuthorityRuntime(
       membershipRevision
     };
     resetArenaRoundPhysics(island, arenaGenerationKey(generation));
+    stageInstallationPending = true;
     installStageItems(stageIndex, stageInstanceId, authorityTick, generation);
     authorityEffects.clear();
     rankingSpatialFacts.clear();
@@ -678,17 +692,20 @@ export function createArenaAuthorityRuntime(
         const spatial = rankingSpatialFacts.get(participant.id) ?? {
           progress: -1_000_000,
           progressTick: authorityTick,
-          centerDistance: 1_000_000
+          centerDistance: 1_000_000,
+          checkpointCount: 0,
+          finished: false,
+          objectiveScore: 0
         };
         return {
           participantId: participant.id,
           eligible: participant.status !== "eliminated",
           active: activeIds.has(participant.id),
-          finished: participant.status === "finished",
-          checkpointCount: 0,
+          finished: spatial.finished || participant.status === "finished",
+          checkpointCount: spatial.checkpointCount,
           progress: spatial.progress,
           progressTick: spatial.progressTick,
-          objectiveScore: 0,
+          objectiveScore: spatial.objectiveScore,
           knockoutCredits: attributions.filter(
             (entry) => entry.knockoutParticipantId === participant.id
           ).length,
@@ -705,22 +722,73 @@ export function createArenaAuthorityRuntime(
   }
 
   function updateRankingSpatialFacts(authorityTick: number): void {
+    const match = director.snapshot();
+    const course = content.stages[match.stageIndex]!.courseProjection;
+    const checkpointVolumes = course.validationProbes
+      .flatMap((probe) => (probe.volume?.kind === "checkpoint" ? [probe.volume] : []))
+      .sort((left, right) => (left.routeOrder ?? 0) - (right.routeOrder ?? 0));
+    const finishVolume = course.validationProbes.find(
+      (probe) => probe.volume?.kind === "finish"
+    )?.volume;
+    const objectiveVolume = course.validationProbes.find(
+      (probe) => probe.volume?.kind === "objective"
+    )?.volume;
+    const boundsCenterX = (course.bounds.min.x + course.bounds.max.x) / 2;
+    const boundsCenterZ = ((course.bounds.min.z ?? 0) + (course.bounds.max.z ?? 0)) / 2;
+    const startZ = average(course.participantSpawns.map((spawn) => spawn.position.z ?? 0));
+    const finishZ = finishVolume?.position.z ?? boundsCenterZ;
     for (const member of island.state().members) {
       if (!isArenaActor(member.id)) continue;
       const participant = participants.byActorMemberId(member.id);
       if (participant === undefined) continue;
+      const previous = rankingSpatialFacts.get(participant.id);
+      let checkpointCount = previous?.checkpointCount ?? 0;
+      const nextCheckpoint = checkpointVolumes[checkpointCount];
+      if (nextCheckpoint !== undefined && pointInside(member.body.position, nextCheckpoint)) {
+        checkpointCount += 1;
+      }
+      const finished =
+        (previous?.finished ?? false) ||
+        (finishVolume !== undefined &&
+          checkpointCount >= checkpointVolumes.length &&
+          pointInside(member.body.position, finishVolume));
+      const routeProgress =
+        Math.abs(startZ - finishZ) <= 0.001
+          ? 0
+          : (startZ - (member.body.position.z ?? 0)) / (startZ - finishZ);
+      const objectiveScore =
+        (previous?.objectiveScore ?? 0) +
+        (objectiveVolume !== undefined &&
+        pointInside(member.body.position, objectiveVolume) &&
+        authorityTick % 30 === 0
+          ? 1
+          : 0);
       rankingSpatialFacts.set(participant.id, {
-        progress: -(member.body.position.z ?? 0),
+        progress: checkpointCount * 10 + Math.max(0, Math.min(1, routeProgress)),
         progressTick: authorityTick,
-        centerDistance: Math.hypot(member.body.position.x, member.body.position.z ?? 0)
+        centerDistance: Math.hypot(
+          member.body.position.x - boundsCenterX,
+          (member.body.position.z ?? 0) - boundsCenterZ
+        ),
+        checkpointCount,
+        finished,
+        objectiveScore
       });
     }
   }
 
   function detectEliminations(authorityTick: number): void {
+    const killVolumes = content.stages[director.snapshot().stageIndex]!.course.volumes.filter(
+      (volume) => volume.kind === "kill"
+    );
     let membershipChanged = false;
     for (const member of island.state().members) {
-      if (!isArenaActor(member.id) || member.body.position.y >= -4) continue;
+      if (
+        !isArenaActor(member.id) ||
+        !killVolumes.some((volume) => pointInside(member.body.position, volume))
+      ) {
+        continue;
+      }
       const participant = participants.byActorMemberId(member.id);
       if (participant === undefined || participant.status === "eliminated") continue;
       const result = participants.transition(participant.id, "eliminated", {
@@ -776,6 +844,26 @@ export function createArenaAuthorityRuntime(
       });
     };
 
+    if (stageInstallationPending) {
+      const entrantActorIds = participants
+        .list()
+        .filter(
+          (participant) =>
+            stageEntrantParticipantIds.has(participant.id) &&
+            participant.actorMemberId !== undefined
+        )
+        .map((participant) => participant.actorMemberId!);
+      const installation = planArenaStageInstallation({
+        stageIndex: director.snapshot().stageIndex,
+        tick: targetTick,
+        currentMemberIds: island.state().members.map(({ id }) => id),
+        entrantActorIds,
+        nextSequence
+      });
+      commands.push(...installation.commands);
+      stageInstallationPending = false;
+    }
+
     itemAuthority.advancePhysics({
       authorityTick,
       targetTick,
@@ -827,13 +915,14 @@ export function createArenaAuthorityRuntime(
       });
     }
 
-    const angle = authorityTick * 0.028;
-    queuePatch("circuit.sweeper", {
-      rotation: { x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) }
-    });
-    queuePatch("circuit.moving-bridge", {
-      position: { x: -5.8, y: 1.2 + Math.sin(authorityTick * 0.025) * 1.15, z: -8.7 }
-    });
+    const match = director.snapshot();
+    for (const hazard of sampleArenaStageHazards({
+      stageIndex: match.stageIndex,
+      tick: targetTick,
+      stageStartedAtTick: match.stageStartedAtTick ?? match.startedAtTick
+    })) {
+      queuePatch(hazard.memberId, hazard.patch);
+    }
 
     for (const command of commands) island.queue(command);
     const advanced = island.advanceTo(targetTick);
@@ -1160,4 +1249,22 @@ export function arenaMemberDefinitionsById(
 
 export function arenaVector(x: number, y: number, z: number): PhysicsVector {
   return { x, y, z };
+}
+
+function pointInside(
+  point: PhysicsVector,
+  volume: {
+    position: PhysicsVector;
+    size: { width: number; height: number; depth: number };
+  }
+): boolean {
+  return (
+    Math.abs(point.x - volume.position.x) <= volume.size.width / 2 &&
+    Math.abs(point.y - volume.position.y) <= volume.size.height / 2 &&
+    Math.abs((point.z ?? 0) - (volume.position.z ?? 0)) <= volume.size.depth / 2
+  );
+}
+
+function average(values: readonly number[]): number {
+  return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
 }

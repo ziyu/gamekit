@@ -160,6 +160,10 @@ kinematic schedule 或自由 dynamic body 表达，不偷渡 Rapier joint handle
 - Sensor/volume 本身如果无 solver body，可以留在 authority gameplay query；其结果仍通过稳定 fact 复制。
 - Collapse/spawn/despawn 改变成员时递增 membership revision；同一批原子变化只发布一致 frame。
 - Stage generation change 清除旧 member/history/command/effect，并安装该 stage 的完整 active participant + content baseline。
+- Stage installation 先以 compiled member id 集合移除上一关 dynamic/kinematic content，再生成当前关成员并把晋级 actor 归零速度后放到
+  stable participant spawn；authority 与 client 都从同一绝对 stage tick hazard sampler 生成 patch，不能分别累计局部相位。
+- 资格赛 checkpoint 只按 `routeOrder` 单调推进；达到全部 checkpoint 后进入 finish volume 才算完成。完成数达到 qualification count
+  时 Stage Rule 可以提前结算，deadline 继续作为断路或玩家停滞时的确定性后备。
 
 ## 内容校验
 

@@ -51,6 +51,7 @@ import {
   arenaAuthorityPeerId
 } from "../shared/config";
 import { readArenaSnapshot, type ArenaSnapshot } from "../shared/protocol";
+import { sampleArenaStageHazards } from "../shared/arena-stage-course";
 
 export type ArenaClientInput = {
   moveX: number;
@@ -238,7 +239,6 @@ export async function createArenaClientSession(options: {
     mapInput({ input, snapshot, predictionFrame, predictionTick }) {
       const memberId = snapshot.playerIdsByPeerId[peerId];
       const body = memberId === undefined ? undefined : readPredictedBody(memberId);
-      const angle = predictionTick * 0.028;
       const canJump = input.jump && Math.abs(body?.linearVelocity.y ?? 1) < 0.35;
       if (memberId !== undefined && canJump) {
         effects.anticipateJump({
@@ -293,20 +293,15 @@ export async function createArenaClientSession(options: {
             })
           ];
         }),
-        {
+        ...sampleArenaStageHazards({
+          stageIndex: snapshot.match.stageIndex,
+          tick: predictionTick,
+          stageStartedAtTick: snapshot.match.stageStartedAtTick ?? snapshot.match.startedAtTick
+        }).map((hazard) => ({
           type: "patch" as const,
-          memberId: "circuit.sweeper",
-          patch: {
-            rotation: { x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) }
-          }
-        },
-        {
-          type: "patch" as const,
-          memberId: "circuit.moving-bridge",
-          patch: {
-            position: { x: -5.8, y: 1.2 + Math.sin(predictionTick * 0.025) * 1.15, z: -8.7 }
-          }
-        }
+          memberId: hazard.memberId,
+          patch: hazard.patch
+        }))
       ];
     },
     onContacts(contacts) {

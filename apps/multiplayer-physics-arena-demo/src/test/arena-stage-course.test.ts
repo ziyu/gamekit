@@ -1,0 +1,104 @@
+import { describe, expect, it } from "vitest";
+
+import { ARENA_COMPILED_CONTENT } from "../content/default-content";
+import { planArenaStageInstallation, sampleArenaStageHazards } from "../shared/arena-stage-course";
+
+describe("Knockout Arena compiled stage course", () => {
+  it("atomically replaces course members and places qualified actors at the next start grid", () => {
+    let sequence = 0;
+    const circuitMembers = ARENA_COMPILED_CONTENT.stages[0]!.courseProjection.memberDefinitions;
+    const scrapMembers = ARENA_COMPILED_CONTENT.stages[1]!.courseProjection.memberDefinitions;
+    const plan = planArenaStageInstallation({
+      stageIndex: 1,
+      tick: 420,
+      currentMemberIds: [
+        "player.0",
+        "player.1",
+        "bot.0",
+        "bot.1",
+        "bot.2",
+        "bot.3",
+        ...circuitMembers.map(({ id }) => id)
+      ],
+      entrantActorIds: ["player.1", "bot.2", "player.0", "bot.0", "bot.3", "bot.1"],
+      nextSequence: () => sequence++
+    });
+
+    expect(
+      plan.commands
+        .filter((command) => command.type === "despawn")
+        .map((command) => command.memberId)
+        .sort()
+    ).toEqual(circuitMembers.map(({ id }) => id).sort());
+    expect(
+      plan.commands
+        .filter((command) => command.type === "spawn")
+        .map((command) => command.member.id)
+        .sort()
+    ).toEqual(scrapMembers.map(({ id }) => id).sort());
+    expect(Object.keys(plan.actorSpawns)).toHaveLength(6);
+    expect(Object.values(plan.actorSpawns).every((position) => position.x > 30)).toBe(true);
+    expect(new Set(plan.commands.map((command) => command.sequence)).size).toBe(
+      plan.commands.length
+    );
+  });
+
+  it("samples every hazard from absolute stage tick without accumulated drift", () => {
+    const first = sampleArenaStageHazards({ stageIndex: 0, tick: 480, stageStartedAtTick: 300 });
+    const replay = sampleArenaStageHazards({ stageIndex: 0, tick: 480, stageStartedAtTick: 300 });
+    const nextCycle = sampleArenaStageHazards({
+      stageIndex: 0,
+      tick: 720,
+      stageStartedAtTick: 300
+    });
+
+    expect(first).toEqual(replay);
+    expect(first.map(({ memberId }) => memberId)).toEqual([
+      "circuit.sweeper",
+      "circuit.moving-bridge",
+      "circuit.piston-gate"
+    ]);
+    expect(first.every(({ nextTransitionTick }) => nextTransitionTick > 480)).toBe(true);
+    expect(nextCycle.find(({ memberId }) => memberId === "circuit.sweeper")?.patch).toEqual(
+      first.find(({ memberId }) => memberId === "circuit.sweeper")?.patch
+    );
+  });
+
+  it("keeps all eight Circuit Forge starts and the ordered finish route inside authored bounds", () => {
+    const circuit = ARENA_COMPILED_CONTENT.stages[0]!.courseProjection;
+    const routeVolumes = circuit.validationProbes
+      .flatMap((probe) =>
+        probe.volume?.kind === "checkpoint" || probe.volume?.kind === "finish" ? [probe.volume] : []
+      )
+      .sort((left, right) => (left.routeOrder ?? 0) - (right.routeOrder ?? 0));
+
+    expect(circuit.participantSpawns).toHaveLength(8);
+    expect(routeVolumes.map(({ routeOrder }) => routeOrder)).toEqual([1, 2, 3]);
+    for (const spawn of circuit.participantSpawns) {
+      expect(insideBounds(spawn.position, circuit.bounds)).toBe(true);
+      expect(routeVolumes.every((volume) => insideBounds(volume.position, circuit.bounds))).toBe(
+        true
+      );
+      expect(
+        circuit.navigation.source.triangles.some((triangle) => triangle.area === "walkable")
+      ).toBe(true);
+    }
+  });
+});
+
+function insideBounds(
+  point: { x: number; y: number; z?: number },
+  bounds: {
+    min: { x: number; y: number; z?: number };
+    max: { x: number; y: number; z?: number };
+  }
+): boolean {
+  return (
+    point.x >= bounds.min.x &&
+    point.x <= bounds.max.x &&
+    point.y >= bounds.min.y &&
+    point.y <= bounds.max.y &&
+    (point.z ?? 0) >= (bounds.min.z ?? 0) &&
+    (point.z ?? 0) <= (bounds.max.z ?? 0)
+  );
+}

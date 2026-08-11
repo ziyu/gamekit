@@ -1,6 +1,10 @@
 import type { ArenaStageDefinition } from "../content/types";
 
-export type ArenaStageCompletionReason = "all-eliminated" | "last-standing" | "deadline";
+export type ArenaStageCompletionReason =
+  | "all-eliminated"
+  | "last-standing"
+  | "qualification-reached"
+  | "deadline";
 
 export type ArenaStageRuleDecision =
   | { status: "continue" }
@@ -26,6 +30,7 @@ export type ArenaStageRule = {
     elapsedTicks: number;
     entrantParticipantIds: readonly string[];
     activeParticipantIds: readonly string[];
+    completedParticipantIds?: readonly string[] | undefined;
   }): ArenaStageRuleDecision;
   diagnostics(): ArenaStageRuleDiagnostics;
   dispose(): void;
@@ -59,7 +64,11 @@ export function createArenaStageRule(definition: Readonly<ArenaStageDefinition>)
         input.elapsedTicks < 0 ||
         hasDuplicates(input.entrantParticipantIds) ||
         hasDuplicates(input.activeParticipantIds) ||
-        input.activeParticipantIds.some((id) => !input.entrantParticipantIds.includes(id))
+        input.activeParticipantIds.some((id) => !input.entrantParticipantIds.includes(id)) ||
+        hasDuplicates(input.completedParticipantIds ?? []) ||
+        (input.completedParticipantIds ?? []).some(
+          (id) => !input.entrantParticipantIds.includes(id)
+        )
       ) {
         invalidInputs += 1;
         throw new Error(`Invalid Arena stage rule input: ${definition.id}`);
@@ -75,6 +84,13 @@ export function createArenaStageRule(definition: Readonly<ArenaStageDefinition>)
           reason: "last-standing",
           winnerParticipantId: input.activeParticipantIds[0]
         };
+      }
+      if (
+        definition.kind === "qualifier" &&
+        (input.completedParticipantIds?.length ?? 0) >= definition.qualificationCount
+      ) {
+        completions += 1;
+        return { status: "complete", reason: "qualification-reached" };
       }
       if (input.elapsedTicks >= definition.durationTicks) {
         completions += 1;

@@ -71,6 +71,7 @@ export type ArenaMatchDirector = {
     connectedHumans: number;
     entrantParticipantIds: readonly string[];
     activeParticipantIds: readonly string[];
+    completedParticipantIds?: readonly string[] | undefined;
   }): ArenaMatchDirectorAdvanceResult;
   snapshot(): ArenaMatchDirectorSnapshot;
   countdownMs(fixedDeltaMs: number, tick: number): number;
@@ -145,7 +146,8 @@ export function createArenaMatchDirector(options: {
         const decision = currentRule().evaluate({
           elapsedTicks: input.tick - (stageStartedAtTick ?? input.tick),
           entrantParticipantIds: input.entrantParticipantIds,
-          activeParticipantIds: input.activeParticipantIds
+          activeParticipantIds: input.activeParticipantIds,
+          completedParticipantIds: input.completedParticipantIds
         });
         if (decision.status === "complete") {
           winnerParticipantId = decision.winnerParticipantId;

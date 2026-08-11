@@ -101,6 +101,22 @@ describe("Knockout Arena match director", () => {
     director.dispose();
   });
 
+  it("completes a qualifier when the required finish count is reached", () => {
+    const director = createArenaMatchDirector({
+      stageRules: [createArenaStageRule(stage("qualifier", 120, "stage.race", 2))],
+      countdownTicks: 1,
+      resultsTicks: 2
+    });
+    const entrants = ["a", "b", "c"];
+    advance(director, 0, 1, entrants, entrants);
+    advance(director, 1, 1, entrants, entrants);
+    expect(advance(director, 2, 1, entrants, entrants, ["a", "b"])).toMatchObject({
+      snapshot: { phase: "results" },
+      actions: [{ type: "stage-completed", reason: "qualification-reached" }]
+    });
+    director.dispose();
+  });
+
   it("rejects stage rule inputs whose active set is not a subset of entrants", () => {
     const rule = createArenaStageRule(stage("brawl", 20));
 
@@ -121,9 +137,16 @@ function advance(
   tick: number,
   connectedHumans: number,
   entrantParticipantIds: readonly string[],
-  activeParticipantIds: readonly string[]
+  activeParticipantIds: readonly string[],
+  completedParticipantIds?: readonly string[]
 ) {
-  return director.advance({ tick, connectedHumans, entrantParticipantIds, activeParticipantIds });
+  return director.advance({
+    tick,
+    connectedHumans,
+    entrantParticipantIds,
+    activeParticipantIds,
+    completedParticipantIds
+  });
 }
 
 function stage(
