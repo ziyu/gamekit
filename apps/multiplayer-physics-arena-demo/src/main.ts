@@ -75,6 +75,8 @@ async function boot(rootElement: HTMLElement): Promise<void> {
         physicsBackend,
         readInput: input.sample,
         onEffect(event) {
+          visual.effect(event);
+          ui.showEffect(event);
           ui.pushLog(`${event.kind.toUpperCase()} · ${event.phase.toUpperCase()}`);
         }
       });
@@ -115,7 +117,7 @@ async function boot(rootElement: HTMLElement): Promise<void> {
     lastFrame = now;
     configured.host.tick(delta, now);
     session?.tick(delta);
-    visual.update(session?.predictedState(), session?.localMemberId());
+    visual.update(session?.predictedState(), session?.localMemberId(), delta);
     if (now - lastUiUpdate >= 100) {
       updateArenaUi(
         ui,

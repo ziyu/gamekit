@@ -1,4 +1,5 @@
 import type { ArenaSnapshot } from "../shared/protocol";
+import type { ArenaEffectPresentationEvent } from "./arena-effects";
 
 export type ArenaUi = {
   root: HTMLElement;
@@ -15,71 +16,142 @@ export type ArenaUi = {
   diagnostics: HTMLElement;
   hint: HTMLElement;
   log: HTMLOListElement;
+  round: HTMLElement;
+  position: HTMLElement;
+  progress: HTMLElement;
+  progressFill: HTMLElement;
+  roster: HTMLElement;
+  authorityTick: HTMLElement;
+  replayTicks: HTMLElement;
+  pendingInputs: HTMLElement;
+  effectState: HTMLElement;
+  payloadSize: HTMLElement;
+  effectFlash: HTMLElement;
   setConnection(status: "offline" | "connecting" | "online" | "error", detail: string): void;
   setBusy(busy: boolean): void;
   pushLog(message: string): void;
+  showEffect(event: ArenaEffectPresentationEvent): void;
 };
 
 export function renderArenaUi(root: HTMLElement): ArenaUi {
   root.className = "arena-app";
-  const shell = element("section", "arena-shell");
-  const masthead = element("header", "arena-masthead");
-  const brand = element("div", "arena-brand");
-  brand.append(
-    element("span", "arena-brand__flag", "GK // LIVE"),
-    element("h1", "arena-brand__title", "KNOCKOUT CIRCUIT"),
-    element("p", "arena-brand__sub", "SERVER AUTHORITY · FULL-ISLAND ROLLBACK")
-  );
-  const phase = element("strong", "arena-scoreboard__phase", "OFFLINE");
-  const timer = element("span", "arena-scoreboard__timer", "--:--");
-  const scoreboard = element("div", "arena-scoreboard");
-  scoreboard.append(phase, timer);
-  masthead.append(brand, scoreboard);
+  root.dataset.connection = "offline";
 
-  const stage = element("section", "arena-stage");
+  const shell = element("section", "arena-shell");
   const viewport = element("div", "arena-viewport");
   viewport.tabIndex = 0;
   viewport.setAttribute("aria-label", "Knockout Circuit 3D game viewport");
-  const crosshair = element("div", "arena-crosshair");
-  crosshair.setAttribute("aria-hidden", "true");
-  const hint = element("p", "arena-hint", "WASD / ARROWS TO RUN · SPACE TO JUMP");
-  viewport.append(crosshair, hint);
 
-  const rail = element("aside", "arena-rail");
-  const connectPanel = panel("SESSION LINK");
+  const atmosphere = element("div", "arena-atmosphere");
+  const scanline = element("div", "arena-scanline");
+  const effectFlash = element("div", "arena-effect-flash");
+  atmosphere.setAttribute("aria-hidden", "true");
+  scanline.setAttribute("aria-hidden", "true");
+  effectFlash.setAttribute("aria-hidden", "true");
+
+  const broadcast = element("header", "arena-broadcast");
+  const brand = element("div", "arena-brand");
+  const brandMark = element("span", "arena-brand__mark", "GK");
+  const brandCopy = element("div", "arena-brand__copy");
+  brandCopy.append(
+    element("span", "arena-brand__eyebrow", "LIVE FROM THE SIMULATION"),
+    element("h1", "arena-brand__title", "KNOCKOUT CIRCUIT")
+  );
+  brand.append(brandMark, brandCopy);
+
+  const scoreboard = element("div", "arena-scoreboard");
+  const round = element("span", "arena-scoreboard__round", "ROUND 01");
+  const phase = element("strong", "arena-scoreboard__phase", "STANDBY");
+  const timer = element("span", "arena-scoreboard__timer", "--:--");
+  scoreboard.append(round, phase, timer);
+
+  const signal = element("div", "arena-signal");
+  signal.append(
+    element("span", "arena-signal__dot"),
+    element("span", undefined, "AUTHORITY OFFLINE")
+  );
+  broadcast.append(brand, scoreboard, signal);
+
+  const raceHud = element("section", "arena-race-hud");
+  const positionLabel = element("span", "arena-race-hud__label", "CURRENT POSITION");
+  const position = element("strong", "arena-race-hud__position", "-- / --");
+  const roster = element("span", "arena-race-hud__roster", "WAITING FOR GRID");
+  const progressTrack = element("div", "arena-progress");
+  const progressFill = element("span", "arena-progress__fill");
+  const progress = element("span", "arena-progress__value", "0%");
+  progressTrack.append(progressFill);
+  raceHud.append(positionLabel, position, roster, progressTrack, progress);
+
+  const hint = element("p", "arena-hint");
+  hint.append(
+    keycap("WASD"),
+    element("span", undefined, "RUN"),
+    keycap("SPACE"),
+    element("span", undefined, "JUMP")
+  );
+
+  const sessionCard = element("section", "arena-session-card");
+  sessionCard.tabIndex = 0;
+  sessionCard.setAttribute("aria-label", "Room controls");
+  const sessionHeader = element("div", "arena-session-card__header");
+  sessionHeader.append(
+    element("span", "arena-kicker", "PLAYER ACCESS"),
+    element("strong", undefined, "ENTER THE CIRCUIT")
+  );
   const sessionInput = input("text", "knockout-arena", "Session code");
   sessionInput.maxLength = 32;
   const nameInput = input("text", randomName(), "Display name");
   nameInput.maxLength = 18;
   const fieldGrid = element("div", "arena-fields");
-  fieldGrid.append(field("CODE", sessionInput), field("CALLSIGN", nameInput));
-  const createButton = button("CREATE", "is-primary");
-  const joinButton = button("JOIN");
-  const disconnectButton = button("DISCONNECT", "is-quiet");
+  fieldGrid.append(field("ROOM CODE", sessionInput), field("CALLSIGN", nameInput));
+  const createButton = button("CREATE ROOM", "is-primary");
+  const joinButton = button("JOIN RACE");
+  const disconnectButton = button("LEAVE CIRCUIT", "is-quiet");
   disconnectButton.disabled = true;
   const actions = element("div", "arena-actions");
   actions.append(createButton, joinButton, disconnectButton);
-  const connection = element("p", "arena-connection is-offline", "AUTHORITY OFFLINE");
+  const connection = element("p", "arena-connection is-offline", "AUTHORITY READY");
   const localPlayer = element("p", "arena-local-player", "LOCAL SLOT · UNBOUND");
-  connectPanel.body.append(fieldGrid, actions, connection, localPlayer);
+  sessionCard.append(sessionHeader, fieldGrid, actions, connection, localPlayer);
 
-  const diagnosticsPanel = panel("ROLLBACK TELEMETRY");
-  const diagnostics = element("pre", "arena-diagnostics", "Awaiting authority frame…");
-  diagnosticsPanel.body.append(diagnostics);
-
-  const logPanel = panel("RACE CONTROL");
-  const log = element("ol", "arena-log") as HTMLOListElement;
-  logPanel.body.append(log);
-  rail.append(connectPanel.root, diagnosticsPanel.root, logPanel.root);
-  stage.append(viewport, rail);
-
-  const footer = element("footer", "arena-footer");
-  footer.append(
-    element("span", undefined, "60 HZ PHYSICS"),
-    element("span", undefined, "20 HZ AUTHORITY FRAME"),
-    element("span", undefined, "RAPIER3D / COLYSEUS / THREE")
+  const telemetry = document.createElement("details");
+  telemetry.className = "arena-telemetry";
+  const telemetrySummary = document.createElement("summary");
+  telemetrySummary.append(
+    element("span", "arena-telemetry__pulse"),
+    element("span", undefined, "NETCODE // LIVE TELEMETRY"),
+    element("span", "arena-telemetry__toggle", "OPEN")
   );
-  shell.append(masthead, stage, footer);
+  const metrics = element("div", "arena-metrics");
+  const authorityTick = metric(metrics, "AUTH TICK", "0");
+  const replayTicks = metric(metrics, "RESIM", "0");
+  const pendingInputs = metric(metrics, "INPUT LEAD", "0");
+  const effectState = metric(metrics, "FX SETTLED", "0 / 0");
+  const payloadSize = metric(metrics, "FRAME", "0 KB");
+  const diagnostics = element("pre", "arena-diagnostics", "Awaiting authority frame…");
+  telemetry.append(telemetrySummary, metrics, diagnostics);
+
+  const feed = element("aside", "arena-feed");
+  const feedHeader = element("div", "arena-feed__header");
+  feedHeader.append(
+    element("span", "arena-feed__live"),
+    element("span", undefined, "RACE CONTROL")
+  );
+  const log = element("ol", "arena-log") as HTMLOListElement;
+  feed.append(feedHeader, log);
+
+  viewport.append(
+    atmosphere,
+    scanline,
+    effectFlash,
+    broadcast,
+    raceHud,
+    hint,
+    sessionCard,
+    telemetry,
+    feed
+  );
+  shell.append(viewport);
   root.replaceChildren(shell);
 
   const ui: ArenaUi = {
@@ -97,23 +169,50 @@ export function renderArenaUi(root: HTMLElement): ArenaUi {
     diagnostics,
     hint,
     log,
+    round,
+    position,
+    progress,
+    progressFill,
+    roster,
+    authorityTick,
+    replayTicks,
+    pendingInputs,
+    effectState,
+    payloadSize,
+    effectFlash,
     setConnection(status, detail) {
+      root.dataset.connection = status;
       connection.className = `arena-connection is-${status}`;
       connection.textContent = detail;
+      const signalText = signal.lastElementChild;
+      if (signalText) signalText.textContent = detail;
+      signal.className = `arena-signal is-${status}`;
     },
     setBusy(busy) {
+      root.dataset.busy = String(busy);
       createButton.disabled = busy;
       joinButton.disabled = busy;
-      disconnectButton.disabled = busy || connection.classList.contains("is-offline");
+      disconnectButton.disabled = busy || root.dataset.connection !== "online";
       sessionInput.disabled = busy;
       nameInput.disabled = busy;
     },
     pushLog(message) {
-      const item = element("li", undefined, message);
-      const time = new Date().toLocaleTimeString([], { hour12: false });
+      const item = element("li", classifyLogMessage(message), message);
+      const time = new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+      });
       item.dataset.time = time;
       log.prepend(item);
-      while (log.childElementCount > 8) log.lastElementChild?.remove();
+      while (log.childElementCount > 6) log.lastElementChild?.remove();
+    },
+    showEffect(event) {
+      if (event.phase === "cancel") return;
+      effectFlash.className = "arena-effect-flash";
+      void effectFlash.offsetWidth;
+      effectFlash.classList.add("is-active", `is-${event.kind}`, `is-${event.phase}`);
     }
   };
   return ui;
@@ -125,35 +224,84 @@ export function updateArenaUi(
   localMemberId: string | undefined,
   telemetry: Record<string, unknown>
 ): void {
+  const replication = recordValue(telemetry.replication);
+  const island = recordValue(telemetry.island);
+  const effects = recordValue(telemetry.effects);
+  const journal = recordValue(effects.journal);
+  const presentation = recordValue(effects.presentation);
+  const authority = recordValue(telemetry.authority);
+
+  ui.authorityTick.textContent = compactNumber(
+    numberValue(telemetry.authorityTick, snapshot?.frame.tick ?? 0)
+  );
+  ui.replayTicks.textContent = compactNumber(numberValue(island.resimulatedTicks, 0));
+  ui.pendingInputs.textContent = compactNumber(numberValue(replication.pendingInputs, 0));
+  ui.effectState.textContent = `${compactNumber(numberValue(presentation.confirmed, 0))} / ${compactNumber(numberValue(journal.pending, 0))}`;
+  ui.payloadSize.textContent = `${(numberValue(authority.payloadBytes, 0) / 1024).toFixed(1)} KB`;
+  ui.diagnostics.textContent = JSON.stringify(telemetry, null, 2);
+
   if (!snapshot) {
-    ui.phase.textContent = "LINKING";
+    ui.root.dataset.phase = "offline";
+    ui.phase.textContent = "STANDBY";
     ui.timer.textContent = "--:--";
-    ui.diagnostics.textContent = JSON.stringify(telemetry, null, 2);
+    ui.round.textContent = "ROUND --";
+    ui.position.textContent = "-- / --";
+    ui.roster.textContent = "WAITING FOR GRID";
+    ui.progress.textContent = "0%";
+    ui.progressFill.style.setProperty("--race-progress", "0%");
     return;
   }
-  ui.phase.textContent = snapshot.phase.toUpperCase();
+
+  ui.root.dataset.phase = snapshot.phase;
+  ui.phase.textContent = phaseLabel(snapshot.phase);
+  ui.round.textContent = `ROUND ${String(snapshot.round).padStart(2, "0")}`;
   const timeMs =
     snapshot.phase === "countdown"
       ? snapshot.countdownMs
       : Math.max(0, 120_000 - snapshot.roundTimeMs);
   ui.timer.textContent = formatTime(timeMs);
   ui.localPlayer.textContent = `LOCAL SLOT · ${localMemberId ?? "SPECTATOR"}`;
-  ui.viewport.dataset.phase = snapshot.phase;
-  ui.hint.textContent =
-    snapshot.phase === "countdown"
-      ? `ROUND ${snapshot.round} · HOLD YOUR LINE`
-      : snapshot.phase === "results"
-        ? `${snapshot.winnerId ?? "NO SURVIVOR"} TAKES THE HEAT`
-        : "WASD / ARROWS TO RUN · SPACE TO JUMP";
-  ui.diagnostics.textContent = JSON.stringify(telemetry, null, 2);
-}
 
-function panel(title: string): { root: HTMLElement; body: HTMLElement } {
-  const root = element("section", "arena-panel");
-  const heading = element("h2", "arena-panel__title", title);
-  const body = element("div", "arena-panel__body");
-  root.append(heading, body);
-  return { root, body };
+  const racers = snapshot.frame.members
+    .filter((member) => member.id.startsWith("player.") || member.id.startsWith("bot."))
+    .sort(
+      (left, right) =>
+        (left.body.position.z ?? Number.POSITIVE_INFINITY) -
+        (right.body.position.z ?? Number.POSITIVE_INFINITY)
+    );
+  const localIndex = racers.findIndex((member) => member.id === localMemberId);
+  ui.position.textContent =
+    localIndex < 0
+      ? `-- / ${String(racers.length).padStart(2, "0")}`
+      : `${String(localIndex + 1).padStart(2, "0")} / ${String(racers.length).padStart(2, "0")}`;
+  ui.roster.textContent = `${racers.length} RUNNERS · ${snapshot.eliminatedMemberIds.length} OUT`;
+
+  const localMember = snapshot.frame.members.find((member) => member.id === localMemberId);
+  const raceProgress = Math.round(
+    Math.max(0, Math.min(1, (5.4 - (localMember?.body.position.z ?? 5.4)) / 16.9)) * 100
+  );
+  ui.progress.textContent = `${raceProgress}%`;
+  ui.progressFill.style.setProperty("--race-progress", `${raceProgress}%`);
+
+  ui.hint.replaceChildren();
+  if (snapshot.phase === "countdown") {
+    ui.hint.append(
+      element("strong", undefined, `ROUND ${snapshot.round}`),
+      element("span", undefined, "HOLD THE LINE")
+    );
+  } else if (snapshot.phase === "results") {
+    ui.hint.append(
+      element("strong", undefined, snapshot.winnerId ?? "NO SURVIVOR"),
+      element("span", undefined, "TAKES THE HEAT")
+    );
+  } else {
+    ui.hint.append(
+      keycap("WASD"),
+      element("span", undefined, "RUN"),
+      keycap("SPACE"),
+      element("span", undefined, "JUMP")
+    );
+  }
 }
 
 function field(label: string, control: HTMLElement): HTMLElement {
@@ -179,6 +327,18 @@ function button(label: string, modifier?: string): HTMLButtonElement {
   return target;
 }
 
+function keycap(label: string): HTMLElement {
+  return element("kbd", "arena-keycap", label);
+}
+
+function metric(parent: HTMLElement, label: string, initial: string): HTMLElement {
+  const value = element("strong", "arena-metric__value", initial);
+  const item = element("div", "arena-metric");
+  item.append(element("span", "arena-metric__label", label), value);
+  parent.append(item);
+  return value;
+}
+
 function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -190,10 +350,41 @@ function element<K extends keyof HTMLElementTagNameMap>(
   return target;
 }
 
+function phaseLabel(phase: ArenaSnapshot["phase"]): string {
+  if (phase === "lobby") return "GRID OPEN";
+  if (phase === "countdown") return "GET READY";
+  if (phase === "running") return "RACE LIVE";
+  return "RESULTS";
+}
+
 function formatTime(value: number): string {
   if (value <= 3_000) return `${(value / 1000).toFixed(1)}S`;
   const total = Math.ceil(value / 1000);
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function compactNumber(value: number): string {
+  return value >= 10_000
+    ? `${(value / 1000).toFixed(1)}K`
+    : Math.round(value).toLocaleString("en-US");
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function numberValue(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function classifyLogMessage(message: string): string {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("confirm")) return "is-confirm";
+  if (normalized.includes("cancel") || normalized.includes("reject")) return "is-alert";
+  if (normalized.includes("jump") || normalized.includes("contact")) return "is-effect";
+  return "is-system";
 }
 
 function randomName(): string {

@@ -22,8 +22,12 @@ Multiplayer Physics Arena Demo 是 GameKit 的 3D server-authoritative 高互动
 - 玩家使用动态 capsule，支持移动、跳跃和可撤销的 dive；角色之间可以推挤、阻挡和连锁碰撞。
 - 单一短赛道由三个可读区域组成：旋转 sweeper、拥挤门与可推动物体、移动平台与终点。
 - 掉出场地后由 authority 决定淘汰或从最近检查点重生；到达终点和排名只由 authority 提交。
-- 视觉采用清晰的程序化 Three mesh、颜色和轮廓，不依赖外部品牌资产，不复刻糖豆人角色或关卡美术。
-- 主视图优先展示游戏；网络和 prediction diagnostics 位于可折叠侧栏，不挤压操作区域。
+- 视觉采用“午夜电视竞技秀 + 霓虹玩具赛道”方向：程序化 Three mesh、强轮廓、赛道灯带和远景观众舱形成独立辨识度，
+  不依赖外部品牌资产，也不复刻糖豆人角色或关卡美术。
+- 玩家使用独立的 Circuit Runner 造型和第三人称跟随镜头；移动步态、跳跃涟漪、碰撞碎片与短促镜头震动只消费
+  predicted/presented state，不反写 simulation。
+- 主视图始终占满应用；房间操作、名次、进度、比赛控制 feed 以 broadcast HUD 覆盖在画面上，完整 netcode
+  diagnostics 位于可折叠 telemetry drawer，不挤压操作区域。
 
 ## Authority 与 simulation
 
@@ -85,6 +89,8 @@ Multiplayer Physics Arena Demo 是 GameKit 的 3D server-authoritative 高互动
 - 单个完整 island 是正确性基线。若加入分区，authority 必须声明完整 membership revision，且跨 island 对象不能保持
   可碰撞却不共享历史。
 - Renderer/camera 只消费 presented/predicted output，不把平滑 transform 写回 authority 或 island simulation state。
+- Demo presentation 可以在 Three Driver 暴露的 native scene/renderer boundary 创建专用透视镜头；该镜头只属于 app
+  presentation，不能成为共享 simulation 或通用 renderer 协议的一部分。
 - 一局游戏有完整 lobby → countdown → running → qualified/eliminated → results → rematch 流程；不能退化为只有刚体和
   数字面板的实验台。
 - 不使用外部品牌名称、角色造型、关卡布局或音频资产；“糖豆人式”只描述多人障碍赛与拥挤物理交互类别。
