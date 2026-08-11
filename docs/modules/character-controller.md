@@ -41,7 +41,9 @@ DataRegistry、解析字符串或容忍 NaN/Infinity。App 可以在编译前组
 - 只读取参数，不读取 wall clock、全局 registry 或 native runtime，不提交 EventBus、Audio、Renderer、Camera、GAS/Combat 副作用。
 - 相同 definition/state/intent/body/observation/tick/delta 产生相同 command 与 state signature。
 - diagonal move 归一化；ground/air acceleration 与 braking 有界，不把 external impulse 在下一 tick 直接清零。
-- ground normal 决定 walkable slope；过陡面不刷新 ground。Step 只有高度、clearance 和 landing slope 全部通过才输出位置 patch。
+- ground normal 决定 walkable slope；grounded 使用相对支撑面的法向分离速度判定，移动目标投影到 walkable ground tangent，
+  不能用 world-space `velocity.y` 把上坡或升降平台误判为空中。过陡面不刷新 ground。Step 只有高度、clearance、landing
+  slope 和最终 capsule clearance 全部通过才输出位置 patch。
 - platform velocity 先限幅，支撑期间作为相对速度参考；离地只保留 definition 声明的 departure fraction。
 - jumpPressed 进入有界 buffer，ground/coyote 有效时按 sequence 只消费一次；held jump、ceiling 和 timer 都由 fixed delta 推进。
 - dive 按 sequence 只提交一次 impulse，并经过 duration、recovery、cooldown；stagger 同样通过确定性 timer 进入 recovery。
@@ -50,11 +52,14 @@ DataRegistry、解析字符串或容忍 NaN/Infinity。App 可以在编译前组
 环境观测是 query/runtime strategy 交给 pure motor 的稳定事实，不是新的 Physics 状态源。Strategy 必须忽略 self collider、使用 stable
 closest/sort 规则，并把 query/rejection 数写入 diagnostics。Authority 与 prediction 必须在相同 tick 使用等价观测。
 
-`observeCharacterGround(...)` 是标准 backend-neutral ground strategy：从公开 body state 发起向下 capsule shape cast，排除自身
+`observeCharacterGround(...)` 是最小 backend-neutral ground strategy：从公开 body state 发起向下 capsule shape cast，排除自身
 body/collider 和 sensor，使用 closest/distance contract 生成稳定 ground/surface/platform velocity 事实。Definition 的
 `capsuleHeight` 表示包含两端半球的总高度，映射 Physics capsule query 时转换为中段高度；backend 不支持 shape-cast `all` 时不要求
-app 分支，标准 helper 使用成熟 backend 均支持的 closest 模式。Ceiling、step 和特殊 surface strategy 可以在此结果上窄扩展，
-但不能另建 locomotion timer。
+app 分支，标准 helper 使用成熟 backend 均支持的 closest 模式。
+
+完整动态角色应使用 `observeCharacterEnvironment(...)`。它在 ground 事实之上按移动方向依次执行低位阻挡、高位净空、落点和最终
+capsule clearance probe，并在上升且保持跳跃时检查 ceiling；输出仍只有 backend-neutral observation、query count 与 rejection count。
+特殊 surface strategy 可以在这个结果上窄扩展，但不能另建 locomotion timer。
 
 ## Diagnostics 与重演
 
@@ -80,7 +85,7 @@ reconcile 在写入前拒绝。Physics body checkpoint 与 motor timer 必须在
 - Arena authority 与 client prediction 都创建 `createCharacterMotorPredictionContributor(...)`，Human 和 authority AI 只写同构
   `CharacterControlIntent`；authority projection 发布 contributor checkpoint 和每个 actor 实际 control sequence，client 不再从
   velocity 手写 actor motion patch，也不使用 authority frame tick 猜 jump/dive 去重序列。
-- 非多人 fixture 可以直接组合 `observeCharacterGround(...) + stepCharacterMotor(...) + PhysicsScene update/command`；Physics 3D Lab
+- 非多人 fixture 可以直接组合 `observeCharacterEnvironment(...) + stepCharacterMotor(...) + PhysicsScene update/command`；Physics 3D Lab
   保留一个可见 Rapier capsule、键盘 intent 和 motor diagnostics，证明 toolkit 不依赖 Multiplayer 或 Arena。
 
 ## 使用最佳实践

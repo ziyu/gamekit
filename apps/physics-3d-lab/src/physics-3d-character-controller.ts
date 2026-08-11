@@ -1,6 +1,6 @@
 import {
   compileCharacterMotorDefinition,
-  observeCharacterGround,
+  observeCharacterEnvironment,
   stepCharacterMotor,
   type CharacterControlIntent,
   type CharacterMotorDefinition,
@@ -80,9 +80,10 @@ export function stepPhysics3dCharacter(options: {
   if (body === undefined) {
     throw new Error("Physics 3D Lab character body is unavailable");
   }
-  const observation = observeCharacterGround({
+  const observation = observeCharacterEnvironment({
     body,
     definition: PHYSICS_3D_CHARACTER_MOTOR_DEFINITION,
+    intent: options.intent,
     simulation: {
       query: (query) => options.scene.query(query),
       body: (bodyId) => options.scene.getBodyState(bodyId)

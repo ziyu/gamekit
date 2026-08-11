@@ -96,6 +96,8 @@ checkpoint。
 
 - Ground probe 使用 capsule/shape cast，不用单点 `velocity.y === 0` 近似落地。
 - Walkable 由 ground normal 与 profile max slope 判断。过陡面只提供接触，不能刷新 coyote 或强制贴地。
+- Grounded 使用角色相对支撑面的法向分离速度判定；上坡速度和升降平台速度不能被 world-space `velocity.y` 误判为空中。
+- Walkable ground 上的移动目标投影到 ground tangent 后再按 acceleration 逼近，避免水平目标速度持续顶住坡面。
 - Ground snap 只在角色正在接近支撑面、未跳跃且距离小于上限时生效；不能把上升角色吸回平台。
 - Step solver 依次验证前方阻挡、上方 clearance、step 顶部 walkable 和最终 capsule 无重叠，再生成受限上移 command。
 - Query 忽略自身 collider、carried item presentation 和明确不承载角色的 sensor；不能忽略其他玩家或动态障碍。
@@ -172,9 +174,15 @@ Instability 和攻击合法性归 Arena Combat policy；controller 只消费已�
 authority frame 同时发布 body members 与按 id 排序的 motor auxiliary checkpoint，generation/membership baseline 由标准 Arena
 adapter 恢复。Sweeper/platform 的确定性 stage schedule 仍是场景 command，不属于 character prediction 的手写替身。
 
-Physics 3D Lab 使用同一个 compiled definition 结构、`observeCharacterGround(...)` 和 `stepCharacterMotor(...)` 驱动独立 Rapier
-capsule，作为不依赖 Multiplayer 的第二 fixture。Lab viewport 聚焦后由 WASD、Space、Shift 产生 semantic intent，并展示 mode、
-grounded、facing 和 query diagnostics；后续 controller course 在此扩展坡、台阶、平台、边缘与推挤场景。
+Physics 3D Lab 使用同一个 compiled definition 结构、`observeCharacterEnvironment(...)` 和 `stepCharacterMotor(...)` 驱动独立
+Rapier capsule，作为不依赖 Multiplayer 的第二 fixture。Lab viewport 聚焦后由 WASD、Space、Shift 产生 semantic intent，并展示
+mode、grounded、facing 和 query diagnostics。独立 controller course 用真实 Rapier3D 场景逐项验证平地制动、walkable slope、
+bounded step、moving platform、edge coyote、actor push 和 landing；每项使用独立 scene，不能用前一项的接触状态替代。
+
+高延迟 replay fixture 让 client 领先 authority 9 tick（150 ms），再注入 client 未预测的 authority Physics impulse；旧 authority
+checkpoint 到达时必须同时恢复 Physics 与 motor auxiliary state，回放 pending control 后与 authority body/state signature 完全一致。
+整个过程不得出现 history overflow、replay budget overflow、hard correction failure 或 auxiliary mismatch，重复最终 frame 必须为
+confirmed。
 
 ## Input、Gamepad 与 Scope
 

@@ -171,6 +171,21 @@ describe("pure character motor", () => {
     expect(rejected.trace.map((entry) => entry.code)).toContain("step-rejected");
   });
 
+  it("projects grounded locomotion onto a walkable slope without becoming airborne", () => {
+    const slopeNormal = { x: -Math.sin(0.2), y: Math.cos(0.2), z: 0 };
+    const result = run({
+      state: createCharacterMotorState({ grounded: true }),
+      intent: intent(1, { move: { x: 1, y: 0, z: 0 } }),
+      observation: ground({ normal: slopeNormal }),
+      body: body({ x: 0, y: 0, z: 0 }),
+      deltaMs: 100
+    });
+
+    expect(result.state.grounded).toBe(true);
+    expect(result.bodyPatch.linearVelocity?.x).toBeGreaterThan(1.9);
+    expect(result.bodyPatch.linearVelocity?.y).toBeGreaterThan(0.3);
+  });
+
   it("inherits bounded moving-platform velocity and keeps the declared departure fraction", () => {
     const supported = run({
       state: createCharacterMotorState({ grounded: true }),

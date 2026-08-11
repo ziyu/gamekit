@@ -138,7 +138,7 @@ describe("Physics 3D Lab runtime", () => {
     expect(moved.position.x).toBeGreaterThan(before.position.x);
     expect(snapshot.character.diagnostics).toMatchObject({
       sequence: 1,
-      queryCount: 1
+      queryCount: 2
     });
 
     lab.setCharacterIntent(

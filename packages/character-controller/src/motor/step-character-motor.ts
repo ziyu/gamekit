@@ -25,7 +25,11 @@ export function stepCharacterMotor(input: CharacterMotorStepInput): CharacterMot
   const trace: CharacterMotorTraceEntry[] = [];
   const commands = [];
   const ground = classifyGround(observation.ground, definition);
-  let grounded = ground.walkable && body.linearVelocity.y <= EPSILON;
+  const groundSeparationSpeed = dotVector(
+    subtractVector(body.linearVelocity, ground.observation?.bodyLinearVelocity),
+    ground.normal
+  );
+  let grounded = ground.walkable && groundSeparationSpeed <= EPSILON;
   const wasGrounded = state.grounded;
 
   state.lastStableTick = tick;
@@ -63,7 +67,7 @@ export function stepCharacterMotor(input: CharacterMotorStepInput): CharacterMot
     if (ground.observation !== undefined) {
       pushTrace(trace, input, "ground-rejected", {
         slopeRadians: ground.slopeRadians,
-        rising: body.linearVelocity.y > EPSILON
+        rising: groundSeparationSpeed > EPSILON
       });
     }
     if (wasGrounded) {
@@ -170,15 +174,16 @@ export function stepCharacterMotor(input: CharacterMotorStepInput): CharacterMot
 
   const controlScale = controlScaleFor(state.mode, definition);
   const movement = normalizedHorizontal(intent.move);
+  const locomotionDirection = grounded ? projectOntoGround(movement, ground.normal) : movement;
   const targetSpeed = grounded ? definition.maxGroundSpeed : definition.maxAirSpeed;
   const platformVelocity = state.inheritedPlatformVelocity;
   const relativeCurrent = {
     x: body.linearVelocity.x - platformVelocity.x,
-    y: 0,
+    y: grounded ? body.linearVelocity.y - platformVelocity.y : 0,
     z: (body.linearVelocity.z ?? 0) - (platformVelocity.z ?? 0)
   };
   const hasMovement = vectorLengthSquared(movement) > EPSILON;
-  const target = scaleVector(movement, targetSpeed * controlScale);
+  const target = scaleVector(locomotionDirection, targetSpeed * controlScale);
   const acceleration = grounded
     ? hasMovement
       ? definition.groundAcceleration
@@ -192,7 +197,9 @@ export function stepCharacterMotor(input: CharacterMotorStepInput): CharacterMot
       x: nextRelative.x + platformVelocity.x,
       y: jumped
         ? definition.jumpSpeed
-        : jumpHeldVelocity(body.linearVelocity.y, state, intent, definition, deltaSeconds),
+        : grounded
+          ? nextRelative.y + platformVelocity.y
+          : jumpHeldVelocity(body.linearVelocity.y, state, intent, definition, deltaSeconds),
       z: (nextRelative.z ?? 0) + (platformVelocity.z ?? 0)
     }
   };
@@ -343,14 +350,22 @@ function limitedPlatformVelocity(
   maximum: number
 ): PhysicsVector {
   if (velocity === undefined) return { x: 0, y: 0, z: 0 };
-  const horizontal = { x: velocity.x, y: 0, z: velocity.z ?? 0 };
-  const length = Math.sqrt(vectorLengthSquared(horizontal));
-  if (length <= maximum || length <= EPSILON) return horizontal;
-  return scaleVector(horizontal, maximum / length);
+  const stableVelocity = { x: velocity.x, y: velocity.y, z: velocity.z ?? 0 };
+  const length = Math.sqrt(vectorLengthSquared(stableVelocity));
+  if (length <= maximum || length <= EPSILON) return stableVelocity;
+  return scaleVector(stableVelocity, maximum / length);
 }
 
 function normalizedHorizontal(vector: Readonly<PhysicsVector>): PhysicsVector {
   return normalized({ x: vector.x, y: 0, z: vector.z ?? 0 });
+}
+
+function projectOntoGround(
+  direction: Readonly<PhysicsVector>,
+  normal: Readonly<PhysicsVector>
+): PhysicsVector {
+  const projected = subtractVector(direction, scaleVector(normal, dotVector(direction, normal)));
+  return normalized(projected);
 }
 
 function normalized(vector: Readonly<PhysicsVector>): PhysicsVector {
@@ -367,14 +382,14 @@ function moveVectorTowards(
 ): PhysicsVector {
   const delta = {
     x: target.x - current.x,
-    y: 0,
+    y: target.y - current.y,
     z: (target.z ?? 0) - (current.z ?? 0)
   };
   const length = Math.sqrt(vectorLengthSquared(delta));
   if (length <= maximumDelta || length <= EPSILON) return cloneVector(target);
   return {
     x: current.x + (delta.x / length) * maximumDelta,
-    y: 0,
+    y: current.y + (delta.y / length) * maximumDelta,
     z: (current.z ?? 0) + ((delta.z ?? 0) / length) * maximumDelta
   };
 }
@@ -394,6 +409,22 @@ function wrapAngle(angle: number): number {
 
 function slopeRadians(normal: Readonly<PhysicsVector>): number {
   return Math.acos(Math.max(-1, Math.min(1, normalized(normal).y)));
+}
+
+function dotVector(left: Readonly<PhysicsVector>, right: Readonly<PhysicsVector>): number {
+  return left.x * right.x + left.y * right.y + (left.z ?? 0) * (right.z ?? 0);
+}
+
+function subtractVector(
+  left: Readonly<PhysicsVector>,
+  right: Readonly<PhysicsVector> | undefined
+): PhysicsVector {
+  if (right === undefined) return cloneVector(left);
+  return {
+    x: left.x - right.x,
+    y: left.y - right.y,
+    z: (left.z ?? 0) - (right.z ?? 0)
+  };
 }
 
 function pushTrace(

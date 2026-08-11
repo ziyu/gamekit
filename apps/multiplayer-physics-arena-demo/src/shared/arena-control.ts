@@ -1,7 +1,7 @@
 import {
   compileCharacterMotorDefinition,
   createCharacterMotorPredictionContributor,
-  observeCharacterGround,
+  observeCharacterEnvironment,
   type CharacterControlIntent,
   type CharacterMotorDefinition,
   type CharacterMotorPredictionCommand,
@@ -90,12 +90,13 @@ export function createArenaCharacterMotorContributor(): CharacterMotorPrediction
     resolveDefinition() {
       return ARENA_CHARACTER_MOTOR_DEFINITION;
     },
-    observe({ memberId, context }) {
+    observe({ memberId, intent, context }) {
       const body = context.simulation.body(memberId);
       if (body === undefined) return undefined;
-      return observeCharacterGround({
+      return observeCharacterEnvironment({
         body,
         definition: ARENA_CHARACTER_MOTOR_DEFINITION,
+        intent,
         simulation: context.simulation,
         ignoreColliderIds: [`${memberId}.collider`]
       });
