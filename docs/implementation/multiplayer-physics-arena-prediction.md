@@ -1,6 +1,6 @@
 # Multiplayer Physics Arena Prediction
 
-Status: Active
+Status: Closed
 
 ## 工作流目标
 
@@ -73,12 +73,12 @@ multiplayer-physics-arena-demo
 | P1：Input delivery 与 client prediction-domain bridge | Verified | 可选 redundant input bundle、authority inbox、Multiplayer GameModule descriptor/factory lifecycle | 默认单帧输入保持兼容；binding/reset/input/snapshot/frame/dispose 顺序有契约测试 |
 | P2：Arena frame 与 island 预算                        | Verified | island id/revision/definition envelope、bytes/replay budgets、校验与 diagnostics                  | 非法/缺失成员不能 replay；所有缓存有硬上限                                      |
 | P3：App Host 标准 Physics Arena adapter               | Verified | client adapter、authority projection、standard exports                                            | app 只提供 typed mapping/policy/writer；默认 reconcile/hard correction 顺序唯一 |
-| P4：Conformance 与 benchmark                          | Active   | memory backend conformance、Rapier 2D/3D integration、arena benchmark/budget                      | generation/revision/gap/overflow/duplicate/cleanup 和 3D replay 性能均可重复    |
+| P4：Conformance 与 benchmark                          | Verified | memory backend conformance、Rapier 2D/3D integration、arena benchmark/budget                      | generation/revision/gap/overflow/duplicate/cleanup 和 3D replay 性能均可重复    |
 | P5：Knockout Arena 可玩纵切                           | Verified | 新 app、Three/Rapier3D、赛道、玩家控制、bots、round lifecycle                                     | 浏览器 authority/prediction 复用同一 input/snapshot contract；纵切可玩          |
 | P6：Room-owned authority 与复制                       | Verified | Colyseus Room、headless authority runtime、typed app schema、arena projection                     | 2 client 读取同一 authority world；逐 step ack，不双写 authority lane           |
 | P7：完整 arena client prediction                      | Verified | standard adapter 接入、全成员 island、hard correction、presentation writer                        | app 无私有 replay/history/membership loop；动态互动在同一 tick 重演             |
-| P8：效果、诊断与网络矩阵                              | Active   | effect journal、camera/audio/UI feedback、network presets、DevTools summary                       | replay 不重复效果；高延迟/丢包时有界退化且可解释                                |
-| P9：最终验收与关闭                                    | Planned  | e2e、soak、全仓门禁、文档收口                                                                     | 真实双浏览器和性能预算通过；长期结论迁移后关闭工作流                            |
+| P8：效果、诊断与网络矩阵                              | Verified | effect journal、UI feedback、network presets、diagnostics summary                                 | replay 不重复效果；高延迟/丢包时有界退化且可解释                                |
+| P9：最终验收与关闭                                    | Verified | e2e、soak、全仓门禁、文档收口                                                                     | 真实双浏览器和性能预算通过；长期结论迁移后关闭工作流                            |
 
 ## P1：Input delivery 与 client prediction-domain bridge
 
@@ -140,13 +140,14 @@ hard correction；测试源码中不存在 app-owned history、binding、revisio
 
 关闭前性能门禁：
 
-- 16-member/12-tick rollback p95 不高于 8 ms；
+- 16-member/12-tick rollback p95 不高于 8 ms，max 不高于 32 ms；
 - 32-member/30-tick rollback p95 不高于 25 ms，max 不高于 50 ms；
 - 32-member arena frame 的未压缩 payload 不高于 16 KiB；
 - 默认 128-tick history 不高于 24 MiB；
 - hard correction 在完整 definition 下成功率 100%；
 - dispose 后 history、command、binding、effect entry 和 Physics scene retained count 均为 0；
-- 10 分钟模拟的 retained heap 趋势不超过 2 MiB，且所有 queue/registry 保持硬上限。
+- 10 分钟模拟的最终 retained heap 增长不超过 2 MiB、分钟采样峰值增长不超过 4 MiB，且所有 queue/registry
+  保持硬上限。
 
 若首个 Rapier 3D 基线无法满足上述时间预算，先 profile checkpoint copy、scene rebuild 和 replay step；只有证明预算不
 合理后才在本工作流记录测量证据并调整，不能通过减少互动成员或关闭 replay 伪造通过。
@@ -216,7 +217,8 @@ diagnostics 和 console error。Headless integration 必须使用真实 Rapier 3
 ## 2026-08-11 可验收纵切证据
 
 - Multiplayer Core 的 authority host loop 已直接消费显式 `redundant-bundle` delivery；app 不拆包、不维护 resend window、
-  duplicate set、gap counter 或 ack history。默认单帧分支保持原行为。Core 聚焦回归为 10 files / 80 tests passed。
+  duplicate set、gap counter 或 ack history。默认单帧分支保持原行为。Core 聚焦回归为 10 files / 81 tests passed，包含
+  hold-last gap frame 使用 bundle sequence 而不是旧 payload sequence 的回归。
 - Physics island 已有 checkpoint bytes、total history bytes 和 per-operation replay tick 预算；App Host Arena adapter 已覆盖
   baseline install、input command mapping、revision rebuild、replay-budget hard correction、authority payload budget 和 dispose。
 - 新增 `apps/multiplayer-physics-arena-demo`：Room-owned Colyseus authority 以 60 Hz 推进 Rapier3D，20 Hz 发布完整 14-member
@@ -226,8 +228,25 @@ diagnostics 和 console error。Headless integration 必须使用真实 Rapier 3
 - 双浏览器 smoke 确认 Create/Join 同一 session、倒计时/运行/结果阶段、Three WebGL 表现、键盘 move/jump、全岛
   reconcile/resimulation 和 telemetry。观测样本包含 `resimulatedTicks=81`、`replayBudgetOverflows=0`；两个页面无 runtime
   error，仅有 Rapier compat 上游初始化 API 的 deprecation warning。
-- 该纵切达到“新 Demo 可验收”，但工作流仍保持 Active：P4 的 arena benchmark/retained-memory 门禁以及 P8 的网络故障矩阵、
-  speculative effect journal、完整 rematch/soak 尚未作为成熟框架关闭证据。
+- `arena-prediction` 使用真实 Rapier3D、排除 fixture construction，24 轮测得 16-member/12-tick rollback
+  `p95=3.936 ms / max=9.145 ms`，32-member/30-tick rollback `p95=11.241 ms / max=13.958 ms`；对应 payload 为
+  `6.05/12.01 KiB`，history 为 `2.83/5.38 MiB`。64-member capacity/hard-correction profile payload `22.69 KiB`，
+  25 项预算全部通过，所有 profile 的 hard-correction failure、replay overflow 和 dispose retained state 均为 0。
+- Multiplayer Core 新增可包裹任意 backend 的确定性 network-condition simulator。Arena 四档矩阵覆盖 0 ms、
+  50±20 ms、100±30 ms + 2% loss、150±50 ms + 5% loss + 2% duplicate；分别观察 authority consumed sequence 与
+  client observed ack，并在 120 recovery tick 后验证 ack lag、ordered sequence、duplicate、capacity 和 delivery error。
+- Jump 以 `member + input sequence`、contact 以 collider pair/kind/predicted tick 建立稳定 effect identity；authority ACK 和
+  snapshot contact cue 分别执行 confirm，round generation reset、超龄与 dispose 执行 cancel。重复 replay 只产生一次
+  UI anticipation/confirmation，2 个 effect contract tests 覆盖 duplicate、confirm、reset 和 expire。
+- `arena-prediction-stability` 使用真实 Rapier3D 运行 10 分钟虚拟时长：14 members、60 Hz、20 Hz authority、3-tick
+  delay，共 36,000 tick 和 36,597 resimulated tick；history 固定 181 entries / 4.421 MiB、commands 2,520、峰值 retained
+  heap 增长 0.356 MiB，queue/reconcile/replay/hard-correction failure 均为 0，dispose retained state 为 0。
+- 最终全仓门禁为 test 92/92 tasks、build 50/50 tasks、lint 92/92 tasks、format check 与 `bench:world` 通过；
+  Multiplayer、Checkpoint、Projectile Prediction、Arena Prediction 共 69 项 benchmark budget 全部通过。
+- 最终双浏览器验收中两个独立页面分别绑定 `player.0/player.1`，同一采样 authority tick 为 1509、active peers 为 2、
+  rejected input 为 0；双方均产生有界全岛 resimulation，键盘 jump 与 contact UI feedback 完成 anticipate → confirm，
+  replay budget overflow 为 0。两个 Three/WebGL 视图显示同一赛道/机关/成员状态；控制台无 runtime error，仅保留 Rapier
+  compat 上游 initialization deprecation warning。
 
 ## Review 与关闭规则
 

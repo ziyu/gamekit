@@ -15,6 +15,7 @@
     { "path": "../../packages/game-runtime" },
     { "path": "../../packages/multiplayer-colyseus" },
     { "path": "../../packages/multiplayer-core" },
+    { "path": "../../packages/multiplayer-memory" },
     { "path": "../../packages/physics-core" },
     { "path": "../../packages/physics-rapier3d" },
     { "path": "../../packages/platform-core" },

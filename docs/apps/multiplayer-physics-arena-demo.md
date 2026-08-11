@@ -74,8 +74,9 @@ Multiplayer Physics Arena Demo 是 GameKit 的 3D server-authoritative 高互动
 - speculative effect pending/confirmed/cancelled；
 - server/client body/contact 数、payload bytes 和 dispose/retained-state 摘要。
 
-网络模拟 preset 必须能覆盖正常、延迟、jitter、丢包和短时 snapshot gap，但模拟器只改变 delivery，不拥有第二套
-prediction clock。
+网络模拟 preset 使用 Multiplayer Core 的确定性 network-condition simulator，覆盖正常、延迟、jitter、丢包、duplicate
+和短时 snapshot gap。模拟器只改变 delivery，不拥有第二套 prediction clock；测试分别展示 authority consumed sequence
+与 client observed ack，避免把服务端内部水位误报为客户端已确认。
 
 ## 长期约束
 

@@ -430,6 +430,12 @@ ack 的旧 frame；authority fixed-step inbox 按 peer、binding generation 和 
 hold-last/neutral gap policy 处理超过等待预算的缺口。App 只编码单帧 gameplay input，不维护 resend window；snapshot ack
 只能推进到已经实际模拟的最高连续 sequence。该 delivery policy 是 additive opt-in，未配置时保持单帧 input 行为。
 
+`createMultiplayerNetworkConditionSimulator(...)` 是 provider-neutral 的确定性故障注入 wrapper。它可以包裹 Memory、
+Colyseus 测试桥或其他 backend，用手动 `advance(...)` / `flush()`、固定 seed、direction/message predicate 和有界 pending
+queue 模拟 latency、jitter、loss 与 duplicate，并输出 scheduled/delivered/drop/duplicate/capacity/error/connection
+diagnostics。Session lifecycle 直接委托底层 backend；reliable ordered lane 中未丢弃的消息保持顺序。该 helper 只服务
+测试、benchmark 和本地调试，不替代真实 provider 的 transport/reconnect 测试，也不拥有 authority 或 prediction clock。
+
 App Host 的 `createStandardMultiplayerPhysicsArenaPrediction(...)` 把 descriptor 与 Physics island、standard Physics
 prediction domain、membership revision、hard correction、可选 rollback contributor 和 speculative effect journal 组合
 成默认 arena adapter。应用声明 authority frame mapping、input command mapping、完整交互成员 policy、definition resolver
@@ -715,6 +721,9 @@ Multiplayer diagnostics 应回答：
 - 多客户端 headless test 不能只断言 peer count；必须断言同一 lifecycle、input 或 snapshot 来自同一个 authority state。
 - Room-owned 物理游戏的多客户端测试应至少覆盖 bounded action、latest continuous state 或 fixed-step predicted input/ack（按实际 contract 选择）、完整 authority begin → GameRuntime/Physics → commit、实体出生/离开清理，以及 leader 离开后剩余 peer 继续读取同一 authority state。Fixed-step predicted input 测试必须证明 burst 到达后 ack 按每个已模拟 step 依次推进。
 - 改动多人高频路径时运行并按需扩展 `bench:multiplayer`。模块级 benchmark 应覆盖 envelope normalization、authority receiver source gate、host/local authority loop、latest-input coalescing、prediction lead backpressure、prediction reconciliation/presentation、snapshot playback 和 presentation projection；定时或手动 performance workflow 使用宽松预算观察数量级回归，并用模拟长时序 + GC 后 retained heap 检查有界缓存，不作为常规 PR merge gate。provider-native backend 可在对应 adapter 包中补独立 benchmark。
+- 逐 step input replay、prediction island 或 authority ack 改动必须用确定性 network-condition simulator 覆盖 baseline、
+  latency+jitter、loss 和 duplicate。分别记录 authority consumed sequence 与 client observed ack；停止发送后推进有限
+  recovery tick，再检查 ack lag、queue 上限和 delivery error。`flush()` 只排空网络 delivery，不能冒充 authority tick。
 - 新增 selective prediction domain 时，conformance 必须覆盖 spawn confirm/reject/duplicate/late result、generation/
   binding reset、history overflow、hard correction 与 dispose；benchmark 分开测 history capture、restore、replay、
   predicted-spawn churn 和 retained bytes。只测 renderer object 数或关闭 prediction 的路径不能作为该能力预算。

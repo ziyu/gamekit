@@ -797,6 +797,63 @@ describe("multiplayer authority helpers", () => {
     loop.dispose();
   });
 
+  it("uses the bundle frame sequence when hold-last fills a fixed-step gap", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({ id: "gap-fill-host", backend: fake.backend });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "host-authoritative",
+      localPeer: { id: "host", role: "host" }
+    });
+    const processed: Array<{ frameSequence: number | undefined; payloadSequence: number }> = [];
+    const loop = createMultiplayerAuthorityHostLoop<never, InputPayload, { tick: number }>({
+      runtime,
+      binding: createMultiplayerAuthorityBindingStore({
+        sessionId: "session-1",
+        mode: "host-authoritative",
+        authorityPeerId: "host"
+      }),
+      readInput,
+      inputSequence: (input) => input.sequence,
+      inputDelivery: {
+        mode: "redundant-bundle",
+        maxGapTicks: 0,
+        gapPolicy: "hold-last"
+      },
+      maxInputsPerSourcePerTick: 1,
+      handleInput({ message, payload }) {
+        processed.push({ frameSequence: message.sequence, payloadSequence: payload.sequence });
+      },
+      captureSnapshot: ({ tick }) => ({ tick })
+    });
+
+    fake.emit(
+      messageFrom(
+        "client-a",
+        MULTIPLAYER_INPUT_KIND,
+        createMultiplayerFixedStepInputBundle([
+          { sequence: 1, payload: { sequence: 1, dx: 1 } },
+          { sequence: 3, payload: { sequence: 3, dx: 1 } }
+        ])
+      )
+    );
+    loop.tick(1000 / 60);
+    loop.tick(1000 / 60);
+    loop.tick(1000 / 60);
+
+    expect(processed).toEqual([
+      { frameSequence: 1, payloadSequence: 1 },
+      { frameSequence: 2, payloadSequence: 1 },
+      { frameSequence: 3, payloadSequence: 3 }
+    ]);
+    expect(loop.diagnostics()).toMatchObject({
+      acceptedInputs: 3,
+      rejectedInputs: 0,
+      fixedStepInput: { gapFills: 1, consumedFrames: 3 }
+    });
+    loop.dispose();
+  });
+
   it("coalesces queued input state to the latest sequence per source", async () => {
     const fake = createFakeBackend();
     const runtime = createMultiplayerRuntime({

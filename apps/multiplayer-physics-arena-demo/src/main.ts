@@ -73,7 +73,10 @@ async function boot(rootElement: HTMLElement): Promise<void> {
         displayName: ui.nameInput.value,
         intent,
         physicsBackend,
-        readInput: input.sample
+        readInput: input.sample,
+        onEffect(event) {
+          ui.pushLog(`${event.kind.toUpperCase()} · ${event.phase.toUpperCase()}`);
+        }
       });
       ui.setConnection("online", `AUTHORITY LINKED · ${session.peerId}`);
       ui.disconnectButton.disabled = false;

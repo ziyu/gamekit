@@ -19,6 +19,10 @@ import { createKootaWorld } from "@gamekit/world-koota";
 
 import { ARENA_ENVIRONMENT, createArenaDefinitionMap } from "../shared/arena-definition";
 import {
+  createArenaClientEffectController,
+  type ArenaEffectPresentationEvent
+} from "./arena-effects";
+import {
   ARENA_BROWSER_CONFIG_PATH,
   ARENA_DEFINITION_VERSION,
   ARENA_FIXED_STEP_MS,
@@ -78,6 +82,7 @@ export async function createArenaClientSession(options: {
   intent: ArenaSessionIntent;
   physicsBackend: PhysicsBackendAdapter;
   readInput(): ArenaClientInput;
+  onEffect?(event: ArenaEffectPresentationEvent): void;
 }): Promise<ArenaClientSession> {
   const peerId = createPeerId();
   const backend = createColyseusMultiplayerBackend({
@@ -131,6 +136,7 @@ export async function createArenaClientSession(options: {
   const definitions = createArenaDefinitionMap();
   let latestSnapshot: ArenaSnapshot | undefined;
   let replication: MultiplayerClientReplicationView<ArenaSnapshot, ArenaControlState> | undefined;
+  const effects = createArenaClientEffectController(1, options.onEffect);
 
   let readPredictedBody: (memberId: string) => PhysicsBodyState | undefined = () => undefined;
   const arena = createStandardMultiplayerPhysicsArenaPrediction<
@@ -171,13 +177,21 @@ export async function createArenaClientSession(options: {
     resolveMemberDefinition(member) {
       return definitions.get(member.id);
     },
-    mapInput({ input, snapshot, predictionTick }) {
+    mapInput({ input, snapshot, predictionFrame, predictionTick }) {
       const memberId = snapshot.playerIdsByPeerId[peerId];
       if (!memberId || snapshot.eliminatedMemberIds.includes(memberId)) return [];
       const body = readPredictedBody(memberId);
       const length = Math.hypot(input.moveX, input.moveZ);
       const scale = length > 1 ? 1 / length : 1;
       const angle = predictionTick * 0.028;
+      const canJump = input.jump && Math.abs(body?.linearVelocity.y ?? 1) < 0.35;
+      if (canJump) {
+        effects.anticipateJump({
+          memberId,
+          inputSequence: predictionFrame.sequence,
+          predictionTick
+        });
+      }
       return [
         {
           type: "patch" as const,
@@ -185,10 +199,7 @@ export async function createArenaClientSession(options: {
           patch: {
             linearVelocity: {
               x: input.moveX * scale * 6.4,
-              y:
-                input.jump && Math.abs(body?.linearVelocity.y ?? 1) < 0.35
-                  ? 7.2
-                  : (body?.linearVelocity.y ?? 0),
+              y: canJump ? 7.2 : (body?.linearVelocity.y ?? 0),
               z: input.moveZ * scale * 6.4
             }
           }
@@ -219,6 +230,9 @@ export async function createArenaClientSession(options: {
           }
         }
       ];
+    },
+    onContacts(contacts) {
+      effects.anticipateContacts(contacts, latestSnapshot?.playerIdsByPeerId[peerId]);
     }
   });
   readPredictedBody = (memberId) => arena.body(memberId);
@@ -269,6 +283,7 @@ export async function createArenaClientSession(options: {
       },
       applyAuthoritative({ snapshot }) {
         latestSnapshot = snapshot;
+        effects.reconcile(snapshot, peerId);
       },
       prediction: {
         inputKind: ARENA_INPUT_KIND,
@@ -355,11 +370,13 @@ export async function createArenaClientSession(options: {
           historyBytes: arenaDiagnostics.island?.historyBytes ?? 0,
           maxCheckpointBytes: arenaDiagnostics.island?.maxCheckpointBytesObserved ?? 0,
           replayBudgetOverflows: arenaDiagnostics.island?.replayBudgetOverflows ?? 0
-        }
+        },
+        effects: effects.diagnostics()
       };
     },
     async dispose() {
       game.dispose();
+      effects.dispose();
       binding.close("Knockout client disposed");
       await runtime.dispose();
     }

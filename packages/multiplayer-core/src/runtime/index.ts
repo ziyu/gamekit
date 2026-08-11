@@ -9,6 +9,7 @@ export * from "./client-replication";
 export * from "./conformance";
 export * from "./errors";
 export * from "./fixed-step-input";
+export * from "./network-condition-simulator";
 export * from "./peer-player-binding";
 export * from "./participant-policy";
 export * from "./predicted-spawn";

@@ -11,6 +11,7 @@ import {
   type PhysicsBackendAdapter,
   type PhysicsPredictionIsland,
   type PhysicsPredictionIslandCommand,
+  type PhysicsPredictionIslandContact,
   type PhysicsPredictionIslandMemberDefinition,
   type PhysicsVector
 } from "@gamekit/physics-core";
@@ -34,7 +35,11 @@ import {
   type ArenaMatchPhase,
   type ArenaMoveInput
 } from "../shared/config";
-import { readArenaMoveInput, type ArenaSnapshot } from "../shared/protocol";
+import {
+  readArenaMoveInput,
+  type ArenaAuthorityEffectCue,
+  type ArenaSnapshot
+} from "../shared/protocol";
 
 export type ArenaAuthorityRuntimeSnapshot = {
   phase: ArenaMatchPhase;
@@ -66,6 +71,8 @@ const ROUND_DURATION_MS = 120_000;
 const RESULTS_DURATION_MS = 5_000;
 const MOVE_SPEED = 6.4;
 const JUMP_SPEED = 7.2;
+const AUTHORITY_EFFECT_RETENTION_TICKS = 60;
+const MAX_AUTHORITY_EFFECTS = 128;
 
 export function createArenaAuthorityRuntime(
   options: CreateArenaAuthorityRuntimeOptions
@@ -103,6 +110,7 @@ export function createArenaAuthorityRuntime(
   const inputsByPeerId = new Map<string, ArenaMoveInput>();
   const inputAcksByPeerId = new Map<string, number>();
   const eliminatedMemberIds = new Set<string>();
+  const authorityEffects = new Map<string, ArenaAuthorityEffectCue>();
   let phase: ArenaMatchPhase = "lobby";
   let round = 1;
   let countdownMs = COUNTDOWN_MS;
@@ -154,7 +162,7 @@ export function createArenaAuthorityRuntime(
         };
       }
       inputsByPeerId.set(message.sourcePeerId, payload);
-      inputAcksByPeerId.set(message.sourcePeerId, payload.sequence);
+      inputAcksByPeerId.set(message.sourcePeerId, message.sequence ?? payload.sequence);
       return { allowed: true };
     },
     tick({ tick, deltaMs }) {
@@ -212,6 +220,7 @@ export function createArenaAuthorityRuntime(
       inputsByPeerId.clear();
       inputAcksByPeerId.clear();
       eliminatedMemberIds.clear();
+      authorityEffects.clear();
     }
   };
 
@@ -300,6 +309,7 @@ export function createArenaAuthorityRuntime(
 
   function resetRound(): void {
     eliminatedMemberIds.clear();
+    authorityEffects.clear();
     winnerId = undefined;
     countdownMs = COUNTDOWN_MS;
     roundTimeMs = 0;
@@ -347,7 +357,38 @@ export function createArenaAuthorityRuntime(
     });
 
     for (const command of commands) island.queue(command);
-    island.advanceTo(targetTick);
+    const advanced = island.advanceTo(targetTick);
+    recordAuthorityContacts(advanced.contacts, targetTick);
+  }
+
+  function recordAuthorityContacts(
+    contacts: readonly PhysicsPredictionIslandContact[],
+    currentTick: number
+  ): void {
+    for (const contact of contacts) {
+      if (contact.phase !== "enter") continue;
+      const [colliderA, colliderB] = [contact.colliderA, contact.colliderB].sort();
+      if (colliderA === undefined || colliderB === undefined) continue;
+      const id = `round.${round}:${contact.tick}:${contact.kind}:${colliderA}|${colliderB}`;
+      authorityEffects.set(id, {
+        id,
+        kind: "contact",
+        contactKind: contact.kind,
+        tick: contact.tick,
+        colliderA,
+        colliderB
+      });
+    }
+    for (const [id, effect] of authorityEffects) {
+      if (effect.tick < currentTick - AUTHORITY_EFFECT_RETENTION_TICKS) {
+        authorityEffects.delete(id);
+      }
+    }
+    while (authorityEffects.size > MAX_AUTHORITY_EFFECTS) {
+      const oldest = authorityEffects.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      authorityEffects.delete(oldest);
+    }
   }
 
   function queueActorMotion(
@@ -408,6 +449,9 @@ export function createArenaAuthorityRuntime(
       ),
       inputAcksByPeerId: Object.fromEntries(inputAcksByPeerId),
       eliminatedMemberIds: [...eliminatedMemberIds].sort(),
+      effects: [...authorityEffects.values()].sort(
+        (left, right) => left.tick - right.tick || left.id.localeCompare(right.id)
+      ),
       serverTime: now(),
       authority: {
         receivedInputBundles: diagnostics?.receivedInputs ?? 0,

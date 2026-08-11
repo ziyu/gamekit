@@ -358,6 +358,9 @@ importers:
         specifier: ^0.181.2
         version: 0.181.2
     devDependencies:
+      '@gamekit/multiplayer-memory':
+        specifier: workspace:*
+        version: link:../../packages/multiplayer-memory
       '@gamekit/test-utils':
         specifier: workspace:*
         version: link:../../packages/test-utils

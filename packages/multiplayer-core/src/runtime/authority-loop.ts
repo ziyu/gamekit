@@ -39,6 +39,7 @@ type QueuedAction<TAction> = QueuedPayload<TAction> & {
 
 type QueuedInput<TInput> = QueuedPayload<TInput> & {
   sourceKey: string;
+  fixedStepSequence?: number | undefined;
 };
 
 export type MultiplayerAuthorityInputQueueMode = "fifo" | "latest";
@@ -305,7 +306,11 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
     enqueueDecodedInput(message, payload);
   }
 
-  function enqueueDecodedInput(message: MultiplayerMessageEnvelope, payload: TInput): void {
+  function enqueueDecodedInput(
+    message: MultiplayerMessageEnvelope,
+    payload: TInput,
+    fixedStepSequence?: number
+  ): void {
     const sourceKey = options.inputSequenceKey?.(payload, message) ?? message.sourcePeerId;
     const queuedLatest = latestQueuedInputBySource.get(sourceKey);
     if (inputQueueMode === "latest" && queuedLatest !== undefined) {
@@ -329,7 +334,12 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       return;
     }
 
-    const entry = { message, payload, sourceKey };
+    const entry = {
+      message,
+      payload,
+      sourceKey,
+      ...(fixedStepSequence === undefined ? {} : { fixedStepSequence })
+    };
     if (!inputQueue.enqueue(entry)) {
       rejectMessage(message, "input-queue-full", "Input queue is full for this room.");
       diagnostics.rejectedInputs += 1;
@@ -382,7 +392,11 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
   }
 
   function processInput(entry: QueuedInput<TInput>): void {
-    const sequenceDecision = acceptsInputSequence(entry.payload, entry.message);
+    const sequenceDecision = acceptsInputSequence(
+      entry.payload,
+      entry.message,
+      entry.fixedStepSequence
+    );
     if (!sequenceDecision.allowed) {
       rejectMessage(entry.message, sequenceDecision.code, sequenceDecision.reason);
       diagnostics.rejectedInputs += 1;
@@ -456,10 +470,11 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
         const message: MultiplayerMessageEnvelope = {
           ...source.message,
           payload: result.frame.payload,
+          sequence: result.frame.sequence,
           ...(result.frame.tick === undefined ? {} : { tick: result.frame.tick }),
           ...(result.frame.timestamp === undefined ? {} : { timestamp: result.frame.timestamp })
         };
-        enqueueDecodedInput(message, result.frame.payload);
+        enqueueDecodedInput(message, result.frame.payload, result.frame.sequence);
       }
     }
   }
@@ -515,9 +530,10 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
 
   function acceptsInputSequence(
     input: TInput,
-    message: MultiplayerMessageEnvelope
+    message: MultiplayerMessageEnvelope,
+    fixedStepSequence?: number
   ): MultiplayerAuthorityDecision {
-    const sequence = options.inputSequence?.(input, message);
+    const sequence = fixedStepSequence ?? options.inputSequence?.(input, message);
     if (sequence === undefined) {
       return { allowed: true };
     }

@@ -452,11 +452,16 @@ definition version 不一致或 history/byte/replay 预算溢出时必须安装�
 island 与通用 World/Physics rollback contributor 不得重复捕获同一 solver state。具体决策见
 `docs/adr/0049-standard-multiplayer-physics-arena-prediction.md`。
 
+`@gamekit/multiplayer-core` 还提供可包裹任意 backend 的确定性 network-condition simulator，使用手动虚拟时钟、固定
+seed、选择性 message predicate 和有界 delivery queue 注入 latency、jitter、loss 与 duplicate。它只改变消息 delivery，
+不拥有第二套 session、authority 或 prediction clock；真实 provider 行为仍由 adapter integration/e2e 验证。具体决策见
+`docs/adr/0050-deterministic-multiplayer-network-condition-simulator.md`。
+
 Server-authoritative Room 可以持有 headless App Host、GameRuntime、World、Physics 和 replication lifecycle；browser creator 只拥有 app-defined party leader 权限，不成为 authority clock owner。复杂 provider-native state sync 的字段级 Schema 与 mapping 留在 app provider boundary，backend package 只提供通用 typed hook、source/version/resync gate 和 redacted diagnostics。Room-owned 与 host-authoritative 模式共享 authority contract，但不能共享 host-leave-close policy。
 
 Room-side backend bridge 可以把已经由 provider Room 拥有的 session 映射成 `MultiplayerBackendAdapter/Connection`，再统一交给 `multiplayer-core` 的 `createMultiplayerRuntime()` 暴露 server-side facade；它不能手写第二套 MultiplayerRuntime/session 状态机。Bridge 还可以组合单一 simulation interval、peer/client active index、envelope ingress/egress 与 app-provided runtime lifecycle，但不能替 app 创建 gameplay Room、解析 participant 权限或持有字段级 Schema；server facade 也不能通过自连 Room 再创建第二条 provider connection/tick lifecycle。具体决策见 `docs/adr/0025-colyseus-room-owned-runtime-bridge.md`。
 
-详细设计见 `docs/modules/multiplayer.md`，决策背景见 `docs/adr/0010-multiplayer-core-and-backend-adapters.md`、`docs/adr/0012-mature-multiplayer-backend-adapter.md`、`docs/adr/0013-standard-authoritative-replication-boundary.md`、`docs/adr/0016-room-owned-server-authority-lifecycle.md`、`docs/adr/0017-app-owned-colyseus-field-schema-boundary.md`、`docs/adr/0028-managed-client-replication-runtime.md`、`docs/adr/0047-selective-network-prediction-and-projectile-strategies.md` 和 `docs/adr/0049-standard-multiplayer-physics-arena-prediction.md`。
+详细设计见 `docs/modules/multiplayer.md`，决策背景见 `docs/adr/0010-multiplayer-core-and-backend-adapters.md`、`docs/adr/0012-mature-multiplayer-backend-adapter.md`、`docs/adr/0013-standard-authoritative-replication-boundary.md`、`docs/adr/0016-room-owned-server-authority-lifecycle.md`、`docs/adr/0017-app-owned-colyseus-field-schema-boundary.md`、`docs/adr/0028-managed-client-replication-runtime.md`、`docs/adr/0047-selective-network-prediction-and-projectile-strategies.md`、`docs/adr/0049-standard-multiplayer-physics-arena-prediction.md` 和 `docs/adr/0050-deterministic-multiplayer-network-condition-simulator.md`。
 
 ## 包内架构约定
 
