@@ -22,6 +22,21 @@ Arena authority composition 按 `peer reconcile → elimination facts → direct
 的固定顺序执行 action。进入 running 的同一 tick 不评估 stage completion，必须先完成 lobby→active 转换，避免空 active set 被误判为
 全员淘汰。三个 owner 都声明容量、reset/dispose 与 diagnostics；trace 只保留有界语义转换，不记录每 tick 全量 roster。
 
+Ranking Policy 是第四个纯规则边界。它一次消费当前 stage 的 authority fact snapshot，不持有 Physics、Registry 或 Director：
+
+- qualifier key 为 eligible、finished、checkpoint、route progress、progress tick、participant id。
+- brawl key 为 eligible、active、objective、KO、assist、instability、center distance、participant id。
+- final key 为 eligible、active、elimination tick、instability、KO、center distance、participant id。
+
+每次 settlement 生成稳定 `settlementId`、`placementId`、qualified/eliminated 集合和可解释 ranking key；deadline 结算显式记录
+`timeout-tiebreak`。已经由 kill volume 淘汰的 participant 在排序前即失去 eligible，不会因旧 progress 重新晋级。Authority 只缓存每名
+participant 一条有界空间摘要，淘汰/成员移除后仍可用最后一条 authority fact 结算。
+
+Impact Ledger 与排名分离：它按 hit ticket 去重并保留有界 authority-confirmed impact，按 elimination id 原子生成一次 KO/assist
+attribution。KO 使用 knockout window 内最后一个超过 threshold 的敌对 source；assist 从 assist window 中按最近、impulse、source id
+稳定选择不同 source。没有有效 source 时必须记录 environment，不能为了积分伪造攻击者。Combat 尚未提交 impact 的阶段，ledger 仍正常
+产出 environment attribution；后续 Combat 集成只写 ledger，不改 ranking comparator。
+
 ## 身份与实例
 
 比赛相关 identity 必须区分：

@@ -19,12 +19,18 @@ import {
 
 import { compileArenaContent, createArenaDataRegistry } from "../content/registry";
 import { createArenaMatchDirector, type ArenaMatchDirectorSnapshot } from "../match/match-director";
+import { createArenaImpactLedger, type ArenaImpactLedgerDiagnostics } from "../match/impact-ledger";
 import {
   createArenaParticipantRegistry,
   type ArenaParticipantRegistry,
   type ArenaParticipantRegistryDiagnostics
 } from "../match/participant-registry";
 import { createArenaStageRule } from "../match/stage-rule";
+import {
+  settleArenaStageRanking,
+  type ArenaStageRankingFact,
+  type ArenaStageSettlement
+} from "../match/ranking-policy";
 import {
   ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
   createArenaCharacterIntent,
@@ -66,6 +72,8 @@ export type ArenaAuthorityRuntimeSnapshot = {
   physics: ReturnType<PhysicsPredictionIsland["diagnostics"]>;
   match: ArenaMatchDirectorSnapshot;
   participants: ArenaParticipantRegistryDiagnostics;
+  impacts: ArenaImpactLedgerDiagnostics;
+  settlement?: ArenaStageSettlement | undefined;
 };
 
 export type ArenaAuthorityRuntime = {
@@ -105,6 +113,15 @@ export function createArenaAuthorityRuntime(
     resultsTicks: Math.ceil(RESULTS_DURATION_MS / ARENA_FIXED_STEP_MS),
     traceCapacity: 128
   });
+  const impactLedger = createArenaImpactLedger({
+    entryCapacity: 256,
+    attributionCapacity: 64,
+    retentionTicks: 600,
+    knockoutWindowTicks: 240,
+    assistWindowTicks: 360,
+    impulseThreshold: 1,
+    maxAssists: 3
+  });
   const characterMotor = createArenaCharacterMotorContributor();
   const island = createPhysicsPredictionIsland({
     backend: options.backend,
@@ -138,7 +155,12 @@ export function createArenaAuthorityRuntime(
   const inputAcksByPeerId = new Map<string, number>();
   const actorControlsByMemberId = new Map<string, ArenaActorControlFrame>();
   const authorityEffects = new Map<string, ArenaAuthorityEffectCue>();
+  const rankingSpatialFacts = new Map<
+    string,
+    { progress: number; progressTick: number; centerDistance: number }
+  >();
   let membershipRevision = 1;
+  let latestSettlement: ArenaStageSettlement | undefined;
   let latestPayloadBytes = 0;
   let disposed = false;
   const binding = createMultiplayerAuthorityBindingStore({
@@ -234,7 +256,9 @@ export function createArenaAuthorityRuntime(
         input: diagnostics,
         physics: island.diagnostics(),
         match,
-        participants: participants.diagnostics()
+        participants: participants.diagnostics(),
+        impacts: impactLedger.diagnostics(),
+        ...(latestSettlement === undefined ? {} : { settlement: structuredClone(latestSettlement) })
       };
     },
     latestSnapshot() {
@@ -248,10 +272,12 @@ export function createArenaAuthorityRuntime(
       island.dispose();
       director.dispose();
       participants.dispose();
+      impactLedger.dispose();
       inputsByPeerId.clear();
       inputAcksByPeerId.clear();
       actorControlsByMemberId.clear();
       authorityEffects.clear();
+      rankingSpatialFacts.clear();
     }
   };
 
@@ -299,7 +325,10 @@ export function createArenaAuthorityRuntime(
   }
 
   function advanceMatch(authorityTick: number): void {
-    if (director.snapshot().phase === "running") detectEliminations(authorityTick);
+    if (director.snapshot().phase === "running") {
+      updateRankingSpatialFacts(authorityTick);
+      detectEliminations(authorityTick);
+    }
     const entrantParticipantIds = participants
       .list()
       .filter((participant) => participant.actorMemberId !== undefined)
@@ -314,12 +343,15 @@ export function createArenaAuthorityRuntime(
       if (action.type === "stage-started") {
         activateStageParticipants(authorityTick, action.stageInstanceId);
       } else if (action.type === "stage-completed") {
-        settleStageParticipants(authorityTick, action.winnerParticipantId);
+        settleStageParticipants(authorityTick, action.reason, action.winnerParticipantId);
       } else {
         resetArenaRoundPhysics(island, action.round);
         participants.resetForMatch(authorityTick);
         membershipRevision += 1;
         authorityEffects.clear();
+        rankingSpatialFacts.clear();
+        impactLedger.reset();
+        latestSettlement = undefined;
       }
     }
   }
@@ -348,21 +380,91 @@ export function createArenaAuthorityRuntime(
 
   function settleStageParticipants(
     authorityTick: number,
+    completionReason: string,
     winnerParticipantId: string | undefined
   ): void {
-    if (winnerParticipantId === undefined) return;
+    const stage = content.stages[0]!.definition;
     const stageInstanceId = director.snapshot().stageInstanceId;
-    for (const participant of participants.list()) {
-      if (participant.status !== "active" && participant.status !== "qualified") continue;
-      participants.transition(
-        participant.id,
-        participant.id === winnerParticipantId ? "finished" : "eliminated",
-        {
-          reason: participant.id === winnerParticipantId ? "stage-finished" : "stage-eliminated",
-          tick: authorityTick,
-          stageInstanceId
-        }
-      );
+    const settlement = settleArenaStageRanking({
+      stageInstanceId,
+      stageKind: stage.kind,
+      qualificationCount: stage.qualificationCount,
+      completionReason,
+      facts: createRankingFacts(authorityTick)
+    });
+    if (
+      winnerParticipantId !== undefined &&
+      settlement.winnerParticipantId !== winnerParticipantId
+    ) {
+      throw new Error("Arena director winner disagrees with deterministic ranking");
+    }
+    let eliminated = 0;
+    for (const placement of settlement.placements) {
+      const participant = participants.participant(placement.participantId);
+      if (participant === undefined) continue;
+      const to = placement.outcome === "winner" ? "finished" : placement.outcome;
+      const result = participants.transition(participant.id, to, {
+        reason:
+          placement.outcome === "winner"
+            ? "stage-finished"
+            : placement.outcome === "qualified"
+              ? "stage-qualified"
+              : "stage-eliminated",
+        tick: authorityTick,
+        stageInstanceId
+      });
+      if (to === "eliminated" && result.status === "applied") eliminated += 1;
+    }
+    if (eliminated > 0) membershipRevision += 1;
+    latestSettlement = settlement;
+  }
+
+  function createRankingFacts(authorityTick: number): ArenaStageRankingFact[] {
+    const attributions = impactLedger.attributions();
+    const activeIds = new Set(participants.competitiveParticipantIds());
+    return participants
+      .list()
+      .filter((participant) => participant.actorMemberId !== undefined)
+      .map((participant) => {
+        const spatial = rankingSpatialFacts.get(participant.id) ?? {
+          progress: -1_000_000,
+          progressTick: authorityTick,
+          centerDistance: 1_000_000
+        };
+        return {
+          participantId: participant.id,
+          eligible: participant.status !== "eliminated",
+          active: activeIds.has(participant.id),
+          finished: participant.status === "finished",
+          checkpointCount: 0,
+          progress: spatial.progress,
+          progressTick: spatial.progressTick,
+          objectiveScore: 0,
+          knockoutCredits: attributions.filter(
+            (entry) => entry.knockoutParticipantId === participant.id
+          ).length,
+          assistCredits: attributions.filter((entry) =>
+            entry.assistParticipantIds.includes(participant.id)
+          ).length,
+          instability: 0,
+          centerDistance: spatial.centerDistance,
+          ...(participant.status === "eliminated"
+            ? { eliminationTick: participant.statusChangedAtTick }
+            : {})
+        };
+      });
+  }
+
+  function updateRankingSpatialFacts(authorityTick: number): void {
+    for (const member of island.state().members) {
+      if (!isArenaActor(member.id)) continue;
+      const participant = participants.byActorMemberId(member.id);
+      if (participant === undefined) continue;
+      rankingSpatialFacts.set(participant.id, {
+        progress: -(member.body.position.z ?? 0),
+        progressTick: authorityTick,
+        centerDistance: Math.hypot(member.body.position.x, member.body.position.z ?? 0)
+      });
     }
   }
 
@@ -377,7 +479,14 @@ export function createArenaAuthorityRuntime(
         tick: authorityTick,
         stageInstanceId: director.snapshot().stageInstanceId
       });
-      if (result.status === "applied") membershipChanged = true;
+      if (result.status === "applied") {
+        membershipChanged = true;
+        impactLedger.attribute({
+          eliminationId: `${director.snapshot().stageInstanceId}:elimination:${participant.id}`,
+          targetParticipantId: participant.id,
+          tick: authorityTick
+        });
+      }
     }
     if (membershipChanged) membershipRevision += 1;
   }
