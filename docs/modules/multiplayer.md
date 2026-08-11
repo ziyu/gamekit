@@ -437,6 +437,13 @@ prediction domain、membership revision、hard correction、可选 rollback cont
 从显式 membership source 生成 `islandId + generation + tick + membershipRevision + definitionVersion + members`，但 input
 ack、round/player state 和 provider wire serializer 仍由 app replication schema 拥有。
 
+标准 arena 接入面固定为三段：authority loop 声明 `inputDelivery: { mode: "redundant-bundle" }` 并在 fixed tick 中消费
+typed gameplay input；authority projection 把显式完整 membership 投影进 app snapshot；client 创建一次 Arena prediction
+descriptor，并把它和 replication schema 一起交给 Multiplayer GameModule。新游戏仍需定义共享 body/collider/layout、
+input-to-command mapping、round/score 规则和最终 presentation writer，但不实现 resend/de-dup、binding lifecycle、ack prune、
+checkpoint/history、reconcile/replay、hard correction 或 dispose 调度。普通单主体游戏继续使用 managed state transition 或
+Physics body transition；只有确实存在多人/机关/动态道具因果接触时才升级到完整 arena island。
+
 Arena membership 是相互作用对象的完整因果闭包，不等同于 renderer interest set。Authority 必须发布完整 revision；
 客户端不能根据距离静默猜测。成员或 definition 变化、history/byte/replay work 溢出时安装完整 baseline 或降级
 authority-only。单个完整 arena island 是标准正确性基线；partition/merge/split 只能作为 authority-declared 可选 policy。

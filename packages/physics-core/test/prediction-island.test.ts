@@ -225,4 +225,124 @@ describe("Physics prediction island", () => {
     });
     island.dispose();
   });
+
+  it("enforces replay work and retained history byte budgets", () => {
+    const probe = createPhysicsPredictionIsland({
+      backend: createMemoryPhysicsBackend(),
+      generation: "budget-probe",
+      initialMembers: [TARGET_MEMBER]
+    });
+    const checkpointBytes = probe.diagnostics().maxCheckpointBytesObserved;
+    probe.dispose();
+
+    const island = createPhysicsPredictionIsland({
+      backend: createMemoryPhysicsBackend(),
+      generation: "budgeted",
+      initialMembers: [TARGET_MEMBER],
+      maxHistoryTicks: 32,
+      maxCheckpointBytes: checkpointBytes * 2,
+      maxHistoryBytes: checkpointBytes * 3,
+      maxReplayTicksPerOperation: 2
+    });
+    island.advanceTo(6);
+    expect(island.diagnostics().historyBytes).toBeLessThanOrEqual(checkpointBytes * 3);
+    expect(island.diagnostics().historyByteEvictions).toBeGreaterThan(0);
+    expect(
+      island.queue({
+        type: "patch",
+        tick: 4,
+        sequence: 1,
+        memberId: "target",
+        patch: { linearVelocity: { x: 1, y: 0 } }
+      }).status
+    ).toBe("history-overflow");
+    island.dispose();
+
+    const replayIsland = createPhysicsPredictionIsland({
+      backend: createMemoryPhysicsBackend(),
+      generation: "budgeted",
+      initialMembers: [TARGET_MEMBER],
+      maxHistoryTicks: 16,
+      maxCheckpointBytes: checkpointBytes * 2,
+      maxHistoryBytes: checkpointBytes * 20,
+      maxReplayTicksPerOperation: 2
+    });
+    replayIsland.advanceTo(6);
+    expect(
+      replayIsland.queue({
+        type: "patch",
+        tick: 4,
+        sequence: 1,
+        memberId: "target",
+        patch: { linearVelocity: { x: 1, y: 0 } }
+      }).status
+    ).toBe("replay-budget");
+    const authority = createPhysicsPredictionIsland({
+      backend: createMemoryPhysicsBackend(),
+      generation: "budgeted",
+      initialMembers: [TARGET_MEMBER]
+    });
+    authority.advanceTo(3);
+    expect(replayIsland.reconcile(authority.state()).status).toBe("replay-budget");
+    expect(replayIsland.diagnostics().replayBudgetOverflows).toBe(2);
+    replayIsland.dispose();
+    authority.dispose();
+  });
+
+  it("rejects an oversized hard-correction checkpoint without replacing the live baseline", () => {
+    const probe = createPhysicsPredictionIsland({
+      backend: createMemoryPhysicsBackend(),
+      generation: 1,
+      initialMembers: [TARGET_MEMBER]
+    });
+    const checkpointBytes = probe.diagnostics().maxCheckpointBytesObserved;
+    probe.dispose();
+    const island = createPhysicsPredictionIsland({
+      backend: createMemoryPhysicsBackend(),
+      generation: 1,
+      initialMembers: [TARGET_MEMBER],
+      maxCheckpointBytes: checkpointBytes + 256,
+      maxHistoryBytes: checkpointBytes * 4,
+      maxMembers: 4
+    });
+    const oversized: PhysicsPredictionIslandMemberDefinition = {
+      id: "oversized",
+      body: {
+        id: "oversized.body",
+        kind: "dynamic",
+        position: { x: 1, y: 1 },
+        userData: { payload: "x".repeat(8_192) }
+      }
+    };
+    const before = island.state();
+    expect(
+      island.hardCorrect(
+        {
+          generation: 2,
+          tick: 10,
+          members: [
+            before.members[0]!,
+            {
+              id: "oversized",
+              body: {
+                id: "oversized.body",
+                kind: "dynamic",
+                position: { x: 1, y: 1 },
+                linearVelocity: { x: 0, y: 0 },
+                sleeping: false,
+                userData: { payload: "x".repeat(8_192) }
+              }
+            }
+          ]
+        },
+        [oversized]
+      ).status
+    ).toBe("checkpoint-budget");
+    expect(island.state()).toEqual(before);
+    expect(island.diagnostics()).toMatchObject({
+      hardCorrectionFailures: 1,
+      checkpointByteOverflows: 1
+    });
+    island.dispose();
+  });
 });

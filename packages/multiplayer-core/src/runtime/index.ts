@@ -8,6 +8,7 @@ export * from "./bridge";
 export * from "./client-replication";
 export * from "./conformance";
 export * from "./errors";
+export * from "./fixed-step-input";
 export * from "./peer-player-binding";
 export * from "./participant-policy";
 export * from "./predicted-spawn";

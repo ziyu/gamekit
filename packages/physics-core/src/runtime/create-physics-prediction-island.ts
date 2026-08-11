@@ -68,7 +68,14 @@ export type PhysicsPredictionIslandAdvanceResult = {
 };
 
 export type PhysicsPredictionIslandQueueResult = {
-  status: "queued" | "replayed" | "duplicate" | "conflict" | "history-overflow" | "capacity";
+  status:
+    | "queued"
+    | "replayed"
+    | "duplicate"
+    | "conflict"
+    | "history-overflow"
+    | "replay-budget"
+    | "capacity";
   replayedTicks: number;
   contacts: PhysicsPredictionIslandContact[];
 };
@@ -79,13 +86,19 @@ export type PhysicsPredictionIslandReconcileResult = {
     | "corrected"
     | "membership-mismatch"
     | "history-overflow"
+    | "replay-budget"
     | "stale-generation";
   correctionMagnitude: number;
   replayedTicks: number;
 };
 
 export type PhysicsPredictionIslandHardCorrectResult = {
-  status: "corrected" | "member-definition-missing" | "member-capacity" | "invalid-snapshot";
+  status:
+    | "corrected"
+    | "member-definition-missing"
+    | "member-capacity"
+    | "checkpoint-budget"
+    | "invalid-snapshot";
   correctedMembers: number;
   missingMemberIds: string[];
 };
@@ -116,6 +129,10 @@ export type PhysicsPredictionIslandDiagnostics = {
   maxCorrectionMagnitude: number;
   hardCorrections: number;
   hardCorrectionFailures: number;
+  checkpointByteOverflows: number;
+  historyByteEvictions: number;
+  replayBudgetOverflows: number;
+  maxCheckpointBytesObserved: number;
   disposed: boolean;
 };
 
@@ -128,6 +145,9 @@ export type CreatePhysicsPredictionIslandOptions = {
   initialTick?: number;
   fixedDeltaMs?: number;
   maxHistoryTicks?: number;
+  maxCheckpointBytes?: number;
+  maxHistoryBytes?: number;
+  maxReplayTicksPerOperation?: number;
   maxMembers?: number;
   maxCommands?: number;
 };
@@ -156,6 +176,9 @@ type StoredIslandCheckpoint = {
 
 const DEFAULT_FIXED_DELTA_MS = 1000 / 60;
 const DEFAULT_MAX_HISTORY_TICKS = 128;
+const DEFAULT_MAX_CHECKPOINT_BYTES = 8 * 1024 * 1024;
+const DEFAULT_MAX_HISTORY_BYTES = 64 * 1024 * 1024;
+const DEFAULT_MAX_REPLAY_TICKS_PER_OPERATION = 128;
 const DEFAULT_MAX_MEMBERS = 64;
 const DEFAULT_MAX_COMMANDS = 256;
 
@@ -176,6 +199,15 @@ export function createPhysicsPredictionIsland(
   }
   const fixedDeltaMs = positiveNumber(options.fixedDeltaMs, DEFAULT_FIXED_DELTA_MS);
   const maxHistoryTicks = positiveInteger(options.maxHistoryTicks, DEFAULT_MAX_HISTORY_TICKS);
+  const maxCheckpointBytes = positiveInteger(
+    options.maxCheckpointBytes,
+    DEFAULT_MAX_CHECKPOINT_BYTES
+  );
+  const maxHistoryBytes = positiveInteger(options.maxHistoryBytes, DEFAULT_MAX_HISTORY_BYTES);
+  const maxReplayTicksPerOperation = positiveInteger(
+    options.maxReplayTicksPerOperation,
+    DEFAULT_MAX_REPLAY_TICKS_PER_OPERATION
+  );
   const maxMembers = positiveInteger(options.maxMembers, DEFAULT_MAX_MEMBERS);
   const maxCommands = positiveInteger(options.maxCommands, DEFAULT_MAX_COMMANDS);
   const initialTick = nonNegativeInteger(options.initialTick, 0);
@@ -205,6 +237,7 @@ export function createPhysicsPredictionIsland(
   let generation = options.generation;
   let currentTick = initialTick;
   let commandCount = 0;
+  let historyBytes = 0;
   let disposed = false;
   const metrics: Omit<
     PhysicsPredictionIslandDiagnostics,
@@ -234,7 +267,11 @@ export function createPhysicsPredictionIsland(
     rejectedCommands: 0,
     maxCorrectionMagnitude: 0,
     hardCorrections: 0,
-    hardCorrectionFailures: 0
+    hardCorrectionFailures: 0,
+    checkpointByteOverflows: 0,
+    historyByteEvictions: 0,
+    replayBudgetOverflows: 0,
+    maxCheckpointBytesObserved: 0
   };
 
   try {
@@ -247,7 +284,18 @@ export function createPhysicsPredictionIsland(
     throw error;
   }
   const initialCheckpoint = captureCheckpoint(initialTick);
-  storeCheckpoint(initialCheckpoint);
+  if (!storeCheckpoint(initialCheckpoint)) {
+    scene.dispose();
+    throw new GameError(
+      "physics.prediction_island_initial_checkpoint_budget",
+      "Physics prediction island initial checkpoint exceeds the configured byte budget",
+      {
+        checkpointBytes: initialCheckpoint.scene.byteLength,
+        maxCheckpointBytes,
+        maxHistoryBytes
+      }
+    );
+  }
 
   return {
     queue(command) {
@@ -271,6 +319,12 @@ export function createPhysicsPredictionIsland(
         metrics.historyOverflows += 1;
         metrics.rejectedCommands += 1;
         return { status: "history-overflow", replayedTicks: 0, contacts: [] };
+      }
+      const replayTicks = currentTick - command.tick + 1;
+      if (command.tick <= currentTick && replayTicks > maxReplayTicksPerOperation) {
+        metrics.replayBudgetOverflows += 1;
+        metrics.rejectedCommands += 1;
+        return { status: "replay-budget", replayedTicks: 0, contacts: [] };
       }
       const stored = cloneCommand(command);
       const commands = commandsByTick.get(command.tick) ?? [];
@@ -310,6 +364,12 @@ export function createPhysicsPredictionIsland(
         return { status: "membership-mismatch", correctionMagnitude: 0, replayedTicks: 0 };
       }
       const targetTick = currentTick;
+      const replayTicks = targetTick - snapshot.tick;
+      if (replayTicks > maxReplayTicksPerOperation) {
+        metrics.replayBudgetOverflows += 1;
+        return { status: "replay-budget", correctionMagnitude: 0, replayedTicks: 0 };
+      }
+      const currentCheckpoint = history.get(targetTick);
       restoreCheckpoint(checkpoint);
       let correctionMagnitude = 0;
       for (const authorityMember of snapshot.members) {
@@ -328,8 +388,16 @@ export function createPhysicsPredictionIsland(
         );
         scene.updateBody(definition.body.id, bodyStatePatch(authorityMember.body));
       }
+      const correctedCheckpoint = captureCheckpoint(snapshot.tick);
+      if (!checkpointWithinBudget(correctedCheckpoint)) {
+        if (currentCheckpoint !== undefined) {
+          restoreCheckpoint(currentCheckpoint);
+        }
+        metrics.historyOverflows += 1;
+        return { status: "history-overflow", correctionMagnitude: 0, replayedTicks: 0 };
+      }
       dropHistoryAfter(snapshot.tick - 1);
-      storeCheckpoint(captureCheckpoint(snapshot.tick));
+      storeCheckpoint(correctedCheckpoint);
       metrics.resimulations += 1;
       const replayed = advance(targetTick, true);
       metrics.resimulatedTicks += replayed.steps;
@@ -389,6 +457,7 @@ export function createPhysicsPredictionIsland(
         };
       }
 
+      const previousCheckpoint = captureCheckpoint(currentTick);
       restoreCheckpoint(initialCheckpoint);
       const desiredIds = new Set(snapshot.members.map((member) => member.id));
       for (const [memberId, definition] of members) {
@@ -406,6 +475,16 @@ export function createPhysicsPredictionIsland(
         }
         scene.updateBody(definition.body.id, bodyStatePatch(authorityMember.body));
       }
+      const nextCheckpoint = captureCheckpoint(snapshot.tick);
+      if (!checkpointWithinBudget(nextCheckpoint)) {
+        restoreCheckpoint(previousCheckpoint);
+        metrics.hardCorrectionFailures += 1;
+        return {
+          status: "checkpoint-budget",
+          correctedMembers: 0,
+          missingMemberIds: []
+        };
+      }
       generation = snapshot.generation;
       currentTick = snapshot.tick;
       commandsByTick.clear();
@@ -413,7 +492,8 @@ export function createPhysicsPredictionIsland(
       commandCount = 0;
       history.clear();
       historyOrder.length = 0;
-      storeCheckpoint(captureCheckpoint(currentTick));
+      historyBytes = 0;
+      storeCheckpoint(nextCheckpoint);
       metrics.hardCorrections += 1;
       return {
         status: "corrected",
@@ -454,7 +534,14 @@ export function createPhysicsPredictionIsland(
       commandCount = 0;
       history.clear();
       historyOrder.length = 0;
-      storeCheckpoint(captureCheckpoint(nextTick));
+      historyBytes = 0;
+      if (!storeCheckpoint(captureCheckpoint(nextTick))) {
+        throw new GameError(
+          "physics.prediction_island_reset_checkpoint_budget",
+          "Physics prediction island reset checkpoint exceeds the configured byte budget",
+          { nextTick, maxCheckpointBytes, maxHistoryBytes }
+        );
+      }
     },
     diagnostics() {
       return {
@@ -463,10 +550,7 @@ export function createPhysicsPredictionIsland(
         tick: currentTick,
         members: members.size,
         historyEntries: history.size,
-        historyBytes: historyOrder.reduce(
-          (total, historyTick) => total + (history.get(historyTick)?.scene.byteLength ?? 0),
-          0
-        ),
+        historyBytes,
         commands: commandCount,
         ...metrics,
         disposed
@@ -480,6 +564,7 @@ export function createPhysicsPredictionIsland(
       members.clear();
       history.clear();
       historyOrder.length = 0;
+      historyBytes = 0;
       commandsByTick.clear();
       commandBySequence.clear();
       commandCount = 0;
@@ -530,6 +615,13 @@ export function createPhysicsPredictionIsland(
       );
     }
     const targetTick = currentTick;
+    if (targetTick - fromTick + 1 > maxReplayTicksPerOperation) {
+      throw new GameError(
+        "physics.prediction_island_replay_budget",
+        "Physics prediction island replay exceeds the configured tick budget",
+        { fromTick, targetTick, maxReplayTicksPerOperation }
+      );
+    }
     restoreCheckpoint(checkpoint);
     dropHistoryAfter(fromTick - 1);
     metrics.resimulations += 1;
@@ -609,21 +701,48 @@ export function createPhysicsPredictionIsland(
     };
   }
 
-  function storeCheckpoint(checkpoint: StoredIslandCheckpoint): void {
+  function storeCheckpoint(checkpoint: StoredIslandCheckpoint): boolean {
+    if (!checkpointWithinBudget(checkpoint)) {
+      return false;
+    }
+    const previous = history.get(checkpoint.tick);
+    if (previous !== undefined) {
+      historyBytes -= previous.scene.byteLength;
+    }
     if (!history.has(checkpoint.tick)) {
       historyOrder.push(checkpoint.tick);
     }
     history.set(checkpoint.tick, checkpoint);
-    while (historyOrder.length > maxHistoryTicks + 1) {
+    historyBytes += checkpoint.scene.byteLength;
+    while (historyOrder.length > maxHistoryTicks + 1 || historyBytes > maxHistoryBytes) {
+      const evictedForBytes = historyBytes > maxHistoryBytes;
       const expiredTick = historyOrder.shift();
       if (expiredTick !== undefined) {
-        history.delete(expiredTick);
+        const expired = history.get(expiredTick);
+        if (expired !== undefined) {
+          historyBytes -= expired.scene.byteLength;
+          history.delete(expiredTick);
+          if (evictedForBytes) {
+            metrics.historyByteEvictions += 1;
+          }
+        }
       }
     }
     const earliestTick = historyOrder[0];
     if (earliestTick !== undefined) {
       trimCommandsThrough(earliestTick);
     }
+    return history.has(checkpoint.tick);
+  }
+
+  function checkpointWithinBudget(checkpoint: StoredIslandCheckpoint): boolean {
+    const bytes = checkpoint.scene.byteLength;
+    metrics.maxCheckpointBytesObserved = Math.max(metrics.maxCheckpointBytesObserved, bytes);
+    if (bytes <= maxCheckpointBytes && bytes <= maxHistoryBytes) {
+      return true;
+    }
+    metrics.checkpointByteOverflows += 1;
+    return false;
   }
 
   function restoreCheckpoint(checkpoint: StoredIslandCheckpoint): void {
@@ -643,7 +762,11 @@ export function createPhysicsPredictionIsland(
         continue;
       }
       historyOrder.splice(index, 1);
-      history.delete(historyTick);
+      const checkpoint = history.get(historyTick);
+      if (checkpoint !== undefined) {
+        historyBytes -= checkpoint.scene.byteLength;
+        history.delete(historyTick);
+      }
     }
   }
 

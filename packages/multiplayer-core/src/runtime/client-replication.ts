@@ -4,6 +4,10 @@ import type {
   MultiplayerAuthorityBindingStore
 } from "./authority-types";
 import {
+  createMultiplayerFixedStepInputBundle,
+  type MultiplayerFixedStepInputFrame
+} from "./fixed-step-input";
+import {
   createMultiplayerPredictionBuffer,
   type MultiplayerPredictionBuffer,
   type MultiplayerPredictionBufferOptions,
@@ -81,6 +85,11 @@ export type MultiplayerClientPredictionEncodeContext<TSnapshot, TInput, TInstall
     predictionFrame: MultiplayerPredictionFrame<TInput>;
   };
 
+export type MultiplayerClientPredictionInputDeliveryOptions = {
+  mode: "redundant-bundle";
+  maxFramesPerBundle?: number | undefined;
+};
+
 export type MultiplayerClientPredictionOptions<TSnapshot, TInput, TState, TInstallContext> = {
   buffer: Omit<MultiplayerPredictionBufferOptions<TState, TInput>, "initialState">;
   inputKind?: string;
@@ -89,6 +98,7 @@ export type MultiplayerClientPredictionOptions<TSnapshot, TInput, TState, TInsta
   maxCatchUpSteps?: number;
   maxInFlightSends?: number;
   maxPredictionLeadInputs?: number;
+  inputDelivery?: MultiplayerClientPredictionInputDeliveryOptions | undefined;
   readInput(
     ctx: MultiplayerClientPredictionReadContext<TSnapshot, TInstallContext>
   ): TInput | undefined;
@@ -156,6 +166,9 @@ export type MultiplayerClientReplicationDiagnostics = {
   coalescedInputs: number;
   throttledInputs: number;
   inFlightInputs: number;
+  sentInputBundles: number;
+  redundantInputFrames: number;
+  pendingEncodedInputs: number;
   lastAppliedTick?: number;
   lastAppliedSequence?: number;
   lastRejectedCode?: string;
@@ -243,6 +256,11 @@ export function createMultiplayerClientReplication<
     predictionOptions?.maxPredictionLeadInputs,
     DEFAULT_MAX_PREDICTION_LEAD_INPUTS
   );
+  const redundantInputDelivery = predictionOptions?.inputDelivery?.mode === "redundant-bundle";
+  const maxFramesPerBundle = normalizePositiveInteger(
+    predictionOptions?.inputDelivery?.maxFramesPerBundle,
+    maxPredictionLeadInputs
+  );
   let activeBinding: MultiplayerAuthorityBinding | undefined;
   let activeBindingKey: string | undefined;
   let pendingSnapshot: PendingSnapshot<TSnapshot> | undefined;
@@ -258,6 +276,7 @@ export function createMultiplayerClientReplication<
   let bindingGeneration = 0;
   let lastObservedSourceMessageId: string | undefined;
   let disposed = false;
+  const encodedInputs = new Map<number, MultiplayerFixedStepInputFrame>();
   const diagnostics: Omit<
     MultiplayerClientReplicationDiagnostics,
     "binding" | "playback" | "prediction"
@@ -272,7 +291,10 @@ export function createMultiplayerClientReplication<
     failedInputs: 0,
     coalescedInputs: 0,
     throttledInputs: 0,
-    inFlightInputs: 0
+    inFlightInputs: 0,
+    sentInputBundles: 0,
+    redundantInputFrames: 0,
+    pendingEncodedInputs: 0
   };
 
   const receiveSnapshot = (message: MultiplayerMessageEnvelope): SnapshotReceiveStatus => {
@@ -406,6 +428,7 @@ export function createMultiplayerClientReplication<
       }
     },
     diagnostics() {
+      diagnostics.pendingEncodedInputs = encodedInputs.size;
       return {
         ...(activeBinding === undefined ? {} : { binding: cloneAuthorityBinding(activeBinding) }),
         ...diagnostics,
@@ -494,6 +517,7 @@ export function createMultiplayerClientReplication<
     const acknowledgedSequence =
       predictionOptions.readAcknowledgedSequence?.(context) ??
       options.schema?.readAcknowledgedSequence(context);
+    pruneEncodedInputs(acknowledgedSequence);
     if (acknowledgedSequence !== undefined) {
       nextInputSequence = Math.max(nextInputSequence, acknowledgedSequence);
     }
@@ -529,6 +553,7 @@ export function createMultiplayerClientReplication<
       );
       latestPredictedState = authoritativeState;
       failedPredictionSequence = undefined;
+      clearEncodedInputs();
       return;
     }
     failedPredictionSequence = undefined;
@@ -589,14 +614,13 @@ export function createMultiplayerClientReplication<
         timestamp: frameTimestamp - inputAccumulatorMs
       };
       predictionBuffer.predict(predictionFrame);
-      sendInput(
-        predictionOptions.encodeInput({
-          ...context,
-          input: sampledInput,
-          predictionFrame
-        }),
+      const encodedPayload = predictionOptions.encodeInput({
+        ...context,
+        input: sampledInput,
         predictionFrame
-      );
+      });
+      const outgoingPayload = encodeOutgoingInput(predictionFrame, encodedPayload);
+      sendInput(outgoingPayload.payload, predictionFrame, outgoingPayload.bundledFrames);
     }
     if (steps >= maxCatchUpSteps) {
       inputAccumulatorMs = Math.min(inputAccumulatorMs, inputIntervalMs * maxCatchUpSteps);
@@ -607,7 +631,11 @@ export function createMultiplayerClientReplication<
     });
   }
 
-  function sendInput(payload: unknown, frame: MultiplayerPredictionFrame<TInput>): void {
+  function sendInput(
+    payload: unknown,
+    frame: MultiplayerPredictionFrame<TInput>,
+    bundledFrames: number
+  ): void {
     if (predictionOptions === undefined || activeBinding?.authorityPeerId === undefined) {
       return;
     }
@@ -625,10 +653,14 @@ export function createMultiplayerClientReplication<
       .then(
         () => {
           diagnostics.sentInputs += 1;
+          if (redundantInputDelivery) {
+            diagnostics.sentInputBundles += 1;
+            diagnostics.redundantInputFrames += Math.max(0, bundledFrames - 1);
+          }
         },
         (error) => {
           diagnostics.failedInputs += 1;
-          if (!disposed && bindingGeneration === sendBindingGeneration) {
+          if (!redundantInputDelivery && !disposed && bindingGeneration === sendBindingGeneration) {
             failedPredictionSequence =
               failedPredictionSequence === undefined
                 ? frame.sequence
@@ -700,7 +732,63 @@ export function createMultiplayerClientReplication<
   function disposePredictionBuffer(): void {
     predictionBuffer?.dispose();
     predictionBuffer = undefined;
+    clearEncodedInputs();
   }
+
+  function encodeOutgoingInput(
+    frame: MultiplayerPredictionFrame<TInput>,
+    payload: unknown
+  ): { payload: unknown; bundledFrames: number } {
+    if (!redundantInputDelivery) {
+      return { payload, bundledFrames: 1 };
+    }
+    encodedInputs.set(frame.sequence, {
+      sequence: frame.sequence,
+      payload,
+      ...(frame.tick === undefined ? {} : { tick: frame.tick }),
+      ...(frame.timestamp === undefined ? {} : { timestamp: frame.timestamp })
+    });
+    const frames = selectRedundantFrames(encodedInputs, frame.sequence, maxFramesPerBundle);
+    diagnostics.pendingEncodedInputs = encodedInputs.size;
+    return {
+      payload: createMultiplayerFixedStepInputBundle(frames),
+      bundledFrames: frames.length
+    };
+  }
+
+  function pruneEncodedInputs(acknowledgedSequence: number | undefined): void {
+    if (acknowledgedSequence === undefined || encodedInputs.size === 0) {
+      return;
+    }
+    for (const sequence of encodedInputs.keys()) {
+      if (sequence <= acknowledgedSequence) {
+        encodedInputs.delete(sequence);
+      }
+    }
+    diagnostics.pendingEncodedInputs = encodedInputs.size;
+  }
+
+  function clearEncodedInputs(): void {
+    encodedInputs.clear();
+    diagnostics.pendingEncodedInputs = 0;
+  }
+}
+
+function selectRedundantFrames(
+  pending: ReadonlyMap<number, MultiplayerFixedStepInputFrame>,
+  currentSequence: number,
+  maxFrames: number
+): MultiplayerFixedStepInputFrame[] {
+  const frames = [...pending.values()].sort((left, right) => left.sequence - right.sequence);
+  if (frames.length <= maxFrames) {
+    return frames;
+  }
+  if (maxFrames === 1) {
+    return frames.filter((frame) => frame.sequence === currentSequence).slice(-1);
+  }
+  const oldest = frames.slice(0, maxFrames - 1);
+  const current = frames.find((frame) => frame.sequence === currentSequence);
+  return current === undefined ? oldest : [...oldest, current];
 }
 
 function resolveAuthorityBinding(

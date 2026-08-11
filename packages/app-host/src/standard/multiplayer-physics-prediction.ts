@@ -149,6 +149,7 @@ export function createStandardMultiplayerPhysicsPredictionDomain(
       if (
         !hardCorrectionEnabled ||
         (reconciliation.status !== "history-overflow" &&
+          reconciliation.status !== "replay-budget" &&
           reconciliation.status !== "membership-mismatch" &&
           reconciliation.status !== "stale-generation")
       ) {

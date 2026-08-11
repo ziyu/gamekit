@@ -70,14 +70,14 @@ multiplayer-physics-arena-demo
 | 任务                                                  | 状态     | 主要产物                                                                                          | 验收重点                                                                        |
 | ----------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | P0：长期设计与执行计划                                | Verified | ADR 0049、Architecture、Multiplayer/Physics 模块文档、Demo 设计和本工作流                         | 文档职责清晰；不把阶段状态写入长期模块文档                                      |
-| P1：Input delivery 与 client prediction-domain bridge | Planned  | 可选 redundant input bundle、authority inbox、Multiplayer GameModule descriptor/factory lifecycle | 默认单帧输入保持兼容；binding/reset/input/snapshot/frame/dispose 顺序有契约测试 |
-| P2：Arena frame 与 island 预算                        | Planned  | island id/revision/definition envelope、bytes/replay budgets、校验与 diagnostics                  | 非法/缺失成员不能 replay；所有缓存有硬上限                                      |
-| P3：App Host 标准 Physics Arena adapter               | Planned  | client adapter、authority projection、ownership guard、standard exports                           | app 只提供 typed mapping/policy/writer；默认 reconcile/hard correction 顺序唯一 |
-| P4：Conformance 与 benchmark                          | Planned  | memory backend conformance、Rapier 2D/3D integration、arena benchmark/budget                      | generation/revision/gap/overflow/duplicate/cleanup 和 3D replay 性能均可重复    |
-| P5：Knockout Arena 离线纵切                           | Planned  | 新 app、Three/Rapier3D、赛道、玩家控制、bots、round lifecycle                                     | local authority 复用同一 input/snapshot contract；完整一局可玩                  |
-| P6：Room-owned authority 与复制                       | Planned  | Colyseus Room、headless GameRuntime、typed app schema、arena projection                           | 2 client 读取同一 authority world；逐 step ack，不双写 authority lane           |
-| P7：完整 arena client prediction                      | Planned  | standard adapter 接入、全成员 island、hard correction、presentation writer                        | app 无私有 replay/history/membership loop；动态互动在同一 tick 重演             |
-| P8：效果、诊断与网络矩阵                              | Planned  | effect journal、camera/audio/UI feedback、network presets、DevTools summary                       | replay 不重复效果；高延迟/丢包时有界退化且可解释                                |
+| P1：Input delivery 与 client prediction-domain bridge | Verified | 可选 redundant input bundle、authority inbox、Multiplayer GameModule descriptor/factory lifecycle | 默认单帧输入保持兼容；binding/reset/input/snapshot/frame/dispose 顺序有契约测试 |
+| P2：Arena frame 与 island 预算                        | Verified | island id/revision/definition envelope、bytes/replay budgets、校验与 diagnostics                  | 非法/缺失成员不能 replay；所有缓存有硬上限                                      |
+| P3：App Host 标准 Physics Arena adapter               | Verified | client adapter、authority projection、standard exports                                            | app 只提供 typed mapping/policy/writer；默认 reconcile/hard correction 顺序唯一 |
+| P4：Conformance 与 benchmark                          | Active   | memory backend conformance、Rapier 2D/3D integration、arena benchmark/budget                      | generation/revision/gap/overflow/duplicate/cleanup 和 3D replay 性能均可重复    |
+| P5：Knockout Arena 可玩纵切                           | Verified | 新 app、Three/Rapier3D、赛道、玩家控制、bots、round lifecycle                                     | 浏览器 authority/prediction 复用同一 input/snapshot contract；纵切可玩          |
+| P6：Room-owned authority 与复制                       | Verified | Colyseus Room、headless authority runtime、typed app schema、arena projection                     | 2 client 读取同一 authority world；逐 step ack，不双写 authority lane           |
+| P7：完整 arena client prediction                      | Verified | standard adapter 接入、全成员 island、hard correction、presentation writer                        | app 无私有 replay/history/membership loop；动态互动在同一 tick 重演             |
+| P8：效果、诊断与网络矩阵                              | Active   | effect journal、camera/audio/UI feedback、network presets、DevTools summary                       | replay 不重复效果；高延迟/丢包时有界退化且可解释                                |
 | P9：最终验收与关闭                                    | Planned  | e2e、soak、全仓门禁、文档收口                                                                     | 真实双浏览器和性能预算通过；长期结论迁移后关闭工作流                            |
 
 ## P1：Input delivery 与 client prediction-domain bridge
@@ -212,6 +212,22 @@ corepack pnpm bench:arena-prediction:check
 
 浏览器验证使用两个真实窗口和同一 Colyseus session，检查首屏、输入 scope、完整一局、rematch、network presets、
 diagnostics 和 console error。Headless integration 必须使用真实 Rapier 3D adapter，不只用 memory backend。
+
+## 2026-08-11 可验收纵切证据
+
+- Multiplayer Core 的 authority host loop 已直接消费显式 `redundant-bundle` delivery；app 不拆包、不维护 resend window、
+  duplicate set、gap counter 或 ack history。默认单帧分支保持原行为。Core 聚焦回归为 10 files / 80 tests passed。
+- Physics island 已有 checkpoint bytes、total history bytes 和 per-operation replay tick 预算；App Host Arena adapter 已覆盖
+  baseline install、input command mapping、revision rebuild、replay-budget hard correction、authority payload budget 和 dispose。
+- 新增 `apps/multiplayer-physics-arena-demo`：Room-owned Colyseus authority 以 60 Hz 推进 Rapier3D，20 Hz 发布完整 14-member
+  arena frame；默认成员为 2 个真人 slot、6 个 authority bots、3 个动态道具和 3 个 kinematic 机关。
+- Headless Room 集成测试使用两个真实 Colyseus client，确认双方映射到 `player.0/player.1`、读取同一完整 island，并把冗余
+  input bundle 连续消费到 ack `2/1`；authority 报告 3 accepted、0 rejected，frame payload 大于 1 KiB 且低于预算。
+- 双浏览器 smoke 确认 Create/Join 同一 session、倒计时/运行/结果阶段、Three WebGL 表现、键盘 move/jump、全岛
+  reconcile/resimulation 和 telemetry。观测样本包含 `resimulatedTicks=81`、`replayBudgetOverflows=0`；两个页面无 runtime
+  error，仅有 Rapier compat 上游初始化 API 的 deprecation warning。
+- 该纵切达到“新 Demo 可验收”，但工作流仍保持 Active：P4 的 arena benchmark/retained-memory 门禁以及 P8 的网络故障矩阵、
+  speculative effect journal、完整 rematch/soak 尚未作为成熟框架关闭证据。
 
 ## Review 与关闭规则
 

@@ -7,6 +7,7 @@ import {
   createMultiplayerAuthorityDiagnostics,
   createMultiplayerAuthorityHostLoop,
   createMultiplayerAuthorityReceiver,
+  createMultiplayerFixedStepInputBundle,
   createMultiplayerLocalAuthorityLoop,
   createMultiplayerPeerPlayerBindingStore,
   createMultiplayerParticipantPolicy,
@@ -708,6 +709,92 @@ describe("multiplayer authority helpers", () => {
       tick: 6,
       lastRejected: { code: "input-queue-full" }
     });
+  });
+
+  it("consumes redundant fixed-step bundles once in contiguous authority order", async () => {
+    const fake = createFakeBackend();
+    const runtime = createMultiplayerRuntime({
+      id: "bundled-input-host",
+      backend: fake.backend,
+      clock: () => 200
+    });
+    await runtime.createSession({
+      id: "session-1",
+      authority: "host-authoritative",
+      localPeer: { id: "host", role: "host" }
+    });
+    const processed: number[] = [];
+    const loop = createMultiplayerAuthorityHostLoop<never, InputPayload, { tick: number }>({
+      runtime,
+      binding: createMultiplayerAuthorityBindingStore({
+        sessionId: "session-1",
+        mode: "host-authoritative",
+        authorityPeerId: "host"
+      }),
+      readInput,
+      inputSequence: (input) => input.sequence,
+      inputDelivery: {
+        mode: "redundant-bundle",
+        maxBufferedFramesPerSource: 8,
+        gapPolicy: "wait"
+      },
+      maxInputsPerSourcePerTick: 1,
+      handleInput({ payload }) {
+        processed.push(payload.sequence);
+      },
+      captureSnapshot({ tick }) {
+        return { tick };
+      }
+    });
+
+    fake.emit(
+      messageFrom(
+        "client-a",
+        MULTIPLAYER_INPUT_KIND,
+        createMultiplayerFixedStepInputBundle([
+          { sequence: 1, payload: { sequence: 1, dx: 1 } },
+          { sequence: 2, payload: { sequence: 2, dx: 1 } }
+        ])
+      )
+    );
+    loop.tick(1000 / 60);
+    expect(processed).toEqual([1]);
+    expect(loop.diagnostics()).toMatchObject({
+      receivedInputs: 1,
+      acceptedInputs: 1,
+      queuedInputs: 1,
+      fixedStepInput: { acceptedFrames: 2, consumedFrames: 1, duplicateFrames: 0 }
+    });
+
+    fake.emit(
+      messageFrom(
+        "client-a",
+        MULTIPLAYER_INPUT_KIND,
+        createMultiplayerFixedStepInputBundle([
+          { sequence: 1, payload: { sequence: 1, dx: 1 } },
+          { sequence: 2, payload: { sequence: 2, dx: 1 } },
+          { sequence: 3, payload: { sequence: 3, dx: 1 } }
+        ])
+      )
+    );
+    loop.tick(1000 / 60);
+    loop.tick(1000 / 60);
+
+    expect(processed).toEqual([1, 2, 3]);
+    expect(loop.diagnostics()).toMatchObject({
+      acceptedInputs: 3,
+      queuedInputs: 0,
+      fixedStepInput: {
+        acceptedFrames: 3,
+        consumedFrames: 3,
+        duplicateFrames: 1,
+        staleFrames: 1
+      }
+    });
+
+    loop.releasePeer("client-a");
+    expect(loop.diagnostics().fixedStepInput).toMatchObject({ sources: 0 });
+    loop.dispose();
   });
 
   it("coalesces queued input state to the latest sequence per source", async () => {
