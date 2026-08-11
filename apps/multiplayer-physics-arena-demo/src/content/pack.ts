@@ -144,10 +144,10 @@ const courses: ArenaCourseDefinition[] = [
         "circuit.finish-deck",
         "finish-deck",
         0,
-        0.7,
+        0.2,
         -12.4,
         8,
-        1.4,
+        0.4,
         2.4,
         "course",
         "walkable"
@@ -222,10 +222,10 @@ const courses: ArenaCourseDefinition[] = [
     bounds: { min: { x: 23, y: -6, z: -14 }, max: { x: 49, y: 9, z: 13 } },
     staticLayout: [
       staticBox("scrap.floor", "floor", 36, -0.5, 0, 23, 1, 23, "mud", "slow"),
-      staticBox("scrap.ring-north", "platform", 36, 0.35, -7.8, 12, 0.7, 3.5, "course", "walkable"),
-      staticBox("scrap.ring-south", "platform", 36, 0.35, 7.8, 12, 0.7, 3.5, "course", "walkable"),
-      staticBox("scrap.ring-west", "platform", 28.2, 0.35, 0, 3.5, 0.7, 12, "course", "walkable"),
-      staticBox("scrap.ring-east", "platform", 43.8, 0.35, 0, 3.5, 0.7, 12, "course", "walkable")
+      staticBox("scrap.ring-north", "platform", 36, 0.15, -7.8, 12, 0.3, 3.5, "course", "walkable"),
+      staticBox("scrap.ring-south", "platform", 36, 0.15, 7.8, 12, 0.3, 3.5, "course", "walkable"),
+      staticBox("scrap.ring-west", "platform", 28.2, 0.15, 0, 3.5, 0.3, 12, "course", "walkable"),
+      staticBox("scrap.ring-east", "platform", 43.8, 0.15, 0, 3.5, 0.3, 12, "course", "walkable")
     ],
     hazards: [
       hazardPlacement(
@@ -289,7 +289,11 @@ const courses: ArenaCourseDefinition[] = [
       staticBox("crown.north", "platform", 72, 0, -6.2, 9, 0.8, 4.2, "ice", "slick"),
       staticBox("crown.south", "platform", 72, 0, 6.2, 9, 0.8, 4.2, "ice", "slick"),
       staticBox("crown.west", "platform", 65.8, 0, 0, 4.2, 0.8, 9, "ice", "slick"),
-      staticBox("crown.east", "platform", 78.2, 0, 0, 4.2, 0.8, 9, "ice", "slick")
+      staticBox("crown.east", "platform", 78.2, 0, 0, 4.2, 0.8, 9, "ice", "slick"),
+      staticBox("crown.bridge-north", "platform", 72, 0, -3.8, 2.6, 0.8, 1.2, "course", "walkable"),
+      staticBox("crown.bridge-south", "platform", 72, 0, 3.8, 2.6, 0.8, 1.2, "course", "walkable"),
+      staticBox("crown.bridge-west", "platform", 68.2, 0, 0, 1.2, 0.8, 2.6, "course", "walkable"),
+      staticBox("crown.bridge-east", "platform", 75.8, 0, 0, 1.2, 0.8, 2.6, "course", "walkable")
     ],
     hazards: [
       hazardPlacement(
@@ -464,7 +468,7 @@ function participantPoints(count: number, z: number, centerX = 0): ArenaSpawnPoi
   return orderedOffsets.map((offset, index) => ({
     id: `participant.${index}`,
     kind: "participant" as const,
-    position: { x: centerX + offset, y: 1.3, z }
+    position: { x: centerX + offset, y: 1.75, z }
   }));
 }
 

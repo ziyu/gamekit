@@ -19,6 +19,7 @@
     { "path": "../../packages/multiplayer-memory" },
     { "path": "../../packages/navigation-core" },
     { "path": "../../packages/navigation-navmesh" },
+    { "path": "../../packages/navigation-recast" },
     { "path": "../../packages/physics-core" },
     { "path": "../../packages/physics-rapier3d" },
     { "path": "../../packages/platform-core" },

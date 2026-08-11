@@ -189,6 +189,11 @@ kinematic schedule 或自由 dynamic body 表达，不偷渡 Rapier joint handle
 - Stage 可以在 deadline 内强制收敛，不依赖 bot/玩家自发合作。
 - Authority/client compiler 的 layout/member/schedule signature 一致。
 
+同步 validator 是 Course compiler 的硬门，任何 error 都拒绝生成默认 runtime content；真实 Recast bake 与 required route 查询通过
+`validate:content` 在构建/CI执行，不把 WASM bake 放进 match startup。当前标准三关分别验证 24 条资格赛分段路线、6 条乱斗
+目标路线和 3 条决赛安全区路线。Profile 直接使用 Course 的 agent radius/height/slope，发现几何断路时修改场地或显式 portal，
+不能放宽 controller 不具备的 climb 能力。
+
 ## 诊断
 
 Course/Stage diagnostics 至少公开 definition version、seed、active hazards/phases、member counts、surface/volume tickets、Nav

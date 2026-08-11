@@ -354,6 +354,9 @@ importers:
       '@gamekit/navigation-navmesh':
         specifier: workspace:*
         version: link:../../packages/navigation-navmesh
+      '@gamekit/navigation-recast':
+        specifier: workspace:*
+        version: link:../../packages/navigation-recast
       '@gamekit/physics-core':
         specifier: workspace:*
         version: link:../../packages/physics-core

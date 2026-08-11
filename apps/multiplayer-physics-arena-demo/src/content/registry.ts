@@ -26,6 +26,7 @@ import {
   type ArenaSpawnSetDefinition,
   type ArenaStageDefinition
 } from "./types";
+import { assertValidArenaCompiledContent } from "./course-validator";
 
 export type CreateArenaDataRegistryOptions = {
   packs?: DataPack[] | undefined;
@@ -99,7 +100,7 @@ export function compileArenaContent(
       scheduleSignature: courseProjection.scheduleSignature
     }))
   );
-  return {
+  const content: CompiledArenaContent = {
     matchRule: structuredClone(matchRule),
     stages: structuredClone(stages),
     definitionVersion,
@@ -110,6 +111,8 @@ export function compileArenaContent(
       registry.list<ArenaMotorProfileDefinition>(ARENA_MOTOR_PROFILE_TYPE).map(({ data }) => data)
     )
   };
+  assertValidArenaCompiledContent(content);
+  return content;
 }
 
 function validateMatchTopology(

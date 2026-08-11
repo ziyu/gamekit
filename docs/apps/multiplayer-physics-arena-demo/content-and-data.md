@@ -60,6 +60,14 @@ Course compiler同时产出match级static Physics environment、stage member def
 backend-neutral presentation placement、validation probes、layout signature和hazard schedule signature。默认内容通过单一缓存实例共享，
 网络frame的definition version由这些signature派生，不另写手工版本常量。
 
+同步 compiler gate 必须在返回内容前执行纯 validator，覆盖 spawn capsule/item clearance、stage capacity、route order、kill/safe/
+objective volume、hazard bounds/schedule、projection alignment、Navigation source 和 forced convergence。Issue 使用稳定排序，并携带
+`code`、`severity`、`stageId`、`sourceId` 与 `sourcePath`，使 CI 和内容工具能定位同一条错误。
+
+Recast bake 与 required-route 查询属于构建/CI 校验，不进入每局启动。每个 Course 的 compiled source 必须生成非空 polygon artifact，
+并用与 Character Controller 一致的 radius/height/slope profile 验证所有 participant spawn 到 checkpoint/finish、objective 或 safe zone；
+不能通过提高 `maxClimb` 掩盖 Physics 角色实际无法跨越的台阶或断面。Arena 应用使用 `validate:content` 独立运行这组校验。
+
 ## Match 与 Stage Content Profile
 
 Match profile声明：
