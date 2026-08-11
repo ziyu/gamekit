@@ -10,7 +10,12 @@ import {
 } from "@gamekit/multiplayer-core";
 import { describe, expect, it } from "vitest";
 
-import { ARENA_FIXED_STEP_MS, ARENA_INPUT_KIND, ARENA_SNAPSHOT_KIND } from "../shared/config";
+import {
+  ARENA_FIXED_STEP_MS,
+  ARENA_INPUT_KIND,
+  ARENA_SCHEMA_VERSION,
+  ARENA_SNAPSHOT_KIND
+} from "../shared/config";
 import { readArenaMoveInput, type ArenaSnapshot } from "../shared/protocol";
 
 type FaultSnapshot = Pick<ArenaSnapshot, "schemaVersion"> & { tick: number; ack: number };
@@ -140,7 +145,7 @@ async function runMatrixCase(profile: MultiplayerNetworkConditionProfile) {
       }
     },
     captureSnapshot: ({ tick }) => ({
-      schemaVersion: "knockout-arena.v2",
+      schemaVersion: ARENA_SCHEMA_VERSION,
       tick,
       ack: authorityAcknowledgedSequence
     })

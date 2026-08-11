@@ -9,6 +9,7 @@ import {
   type Physics3dLabAppContext
 } from "./app-profile";
 import { createPhysics3dFreeCamera } from "./physics-3d-free-camera";
+import { createPhysics3dCharacterIntent } from "./physics-3d-character-controller";
 import { PHYSICS_3D_GROUPS, createPhysics3dLab, type Physics3dLabSnapshot } from "./physics-3d-lab";
 import { createPhysics3dLabVisual, screenToPhysicsQueryPoint } from "./physics-3d-visual";
 import {
@@ -82,6 +83,28 @@ async function boot(rootElement: HTMLElement): Promise<void> {
   commitSnapshot(snapshot);
   setPhysics3dLabLoading(ui, { visible: false });
   ui.pushDiagnostic("physics scene ready");
+  ui.viewport.tabIndex = 0;
+  ui.viewport.setAttribute("aria-label", "Physics 3D controller viewport");
+  const pressedKeys = new Set<string>();
+  let characterSequence = 0;
+  let jumpRequested = false;
+  let diveRequested = false;
+  const onCharacterKeyDown = (event: KeyboardEvent): void => {
+    if (!characterControlCode(event.code)) return;
+    event.preventDefault();
+    pressedKeys.add(event.code);
+    if (!event.repeat && event.code === "Space") jumpRequested = true;
+    if (!event.repeat && (event.code === "ShiftLeft" || event.code === "ShiftRight")) {
+      diveRequested = true;
+    }
+  };
+  const onCharacterKeyUp = (event: KeyboardEvent): void => {
+    if (!characterControlCode(event.code)) return;
+    event.preventDefault();
+    pressedKeys.delete(event.code);
+  };
+  ui.viewport.addEventListener("keydown", onCharacterKeyDown);
+  ui.viewport.addEventListener("keyup", onCharacterKeyUp);
 
   const resizeObserver = new ResizeObserver(() => {
     const size = measureViewport(ui.viewport);
@@ -111,6 +134,19 @@ async function boot(rootElement: HTMLElement): Promise<void> {
     const delta = lastTime === undefined ? 1000 / 60 : now - lastTime;
     lastTime = now;
     configured.host.tick(delta, now);
+    characterSequence += 1;
+    lab.setCharacterIntent(
+      createPhysics3dCharacterIntent({
+        sequence: characterSequence,
+        moveX: Number(pressedKeys.has("KeyD")) - Number(pressedKeys.has("KeyA")),
+        moveZ: Number(pressedKeys.has("KeyS")) - Number(pressedKeys.has("KeyW")),
+        jumpPressed: jumpRequested,
+        jumpHeld: pressedKeys.has("Space"),
+        divePressed: diveRequested
+      })
+    );
+    jumpRequested = false;
+    diveRequested = false;
     commitSnapshot(lab.step(delta), { updateUi: false });
     if (now - lastUiUpdate > 120) {
       updatePhysics3dLabUi(ui, snapshot);
@@ -126,12 +162,26 @@ async function boot(rootElement: HTMLElement): Promise<void> {
       cancelAnimationFrame(frameHandle);
       resizeObserver.disconnect();
       ui.viewport.removeEventListener("pointermove", updateQueryFromPointer);
+      ui.viewport.removeEventListener("keydown", onCharacterKeyDown);
+      ui.viewport.removeEventListener("keyup", onCharacterKeyUp);
       freeCamera.destroy();
       visual.destroy();
       lab.dispose();
       void configured.host.dispose();
     },
     { once: true }
+  );
+}
+
+function characterControlCode(code: string): boolean {
+  return (
+    code === "KeyW" ||
+    code === "KeyA" ||
+    code === "KeyS" ||
+    code === "KeyD" ||
+    code === "Space" ||
+    code === "ShiftLeft" ||
+    code === "ShiftRight"
   );
 }
 

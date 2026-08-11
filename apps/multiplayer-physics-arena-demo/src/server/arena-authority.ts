@@ -1,4 +1,5 @@
 import { createStandardMultiplayerPhysicsArenaAuthorityProjection } from "@gamekit/app-host";
+import type { CharacterMotorPredictionCommand } from "@gamekit/character-controller";
 import {
   createMultiplayerAuthorityBindingStore,
   createMultiplayerAuthorityHostLoop,
@@ -17,6 +18,11 @@ import {
 } from "@gamekit/physics-core";
 
 import {
+  ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
+  createArenaCharacterIntent,
+  createArenaCharacterMotorContributor
+} from "../shared/arena-control";
+import {
   ARENA_ENVIRONMENT,
   createArenaMemberDefinitions,
   isArenaActor
@@ -32,7 +38,7 @@ import {
   ARENA_SNAPSHOT_INTERVAL_TICKS,
   ARENA_SNAPSHOT_KIND,
   arenaPlayerMemberId,
-  type ArenaActorControl,
+  type ArenaActorControlFrame,
   type ArenaMatchPhase,
   type ArenaMoveInput
 } from "../shared/config";
@@ -78,6 +84,7 @@ export function createArenaAuthorityRuntime(
 ): ArenaAuthorityRuntime {
   const now = options.now ?? (() => Date.now());
   const definitions = createArenaMemberDefinitions();
+  const characterMotor = createArenaCharacterMotorContributor();
   const island = createPhysicsPredictionIsland({
     backend: options.backend,
     generation: `round.1`,
@@ -90,6 +97,7 @@ export function createArenaAuthorityRuntime(
     maxReplayTicksPerOperation: 120,
     maxMembers: 32,
     maxCommands: 2_048,
+    auxiliaryContributors: [characterMotor],
     scene: {
       dimension: "3d",
       gravity: { x: 0, y: -18, z: 0 },
@@ -108,7 +116,7 @@ export function createArenaAuthorityRuntime(
   const peerSlots = new Map<string, number>();
   const inputsByPeerId = new Map<string, ArenaMoveInput>();
   const inputAcksByPeerId = new Map<string, number>();
-  const actorControlsByMemberId = new Map<string, ArenaActorControl>();
+  const actorControlsByMemberId = new Map<string, ArenaActorControlFrame>();
   const eliminatedMemberIds = new Set<string>();
   const authorityEffects = new Map<string, ArenaAuthorityEffectCue>();
   let membershipRevision = 1;
@@ -353,6 +361,16 @@ export function createArenaAuthorityRuntime(
       });
       commandIndex += 1;
     };
+    const queueCharacterControl = (command: CharacterMotorPredictionCommand) => {
+      commands.push({
+        type: "auxiliary",
+        tick: targetTick,
+        sequence: authorityTick * 64 + commandIndex,
+        contributorId: ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
+        payload: command
+      });
+      commandIndex += 1;
+    };
 
     actorControlsByMemberId.clear();
     for (let slot = 0; slot < ARENA_MAX_HUMANS; slot += 1) {
@@ -362,14 +380,19 @@ export function createArenaAuthorityRuntime(
         peerId === undefined ? botInput(authorityTick, slot) : inputsByPeerId.get(peerId);
       actorControlsByMemberId.set(
         memberId,
-        queueActorMotion(queuePatch, queueDespawn, memberId, input ?? neutralInput())
+        queueActorMotion(queueCharacterControl, queueDespawn, memberId, input ?? neutralInput())
       );
     }
     for (let slot = 0; slot < 6; slot += 1) {
       const memberId = `bot.${slot}`;
       actorControlsByMemberId.set(
         memberId,
-        queueActorMotion(queuePatch, queueDespawn, memberId, botInput(authorityTick, slot + 2))
+        queueActorMotion(
+          queueCharacterControl,
+          queueDespawn,
+          memberId,
+          botInput(authorityTick, slot + 2)
+        )
       );
     }
 
@@ -420,25 +443,27 @@ export function createArenaAuthorityRuntime(
   }
 
   function queueActorMotion(
-    queuePatch: (
-      memberId: string,
-      patch: Extract<PhysicsPredictionIslandCommand, { type: "patch" }>["patch"]
-    ) => void,
+    queueControl: (command: CharacterMotorPredictionCommand) => void,
     queueDespawn: (memberId: string) => void,
     memberId: string,
     input: ArenaMoveInput
-  ): ArenaActorControl {
+  ): ArenaActorControlFrame {
     const body = island.body(memberId);
     const step = resolveArenaActorAuthorityStep({
       phase,
       eliminated: eliminatedMemberIds.has(memberId),
       input,
-      currentVelocity: body?.linearVelocity
+      memberAvailable: body !== undefined
     });
-    if (step.action.type === "patch") {
-      queuePatch(memberId, step.action.patch);
+    if (step.action.type === "control") {
+      queueControl({
+        type: "control",
+        memberId,
+        intent: createArenaCharacterIntent(step.control, step.control.sequence)
+      });
     } else if (step.action.type === "despawn") {
       queueDespawn(memberId);
+      queueControl({ type: "remove", memberId });
     }
     return step.control;
   }
@@ -451,7 +476,8 @@ export function createArenaAuthorityRuntime(
       tick: state.tick,
       membershipRevision,
       definitionVersion: ARENA_DEFINITION_VERSION,
-      members: state.members
+      members: state.members,
+      auxiliary: state.auxiliary
     });
     if (result.status !== "captured") {
       throw new Error(`Arena authority frame projection failed: ${result.status}`);

@@ -13,6 +13,7 @@
   "dependencies": {
     "@colyseus/core": "^0.17.44",
     "@gamekit/app-host": "workspace:*",
+    "@gamekit/character-controller": "workspace:*",
     "@gamekit/data": "workspace:*",
     "@gamekit/driver-core": "workspace:*",
     "@gamekit/driver-three": "workspace:*",

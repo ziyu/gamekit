@@ -1,33 +1,40 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  createArenaActorControlPatches,
-  createArenaActorMotionPatch
+  ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
+  ARENA_CHARACTER_MOTOR_DEFINITION,
+  createArenaCharacterControlCommands,
+  createArenaCharacterIntent
 } from "../shared/arena-control";
-import { ARENA_MOVE_SPEED } from "../shared/config";
 
-describe("Knockout Arena shared actor controls", () => {
-  it("normalizes movement and preserves vertical collision velocity", () => {
-    expect(
-      createArenaActorMotionPatch({ moveX: 1, moveZ: -1, jump: false }, { x: -2, y: 3.25, z: 1 })
-    ).toEqual({
-      linearVelocity: {
-        x: ARENA_MOVE_SPEED / Math.sqrt(2),
-        y: 3.25,
-        z: -ARENA_MOVE_SPEED / Math.sqrt(2)
-      }
+describe("Knockout Arena shared character controls", () => {
+  it("maps human and authority AI controls into the same semantic intent", () => {
+    const human = createArenaCharacterIntent({ moveX: 1, moveZ: -1, jump: true }, 17);
+    const bot = createArenaCharacterIntent({ moveX: 1, moveZ: -1, jump: true }, 17);
+
+    expect(human).toEqual(bot);
+    expect(human).toMatchObject({
+      sequence: 17,
+      move: { x: 1, y: 0, z: -1 },
+      facing: { x: 1, y: 0, z: -1 },
+      jumpPressed: true,
+      jumpHeld: true,
+      divePressed: false
     });
+    expect(ARENA_CHARACTER_MOTOR_DEFINITION.maxGroundSpeed).toBe(6.4);
   });
 
-  it("rebuilds stable control patches for local and remote interaction members", () => {
-    const controls = {
-      "player.1": { moveX: -1, moveZ: 0, jump: false },
-      "player.0": { moveX: 1, moveZ: 0, jump: false }
-    };
-    const patches = createArenaActorControlPatches(controls, () => ({ x: 0, y: 0, z: 0 }));
+  it("builds stable contributor commands and preserves per-actor sequences", () => {
+    const commands = createArenaCharacterControlCommands({
+      "player.1": { sequence: 11, moveX: -1, moveZ: 0, jump: false },
+      "player.0": { sequence: 23, moveX: 1, moveZ: 0, jump: false }
+    });
 
-    expect(patches.map(({ memberId }) => memberId)).toEqual(["player.0", "player.1"]);
-    expect(patches[0]?.patch.linearVelocity?.x).toBe(ARENA_MOVE_SPEED);
-    expect(patches[1]?.patch.linearVelocity?.x).toBe(-ARENA_MOVE_SPEED);
+    expect(commands.map(({ memberId }) => memberId)).toEqual(["player.0", "player.1"]);
+    expect(commands.map(({ command }) => command)).toMatchObject([
+      { type: "control", memberId: "player.0", intent: { sequence: 23 } },
+      { type: "control", memberId: "player.1", intent: { sequence: 11 } }
+    ]);
+    expect(ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID).toBe("character.motor");
   });
 });

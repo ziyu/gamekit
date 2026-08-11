@@ -318,6 +318,9 @@ importers:
       '@gamekit/app-host':
         specifier: workspace:*
         version: link:../../packages/app-host
+      '@gamekit/character-controller':
+        specifier: workspace:*
+        version: link:../../packages/character-controller
       '@gamekit/data':
         specifier: workspace:*
         version: link:../../packages/data
@@ -413,6 +416,9 @@ importers:
       '@gamekit/app-host':
         specifier: workspace:*
         version: link:../../packages/app-host
+      '@gamekit/character-controller':
+        specifier: workspace:*
+        version: link:../../packages/character-controller
       '@gamekit/driver-core':
         specifier: workspace:*
         version: link:../../packages/driver-core

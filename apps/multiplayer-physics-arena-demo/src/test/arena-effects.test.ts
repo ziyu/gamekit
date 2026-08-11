@@ -99,7 +99,7 @@ function snapshot(
     playerIdsByPeerId: { "peer.0": "player.0" },
     inputAcksByPeerId: { "peer.0": acknowledgedSequence },
     actorControlsByMemberId: {
-      "player.0": { moveX: 0, moveZ: 0, jump: false }
+      "player.0": { sequence: tick, moveX: 0, moveZ: 0, jump: false }
     },
     eliminatedMemberIds: [],
     effects,

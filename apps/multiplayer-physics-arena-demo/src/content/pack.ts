@@ -30,19 +30,19 @@ const items: ArenaItemDefinition[] = [
   item("item.foam-hammer", "melee", 2.2, 0.82, 14, 36, 300)
 ];
 
-const motorProfiles: ArenaMotorProfileDefinition[] = [
-  {
-    id: "motor.standard",
-    maxGroundSpeed: 6.4,
-    groundAcceleration: 28,
-    groundBraking: 34,
-    airAcceleration: 9,
-    jumpSpeed: 7.2,
-    diveSpeed: 9.4,
-    coyoteTicks: 6,
-    jumpBufferTicks: 7
-  }
-];
+export const ARENA_STANDARD_MOTOR_PROFILE: ArenaMotorProfileDefinition = {
+  id: "motor.standard",
+  maxGroundSpeed: 6.4,
+  groundAcceleration: 28,
+  groundBraking: 34,
+  airAcceleration: 9,
+  jumpSpeed: 7.2,
+  diveSpeed: 9.4,
+  coyoteTicks: 6,
+  jumpBufferTicks: 7
+};
+
+const motorProfiles: ArenaMotorProfileDefinition[] = [ARENA_STANDARD_MOTOR_PROFILE];
 
 const botArchetypes: ArenaBotArchetypeDefinition[] = [
   bot("bot.sprinter", 7, 0.12, 0.35, 0.68, ["item.foam-ball"]),

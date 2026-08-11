@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@gamekit/app-host": "workspace:*",
+    "@gamekit/character-controller": "workspace:*",
     "@gamekit/driver-core": "workspace:*",
     "@gamekit/driver-three": "workspace:*",
     "@gamekit/event-bus": "workspace:*",

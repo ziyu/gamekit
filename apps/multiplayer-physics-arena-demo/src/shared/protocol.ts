@@ -3,7 +3,7 @@ import type { MultiplayerPhysicsArenaFrame } from "@gamekit/app-host";
 import {
   ARENA_DEFINITION_VERSION,
   ARENA_SCHEMA_VERSION,
-  type ArenaActorControl,
+  type ArenaActorControlFrame,
   type ArenaMatchPhase,
   type ArenaMoveInput
 } from "./config";
@@ -36,7 +36,7 @@ export type ArenaSnapshot = {
   frame: MultiplayerPhysicsArenaFrame;
   playerIdsByPeerId: Record<string, string>;
   inputAcksByPeerId: Record<string, number>;
-  actorControlsByMemberId: Record<string, ArenaActorControl>;
+  actorControlsByMemberId: Record<string, ArenaActorControlFrame>;
   eliminatedMemberIds: string[];
   effects: ArenaAuthorityEffectCue[];
   serverTime: number;
@@ -101,20 +101,26 @@ export function readArenaSnapshot(value: unknown): ArenaSnapshot | undefined {
 
 function readActorControlMap(
   value: Record<string, unknown>
-): Record<string, ArenaActorControl> | undefined {
+): Record<string, ArenaActorControlFrame> | undefined {
   if (Object.keys(value).length > 64) return undefined;
-  const result: Record<string, ArenaActorControl> = {};
+  const result: Record<string, ArenaActorControlFrame> = {};
   for (const [memberId, entry] of Object.entries(value)) {
     if (
       memberId.length === 0 ||
       !isRecord(entry) ||
       !axis(entry.moveX) ||
       !axis(entry.moveZ) ||
-      typeof entry.jump !== "boolean"
+      typeof entry.jump !== "boolean" ||
+      !nonNegativeSafeInteger(entry.sequence)
     ) {
       return undefined;
     }
-    result[memberId] = { moveX: entry.moveX, moveZ: entry.moveZ, jump: entry.jump };
+    result[memberId] = {
+      sequence: entry.sequence,
+      moveX: entry.moveX,
+      moveZ: entry.moveZ,
+      jump: entry.jump
+    };
   }
   return result;
 }

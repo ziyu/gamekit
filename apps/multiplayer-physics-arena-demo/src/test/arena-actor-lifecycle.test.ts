@@ -13,11 +13,11 @@ describe("Knockout Arena actor lifecycle", () => {
       phase: "running",
       eliminated: true,
       input: { sequence: 7, moveX: 1, moveZ: -1, jump: true },
-      currentVelocity: { x: 2, y: -4, z: 3 }
+      memberAvailable: true
     });
 
     expect(eliminated).toEqual({
-      control: { moveX: 0, moveZ: 0, jump: false },
+      control: { sequence: 7, moveX: 0, moveZ: 0, jump: false },
       action: { type: "despawn" }
     });
     expect(
@@ -25,7 +25,7 @@ describe("Knockout Arena actor lifecycle", () => {
         phase: "running",
         eliminated: true,
         input: { sequence: 8, moveX: 1, moveZ: 0, jump: false },
-        currentVelocity: undefined
+        memberAvailable: false
       }).action
     ).toEqual({ type: "none" });
   });

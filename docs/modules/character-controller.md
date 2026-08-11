@@ -50,6 +50,12 @@ DataRegistry、解析字符串或容忍 NaN/Infinity。App 可以在编译前组
 环境观测是 query/runtime strategy 交给 pure motor 的稳定事实，不是新的 Physics 状态源。Strategy 必须忽略 self collider、使用 stable
 closest/sort 规则，并把 query/rejection 数写入 diagnostics。Authority 与 prediction 必须在相同 tick 使用等价观测。
 
+`observeCharacterGround(...)` 是标准 backend-neutral ground strategy：从公开 body state 发起向下 capsule shape cast，排除自身
+body/collider 和 sensor，使用 closest/distance contract 生成稳定 ground/surface/platform velocity 事实。Definition 的
+`capsuleHeight` 表示包含两端半球的总高度，映射 Physics capsule query 时转换为中段高度；backend 不支持 shape-cast `all` 时不要求
+app 分支，标准 helper 使用成熟 backend 均支持的 closest 模式。Ceiling、step 和特殊 surface strategy 可以在此结果上窄扩展，
+但不能另建 locomotion timer。
+
 ## Diagnostics 与重演
 
 每次 transition 返回 mode、ground/body/surface、坡度、timer、last consumed sequence、query/rejection、command count 和最多 16 条
@@ -71,6 +77,11 @@ reconcile 在写入前拒绝。Physics body checkpoint 与 motor timer 必须在
   映射成 island `auxiliary` command；不要跨 membership revision 复用已经 reset/dispose 的 contributor 实例。
 - Backend-specific strategy 只映射 probe/step/ground resolution，不拥有 gameplay timer、dive、stagger 或公共 state。
 - 新 backend 声明支持前，必须通过 shared motor fixture；Arena 之外至少保留 Physics 3D Lab controller course 作为第二真实 fixture。
+- Arena authority 与 client prediction 都创建 `createCharacterMotorPredictionContributor(...)`，Human 和 authority AI 只写同构
+  `CharacterControlIntent`；authority projection 发布 contributor checkpoint 和每个 actor 实际 control sequence，client 不再从
+  velocity 手写 actor motion patch，也不使用 authority frame tick 猜 jump/dive 去重序列。
+- 非多人 fixture 可以直接组合 `observeCharacterGround(...) + stepCharacterMotor(...) + PhysicsScene update/command`；Physics 3D Lab
+  保留一个可见 Rapier capsule、键盘 intent 和 motor diagnostics，证明 toolkit 不依赖 Multiplayer 或 Arena。
 
 ## 使用最佳实践
 

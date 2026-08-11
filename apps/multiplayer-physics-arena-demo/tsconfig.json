@@ -9,6 +9,7 @@
   "include": ["src"],
   "references": [
     { "path": "../../packages/app-host" },
+    { "path": "../../packages/character-controller" },
     { "path": "../../packages/driver-core" },
     { "path": "../../packages/driver-three" },
     { "path": "../../packages/event-bus" },

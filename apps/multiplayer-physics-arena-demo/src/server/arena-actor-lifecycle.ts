@@ -1,19 +1,13 @@
-import type {
-  PhysicsBodyPatch,
-  PhysicsPredictionIsland,
-  PhysicsVector
-} from "@gamekit/physics-core";
-
-import { createArenaActorMotionPatch } from "../shared/arena-control";
-import type { ArenaActorControl, ArenaMatchPhase, ArenaMoveInput } from "../shared/config";
+import type { PhysicsPredictionIsland } from "@gamekit/physics-core";
+import type { ArenaActorControlFrame, ArenaMatchPhase, ArenaMoveInput } from "../shared/config";
 
 export type ArenaActorAuthorityAction =
   | { type: "none" }
-  | { type: "patch"; patch: PhysicsBodyPatch }
+  | { type: "control" }
   | { type: "despawn" };
 
 export type ArenaActorAuthorityStep = {
-  control: ArenaActorControl;
+  control: ArenaActorControlFrame;
   action: ArenaActorAuthorityAction;
 };
 
@@ -22,30 +16,24 @@ export function resolveArenaActorAuthorityStep(options: {
   phase: ArenaMatchPhase;
   eliminated: boolean;
   input: ArenaMoveInput;
-  currentVelocity: PhysicsVector | undefined;
+  memberAvailable: boolean;
 }): ArenaActorAuthorityStep {
-  if (options.currentVelocity === undefined) {
-    return { control: neutralControl(), action: { type: "none" } };
+  if (!options.memberAvailable) {
+    return { control: neutralControl(options.input.sequence), action: { type: "none" } };
   }
   if (options.eliminated) {
-    return { control: neutralControl(), action: { type: "despawn" } };
+    return { control: neutralControl(options.input.sequence), action: { type: "despawn" } };
   }
   if (options.phase === "countdown" || options.phase === "lobby") {
     return {
-      control: neutralControl(),
-      action: {
-        type: "patch",
-        patch: { linearVelocity: { x: 0, y: 0, z: 0 } }
-      }
+      control: neutralControl(options.input.sequence),
+      action: { type: "control" }
     };
   }
   const control = actorControl(options.input);
   return {
     control,
-    action: {
-      type: "patch",
-      patch: createArenaActorMotionPatch(control, options.currentVelocity)
-    }
+    action: { type: "control" }
   };
 }
 
@@ -54,10 +42,10 @@ export function resetArenaRoundPhysics(island: PhysicsPredictionIsland, round: n
   island.reset(`round.${round}`, island.tick());
 }
 
-function neutralControl(): ArenaActorControl {
-  return { moveX: 0, moveZ: 0, jump: false };
+function neutralControl(sequence: number): ArenaActorControlFrame {
+  return { sequence, moveX: 0, moveZ: 0, jump: false };
 }
 
-function actorControl(input: ArenaMoveInput): ArenaActorControl {
-  return { moveX: input.moveX, moveZ: input.moveZ, jump: input.jump };
+function actorControl(input: ArenaMoveInput): ArenaActorControlFrame {
+  return { sequence: input.sequence, moveX: input.moveX, moveZ: input.moveZ, jump: input.jump };
 }

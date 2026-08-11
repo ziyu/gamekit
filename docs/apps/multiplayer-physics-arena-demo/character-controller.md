@@ -14,10 +14,8 @@ Arena 使用可复用 character-controller toolkit；camera-relative mapping、A
 ```ts
 type CharacterControlIntent = {
   sequence: number;
-  moveX: number;
-  moveZ: number;
-  facingX?: number;
-  facingZ?: number;
+  move: PhysicsVector;
+  facing?: PhysicsVector;
   jumpPressed: boolean;
   jumpHeld: boolean;
   divePressed: boolean;
@@ -167,6 +165,16 @@ Instability 和攻击合法性归 Arena Combat policy；controller 只消费已�
 - Generation、membership revision、definition version 或 profile version 改变时安装完整 baseline，不能跨 stage 复用 timers。
 - Authority-only 的 elimination、qualification、item claim 和 final hit 不进入 speculative motor state。
 - Renderer/camera 只读取 predicted/presented body 与 motor mode，不把平滑 transform 写回 controller。
+
+标准接入中 authority island 和每个 client binding 都安装 `character.motor` contributor。Authority 把 Human input 与 Bot task 输出
+统一映射成 typed `control` command；公开 control frame 保留 actor 实际 input sequence，client 只用本地最新 intent/sequence 覆盖
+自己的 control，其余 actor 复用 authority control/sequence，不能用 snapshot tick 猜 jump/dive 去重。完整
+authority frame 同时发布 body members 与按 id 排序的 motor auxiliary checkpoint，generation/membership baseline 由标准 Arena
+adapter 恢复。Sweeper/platform 的确定性 stage schedule 仍是场景 command，不属于 character prediction 的手写替身。
+
+Physics 3D Lab 使用同一个 compiled definition 结构、`observeCharacterGround(...)` 和 `stepCharacterMotor(...)` 驱动独立 Rapier
+capsule，作为不依赖 Multiplayer 的第二 fixture。Lab viewport 聚焦后由 WASD、Space、Shift 产生 semantic intent，并展示 mode、
+grounded、facing 和 query diagnostics；后续 controller course 在此扩展坡、台阶、平台、边缘与推挤场景。
 
 ## Input、Gamepad 与 Scope
 

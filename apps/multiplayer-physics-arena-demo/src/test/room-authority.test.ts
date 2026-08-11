@@ -78,6 +78,17 @@ describe("Knockout Arena Room authority", () => {
       const latestB = snapshotsB.at(-1)!;
       expect(latestA.frame.islandId).toBe("knockout.full-arena");
       expect(latestA.frame.members).toHaveLength(14);
+      expect(latestA.frame.auxiliary).toMatchObject([
+        {
+          id: "character.motor",
+          version: "1.0.0",
+          state: { version: 1 }
+        }
+      ]);
+      const motorState = latestA.frame.auxiliary?.[0]?.state as
+        | { members?: unknown[] | undefined }
+        | undefined;
+      expect(motorState?.members).toHaveLength(8);
       expect(latestB.frame.tick).toBeGreaterThan(0);
       expect(latestA.authority).toMatchObject({
         activePeers: 2,

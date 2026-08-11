@@ -18,7 +18,11 @@ import type {
 import { createKootaWorld } from "@gamekit/world-koota";
 
 import { ARENA_ENVIRONMENT, createArenaDefinitionMap } from "../shared/arena-definition";
-import { createArenaActorControlPatches } from "../shared/arena-control";
+import {
+  ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
+  createArenaCharacterControlCommands,
+  createArenaCharacterMotorContributor
+} from "../shared/arena-control";
 import {
   createArenaClientEffectController,
   type ArenaEffectPresentationEvent
@@ -169,6 +173,9 @@ export async function createArenaClientSession(options: {
         ]
       }
     },
+    createAuxiliaryContributors() {
+      return [createArenaCharacterMotorContributor()];
+    },
     selectFrame({ snapshot }) {
       return {
         ...snapshot.frame,
@@ -193,19 +200,17 @@ export async function createArenaClientSession(options: {
       const controlsByMemberId = structuredClone(snapshot.actorControlsByMemberId);
       if (memberId !== undefined && !snapshot.eliminatedMemberIds.includes(memberId)) {
         controlsByMemberId[memberId] = {
+          sequence: predictionFrame.sequence,
           moveX: input.moveX,
           moveZ: input.moveZ,
           jump: input.jump
         };
       }
       return [
-        ...createArenaActorControlPatches(
-          controlsByMemberId,
-          (actorId) => readPredictedBody(actorId)?.linearVelocity
-        ).map(({ memberId: actorId, patch }) => ({
-          type: "patch" as const,
-          memberId: actorId,
-          patch
+        ...createArenaCharacterControlCommands(controlsByMemberId).map(({ command }) => ({
+          type: "auxiliary" as const,
+          contributorId: ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
+          payload: command
         })),
         {
           type: "patch" as const,
