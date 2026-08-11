@@ -95,8 +95,14 @@ export function createMultiplayerPeerPlayerBindingStore(
     const existing = byPlayerId.get(playerId);
     const status = input.status ?? statusFromPeer(peer);
     const displayName = resolveDisplayName(peer, input, playerId);
-    const role = input.role ?? peer.role;
+    const role = input.role ?? peer.role ?? existing?.role;
     const slot = input.slot ?? existing?.slot;
+    const metadata =
+      existing?.metadata === undefined &&
+      peer.metadata === undefined &&
+      input.metadata === undefined
+        ? undefined
+        : { ...existing?.metadata, ...peer.metadata, ...input.metadata };
 
     if (previousPlayerId && previousPlayerId !== playerId) {
       byPlayerId.delete(previousPlayerId);
@@ -113,9 +119,7 @@ export function createMultiplayerPeerPlayerBindingStore(
       ...(displayName === undefined ? {} : { displayName }),
       ...(role === undefined ? {} : { role }),
       ...(slot === undefined ? {} : { slot }),
-      ...(peer.metadata === undefined && input.metadata === undefined
-        ? {}
-        : { metadata: { ...peer.metadata, ...input.metadata } })
+      ...(metadata === undefined ? {} : { metadata })
     };
 
     byPlayerId.set(playerId, binding);
@@ -181,7 +185,7 @@ export function createMultiplayerPeerPlayerBindingStore(
     playerId: string
   ): string | undefined {
     const fallback = options.displayNameFallback?.(peer, byPlayerId.size + 1) ?? fallbackName(peer);
-    const raw = input.displayName ?? peer.displayName;
+    const raw = input.displayName ?? peer.displayName ?? byPlayerId.get(playerId)?.displayName;
     const normalize =
       options.normalizeDisplayName ??
       ((value: string | undefined, fallbackValue: string) =>
