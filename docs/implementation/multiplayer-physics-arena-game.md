@@ -107,7 +107,7 @@ capture/restore/replay/reset。实现必须：
 
 | 阶段                             | 状态    | 主要产物                                                                          | 独立验收门                                         |
 | -------------------------------- | ------- | --------------------------------------------------------------------------------- | -------------------------------------------------- |
-| P0：决策与基准                   | Planned | Physics command、character controller、auxiliary replay ADR；数据/预算基线        | 公共边界 review；现有 consumer 兼容                |
+| P0：决策与基准                   | Active  | Physics command、character controller、auxiliary replay ADR；数据/预算基线        | 公共边界 review；现有 consumer 兼容                |
 | P1：Physics command 与角色控制器 | Planned | Core/adapter command、character toolkit、键鼠/gamepad、player/AI shared intent    | Rapier3D controller course；prediction replay 一致 |
 | P2：赛事 authority               | Planned | 多 stage 状态机、participant/qualification/spectator、winner/tie-break、TCA facts | headless 8 人完整 match/rematch                    |
 | P3：道具与物理战斗               | Planned | Item runtime/DataType、pickup/carry/use/throw、Combat/GAS、KO credit              | 2 client 争抢同一道具；无重复消费/命中             |
@@ -116,6 +116,65 @@ capture/restore/replay/reset。实现必须：
 | P6：表现与 UX                    | Planned | Animator、Audio、camera、HUD、spectator、results、可读 telegraph                  | 双窗口完整比赛体验，无 debug-only UI               |
 | P7：网络与性能加固               | Planned | item/pickup fault matrix、arena gameplay benchmark、soak、budget diagnostics      | 150 ms/5% loss 下整场收敛                          |
 | P8：最终验收与关闭               | Planned | review、全仓门禁、浏览器验收、文档收口、提交记录                                  | 完成定义全部满足                                   |
+
+## 执行协议
+
+- 工作包状态只使用 `Planned`、`Active`、`Accepted`、`Blocked`；同一时间只能有一个 `Active` 工作包。
+- 只有依赖项全部 `Accepted` 后才能启动下一工作包。发现缺口时回到当前工作包 rework，不能用后续阶段替身绕过。
+- 每个工作包必须同时交付实现、最小自动化验收、必要文档和一次独立提交；只写代码或只跑人工 smoke 都不能标记
+  `Accepted`。
+- 公共 API 工作包必须在编辑前记录 GitNexus upstream impact；高风险先报告，且必须包含 ADR、conformance 和至少两个真实
+  consumer/fixture。
+- App-local 工作包必须声明 authority/prediction/presentation 所有权，并验证 reset、generation、dispose、容量和 trace。
+- 阶段关闭时运行该阶段专属命令和根级 `test/build/lint/format`；最终全量 benchmark 与浏览器验收留到 P8 再统一复跑。
+- 验收证据写入本文“验收记录”，包含命令、结果、review 结论和 commit；长期设计事实仍只维护在 `docs/apps/`、
+  `docs/modules/` 与 ADR。
+
+## 工作包台账
+
+| 工作包 | 状态     | 依赖         | 交付边界                                                        | 独立验收门                                                      |
+| ------ | -------- | ------------ | --------------------------------------------------------------- | --------------------------------------------------------------- |
+| P0-01  | Accepted | —            | 三个公共缺口的影响分析、ADR 与 API/所有权草图                   | Physics、Multiplayer/App Host、第二 fixture 边界 review         |
+| P0-02  | Active   | P0-01        | 14-member 当前基线与 36-member 目标 profile 测量工具            | authority、payload、checkpoint/history、replay 指标可重复输出   |
+| P0-03  | Planned  | P0-01        | Arena DataType、稳定 identity/generation 与内容校验骨架         | 无效引用/重复 id/非法 generation 的确定性 fixture               |
+| P0-04  | Planned  | P0-02、P0-03 | P0 兼容 review、文档证据和阶段关闭                              | 现有 Multiplayer Demo、Outpost、Arena tests 与根级门禁通过      |
+| P1-01  | Planned  | P0-04        | Physics body command 协议、排序/拒绝诊断与 memory backend       | command conformance 覆盖 impulse、point、wake、duplicate/replay |
+| P1-02  | Planned  | P1-01        | Rapier2D/3D body command 映射                                   | 两个 adapter 通过同一 conformance；native capability 有诊断     |
+| P1-03  | Planned  | P1-02        | `@gamekit/character-controller` pure motor、Data 与 diagnostics | ground/coyote/buffer/slope/step/platform/dive/stagger 单元契约  |
+| P1-04  | Planned  | P1-03        | 标准 Arena auxiliary replay contributor                         | Physics 与 motor 同 tick capture/restore/replay/reset/dispose   |
+| P1-05  | Planned  | P1-04        | Arena 与 Physics 3D Lab 接入共享 controller                     | 玩家/AI 同 intent；旧无状态 consumer 兼容                       |
+| P1-06  | Planned  | P1-05        | Controller course 与高延迟 replay 验收                          | 平地、坡、台阶、平台、边缘、推挤、落地和 reconcile 全通过       |
+| P2-01  | Planned  | P1-06        | Participant registry、match director 与 stage rule              | 所有参与者状态转换合法且可 trace                                |
+| P2-02  | Planned  | P2-01        | 排名、晋级、KO/assist、timeout 与稳定 tie-break                 | deterministic headless ranking fixtures                         |
+| P2-03  | Planned  | P2-02        | stage generation、membership revision 与公开结果投影            | 淘汰不复活；晋级/观战/late join/reconnect baseline 正确         |
+| P2-04  | Planned  | P2-03        | 8 人三阶段 match/rematch headless 验收                          | 唯一 winner、完整清理、无 retained participant/island state     |
+| P3-01  | Planned  | P2-04        | Item DataType、definition compiler 与 authority state machine   | world/claimed/carried/active/spent/respawn 转换与容量契约       |
+| P3-02  | Planned  | P3-01        | stable target、pickup arbitration、carry、drop/throw Physics    | 两客户端同 tick 争抢只产生一个 owner；generation 稳定           |
+| P3-03  | Planned  | P3-02        | Combat/GAS delivery、instability、stagger、knockback、KO bridge | 命中去重、冲击归因与 authority 淘汰 fixture                     |
+| P3-04  | Planned  | P3-03        | 道具预测、effect journal 与 fault matrix                        | loss/duplicate/gap 下无重复消费、命中、cue 或幽灵 body          |
+| P4-01  | Planned  | P3-04        | Course 编译器、共享 Physics/Nav/Presentation projection         | 相同 definition version 生成一致 stable ids 与空间事实          |
+| P4-02  | Planned  | P4-01        | Circuit Forge 资格赛与 controller course                        | 8 人均存在可完成路线，机关时序确定且无隐形 blocker              |
+| P4-03  | Planned  | P4-02        | Scrap Yard 与 Crown Collapse、道具/机关/强制收敛                | 两个 stage 可完成并在超时前产生稳定排名/唯一 winner             |
+| P4-04  | Planned  | P4-03        | 内容 validator、Navigation source 与全 stage 验收               | spawn/route/clearance/kill volume/item/hazard/convergence 校验  |
+| P5-01  | Planned  | P4-04        | Arena perception、memory、profile 与 archetype Data             | Bot 只消费 authority 可见事实；reaction/aim/risk 可配置         |
+| P5-02  | Planned  | P5-01        | Utility goal、interruptible task 与共享 character intent        | advance/survive/item/attack/escape fixtures 可确定重放          |
+| P5-03  | Planned  | P5-02        | Recast route、local steering、hazard timing 与错峰 scheduler    | path stale/stuck/stage change 可恢复；无同帧全量重评尖峰        |
+| P5-04  | Planned  | P5-03        | 三 archetype 完整比赛与 AI diagnostics 验收                     | Bots 能晋级、拾取、攻击、避险且不读客户端/未来状态              |
+| P6-01  | Planned  | P5-04        | Presented state 与 Animator graph                               | rollback 不重复 action/reaction；remote/late join 恢复正确      |
+| P6-02  | Planned  | P6-01        | Audio、VFX、telegraph 与 playing/spectator camera               | 并发有界、镜头不写回 simulation、关键信息可读                   |
+| P6-03  | Planned  | P6-02        | Lobby/HUD/KO feed/spectator/results/rematch UX                  | 无 debug-only 主流程；gamepad/键鼠提示与 input scope 正确       |
+| P6-04  | Planned  | P6-03        | 双浏览器完整比赛体验验收                                        | 三 stage、winner、领奖台、rematch、console 与视觉检查通过       |
+| P7-01  | Planned  | P6-04        | gameplay fault matrix 与断线/重连/late join 加固                | 0–150 ms、0–50 ms jitter、0–5% loss 与 gap/duplicate 收敛       |
+| P7-02  | Planned  | P7-01        | `bench:arena-gameplay:check` 与预算 diagnostics                 | 36-member profile 满足长期 payload/checkpoint/replay/tick 预算  |
+| P7-03  | Planned  | P7-02        | 10 分钟 stage/item/bot/network/rematch soak                     | 无无界增长；dispose retained state 为 0                         |
+| P8-01  | Planned  | P7-03        | 全量 review、根级门禁、benchmark 与最终浏览器验收               | `quality-and-acceptance.md` 全部条目有可复查证据                |
+| P8-02  | Planned  | P8-01        | 长期文档收口、执行记录关闭和最终提交                            | 状态 `Closed`、无遗留 TODO、证据和 commit 完整                  |
+
+## 验收记录
+
+| 工作包 | 验收时间   | 证据                                                                                                                                                                | Commit             |
+| ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| P0-01  | 2026-08-11 | ADR 0051/0052/0053；GitNexus：island HIGH（16 symbols/10 direct/1 flow），Arena adapter LOW（4 symbols/1 flow）；Physics 3D Lab 可作为第二 fixture 且不引入反向依赖 | 本工作包提交时补录 |
 
 ## 分阶段实施细节
 
