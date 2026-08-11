@@ -6,7 +6,7 @@ MVP 阶段已经关闭，历史阶段文档只作为归档证据保留。常态�
 
 ## Active Workflows
 
-- `multiplayer-physics-arena-prediction.md`：标准 Physics Arena prediction 组合与 3D Knockout Arena Demo。
+- `multiplayer-physics-arena-game.md`：把 Knockout Arena 纵切推进为完整的多阶段物理竞技游戏。
 - `multiplayer-package-planning.md`
 - `multiplayer-outpost-siege-demo.md`：Outpost Siege 全框架综合验证应用工作流。
 - `outpost-siege-player-experience-rebuild.md`：Outpost 玩家操作、角色、战斗与表现重构。
@@ -14,6 +14,7 @@ MVP 阶段已经关闭，历史阶段文档只作为归档证据保留。常态�
 
 ## Closed Workflows
 
+- `multiplayer-physics-arena-prediction.md`：标准 Physics Arena prediction 组合与 3D Knockout Arena Demo。
 - `mature-network-prediction-and-rollback.md`：托管 prediction domain、确定性回滚与副作用协议。
 - `physics-projectile-prediction-island.md`
 - `kinematic-projectile-prediction.md`
