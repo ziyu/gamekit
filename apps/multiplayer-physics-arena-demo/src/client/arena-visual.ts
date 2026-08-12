@@ -77,6 +77,9 @@ const ITEM_DEFINITIONS_BY_ID = new Map(
 const COURSE_PRESENTATION_PLACEMENTS = ARENA_COMPILED_CONTENT.stages.flatMap(
   (stage) => stage.courseProjection.presentation.placements
 );
+const QUALIFIER_ROUTE_VOLUMES = ARENA_COMPILED_CONTENT.stages[0]!.course.volumes.filter(
+  (volume) => volume.kind === "checkpoint" || volume.kind === "finish"
+);
 
 export function createArenaVisual(
   native: ThreeRendererNative,
@@ -286,6 +289,7 @@ function createCourse(root: THREE.Group): void {
   createEdgeLights(course);
   createLaneGraphics(course);
   createStartGrid(course);
+  createQualifierRouteMarkers(course);
   createFinishPortal(course);
   createSpectatorPods(course);
 }
@@ -963,13 +967,92 @@ function createStartGrid(course: THREE.Group): void {
   }
 }
 
+function createQualifierRouteMarkers(course: THREE.Group): void {
+  const checkpoints = QUALIFIER_ROUTE_VOLUMES.filter(({ kind }) => kind === "checkpoint").sort(
+    (left, right) => (left.routeOrder ?? 0) - (right.routeOrder ?? 0)
+  );
+  for (const [index, checkpoint] of checkpoints.entries()) {
+    const checkpointNumber = index + 1;
+    const accent = checkpointNumber % 2 === 0 ? COLOR.acid : COLOR.cyan;
+    const z = (checkpoint.position.z ?? 0) * UNIT;
+    const halfWidth = Math.min(9.45, checkpoint.size.width / 2 - 0.5);
+    const gate = new THREE.Group();
+    gate.name = `knockout.course.checkpoint.${checkpointNumber}`;
+    gate.position.z = z;
+
+    const laneBand = createMesh(
+      new THREE.BoxGeometry(
+        Math.min(19.2, checkpoint.size.width) * UNIT,
+        0.035 * UNIT,
+        0.62 * UNIT
+      ),
+      new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.58 }),
+      `${gate.name}.lane-band`
+    );
+    laneBand.position.y = 0.09 * UNIT;
+    gate.add(laneBand);
+
+    for (const side of [-1, 1]) {
+      const pylon = createMesh(
+        new THREE.BoxGeometry(0.28 * UNIT, 2.7 * UNIT, 0.38 * UNIT),
+        new THREE.MeshStandardMaterial({
+          color: 0x183559,
+          roughness: 0.25,
+          metalness: 0.55,
+          emissive: accent,
+          emissiveIntensity: 0.3
+        }),
+        `${gate.name}.pylon`
+      );
+      pylon.position.set(side * halfWidth * UNIT, 1.42 * UNIT, 0);
+      pylon.rotation.z = side * -0.1;
+      gate.add(pylon);
+
+      const beacon = createMesh(
+        new THREE.OctahedronGeometry(0.23 * UNIT, 0),
+        new THREE.MeshBasicMaterial({ color: accent }),
+        `${gate.name}.beacon`
+      );
+      beacon.position.set(side * (halfWidth - 0.12) * UNIT, 3.05 * UNIT, 0);
+      beacon.rotation.y = Math.PI / 4;
+      gate.add(beacon);
+    }
+
+    const header = createMesh(
+      new THREE.BoxGeometry(3.35 * UNIT, 0.18 * UNIT, 0.25 * UNIT),
+      new THREE.MeshBasicMaterial({ color: accent }),
+      `${gate.name}.header`
+    );
+    header.position.y = 3.12 * UNIT;
+    gate.add(header);
+
+    for (let markerIndex = 0; markerIndex < checkpointNumber; markerIndex += 1) {
+      const sequenceMarker = createMesh(
+        new THREE.BoxGeometry(0.42 * UNIT, 0.42 * UNIT, 0.12 * UNIT),
+        new THREE.MeshBasicMaterial({ color: COLOR.white }),
+        `${gate.name}.sequence-marker`
+      );
+      sequenceMarker.position.set(
+        (markerIndex - (checkpointNumber - 1) / 2) * 0.62 * UNIT,
+        3.12 * UNIT,
+        -0.2 * UNIT
+      );
+      sequenceMarker.rotation.z = Math.PI / 4;
+      gate.add(sequenceMarker);
+    }
+    course.add(gate);
+  }
+}
+
 function createFinishPortal(course: THREE.Group): void {
+  const finish = QUALIFIER_ROUTE_VOLUMES.find(({ kind }) => kind === "finish");
+  const finishZ = ((finish?.position.z ?? -12.4) + (finish?.size.depth ?? 1.2) / 2) * UNIT;
   const material = new THREE.MeshStandardMaterial({
-    color: 0x15294d,
+    color: 0x21355b,
     roughness: 0.26,
     metalness: 0.66,
     emissive: COLOR.coral,
-    emissiveIntensity: 0.22
+    emissiveIntensity: 0.42
   });
   for (const x of [-4.45, 4.45]) {
     const column = createMesh(
@@ -977,7 +1060,7 @@ function createFinishPortal(course: THREE.Group): void {
       material.clone(),
       "knockout.course.finish-column"
     );
-    column.position.set(x * UNIT, 3.35 * UNIT, -11.6 * UNIT);
+    column.position.set(x * UNIT, 3.35 * UNIT, finishZ);
     course.add(column);
   }
   const header = createMesh(
@@ -985,15 +1068,31 @@ function createFinishPortal(course: THREE.Group): void {
     material,
     "knockout.course.finish-header"
   );
-  header.position.set(0, 6.05 * UNIT, -11.6 * UNIT);
+  header.position.set(0, 6.05 * UNIT, finishZ);
   course.add(header);
+  const finishLine = createMesh(
+    new THREE.BoxGeometry(8 * UNIT, 0.04 * UNIT, 0.8 * UNIT),
+    new THREE.MeshBasicMaterial({ color: COLOR.white }),
+    "knockout.course.finish-line"
+  );
+  finishLine.position.set(0, 0.44 * UNIT, finishZ);
+  course.add(finishLine);
+  for (let index = 0; index < 10; index += 1) {
+    const finishTile = createMesh(
+      new THREE.BoxGeometry(0.8 * UNIT, 0.045 * UNIT, 0.4 * UNIT),
+      new THREE.MeshBasicMaterial({ color: index % 2 === 0 ? COLOR.ink : COLOR.coral }),
+      "knockout.course.finish-tile"
+    );
+    finishTile.position.set((index - 4.5) * 0.8 * UNIT, 0.46 * UNIT, finishZ - 0.2 * UNIT);
+    course.add(finishTile);
+  }
   for (let index = 0; index < 9; index += 1) {
     const lamp = createMesh(
       new THREE.SphereGeometry(0.09 * UNIT, 10, 8),
       new THREE.MeshBasicMaterial({ color: index % 2 === 0 ? COLOR.cyan : COLOR.coral }),
       "knockout.course.finish-lamp"
     );
-    lamp.position.set((index - 4) * UNIT, 6.05 * UNIT, -11.98 * UNIT);
+    lamp.position.set((index - 4) * UNIT, 6.05 * UNIT, finishZ - 0.38 * UNIT);
     course.add(lamp);
   }
 }

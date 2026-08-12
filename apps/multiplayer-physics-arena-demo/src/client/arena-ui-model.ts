@@ -33,6 +33,7 @@ export type ArenaUiViewModel = {
   timerUrgent: boolean;
   position: string;
   roster: string;
+  progressLabel: string;
   progress: number;
   item: { name: string; state: string; active: boolean };
   instability: number;
@@ -213,7 +214,6 @@ export function buildArenaUiViewModel(input: {
     ({ actorMemberId }) => actorMemberId === camera.targetMemberId
   );
   const focusParticipant = camera.mode === "playing" ? localParticipant : watchedParticipant;
-  const focusMemberId = focusParticipant?.actorMemberId;
   const focusCombat = snapshot.combat.actors.find(
     ({ participantId }) => participantId === focusParticipant?.id
   );
@@ -221,24 +221,54 @@ export function buildArenaUiViewModel(input: {
     ({ ownerParticipantId, state }) =>
       ownerParticipantId === focusParticipant?.id && (state === "carried" || state === "windup")
   );
-  const racers = snapshot.frame.members
-    .filter((member) => member.id.startsWith("player.") || member.id.startsWith("bot."))
-    .sort(
-      (left, right) =>
-        (left.body.position.z ?? Number.POSITIVE_INFINITY) -
-        (right.body.position.z ?? Number.POSITIVE_INFINITY)
+  const qualifierProgress = new Map(
+    snapshot.qualifierProgress.map((entry) => [entry.participantId, entry])
+  );
+  const stageParticipants = snapshot.participants.filter(
+    (participant) =>
+      participant.actorMemberId !== undefined &&
+      (snapshot.phase === "countdown"
+        ? participant.status === "lobby" || participant.status === "qualified"
+        : participant.stageInstanceId === snapshot.match.stageInstanceId &&
+          (participant.status === "active" || participant.status === "qualified"))
+  );
+  const memberZ = new Map(
+    snapshot.frame.members.map((member) => [member.id, member.body.position.z ?? 0])
+  );
+  const racers = stageParticipants.sort((left, right) => {
+    if (snapshot.match.stageKind !== "qualifier") {
+      return (
+        (memberZ.get(left.actorMemberId!) ?? Number.POSITIVE_INFINITY) -
+          (memberZ.get(right.actorMemberId!) ?? Number.POSITIVE_INFINITY) ||
+        left.slot - right.slot ||
+        left.id.localeCompare(right.id)
+      );
+    }
+    const leftProgress = qualifierProgress.get(left.id);
+    const rightProgress = qualifierProgress.get(right.id);
+    if (leftProgress?.finished !== rightProgress?.finished) {
+      return leftProgress?.finished ? -1 : 1;
+    }
+    return (
+      (rightProgress?.checkpointCount ?? 0) - (leftProgress?.checkpointCount ?? 0) ||
+      (rightProgress?.normalizedProgress ?? 0) - (leftProgress?.normalizedProgress ?? 0) ||
+      left.slot - right.slot ||
+      left.id.localeCompare(right.id)
     );
-  const focusIndex = racers.findIndex(({ id }) => id === focusMemberId);
+  });
+  const focusIndex = racers.findIndex(({ id }) => id === focusParticipant?.id);
   const activeCount = snapshot.participants.filter(({ status }) => status === "active").length;
   const stageEntrantCount = snapshot.participants.filter(
-    ({ actorMemberId, stageInstanceId }) =>
-      actorMemberId !== undefined && stageInstanceId === snapshot.match.stageInstanceId
+    ({ actorMemberId, stageInstanceId, status }) =>
+      actorMemberId !== undefined &&
+      (snapshot.phase === "countdown"
+        ? status === "lobby" || status === "qualified"
+        : stageInstanceId === snapshot.match.stageInstanceId)
   ).length;
   const visibleRacerCount = snapshot.phase === "running" ? activeCount : stageEntrantCount;
-  const progressMember = snapshot.frame.members.find(({ id }) => id === focusMemberId);
-  const progress = Math.round(
-    Math.max(0, Math.min(1, (5.4 - (progressMember?.body.position.z ?? 5.4)) / 16.9)) * 100
-  );
+  const focusQualifierProgress =
+    focusParticipant === undefined ? undefined : qualifierProgress.get(focusParticipant.id);
+  const progress = Math.round((focusQualifierProgress?.normalizedProgress ?? 0) * 100);
   const latestResult = snapshot.stageResults.at(-1);
   const resultCountdownMs =
     snapshot.phase === "results" && snapshot.match.deadlineTick !== undefined
@@ -258,11 +288,16 @@ export function buildArenaUiViewModel(input: {
         ? snapshot.countdownMs
         : snapshot.phase === "results"
           ? resultCountdownMs
-          : Math.max(0, 120_000 - snapshot.roundTimeMs)
+          : snapshot.phase === "running" && snapshot.match.deadlineTick !== undefined
+            ? Math.max(0, snapshot.match.deadlineTick - snapshot.frame.tick) * ARENA_FIXED_STEP_MS
+            : 0
     ),
     timerUrgent:
       snapshot.phase === "countdown" ||
-      (snapshot.phase === "running" && Math.max(0, 120_000 - snapshot.roundTimeMs) <= 15_000),
+      (snapshot.phase === "running" &&
+        snapshot.match.deadlineTick !== undefined &&
+        Math.max(0, snapshot.match.deadlineTick - snapshot.frame.tick) * ARENA_FIXED_STEP_MS <=
+          15_000),
     position:
       focusIndex < 0
         ? `-- / ${String(racers.length).padStart(2, "0")}`
@@ -270,7 +305,15 @@ export function buildArenaUiViewModel(input: {
     roster:
       snapshot.phase === "countdown"
         ? `${visibleRacerCount} ON THE GRID`
-        : `${visibleRacerCount} LIVE · ${snapshot.eliminatedMemberIds.length} OUT`,
+        : snapshot.match.stageKind === "qualifier"
+          ? `${snapshot.qualifierProgress.filter(({ finished }) => finished).length} / ${snapshot.match.qualificationCount} QUALIFIED`
+          : `${visibleRacerCount} LIVE · ${snapshot.removedMemberIds.length} OUT`,
+    progressLabel:
+      snapshot.match.stageKind === "qualifier"
+        ? focusQualifierProgress?.finished
+          ? "FINISH LOCKED"
+          : `CHECKPOINT ${focusQualifierProgress?.checkpointCount ?? 0} / ${focusQualifierProgress?.checkpointTotal ?? 0}`
+        : "FIELD STATUS",
     progress:
       snapshot.match.stageKind === "qualifier"
         ? progress
@@ -324,6 +367,7 @@ function offlineView(inputDevice: ArenaInputDevice): ArenaUiViewModel {
     timerUrgent: false,
     position: "-- / --",
     roster: "WAITING FOR GRID",
+    progressLabel: "COURSE STATUS",
     progress: 0,
     item: { name: "EMPTY HANDS", state: "FIND A PICKUP", active: false },
     instability: 0,
@@ -390,6 +434,19 @@ function overlayView(
       kicker: `STAGE ${snapshot.match.stageIndex + 1}`,
       title: stageName,
       detail: stageCopy(snapshot.match.stageKind, snapshot.match.stageId).objective
+    };
+  }
+  if (
+    snapshot.phase === "running" &&
+    snapshot.match.stageKind === "qualifier" &&
+    localParticipant?.status === "qualified"
+  ) {
+    return {
+      visible: true,
+      tone: "success",
+      kicker: "FINISH CONFIRMED",
+      title: "QUALIFIED",
+      detail: "Your place is locked · watching the remaining runners"
     };
   }
   if (snapshot.phase === "results" && snapshot.winnerId === undefined) {

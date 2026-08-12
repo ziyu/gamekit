@@ -14,14 +14,14 @@ export type ArenaActorAuthorityStep = {
 /** Resolves one authority tick without allowing an eliminated actor to re-enter the round. */
 export function resolveArenaActorAuthorityStep(options: {
   phase: ArenaMatchPhase;
-  eliminated: boolean;
+  removed: boolean;
   input: ArenaMoveInput;
   memberAvailable: boolean;
 }): ArenaActorAuthorityStep {
   if (!options.memberAvailable) {
     return { control: neutralControl(options.input.sequence), action: { type: "none" } };
   }
-  if (options.eliminated) {
+  if (options.removed) {
     return { control: neutralControl(options.input.sequence), action: { type: "despawn" } };
   }
   if (options.phase === "countdown" || options.phase === "lobby") {

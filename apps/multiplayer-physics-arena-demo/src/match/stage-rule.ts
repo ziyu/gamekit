@@ -5,6 +5,7 @@ export type ArenaStageCompletionReason =
   | "all-eliminated"
   | "last-standing"
   | "qualification-reached"
+  | "qualification-locked"
   | "field-reduced"
   | "deadline";
 
@@ -79,7 +80,24 @@ export function createArenaStageRule(definition: Readonly<ArenaStageDefinition>)
         definition.qualificationCount,
         input.entrantParticipantIds.length
       );
-      if (input.activeParticipantIds.length === 0) {
+      const completedCount = input.completedParticipantIds?.length ?? 0;
+      if (definition.kind === "qualifier") {
+        if (completedCount + input.activeParticipantIds.length === 0) {
+          completions += 1;
+          return { status: "complete", reason: "all-eliminated" };
+        }
+        if (completedCount >= qualificationCount) {
+          completions += 1;
+          return { status: "complete", reason: "qualification-reached" };
+        }
+        if (
+          completedCount > 0 &&
+          completedCount + input.activeParticipantIds.length <= qualificationCount
+        ) {
+          completions += 1;
+          return { status: "complete", reason: "qualification-locked" };
+        }
+      } else if (input.activeParticipantIds.length === 0) {
         completions += 1;
         return { status: "complete", reason: "all-eliminated" };
       }
@@ -98,13 +116,6 @@ export function createArenaStageRule(definition: Readonly<ArenaStageDefinition>)
       ) {
         completions += 1;
         return { status: "complete", reason: "field-reduced" };
-      }
-      if (
-        definition.kind === "qualifier" &&
-        (input.completedParticipantIds?.length ?? 0) >= qualificationCount
-      ) {
-        completions += 1;
-        return { status: "complete", reason: "qualification-reached" };
       }
       if (input.elapsedTicks >= definition.durationTicks) {
         completions += 1;

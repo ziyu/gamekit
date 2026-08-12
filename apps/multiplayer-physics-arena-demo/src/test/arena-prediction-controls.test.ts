@@ -11,7 +11,7 @@ describe("Knockout Arena prediction control selection", () => {
           "bot.despawned": { sequence: 4, moveX: 1, moveZ: 0, jump: false }
         },
         liveMemberIds: new Set(["player.live"]),
-        eliminatedMemberIds: ["bot.despawned"],
+        removedMemberIds: ["bot.despawned"],
         playerIdsByPeerId: { "peer.local": "player.live" },
         peerId: "peer.local",
         localInput: { moveX: -1, moveZ: 0.5, jump: true },
@@ -29,7 +29,7 @@ describe("Knockout Arena prediction control selection", () => {
           "player.out": { sequence: 12, moveX: 0, moveZ: 0, jump: false }
         },
         liveMemberIds: new Set(),
-        eliminatedMemberIds: ["player.out"],
+        removedMemberIds: ["player.out"],
         playerIdsByPeerId: { "peer.local": "player.out" },
         peerId: "peer.local",
         localInput: { moveX: 1, moveZ: 1, jump: true },

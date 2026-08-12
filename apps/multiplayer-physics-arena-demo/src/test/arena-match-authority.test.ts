@@ -19,10 +19,21 @@ describe("Knockout Arena multi-stage authority", () => {
         stageCount: 3,
         stageKind: "qualifier"
       });
+      expect(qualifier.qualifierProgress).toHaveLength(8);
+      expect(qualifier.qualifierProgress).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            checkpointCount: 0,
+            checkpointTotal: 2,
+            finished: false,
+            normalizedProgress: 0
+          })
+        ])
+      );
 
       advanceUntil(fixture.authority, (snapshot) => snapshot.stageResults.length === 1, 5_500);
       const qualifierResult = fixture.authority.latestSnapshot();
-      expect(actorIds(qualifierResult)).toHaveLength(6);
+      expect(actorIds(qualifierResult)).toHaveLength(0);
       expect(qualifierResult.stageResults[0]).toMatchObject({
         stageKind: "qualifier",
         qualifiedParticipantIds: expect.arrayContaining([expect.any(String), expect.any(String)])
@@ -50,7 +61,7 @@ describe("Knockout Arena multi-stage authority", () => {
         240
       );
       advanceUntil(fixture.authority, (snapshot) => snapshot.stageResults.length === 2, 5_500);
-      expect(actorIds(fixture.authority.latestSnapshot())).toHaveLength(3);
+      expect(actorIds(fixture.authority.latestSnapshot())).toHaveLength(0);
 
       advanceUntil(
         fixture.authority,
@@ -116,7 +127,7 @@ describe("Knockout Arena multi-stage authority", () => {
           membershipRevision: rematch.frame.membershipRevision
         },
         stageResults: [],
-        eliminatedMemberIds: []
+        removedMemberIds: []
       });
       expect(rematch.winnerId).toBeUndefined();
       expect(rematch.frame.generation).not.toBe(finalResult.frame.generation);

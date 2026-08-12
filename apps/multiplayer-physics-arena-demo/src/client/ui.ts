@@ -30,6 +30,7 @@ export type ArenaUi = {
   stageFormat: HTMLElement;
   objective: HTMLElement;
   position: HTMLElement;
+  progressLabel: HTMLElement;
   progress: HTMLElement;
   progressFill: HTMLElement;
   roster: HTMLElement;
@@ -133,12 +134,13 @@ export function renderArenaUi(root: HTMLElement): ArenaUi {
   );
   const position = racePosition.lastElementChild as HTMLElement;
   const raceProgress = element("div", "arena-race-hud__progress-block");
+  const progressLabel = element("span", "arena-race-hud__progress-label", "COURSE STATUS");
   const roster = element("span", "arena-race-hud__roster", "WAITING FOR GRID");
   const progressTrack = element("div", "arena-progress");
   const progressFill = element("span", "arena-progress__fill");
   const progress = element("span", "arena-progress__value", "0%");
   progressTrack.append(progressFill);
-  raceProgress.append(roster, progressTrack, progress);
+  raceProgress.append(progressLabel, roster, progressTrack, progress);
   const equipment = element("div", "arena-equipment");
   const itemBlock = element("div", "arena-equipment__item");
   const itemName = element("strong", "arena-equipment__name", "EMPTY HANDS");
@@ -298,6 +300,7 @@ export function renderArenaUi(root: HTMLElement): ArenaUi {
     stageFormat,
     objective,
     position,
+    progressLabel,
     progress,
     progressFill,
     roster,
@@ -418,6 +421,7 @@ export function updateArenaUi(
   ui.stageFormat.textContent = model.stage.format;
   ui.objective.textContent = model.stage.objective;
   ui.position.textContent = model.position;
+  ui.progressLabel.textContent = model.progressLabel;
   ui.roster.textContent = model.roster;
   ui.progress.textContent = `${model.progress}%`;
   ui.progressFill.style.setProperty("--race-progress", `${model.progress}%`);

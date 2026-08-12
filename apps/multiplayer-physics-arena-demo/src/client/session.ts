@@ -261,7 +261,7 @@ export async function createArenaClientSession(options: {
       const controlsByMemberId = selectArenaPredictionActorControls({
         authorityControls: snapshot.actorControlsByMemberId,
         liveMemberIds: new Set(snapshot.frame.members.map((candidate) => candidate.id)),
-        eliminatedMemberIds: snapshot.eliminatedMemberIds,
+        removedMemberIds: snapshot.removedMemberIds,
         playerIdsByPeerId: snapshot.playerIdsByPeerId,
         peerId,
         localInput: input,
@@ -618,6 +618,7 @@ function resolveLocalMemberId(
   const participant = snapshot?.participants.find((candidate) => candidate.peerId === peerId);
   return participant?.status === "spectator" ||
     participant?.status === "next-match" ||
+    participant?.status === "qualified" ||
     participant?.status === "eliminated" ||
     participant?.status === "finished"
     ? undefined

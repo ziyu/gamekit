@@ -28,6 +28,8 @@ export type ArenaMatchDirectorSnapshot = {
   stageCount: number;
   stageId: string;
   stageKind: ArenaStageKind;
+  qualificationCount: number;
+  durationTicks: number;
   stageInstanceId: string;
   startedAtTick: number;
   stageStartedAtTick?: number | undefined;
@@ -136,7 +138,12 @@ export function createArenaMatchDirector(options: {
         deadlineTick !== undefined &&
         input.tick >= deadlineTick
       ) {
-        transition("running", "countdown-complete", input.tick);
+        transition(
+          "running",
+          "countdown-complete",
+          input.tick,
+          input.tick + currentRule().durationTicks
+        );
         stageStartedAtTick = input.tick;
         actions.push({ type: "stage-started", ...stageActionIdentity() });
         stageStarted = true;
@@ -298,6 +305,8 @@ export function createArenaMatchDirector(options: {
       stageCount: stageRules.length,
       stageId: rule.id,
       stageKind: rule.kind,
+      qualificationCount: rule.qualificationCount,
+      durationTicks: rule.durationTicks,
       stageInstanceId,
       startedAtTick,
       ...(stageStartedAtTick === undefined ? {} : { stageStartedAtTick }),

@@ -196,6 +196,8 @@ function snapshot(
       stageCount: 3,
       stageId: "stage.circuit-forge",
       stageKind: "qualifier",
+      qualificationCount: 6,
+      durationTicks: 5_400,
       stageInstanceId: `match.${round}:stage.circuit-forge:1`,
       startedAtTick: tick,
       stageStartedAtTick: tick,
@@ -214,6 +216,7 @@ function snapshot(
         revision: round
       }
     ],
+    qualifierProgress: [],
     stageResults: [],
     items: [],
     itemActions: [],
@@ -231,7 +234,7 @@ function snapshot(
     actorControlsByMemberId: {
       "player.0": { sequence: tick, moveX: 0, moveZ: 0, jump: false }
     },
-    eliminatedMemberIds: [],
+    removedMemberIds: [],
     effects,
     serverTime: tick * (1000 / 60),
     authority: {

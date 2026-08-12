@@ -26,6 +26,7 @@ describe("Knockout Circuit game UX", () => {
     expect(countdown.spectator.visible).toBe(false);
 
     snapshot.phase = "running";
+    snapshot.match.deadlineTick = 5_440;
     snapshot.participants[0]!.status = "eliminated";
     const spectator = buildArenaUiViewModel({
       snapshot,
@@ -36,7 +37,43 @@ describe("Knockout Circuit game UX", () => {
     });
     expect(spectator.spectator).toMatchObject({ visible: true, target: "BOT 1" });
     expect(spectator.localStatus).toBe("ELIMINATED");
+    expect(spectator).toMatchObject({ timer: "01:30", progressLabel: "CHECKPOINT 0 / 2" });
     expect(spectator.prompts[0]).toEqual({ key: "[ / ]", action: "SWITCH RUNNER" });
+  });
+
+  it("confirms qualification immediately and keeps the local result visible while spectating", () => {
+    const snapshot = arenaSnapshot("running");
+    snapshot.participants[0]!.status = "qualified";
+    snapshot.qualifierProgress[0] = {
+      participantId: "player.0",
+      checkpointCount: 2,
+      checkpointTotal: 2,
+      finished: true,
+      normalizedProgress: 1,
+      progressTick: 40
+    };
+    snapshot.removedMemberIds = ["player.0"];
+    snapshot.frame.members = snapshot.frame.members.filter(({ id }) => id !== "player.0");
+
+    const view = buildArenaUiViewModel({
+      snapshot,
+      localMemberId: undefined,
+      localPeerId: "peer.0",
+      camera: { mode: "spectator", targetMemberId: "bot.0" },
+      inputDevice: "keyboard"
+    });
+
+    expect(view).toMatchObject({
+      localStatus: "QUALIFIED",
+      roster: "1 / 6 QUALIFIED",
+      overlay: {
+        visible: true,
+        tone: "success",
+        kicker: "FINISH CONFIRMED",
+        title: "QUALIFIED"
+      },
+      spectator: { visible: true, target: "BOT 1" }
+    });
   });
 
   it("publishes one bounded knockout announcement and a complete results podium", () => {
@@ -47,7 +84,7 @@ describe("Knockout Circuit game UX", () => {
     const after = structuredClone(before);
     after.frame.tick = 41;
     after.participants[1]!.status = "eliminated";
-    after.eliminatedMemberIds = ["bot.0"];
+    after.removedMemberIds = ["bot.0"];
     after.combat.hits = [
       {
         id: "hit.41",
@@ -163,10 +200,12 @@ function arenaSnapshot(phase: ArenaSnapshot["phase"]): ArenaSnapshot {
       stageCount: 3,
       stageId: "stage.circuit-forge",
       stageKind: "qualifier",
+      qualificationCount: 6,
+      durationTicks: 5_400,
       stageInstanceId: "match.1:stage.circuit-forge:1",
       startedAtTick: 0,
       stageStartedAtTick: 0,
-      deadlineTick: phase === "results" ? 180 : undefined,
+      deadlineTick: phase === "results" ? 180 : phase === "running" ? 5_440 : undefined,
       membershipRevision: 1
     },
     participants: [
@@ -190,6 +229,24 @@ function arenaSnapshot(phase: ArenaSnapshot["phase"]): ArenaSnapshot {
         status: "active",
         stageInstanceId: "match.1:stage.circuit-forge:1",
         revision: 1
+      }
+    ],
+    qualifierProgress: [
+      {
+        participantId: "player.0",
+        checkpointCount: 1,
+        checkpointTotal: 2,
+        finished: false,
+        normalizedProgress: 0.45,
+        progressTick: 40
+      },
+      {
+        participantId: "bot.0",
+        checkpointCount: 0,
+        checkpointTotal: 2,
+        finished: false,
+        normalizedProgress: 0.2,
+        progressTick: 40
       }
     ],
     stageResults: [],
@@ -224,7 +281,7 @@ function arenaSnapshot(phase: ArenaSnapshot["phase"]): ArenaSnapshot {
     playerIdsByPeerId: { "peer.0": "player.0" },
     inputAcksByPeerId: { "peer.0": 40 },
     actorControlsByMemberId: {},
-    eliminatedMemberIds: [],
+    removedMemberIds: [],
     effects: [],
     serverTime: 1_000,
     authority: {

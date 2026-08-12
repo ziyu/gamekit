@@ -18,6 +18,8 @@ describe("Knockout Arena protocol", () => {
         stageCount: 3,
         stageId: "stage.circuit-forge",
         stageKind: "qualifier",
+        qualificationCount: 6,
+        durationTicks: 5_400,
         stageInstanceId: "match.1:stage.circuit-forge:1",
         startedAtTick: 6,
         stageStartedAtTick: 6,
@@ -34,6 +36,16 @@ describe("Knockout Arena protocol", () => {
           status: "active",
           stageInstanceId: "match.1:stage.circuit-forge:1",
           revision: 3
+        }
+      ],
+      qualifierProgress: [
+        {
+          participantId: "player.0",
+          checkpointCount: 1,
+          checkpointTotal: 2,
+          finished: false,
+          normalizedProgress: 0.5,
+          progressTick: 6
         }
       ],
       stageResults: [],
@@ -53,7 +65,7 @@ describe("Knockout Arena protocol", () => {
       actorControlsByMemberId: {
         "player.0": { sequence: 9, moveX: 1, moveZ: 0, jump: false }
       },
-      eliminatedMemberIds: [],
+      removedMemberIds: [],
       effects: [],
       serverTime: 100,
       authority: {
@@ -76,5 +88,9 @@ describe("Knockout Arena protocol", () => {
     const mismatchedRevision = structuredClone(snapshot);
     mismatchedRevision.match.membershipRevision = 2;
     expect(readArenaSnapshot(mismatchedRevision)).toBeUndefined();
+
+    const impossibleCheckpoint = structuredClone(snapshot);
+    impossibleCheckpoint.qualifierProgress[0]!.checkpointCount = 3;
+    expect(readArenaSnapshot(impossibleCheckpoint)).toBeUndefined();
   });
 });

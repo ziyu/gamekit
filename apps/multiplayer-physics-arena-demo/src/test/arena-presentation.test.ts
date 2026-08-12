@@ -63,8 +63,13 @@ describe("Knockout Circuit presented state", () => {
     runtime.sync({ snapshot, predictedState: state, localMemberId: "player.0", deltaMs: 16 });
     expect(runtime.actor("player.0")?.baseState).toBe("stagger");
 
+    snapshot.participants[0]!.status = "qualified";
+    snapshot.removedMemberIds = ["player.0"];
+    runtime.sync({ snapshot, predictedState: state, deltaMs: 16 });
+    expect(runtime.actor("player.0")?.baseState).toBe("stagger");
+
     snapshot.participants[0]!.status = "eliminated";
-    snapshot.eliminatedMemberIds = ["player.0"];
+    snapshot.removedMemberIds = ["player.0"];
     runtime.sync({ snapshot, predictedState: state, deltaMs: 16 });
     expect(runtime.actor("player.0")?.baseState).toBe("eliminated");
     runtime.dispose();
@@ -268,12 +273,15 @@ function arenaSnapshot(tick: number, participants: ArenaPublicParticipantState[]
       stageCount: 3,
       stageId: "stage.circuit-forge",
       stageKind: "qualifier",
+      qualificationCount: 6,
+      durationTicks: 5_400,
       stageInstanceId: "match.1:stage.circuit-forge:1",
       startedAtTick: 0,
       stageStartedAtTick: 0,
       membershipRevision: 1
     },
     participants,
+    qualifierProgress: [],
     stageResults: [],
     items: [],
     itemActions: [],
@@ -289,7 +297,7 @@ function arenaSnapshot(tick: number, participants: ArenaPublicParticipantState[]
     playerIdsByPeerId: { "peer.0": "player.0" },
     inputAcksByPeerId: { "peer.0": tick },
     actorControlsByMemberId: {},
-    eliminatedMemberIds: [],
+    removedMemberIds: [],
     effects: [],
     serverTime: tick * ARENA_FIXED_STEP_MS,
     authority: {

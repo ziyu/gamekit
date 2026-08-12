@@ -143,7 +143,7 @@ describe("Knockout Arena Room authority", () => {
         phase: "running",
         round: 1,
         countdownMs: 0,
-        eliminatedMemberIds: []
+        removedMemberIds: []
       });
       expect(running.actorControlsByMemberId["player.0"]).toMatchObject({
         moveX: 1,

@@ -9,21 +9,21 @@ import { createArenaMemberDefinitions } from "../shared/arena-definition";
 
 describe("Knockout Arena actor lifecycle", () => {
   it("despawns an eliminated actor instead of teleporting it back into the live round", () => {
-    const eliminated = resolveArenaActorAuthorityStep({
+    const removed = resolveArenaActorAuthorityStep({
       phase: "running",
-      eliminated: true,
+      removed: true,
       input: { sequence: 7, moveX: 1, moveZ: -1, jump: true },
       memberAvailable: true
     });
 
-    expect(eliminated).toEqual({
+    expect(removed).toEqual({
       control: { sequence: 7, moveX: 0, moveZ: 0, jump: false },
       action: { type: "despawn" }
     });
     expect(
       resolveArenaActorAuthorityStep({
         phase: "running",
-        eliminated: true,
+        removed: true,
         input: { sequence: 8, moveX: 1, moveZ: 0, jump: false },
         memberAvailable: false
       }).action

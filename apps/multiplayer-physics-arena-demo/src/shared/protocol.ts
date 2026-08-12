@@ -59,11 +59,22 @@ export type ArenaPublicMatchState = {
   stageCount: number;
   stageId: string;
   stageKind: "qualifier" | "brawl" | "final";
+  qualificationCount: number;
+  durationTicks: number;
   stageInstanceId: string;
   startedAtTick: number;
   stageStartedAtTick?: number | undefined;
   deadlineTick?: number | undefined;
   membershipRevision: number;
+};
+
+export type ArenaPublicQualifierProgress = {
+  participantId: string;
+  checkpointCount: number;
+  checkpointTotal: number;
+  finished: boolean;
+  normalizedProgress: number;
+  progressTick: number;
 };
 
 export type ArenaPublicStagePlacement = {
@@ -145,6 +156,7 @@ export type ArenaSnapshot = {
   winnerId?: string | undefined;
   match: ArenaPublicMatchState;
   participants: ArenaPublicParticipantState[];
+  qualifierProgress: ArenaPublicQualifierProgress[];
   stageResults: ArenaPublicStageResult[];
   items: ArenaPublicItemState[];
   itemActions: ArenaPublicItemAction[];
@@ -153,7 +165,7 @@ export type ArenaSnapshot = {
   playerIdsByPeerId: Record<string, string>;
   inputAcksByPeerId: Record<string, number>;
   actorControlsByMemberId: Record<string, ArenaActorControlFrame>;
-  eliminatedMemberIds: string[];
+  removedMemberIds: string[];
   effects: ArenaAuthorityEffectCue[];
   serverTime: number;
   authority: ArenaAuthorityDiagnostics;
@@ -196,6 +208,11 @@ export function readArenaSnapshot(value: unknown): ArenaSnapshot | undefined {
     !value.participants.every(isPublicParticipantState) ||
     new Set(value.participants.map((participant) => participant.id)).size !==
       value.participants.length ||
+    !Array.isArray(value.qualifierProgress) ||
+    value.qualifierProgress.length > 64 ||
+    !value.qualifierProgress.every(isPublicQualifierProgress) ||
+    new Set(value.qualifierProgress.map((entry) => entry.participantId)).size !==
+      value.qualifierProgress.length ||
     !Array.isArray(value.stageResults) ||
     value.stageResults.length > 8 ||
     !value.stageResults.every(isPublicStageResult) ||
@@ -215,8 +232,7 @@ export function readArenaSnapshot(value: unknown): ArenaSnapshot | undefined {
     !isRecord(value.playerIdsByPeerId) ||
     !isRecord(value.inputAcksByPeerId) ||
     !isRecord(value.actorControlsByMemberId) ||
-    !Array.isArray(value.eliminatedMemberIds) ||
-    !value.eliminatedMemberIds.every((id) => typeof id === "string") ||
+    !boundedIdArray(value.removedMemberIds, 64) ||
     !Array.isArray(value.effects) ||
     value.effects.length > 128 ||
     !value.effects.every(isAuthorityEffectCue) ||
@@ -237,6 +253,20 @@ export function readArenaSnapshot(value: unknown): ArenaSnapshot | undefined {
     return undefined;
   }
   return structuredClone(value) as ArenaSnapshot;
+}
+
+function isPublicQualifierProgress(value: unknown): value is ArenaPublicQualifierProgress {
+  return (
+    isRecord(value) &&
+    boundedId(value.participantId) &&
+    nonNegativeSafeInteger(value.checkpointCount) &&
+    nonNegativeSafeInteger(value.checkpointTotal) &&
+    value.checkpointCount <= value.checkpointTotal &&
+    typeof value.finished === "boolean" &&
+    nonNegativeFinite(value.normalizedProgress) &&
+    value.normalizedProgress <= 1 &&
+    nonNegativeSafeInteger(value.progressTick)
+  );
 }
 
 function isPublicCombatProjection(value: unknown): value is ArenaPublicCombatProjection {
@@ -350,6 +380,8 @@ function isPublicMatchState(value: unknown): value is ArenaPublicMatchState {
     value.stageCount > 0 &&
     boundedId(value.stageId) &&
     isStageKind(value.stageKind) &&
+    positiveSafeInteger(value.qualificationCount) &&
+    positiveSafeInteger(value.durationTicks) &&
     boundedId(value.stageInstanceId) &&
     nonNegativeSafeInteger(value.startedAtTick) &&
     (value.stageStartedAtTick === undefined || nonNegativeSafeInteger(value.stageStartedAtTick)) &&

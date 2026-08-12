@@ -359,11 +359,8 @@ function isEliminated(
   snapshot: ArenaSnapshot,
   memberId: string
 ): boolean {
-  return (
-    participant.status === "eliminated" ||
-    participant.status === "finished" ||
-    snapshot.eliminatedMemberIds.includes(memberId)
-  );
+  if (participant.status === "qualified" || participant.status === "finished") return false;
+  return participant.status === "eliminated" || snapshot.removedMemberIds.includes(memberId);
 }
 
 function resolveBaseState(

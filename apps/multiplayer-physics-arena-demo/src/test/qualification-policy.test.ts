@@ -28,6 +28,32 @@ describe("Knockout Arena dynamic qualification", () => {
       })
     ).toEqual({ status: "complete", reason: "qualification-reached" });
 
+    expect(
+      qualifier.evaluate({
+        elapsedTicks: 21,
+        entrantParticipantIds: ["a", "b", "c", "d", "e", "f", "g", "h"],
+        activeParticipantIds: ["c", "d", "e", "f"],
+        completedParticipantIds: ["a", "b"]
+      })
+    ).toEqual({ status: "complete", reason: "qualification-locked" });
+
+    expect(
+      qualifier.evaluate({
+        elapsedTicks: 22,
+        entrantParticipantIds: ["a", "b", "c", "d", "e", "f", "g", "h"],
+        activeParticipantIds: ["a", "b", "c", "d", "e", "f"],
+        completedParticipantIds: []
+      })
+    ).toEqual({ status: "continue" });
+
+    expect(
+      qualifier.evaluate({
+        elapsedTicks: 0,
+        entrantParticipantIds: [],
+        activeParticipantIds: []
+      })
+    ).toEqual({ status: "complete", reason: "all-eliminated" });
+
     const brawl = createArenaStageRule({
       ...ARENA_COMPILED_CONTENT.stages[1]!.definition,
       id: "empty-brawl",

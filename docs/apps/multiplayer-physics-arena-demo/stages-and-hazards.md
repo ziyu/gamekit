@@ -59,6 +59,9 @@ generation 安装，不能退回各端手写一套 course 常量。
 6. Finish Portal：独立 finish sensor 与防止反向刷 checkpoint 的 route order。
 
 资格赛机关不能形成无法恢复的永久封路；required route validator 必须证明每个 schedule window 内存在可完成路径。
+正式表现必须把 authored checkpoint/finish volume 映射为可读的赛道地标，而不是显示调试 collider：每个 checkpoint 使用不同色的
+门架、地面横带和顺序标记，Finish Portal 使用高对比门架、灯带与棋盘终点线。地标位置和序号从 compiled course volume 派生，
+不能在 Renderer 里维护另一套胜利坐标。
 
 ## Scrap Yard 道具乱斗
 
@@ -168,7 +171,9 @@ kinematic schedule 或自由 dynamic body 表达，不偷渡 Rapier joint handle
 - Stage installation 先以 compiled member id 集合移除上一关 dynamic/kinematic content，再生成当前关成员并把晋级 actor 归零速度后放到
   stable participant spawn；authority 与 client 都从同一绝对 stage tick hazard sampler 生成 patch，不能分别累计局部相位。
 - 资格赛 checkpoint 只按 `routeOrder` 单调推进；达到全部 checkpoint 后进入 finish volume 才算完成。完成数达到 qualification count
-  时 Stage Rule 可以提前结算，deadline 继续作为断路或玩家停滞时的确定性后备。
+  时 Stage Rule 可以提前结算；若已经存在合法完成者，且“已完成 + 仍 active”不超过有效晋级名额，结果集合也已锁定并可立即结算。
+  单纯开局减员但无人完成时不能触发锁定。完成 actor 在同一 stage 立即退出 island，下一 stage generation 再按晋级阵容重新安装；
+  deadline 继续作为断路或玩家停滞时的确定性后备。
 - Scrap Yard 与 Crown Collapse 使用 authority-owned forced-convergence planner。乱斗从 stage 55% 进度开始按 safe-zone
   scale 收敛到 `qualificationCount`，决赛从 25% 开始收敛到 1 人；82% 后允许按稳定的“离安全区中心距离、participant id”
   顺序强制淘汰。planner 只读取当前 authority body facts，不读取客户端预测或 Renderer，且始终保留规则要求的最小存活数。

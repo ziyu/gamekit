@@ -3,7 +3,7 @@ import type { ArenaActorControlFrame } from "../shared/config";
 export function selectArenaPredictionActorControls(input: {
   authorityControls: Readonly<Record<string, ArenaActorControlFrame>>;
   liveMemberIds: ReadonlySet<string>;
-  eliminatedMemberIds: readonly string[];
+  removedMemberIds: readonly string[];
   playerIdsByPeerId: Readonly<Record<string, string>>;
   peerId: string;
   localInput: { moveX: number; moveZ: number; jump: boolean };
@@ -18,7 +18,7 @@ export function selectArenaPredictionActorControls(input: {
   if (
     localMemberId !== undefined &&
     input.liveMemberIds.has(localMemberId) &&
-    !input.eliminatedMemberIds.includes(localMemberId)
+    !input.removedMemberIds.includes(localMemberId)
   ) {
     controls[localMemberId] = {
       sequence: input.inputSequence,

@@ -142,7 +142,7 @@ Stage intro、results和winner podium可以使用app-ownedThree native camera，
 - Lobby：room code、participant/bot roster、ready/content compatibility、输入设备。
 - Loading：required content进度、等待成员、错误/重试。
 - Stage Intro：目标、晋级名额、关键机关/道具说明。
-- Playing HUD：阶段目标、timer、排名/存活数、item、charge、instability和轻量feed。
+- Playing HUD：阶段目标、authority timer、排名/存活数、资格赛 checkpoint/晋级进度、item、charge、instability和轻量feed。
 - Spectator：观战目标、placement、下一stage/match状态。
 - Stage Results：晋级/淘汰、关键KO和下一stage。
 - Match Results：winner、完整placement、stage表现、KO/assist、道具与机关因果、rematch/leave。
@@ -155,6 +155,11 @@ Gameplay视图始终占主区域。常驻HUD只显示当前做决定需要的信
 Arena UI先由纯`ArenaUiViewModel`把公开match/participant/ranking/item/combat快照、feedback camera和本机peer身份投影为页面状态，
 DOM层只提交`textContent`、class和CSS custom property。Lobby、stage intro、playing、spectator、stage results与match results不能各自
 重新解释淘汰、晋级、winner或rematch；results deadline统一显示authority自动排队的下一stage或下一match。
+
+Running timer 必须由 snapshot 的 `deadlineTick - frame.tick` 计算，不使用关卡无关的客户端固定时长。资格赛 HUD 显示当前关注者的
+`CHECKPOINT n / total`、authority `normalizedProgress`、全场 `finished / qualificationCount` 和确定性名次。本人状态变为
+`qualified` 后，即使本地 actor 已从 frame 移除并切到 spectator camera，HUD 仍通过 peer→participant 绑定显示持久的
+`FINISH CONFIRMED / QUALIFIED` 覆盖层；不能把“身体消失”误解释成淘汰或让成功反馈只闪一帧。
 
 KO feed的首次snapshot只建立hit/status/result基线，避免late join补播旧比赛事件；之后按stable hit/result identity和participant status
 edge生成item hit、environment KO、qualified与winner条目。Tracker只保留协议本身的有界rolling set，UI同时最多显示6条；网络telemetry

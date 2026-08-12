@@ -33,6 +33,7 @@ import {
   type ArenaParticipantRegistryDiagnostics
 } from "../match/participant-registry";
 import { createArenaStageRule } from "../match/stage-rule";
+import { advanceArenaQualifierProgress } from "../match/qualifier-progress";
 import {
   settleArenaStageRanking,
   type ArenaStageRankingFact,
@@ -242,6 +243,8 @@ export function createArenaAuthorityRuntime(
       progressTick: number;
       centerDistance: number;
       checkpointCount: number;
+      checkpointTotal: number;
+      normalizedProgress: number;
       finished: boolean;
       objectiveScore: number;
     }
@@ -351,6 +354,7 @@ export function createArenaAuthorityRuntime(
         participant.status === "next-match" ||
         participant.status === "eliminated" ||
         participant.status === "finished" ||
+        participant.status === "qualified" ||
         payload.authorityEpoch !==
           arenaParticipantCommandEpoch(island.diagnostics().generation, participant.revision)
       ) {
@@ -546,6 +550,7 @@ export function createArenaAuthorityRuntime(
   function advanceMatch(authorityTick: number): void {
     if (director.snapshot().phase === "running") {
       updateRankingSpatialFacts(authorityTick);
+      lockFinishedQualifierParticipants(authorityTick);
       detectEliminations(authorityTick);
     }
     const entrantParticipantIds = participants
@@ -553,8 +558,14 @@ export function createArenaAuthorityRuntime(
       .filter((participant) => stageEntrantParticipantIds.has(participant.id))
       .map((participant) => participant.id);
     const activeParticipantIds = participants
-      .competitiveParticipantIds()
-      .filter((participantId) => stageEntrantParticipantIds.has(participantId));
+      .list()
+      .filter(
+        (participant) =>
+          stageEntrantParticipantIds.has(participant.id) &&
+          (participant.status === "active" ||
+            (participant.status === "disconnected" && participant.resumeStatus === "active"))
+      )
+      .map((participant) => participant.id);
     const result = director.advance({
       tick: authorityTick,
       connectedHumans: participants
@@ -598,6 +609,24 @@ export function createArenaAuthorityRuntime(
         stageResults.length = 0;
       }
     }
+  }
+
+  function lockFinishedQualifierParticipants(authorityTick: number): void {
+    const match = director.snapshot();
+    if (match.stageKind !== "qualifier") return;
+    let membershipChanged = false;
+    for (const [participantId, fact] of rankingSpatialFacts) {
+      if (!fact.finished) continue;
+      const participant = participants.participant(participantId);
+      if (participant?.status !== "active") continue;
+      const result = participants.transition(participant.id, "qualified", {
+        reason: "stage-qualified",
+        tick: authorityTick,
+        stageInstanceId: match.stageInstanceId
+      });
+      if (result.status === "applied") membershipChanged = true;
+    }
+    if (membershipChanged) membershipRevision += 1;
   }
 
   function activateStageParticipants(authorityTick: number, stageInstanceId: string): void {
@@ -715,7 +744,7 @@ export function createArenaAuthorityRuntime(
     ) {
       throw new Error("Arena director winner disagrees with deterministic ranking");
     }
-    let eliminated = 0;
+    let membershipChanged = false;
     for (const placement of settlement.placements) {
       const participant = participants.participant(placement.participantId);
       if (participant === undefined) continue;
@@ -730,9 +759,9 @@ export function createArenaAuthorityRuntime(
         tick: authorityTick,
         stageInstanceId
       });
-      if (to === "eliminated" && result.status === "applied") eliminated += 1;
+      if (result.status === "applied") membershipChanged = true;
     }
-    if (eliminated > 0) membershipRevision += 1;
+    if (membershipChanged) membershipRevision += 1;
     latestSettlement = settlement;
     stageResults.push(settlement);
     while (stageResults.length > content.stages.length) stageResults.shift();
@@ -740,7 +769,16 @@ export function createArenaAuthorityRuntime(
 
   function createRankingFacts(authorityTick: number): ArenaStageRankingFact[] {
     const attributions = impactLedger.attributions();
-    const activeIds = new Set(participants.competitiveParticipantIds());
+    const activeIds = new Set(
+      participants
+        .list()
+        .filter(
+          (participant) =>
+            participant.status === "active" ||
+            (participant.status === "disconnected" && participant.resumeStatus === "active")
+        )
+        .map((participant) => participant.id)
+    );
     return participants
       .list()
       .filter((participant) => stageEntrantParticipantIds.has(participant.id))
@@ -750,6 +788,8 @@ export function createArenaAuthorityRuntime(
           progressTick: authorityTick,
           centerDistance: 1_000_000,
           checkpointCount: 0,
+          checkpointTotal: 0,
+          normalizedProgress: 0,
           finished: false,
           objectiveScore: 0
         };
@@ -792,26 +832,26 @@ export function createArenaAuthorityRuntime(
     const boundsCenterX = (course.bounds.min.x + course.bounds.max.x) / 2;
     const boundsCenterZ = ((course.bounds.min.z ?? 0) + (course.bounds.max.z ?? 0)) / 2;
     const startZ = average(course.participantSpawns.map((spawn) => spawn.position.z ?? 0));
-    const finishZ = finishVolume?.position.z ?? boundsCenterZ;
     for (const member of readIslandState().members) {
       if (!isArenaActor(member.id)) continue;
       const participant = participants.byActorMemberId(member.id);
       if (participant === undefined) continue;
       const previous = rankingSpatialFacts.get(participant.id);
-      let checkpointCount = previous?.checkpointCount ?? 0;
-      const nextCheckpoint = checkpointVolumes[checkpointCount];
-      if (nextCheckpoint !== undefined && pointInside(member.body.position, nextCheckpoint)) {
-        checkpointCount += 1;
-      }
-      const finished =
-        (previous?.finished ?? false) ||
-        (finishVolume !== undefined &&
-          checkpointCount >= checkpointVolumes.length &&
-          pointInside(member.body.position, finishVolume));
-      const routeProgress =
-        Math.abs(startZ - finishZ) <= 0.001
-          ? 0
-          : (startZ - (member.body.position.z ?? 0)) / (startZ - finishZ);
+      const qualifierProgress = advanceArenaQualifierProgress({
+        previous:
+          previous === undefined
+            ? undefined
+            : {
+                checkpointCount: previous.checkpointCount,
+                checkpointTotal: previous.checkpointTotal,
+                normalizedProgress: previous.normalizedProgress,
+                finished: previous.finished
+              },
+        position: member.body.position,
+        startZ,
+        checkpoints: checkpointVolumes,
+        finish: finishVolume
+      });
       const objectiveScore =
         (previous?.objectiveScore ?? 0) +
         (objectiveVolume !== undefined &&
@@ -820,14 +860,16 @@ export function createArenaAuthorityRuntime(
           ? 1
           : 0);
       rankingSpatialFacts.set(participant.id, {
-        progress: checkpointCount * 10 + Math.max(0, Math.min(1, routeProgress)),
+        progress: qualifierProgress.checkpointCount * 10 + qualifierProgress.normalizedProgress,
         progressTick: authorityTick,
         centerDistance: Math.hypot(
           member.body.position.x - boundsCenterX,
           (member.body.position.z ?? 0) - boundsCenterZ
         ),
-        checkpointCount,
-        finished,
+        checkpointCount: qualifierProgress.checkpointCount,
+        checkpointTotal: qualifierProgress.checkpointTotal,
+        normalizedProgress: qualifierProgress.normalizedProgress,
+        finished: qualifierProgress.finished,
         objectiveScore
       });
     }
@@ -846,7 +888,8 @@ export function createArenaAuthorityRuntime(
         !stageEntrantParticipantIds.has(participant.id) ||
         participant.status === "eliminated" ||
         participant.status === "spectator" ||
-        participant.status === "finished"
+        participant.status === "finished" ||
+        participant.status === "qualified"
       ) {
         return [];
       }
@@ -1280,10 +1323,12 @@ export function createArenaAuthorityRuntime(
     const participant = participants.byActorMemberId(memberId);
     const step = resolveArenaActorAuthorityStep({
       phase: director.snapshot().phase,
-      eliminated:
+      removed:
         participant === undefined ||
         !stageEntrantParticipantIds.has(participant.id) ||
         participant.status === "eliminated" ||
+        (participant.status === "qualified" &&
+          participant.stageInstanceId === director.snapshot().stageInstanceId) ||
         participant.status === "spectator" ||
         participant.status === "next-match",
       input,
@@ -1329,6 +1374,12 @@ export function createArenaAuthorityRuntime(
     }
     latestPayloadBytes = result.payloadBytes;
     const diagnostics = authorityLoop?.diagnostics();
+    const qualifierCheckpointTotal =
+      match.stageKind === "qualifier"
+        ? content.stages[match.stageIndex]!.course.volumes.filter(
+            ({ kind }) => kind === "checkpoint"
+          ).length
+        : 0;
     return {
       schemaVersion: ARENA_SCHEMA_VERSION,
       phase: match.phase,
@@ -1349,6 +1400,8 @@ export function createArenaAuthorityRuntime(
         stageCount: match.stageCount,
         stageId: match.stageId,
         stageKind: match.stageKind,
+        qualificationCount: match.qualificationCount,
+        durationTicks: match.durationTicks,
         stageInstanceId: match.stageInstanceId,
         startedAtTick: match.startedAtTick,
         ...(match.stageStartedAtTick === undefined
@@ -1375,6 +1428,27 @@ export function createArenaAuthorityRuntime(
           : { stageInstanceId: participant.stageInstanceId }),
         revision: participant.revision
       })),
+      qualifierProgress:
+        match.stageKind === "qualifier"
+          ? participants
+              .list()
+              .filter(
+                ({ id, actorMemberId }) =>
+                  actorMemberId !== undefined && stageEntrantParticipantIds.has(id)
+              )
+              .map((participant) => {
+                const fact = rankingSpatialFacts.get(participant.id);
+                return {
+                  participantId: participant.id,
+                  checkpointCount: fact?.checkpointCount ?? 0,
+                  checkpointTotal: fact?.checkpointTotal ?? qualifierCheckpointTotal,
+                  finished: fact?.finished ?? false,
+                  normalizedProgress: fact?.normalizedProgress ?? 0,
+                  progressTick: fact?.progressTick ?? state.tick
+                };
+              })
+              .sort((left, right) => left.participantId.localeCompare(right.participantId))
+          : [],
       stageResults: structuredClone(stageResults),
       items: itemAuthority.publicItems(state.members),
       itemActions: itemAuthority.publicActions(),
@@ -1394,12 +1468,14 @@ export function createArenaAuthorityRuntime(
       actorControlsByMemberId: Object.fromEntries(
         [...actorControlsByMemberId.entries()].sort(([left], [right]) => left.localeCompare(right))
       ),
-      eliminatedMemberIds: definitions.flatMap((definition) => {
+      removedMemberIds: definitions.flatMap((definition) => {
         if (!isArenaActor(definition.id)) return [];
         const participant = participants.byActorMemberId(definition.id);
         return participant === undefined ||
           !stageEntrantParticipantIds.has(participant.id) ||
           participant.status === "eliminated" ||
+          (participant.status === "qualified" &&
+            participant.stageInstanceId === match.stageInstanceId) ||
           participant.status === "spectator"
           ? [definition.id]
           : [];

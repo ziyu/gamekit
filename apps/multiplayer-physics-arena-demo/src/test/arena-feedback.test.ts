@@ -179,6 +179,8 @@ function arenaSnapshot(tick: number): ArenaSnapshot {
       stageCount: 3,
       stageId: "stage.circuit-forge",
       stageKind: "qualifier",
+      qualificationCount: 6,
+      durationTicks: 5_400,
       stageInstanceId: "match.1:stage.circuit-forge:1",
       startedAtTick: 0,
       stageStartedAtTick: 0,
@@ -217,6 +219,7 @@ function arenaSnapshot(tick: number): ArenaSnapshot {
         revision: 1
       }
     ],
+    qualifierProgress: [],
     stageResults: [],
     items: [],
     itemActions: [],
@@ -232,7 +235,7 @@ function arenaSnapshot(tick: number): ArenaSnapshot {
     playerIdsByPeerId: { "peer.0": "player.0" },
     inputAcksByPeerId: { "peer.0": tick },
     actorControlsByMemberId: {},
-    eliminatedMemberIds: ["player.0"],
+    removedMemberIds: ["player.0"],
     effects: [],
     serverTime: tick * ARENA_FIXED_STEP_MS,
     authority: {

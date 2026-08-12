@@ -573,13 +573,20 @@ summary:focus-visible,
   letter-spacing: -0.06em;
 }
 
+.arena-race-hud__progress-label,
 .arena-race-hud__roster {
   align-self: end;
-  margin-bottom: 6px;
+  color: var(--cyan);
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.arena-race-hud__roster {
+  margin: 2px 0 6px;
   color: #b9bfd5;
   font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.1em;
 }
 
 .arena-progress {

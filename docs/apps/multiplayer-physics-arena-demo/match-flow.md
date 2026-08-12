@@ -132,6 +132,17 @@ Authority 排名键依次为：
 前 6 名进入 `qualified`。掉出 kill volume 的参与者立即 `eliminated`，当前 stage 不重生。Stage 在 6 名完成、有效参与者
 不足以改变晋级集合或 deadline 到达后结算；不能等待已经 disconnect/卡死的角色无限延长。
 
+资格赛的完成是逐参与者即时 authority 事实，不等到整关结算才生效。参与者按顺序通过全部 checkpoint 并进入 finish volume 的
+同一 authority tick 即执行 `active → qualified`，递增 membership revision，停止接收 gameplay input，并把该 actor 从当前
+prediction island 移除；客户端保留 participant/progress 投影，显示 `FINISH CONFIRMED / QUALIFIED` 并平滑切换观战。晋级 actor
+只会在下一 stage 的新 generation 中恢复，不能继续留在终点阻挡、受击或被误判淘汰。
+
+公开 snapshot 必须包含本关 `qualificationCount`、`durationTicks`、authority `deadlineTick`，以及每名资格赛参与者的有界
+`checkpointCount/checkpointTotal/finished/normalizedProgress/progressTick`。客户端只用这些事实显示名次、检查点和倒计时，不能从
+本地 transform 重算完成状态。已经完成的人数达到有效名额时以 `qualification-reached` 结算；完成者加仍 active 的候选已不多于
+有效名额且已经至少有一人合法冲线时，才以 `qualification-locked` 提前结算，剩余候选按同一确定性排名补齐，不等待无意义
+deadline。无人完成时不能只因为开局减员就立刻结束资格赛，必须继续到首次合法冲线或 deadline。
+
 ## Stage 2：Scrap Yard 道具乱斗
 
 6 名参与者进入，前 3 名晋级。公开排名由以下事实组成：

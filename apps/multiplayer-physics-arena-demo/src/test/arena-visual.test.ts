@@ -20,6 +20,13 @@ describe("Knockout Circuit presentation", () => {
     expect(circuit).toBeInstanceOf(THREE.Group);
     expect(player).toBeInstanceOf(THREE.Group);
     expect(localRing?.visible).toBe(true);
+    expect(native.scene.getObjectByName("knockout.course.checkpoint.1")).toBeInstanceOf(
+      THREE.Group
+    );
+    expect(native.scene.getObjectByName("knockout.course.checkpoint.2")).toBeInstanceOf(
+      THREE.Group
+    );
+    expect(native.scene.getObjectByName("knockout.course.finish-line")).toBeInstanceOf(THREE.Mesh);
     expect(render).toHaveBeenCalledOnce();
     expect(render.mock.calls[0]?.[1]).toBeInstanceOf(THREE.PerspectiveCamera);
     expect(render.mock.calls[0]?.[1]).not.toBe(native.camera);
