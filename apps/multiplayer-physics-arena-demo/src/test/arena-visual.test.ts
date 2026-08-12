@@ -46,7 +46,6 @@ describe("Knockout Circuit presentation", () => {
         z: 0,
         w: Math.cos(Math.PI / 4)
       };
-
       for (let frame = 0; frame < 24; frame += 1) {
         state.tick += 1;
         visual.update(state, "player.0", 16);
@@ -60,6 +59,55 @@ describe("Knockout Circuit presentation", () => {
         .normalize();
       const movement = new THREE.Vector3(moveX, 0, moveZ);
       expect(facing.dot(movement)).toBeGreaterThan(0.999);
+      visual.destroy();
+    }
+  });
+
+  it("converts semantic character facing into the runner model's negative-Z forward axis", () => {
+    for (const [moveX, moveZ] of [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0]
+    ] as const) {
+      const native = fakeNative(vi.fn());
+      const visual = createArenaVisual(native, createArenaDefinitionMap());
+      const state = arenaState();
+      const player = state.members.find((member) => member.id === "player.0")!;
+      player.body.linearVelocity = { x: moveX * 4.5, y: 0, z: moveZ * 4.5 };
+      const presentation = {
+        generation: 1,
+        sourceGeneration: state.generation,
+        actors: [
+          {
+            memberId: "player.0",
+            participantId: "player.0",
+            generation: 1,
+            tick: state.tick,
+            local: true,
+            horizontalSpeed: 4.5,
+            normalizedSpeed: 4.5 / 7.2,
+            verticalVelocity: 0,
+            facingYaw: Math.atan2(moveX, moveZ),
+            instability: 0,
+            grounded: true,
+            carrying: false,
+            baseState: "run" as const
+          }
+        ]
+      };
+
+      for (let frame = 0; frame < 24; frame += 1) {
+        state.tick += 1;
+        visual.update(state, "player.0", 16, presentation);
+      }
+
+      const model = native.scene.getObjectByName("player.0.runner-model")!;
+      const facing = new THREE.Vector3(0, 0, -1)
+        .applyQuaternion(model.getWorldQuaternion(new THREE.Quaternion()))
+        .setY(0)
+        .normalize();
+      expect(facing.dot(new THREE.Vector3(moveX, 0, moveZ))).toBeGreaterThan(0.999);
       visual.destroy();
     }
   });
@@ -100,7 +148,7 @@ describe("Knockout Circuit presentation", () => {
       .applyQuaternion(model.getWorldQuaternion(new THREE.Quaternion()))
       .setY(0)
       .normalize();
-    expect(facing.x).toBeLessThan(-0.99);
+    expect(facing.x).toBeGreaterThan(0.99);
     visual.destroy();
   });
 

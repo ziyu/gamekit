@@ -683,8 +683,11 @@ function updateMemberVisual(
   const horizontalSpeed = presented?.horizontalSpeed ?? Math.hypot(velocity.x, velocity.z ?? 0);
   const stride = Math.min(1, presented?.normalizedSpeed ?? horizontalSpeed / 6.4);
   const targetYaw =
-    presented?.facingYaw ??
-    (horizontalSpeed > 0.12 ? Math.atan2(-velocity.x, -(velocity.z ?? 0)) : visual.root.rotation.y);
+    presented === undefined
+      ? horizontalSpeed > 0.12
+        ? Math.atan2(-velocity.x, -(velocity.z ?? 0))
+        : visual.root.rotation.y
+      : presented.facingYaw + Math.PI;
   if (horizontalSpeed > 0.12 || presented !== undefined) {
     visual.root.rotation.y = lerpAngle(visual.root.rotation.y, targetYaw, alpha * 0.7);
   }

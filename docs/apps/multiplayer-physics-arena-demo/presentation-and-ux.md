@@ -126,6 +126,8 @@ gain、pan、fade和voice lifecycle。Catalog、music transition、SFX dedupe/co
 - Target淘汰/disconnect/stage reset时使用稳定fallback，不把旧actor重新生成。
 - Playing/spectator/broadcast target由统一feedback frame给出；Three camera只平滑追随该display target，不能反向改变participant、
   input、Physics transform或ranking。
+- Character Motor 的 semantic yaw 以 `+Z` 为零朝向；Arena runner mesh 以本地 `-Z` 为正面。Three adapter 只在表现边界做一次
+  `π` 轴转换，不能把 renderer 轴约定写回 prediction、authority 或共享 controller state。
 
 ### Broadcast Camera
 
