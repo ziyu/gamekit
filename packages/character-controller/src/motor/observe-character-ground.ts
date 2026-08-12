@@ -28,6 +28,14 @@ export function observeCharacterGround(
     options.definition.groundSnapDistance,
     options.definition.groundProbeDistance
   );
+  const queryOptions = {
+    triggerInteraction: "exclude" as const,
+    mode: "closest" as const,
+    sort: "distance" as const,
+    maxResults: 1,
+    ignoreBodies: uniqueSorted([options.body.id, ...(options.ignoreBodyIds ?? [])]),
+    ignoreColliders: uniqueSorted(options.ignoreColliderIds ?? [])
+  };
   const hits = options.simulation
     .query({
       type: "shape-cast",
@@ -46,39 +54,96 @@ export function observeCharacterGround(
       direction: { x: 0, y: -1, z: 0 },
       maxDistance: options.definition.groundProbeDistance + probeLift,
       stopAtPenetration: true,
-      options: {
-        triggerInteraction: "exclude",
-        mode: "closest",
-        sort: "distance",
-        maxResults: 1,
-        ignoreBodies: uniqueSorted([options.body.id, ...(options.ignoreBodyIds ?? [])]),
-        ignoreColliders: uniqueSorted(options.ignoreColliderIds ?? [])
-      }
+      options: queryOptions
     })
     .sort(compareHit);
-  let rejectedQueryCount = 0;
-  for (const hit of hits) {
-    if (hit.sensor === true || !finiteVector(hit.normal)) {
-      rejectedQueryCount += 1;
-      continue;
-    }
-    const body = hit.bodyId === undefined ? undefined : options.simulation.body?.(hit.bodyId);
+  const primary = firstStableHit(hits);
+  if (primary.hit === undefined) {
     return {
-      ground: {
-        distance: Math.max(0, finiteNonNegative(hit.distance) - probeLift),
-        normal: cloneVector(hit.normal),
-        bodyId: hit.bodyId,
-        bodyLinearVelocity: body?.linearVelocity,
-        surfaceId: options.surfaceId?.(hit) ?? hit.colliderId
-      },
       queryCount: 1,
-      rejectedQueryCount
+      rejectedQueryCount: primary.rejected
     };
   }
+  if (isWalkable(primary.hit.normal!, options.definition.maxSlopeRadians)) {
+    return groundObservation(options, primary.hit, probeLift, 1, primary.rejected);
+  }
+
+  // A capsule touching a wall can make a closest-only shape cast report that
+  // side face at distance zero and hide the floor beneath it. Probe from the
+  // foot center to recover only a valid upward support; keep the primary hit
+  // when the fallback is empty or still too steep so rejection stays explicit.
+  const halfHeight = options.definition.capsuleHeight / 2;
+  const support = firstStableHit(
+    options.simulation
+      .query({
+        type: "raycast",
+        origin: {
+          x: options.body.position.x,
+          y: options.body.position.y - halfHeight + probeLift,
+          z: options.body.position.z ?? 0
+        },
+        direction: { x: 0, y: -1, z: 0 },
+        maxDistance: options.definition.groundProbeDistance + probeLift,
+        options: queryOptions
+      })
+      .sort(compareHit)
+  );
+  const rejectedQueryCount = primary.rejected + 1 + support.rejected;
+  if (
+    support.hit !== undefined &&
+    isWalkable(support.hit.normal!, options.definition.maxSlopeRadians)
+  ) {
+    return groundObservation(options, support.hit, probeLift, 2, rejectedQueryCount);
+  }
+  return groundObservation(
+    options,
+    primary.hit,
+    probeLift,
+    2,
+    rejectedQueryCount + Number(support.hit !== undefined)
+  );
+}
+
+function groundObservation(
+  options: ObserveCharacterGroundOptions,
+  hit: Readonly<PhysicsQueryResult>,
+  probeLift: number,
+  queryCount: number,
+  rejectedQueryCount: number
+): CharacterMotorObservation {
+  const body = hit.bodyId === undefined ? undefined : options.simulation.body?.(hit.bodyId);
   return {
-    queryCount: 1,
+    ground: {
+      distance: Math.max(0, finiteNonNegative(hit.distance) - probeLift),
+      normal: cloneVector(hit.normal!),
+      bodyId: hit.bodyId,
+      bodyLinearVelocity: body?.linearVelocity,
+      surfaceId: options.surfaceId?.(hit) ?? hit.colliderId
+    },
+    queryCount,
     rejectedQueryCount
   };
+}
+
+function firstStableHit(hits: readonly PhysicsQueryResult[]): {
+  hit?: PhysicsQueryResult | undefined;
+  rejected: number;
+} {
+  let rejected = 0;
+  for (const hit of hits) {
+    if (hit.sensor === true || !finiteVector(hit.normal)) {
+      rejected += 1;
+      continue;
+    }
+    return { hit, rejected };
+  }
+  return { rejected };
+}
+
+function isWalkable(normal: PhysicsVector, maxSlopeRadians: number): boolean {
+  const length = Math.sqrt(normal.x ** 2 + normal.y ** 2 + (normal.z ?? 0) ** 2);
+  if (length <= 1e-6) return false;
+  return Math.acos(Math.max(-1, Math.min(1, normal.y / length))) <= maxSlopeRadians;
 }
 
 function compareHit(left: PhysicsQueryResult, right: PhysicsQueryResult): number {

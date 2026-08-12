@@ -25,6 +25,34 @@ Sandbox 外壳只负责场景发现、选择、懒加载、启动状态和错误
 - 场景清单采用懒加载，未选择的场景不进入当前页面的启动与执行路径。
 - 场景选择可由外壳导航和稳定的 `scene` URL 参数表达，便于自动化测试、问题复现和直接分享。
 
+## 场景：Character Controller Lab
+
+Character Controller Lab 是 `@gamekit/character-controller` 的可玩集成测试场，不承担通用 Physics 查询、掉落物或多人预测演示。
+它使用 Sandbox 的独立惰性场景入口，通过 Three Driver 创建视觉 runtime，并以真实 Rapier3D PhysicsScene 驱动一个动态 capsule。
+角色每个 fixed tick 都走公共 `compileCharacterMotorDefinition → observeCharacterEnvironment → stepCharacterMotor → PhysicsScene`
+路径；场景不能直接设置 native Rapier velocity，也不能复制 coyote、jump buffer、dive、stagger 或 recovery 状态机。
+
+测试空间是可自由探索的第三人称综合试验园区，不再用固定横向镜头把测试项排成一条赛道。中心广场连接 walkable/rejected slope、
+三级 bounded step、coyote gap 与低顶区、平衡木、横移和升降平台、旋转扫杆、dive tunnel，以及带球体和箱体的动态推动区。底部五个
+资格站同时是可点击的校准点，可将角色以干净 motor state 直接放到目标区域。
+
+测试者聚焦 viewport 后使用 WASD、Space、Shift，并可用鼠标拖拽环绕、滚轮缩放第三人称镜头。键盘和鼠标必须先经过 Input Router
+与 game scope；app composition 再用水平 camera basis 把局部 WASD 映射成 world-space semantic intent，Character Controller
+本身不能读取 Camera 或 DOM。presentation frame 的 jump/dive edge 通过 Character Controller 公共 intent buffer 保留到下一个实际
+fixed tick，不能被高刷新率下未推进 simulation 的 frame 提前清除。UI/按钮焦点不能继续产生 held gameplay input。
+
+主视图使用独立 PerspectiveCamera 跟随角色，提供平滑 target、全周水平环绕、从低机位到近俯视的宽俯仰区间、近距离检查到全园区总览的
+宽缩放范围、包含 floor 在内的场景遮挡收近与园区基准地面净空兜底，并展示可辨认的测试区域、角色 facing、
+ground probe 和移动平台；诊断台只读展示 motor mode、support body、ground slope、query count、
+coyote/buffer/dive/recovery/stagger timer、state signature 与有界 semantic trace。Stagger 与 Impact 按钮用于注入公开 observation/body
+command，验证 external impulse 不会被下一 tick motor 立即清零；Pause/Step/Reset 用于固定 tick 检查。原始 provider handle 不进入 UI，
+dispose 后只允许保留无 trace/contact 的终态快照。
+
+该场景的自动化测试使用与页面相同的 proving-ground/runtime 和 Rapier3D adapter，至少锁定二维 camera-relative intent 旋转与归一化、
+综合场地元素、公共 query、高刷新率 presentation 到 fixed tick 的离散输入保留、jump/dive sequence 去重、stagger/recovery、
+external impulse 与 dispose 清理。Physics 3D Lab 仍保留通用
+Physics facade 和 controller course fixture；两者互为补充，不能通过共享 app-local timer 或 native controller 形成第二套实现。
+
 ## 场景：Projectile Combat Field
 
 Multiplayer Projectile 场景采用一个可玩的前线交火区，而不是把 Owner、Authority、Remote 画成三条抽象测试

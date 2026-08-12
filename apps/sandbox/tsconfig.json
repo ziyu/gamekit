@@ -9,6 +9,7 @@
   "include": ["src"],
   "references": [
     { "path": "../../packages/camera-core" },
+    { "path": "../../packages/character-controller" },
     { "path": "../../packages/combat" },
     { "path": "../../packages/asset" },
     { "path": "../../packages/app-host" },
@@ -32,8 +33,10 @@
     { "path": "../../packages/navigation-navmesh" },
     { "path": "../../packages/navigation-recast" },
     { "path": "../../packages/platform-web" },
+    { "path": "../../packages/platform-core" },
     { "path": "../../packages/physics-core" },
     { "path": "../../packages/physics-rapier2d" },
+    { "path": "../../packages/physics-rapier3d" },
     { "path": "../../packages/renderer-core" },
     { "path": "../../packages/renderer-phaser" },
     { "path": "../../packages/save" },

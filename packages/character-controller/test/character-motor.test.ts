@@ -186,6 +186,35 @@ describe("pure character motor", () => {
     expect(result.bodyPatch.linearVelocity?.y).toBeGreaterThan(0.3);
   });
 
+  it("keeps solver-scale normal noise grounded but preserves real separation", () => {
+    const noisyNormal = { x: 0.00001, y: Math.sqrt(1 - 0.00001 ** 2), z: 0 };
+    const supported = run({
+      state: createCharacterMotorState({ grounded: true }),
+      intent: intent(1, { move: { x: 1, y: 0, z: 0 } }),
+      observation: ground({ normal: noisyNormal }),
+      body: body({ x: 8, y: 0, z: 0 })
+    });
+    expect(supported.state.grounded).toBe(true);
+    expect(supported.state.mode).toBe("grounded");
+
+    const separating = run({
+      state: supported.state,
+      intent: intent(2),
+      observation: ground(),
+      body: body({ x: 0, y: 0.02, z: 0 })
+    });
+    expect(separating.state.grounded).toBe(false);
+    expect(separating.state.mode).toBe("airborne");
+    expect(separating.trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "ground-rejected",
+          details: expect.objectContaining({ rising: true })
+        })
+      ])
+    );
+  });
+
   it("inherits bounded moving-platform velocity and keeps the declared departure fraction", () => {
     const supported = run({
       state: createCharacterMotorState({ grounded: true }),

@@ -510,6 +510,9 @@ importers:
       '@gamekit/camera-core':
         specifier: workspace:*
         version: link:../../packages/camera-core
+      '@gamekit/character-controller':
+        specifier: workspace:*
+        version: link:../../packages/character-controller
       '@gamekit/combat':
         specifier: workspace:*
         version: link:../../packages/combat
@@ -525,6 +528,9 @@ importers:
       '@gamekit/devtools-ui':
         specifier: workspace:*
         version: link:../../packages/devtools-ui
+      '@gamekit/driver-core':
+        specifier: workspace:*
+        version: link:../../packages/driver-core
       '@gamekit/driver-phaser':
         specifier: workspace:*
         version: link:../../packages/driver-phaser
@@ -573,6 +579,12 @@ importers:
       '@gamekit/physics-rapier2d':
         specifier: workspace:*
         version: link:../../packages/physics-rapier2d
+      '@gamekit/physics-rapier3d':
+        specifier: workspace:*
+        version: link:../../packages/physics-rapier3d
+      '@gamekit/platform-core':
+        specifier: workspace:*
+        version: link:../../packages/platform-core
       '@gamekit/platform-web':
         specifier: workspace:*
         version: link:../../packages/platform-web
@@ -606,6 +618,9 @@ importers:
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
+      three:
+        specifier: ^0.181.2
+        version: 0.181.2
     devDependencies:
       '@gamekit/test-utils':
         specifier: workspace:*
@@ -616,6 +631,9 @@ importers:
       '@types/react-dom':
         specifier: ^18.3.1
         version: 18.3.7(@types/react@18.3.28)
+      '@types/three':
+        specifier: ^0.184.1
+        version: 0.184.1
       vite:
         specifier: ^6.3.5
         version: 6.4.2(@types/node@22.19.18)(tsx@4.21.0)

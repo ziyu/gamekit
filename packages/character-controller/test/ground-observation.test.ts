@@ -115,4 +115,76 @@ describe("character ground observation", () => {
       })
     ).toEqual({ queryCount: 1, rejectedQueryCount: 0 });
   });
+
+  it("recovers floor support when a closest capsule cast is occluded by a wall", () => {
+    const queries: PhysicsQuery[] = [];
+    const observation = observeCharacterGround({
+      body,
+      definition,
+      simulation: {
+        query(query) {
+          queries.push(query);
+          return query.type === "shape-cast"
+            ? [
+                {
+                  colliderId: "wall.collider",
+                  bodyId: "wall",
+                  distance: 0,
+                  normal: { x: 1, y: 0, z: 0 }
+                }
+              ]
+            : [
+                {
+                  colliderId: "floor.collider",
+                  bodyId: "floor",
+                  distance: 0.12,
+                  normal: { x: 0, y: 1, z: 0 }
+                }
+              ];
+        }
+      }
+    });
+
+    expect(queries.map((query) => query.type)).toEqual(["shape-cast", "raycast"]);
+    expect(queries[1]).toMatchObject({
+      origin: { x: 1, z: 3 },
+      direction: { x: 0, y: -1, z: 0 },
+      maxDistance: 0.35
+    });
+    expect(queries[1]?.type === "raycast" ? queries[1].origin.y : undefined).toBeCloseTo(1.2);
+    expect(observation).toMatchObject({
+      ground: {
+        normal: { x: 0, y: 1, z: 0 },
+        bodyId: "floor",
+        surfaceId: "floor.collider"
+      },
+      queryCount: 2,
+      rejectedQueryCount: 1
+    });
+    expect(observation.ground?.distance).toBeCloseTo(0.02);
+  });
+
+  it("does not turn an unwalkable fallback into floor support", () => {
+    const observation = observeCharacterGround({
+      body,
+      definition,
+      simulation: {
+        query(query) {
+          return [
+            {
+              colliderId: query.type === "shape-cast" ? "wall.collider" : "steep.collider",
+              distance: 0,
+              normal: query.type === "shape-cast" ? { x: 1, y: 0, z: 0 } : { x: 0.9, y: 0.1, z: 0 }
+            }
+          ];
+        }
+      }
+    });
+
+    expect(observation).toMatchObject({
+      ground: { surfaceId: "wall.collider", normal: { x: 1, y: 0, z: 0 } },
+      queryCount: 2,
+      rejectedQueryCount: 2
+    });
+  });
 });

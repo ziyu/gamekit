@@ -52,7 +52,12 @@
 
 .scene-rail__nav {
   display: grid;
+  flex: 1;
   gap: 1px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-color: rgba(140, 214, 163, 0.35) transparent;
+  scrollbar-width: thin;
 }
 
 .scene-rail__link {
@@ -196,6 +201,7 @@
   .scene-rail__nav {
     display: flex;
     min-width: 0;
+    overflow-y: hidden;
     overflow-x: auto;
   }
 

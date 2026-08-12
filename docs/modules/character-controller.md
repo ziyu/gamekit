@@ -20,6 +20,8 @@ character-controller -X→ input / camera / renderer / ai / multiplayer / rapier
 首轮公共能力分为三层：
 
 - `CharacterControlIntent`：玩家和 AI 共用的 move/facing/jump/dive 语义输入与稳定 sequence。
+- `createCharacterControlIntentBuffer(...)`：在 presentation/input sampling 与 fixed tick 不同频时保留 jump/dive 离散边沿；连续
+  move/facing/held 使用最新样本，每次 fixed tick 消费后才清除边沿。
 - Pure motor：读取已编译 definition、上一状态、Physics body state 和本 tick 稳定环境观测，输出下一状态、body patch/command、
   diagnostics 与有界 trace。
 - Runtime strategy/helper：负责 ground/ceiling/step query、稳定排序、Physics 提交和 lifecycle；多人 Physics Arena 使用
@@ -42,7 +44,8 @@ DataRegistry、解析字符串或容忍 NaN/Infinity。App 可以在编译前组
 - 相同 definition/state/intent/body/observation/tick/delta 产生相同 command 与 state signature。
 - diagonal move 归一化；ground/air acceleration 与 braking 有界，不把 external impulse 在下一 tick 直接清零。
 - ground normal 决定 walkable slope；grounded 使用相对支撑面的法向分离速度判定，移动目标投影到 walkable ground tangent，
-  不能用 world-space `velocity.y` 把上坡或升降平台误判为空中。过陡面不刷新 ground。Step 只有高度、clearance、landing
+  并使用独立的小量速度容差吸收成熟 solver 的接触法线/速度噪声；不能复用向量零值 epsilon，也不能用 world-space `velocity.y`
+  把上坡或升降平台误判为空中。容差仍须显著小于真实跳跃或击飞速度，过陡面不刷新 ground。Step 只有高度、clearance、landing
   slope 和最终 capsule clearance 全部通过才输出位置 patch。
 - platform velocity 先限幅，支撑期间作为相对速度参考；离地只保留 definition 声明的 departure fraction。
 - jumpPressed 进入有界 buffer，ground/coyote 有效时按 sequence 只消费一次；held jump、ceiling 和 timer 都由 fixed delta 推进。
@@ -55,7 +58,9 @@ closest/sort 规则，并把 query/rejection 数写入 diagnostics。Authority �
 `observeCharacterGround(...)` 是最小 backend-neutral ground strategy：从公开 body state 发起向下 capsule shape cast，排除自身
 body/collider 和 sensor，使用 closest/distance contract 生成稳定 ground/surface/platform velocity 事实。Definition 的
 `capsuleHeight` 表示包含两端半球的总高度，映射 Physics capsule query 时转换为中段高度；backend 不支持 shape-cast `all` 时不要求
-app 分支，标准 helper 使用成熟 backend 均支持的 closest 模式。
+app 分支，标准 helper 使用成熟 backend 均支持的 closest 模式。当贴墙导致 closest capsule cast 的零距离侧面遮蔽脚下地面时，helper
+从脚底中心补充一次有界向下 raycast，只恢复符合 slope policy 的向上 support；补探针为空或仍不可行走时保留原侧面事实供 Motor 明确
+拒绝，不能把墙或陡坡提升成地面。
 
 完整动态角色应使用 `observeCharacterEnvironment(...)`。它在 ground 事实之上按移动方向依次执行低位阻挡、高位净空、落点和最终
 capsule clearance probe，并在上升且保持跳跃时检查 ceiling；输出仍只有 backend-neutral observation、query count 与 rejection count。
@@ -77,6 +82,9 @@ reconcile 在写入前拒绝。Physics body checkpoint 与 motor timer 必须在
 ## 集成最佳实践
 
 - App composition 先把 keyboard/gamepad/camera-relative 输入映射成 world-space intent；AI task 写入同构 intent。
+- Presentation frame 不能直接拥有 fixed-step intent 的消费时机。渲染帧采到的 jump/dive edge 必须先进入
+  `createCharacterControlIntentBuffer(...)`，由 simulation owner 在实际执行 fixed tick 时消费并分配 sequence；`jumpBufferMs` 只负责
+  Motor 已收到请求后的 coyote/落地窗口，不能补偿请求在进入 Motor 前被 render frame 清除的问题。
 - Authority/prediction runtime 在 fixed tick 前完成 query observation，运行 pure motor，按稳定顺序提交 patch/command，再推进 Physics。
 - Arena client 通过 `createAuxiliaryContributors()` factory 为每个 binding baseline 创建新的 motor contributor，并把 control intent
   映射成 island `auxiliary` command；不要跨 membership revision 复用已经 reset/dispose 的 contributor 实例。
@@ -87,6 +95,11 @@ reconcile 在写入前拒绝。Physics body checkpoint 与 motor timer 必须在
   velocity 手写 actor motion patch，也不使用 authority frame tick 猜 jump/dive 去重序列。
 - 非多人 fixture 可以直接组合 `observeCharacterEnvironment(...) + stepCharacterMotor(...) + PhysicsScene update/command`；Physics 3D Lab
   保留一个可见 Rapier capsule、键盘 intent 和 motor diagnostics，证明 toolkit 不依赖 Multiplayer 或 Arena。
+- Sandbox Character Controller Lab 是面向日常调参与回归的独立可玩 fixture：场景通过 Input Router/game scope 接收局部输入，在 app
+  composition 中使用第三人称 camera basis 生成 world-space intent，并在可自由探索的 Rapier3D 综合园区展示可行走/拒绝坡面、台阶、
+  低顶、coyote gap、平衡木、多轴移动平台、动态推动与 external impact。第三人称镜头可以由场景表现层组合，但不能进入 motor state、
+  checkpoint 或 prediction command。Lab 只能调用公共 compile/observe/step/Physics command 路径；故障注入通过公开 stagger
+  observation 与 linear impulse 完成，不能访问 Rapier native controller 或维护 app-local locomotion timer。
 
 ## 使用最佳实践
 

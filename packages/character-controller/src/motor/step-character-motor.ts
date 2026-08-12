@@ -14,6 +14,9 @@ import type {
 import { cloneCharacterMotorState } from "./state";
 
 const EPSILON = 1e-6;
+// Contact solvers return small normal/velocity residuals even for resting bodies.
+// Keep this far below intentional jump or impulse speeds while avoiding false departures.
+const GROUND_SEPARATION_VELOCITY_TOLERANCE = 0.01;
 const MAX_TRACE_ENTRIES = 16;
 
 export function stepCharacterMotor(input: CharacterMotorStepInput): CharacterMotorStepResult {
@@ -29,7 +32,7 @@ export function stepCharacterMotor(input: CharacterMotorStepInput): CharacterMot
     subtractVector(body.linearVelocity, ground.observation?.bodyLinearVelocity),
     ground.normal
   );
-  let grounded = ground.walkable && groundSeparationSpeed <= EPSILON;
+  let grounded = ground.walkable && groundSeparationSpeed <= GROUND_SEPARATION_VELOCITY_TOLERANCE;
   const wasGrounded = state.grounded;
 
   state.lastStableTick = tick;
@@ -67,7 +70,7 @@ export function stepCharacterMotor(input: CharacterMotorStepInput): CharacterMot
     if (ground.observation !== undefined) {
       pushTrace(trace, input, "ground-rejected", {
         slopeRadians: ground.slopeRadians,
-        rising: groundSeparationSpeed > EPSILON
+        rising: groundSeparationSpeed > GROUND_SEPARATION_VELOCITY_TOLERANCE
       });
     }
     if (wasGrounded) {

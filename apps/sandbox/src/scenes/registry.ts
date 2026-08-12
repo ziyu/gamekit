@@ -36,6 +36,23 @@ export const sandboxSceneCatalog: readonly SandboxSceneDefinition[] = [
     load: () => import("./animator-lab")
   },
   {
+    id: "character-controller-lab",
+    shortLabel: "CC",
+    title: "Character Controller Lab",
+    description: "Free-camera third-person locomotion and physics proving park",
+    capabilities: [
+      "Character Motor",
+      "Third-person Camera",
+      "Rapier3D",
+      "Ground Probe",
+      "Slope + Step",
+      "Platform",
+      "Coyote + Buffer",
+      "Dive + Stagger"
+    ],
+    load: () => import("./character-controller-lab")
+  },
+  {
     id: "ai-lab",
     shortLabel: "AI",
     title: "AI Lab",
