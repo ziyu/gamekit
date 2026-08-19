@@ -117,6 +117,16 @@ corepack pnpm dev
 - 只提交与当前任务相关的文件。
 - commit message 使用简短祈使句，说明实际完成的工程结果。
 
+## Cursor Cloud specific instructions
+
+These notes are for Cloud Agents starting from an already-provisioned VM (dependencies installed by the update script `corepack pnpm install --frozen-lockfile`). Standard commands live in `README.md` and the `## 验证命令` section above; do not duplicate them here.
+
+- Node/toolchain: CI and this environment target **Node 24** (there is no `.nvmrc`/`engines`; the version is only pinned in `.github/workflows/*.yml`). `nvm` has `default -> 24` set, so login/interactive shells (including `tmux` sessions started with `bash -l`) already resolve to Node 24. Gotcha: a bare non-login exec context can hit an `/exec-daemon/node` shim that is Node 22. If a command unexpectedly runs under Node 22, prepend Node 24 explicitly: `export PATH="$HOME/.nvm/versions/node/v24.19.0/bin:$PATH"`.
+- Package manager is **pnpm via Corepack** (pinned `pnpm@11.1.2`); always invoke as `corepack pnpm ...`. First install runs native postinstalls for `esbuild` and `msgpackr-extract`, which are pre-approved via `allowBuilds` in `pnpm-workspace.yaml` (no interactive `pnpm approve-builds` needed).
+- Build/test/lint/format are Turborepo tasks and are heavily cached; a warm run may report most tasks as `cached`. `pnpm test` also runs a root `node --test` release-state check before the Turbo test graph.
+- No Docker, devcontainer, database, or external broker is required. The two multiplayer demos (`dev:multiplayer`, `dev:outpost`) start a Colyseus authority **in-process** via `tsx` alongside Vite — self-contained, no external service to provision.
+- Local dev apps are Vite (bound to `127.0.0.1`). The sandbox (`corepack pnpm dev:sandbox`) is the primary manual validation surface and serves at `http://127.0.0.1:5173/`; it is a scene explorer (Tiny Camp, Combat Range, AI Lab, Navigation Lab, Animation Lab, etc.). Other surfaces: `dev:game`, `dev:three`, `dev:physics2d`, `dev:physics3d`, `dev:outpost`.
+
 <!-- gitnexus:start -->
 
 # GitNexus — Code Intelligence
