@@ -20,15 +20,6 @@ export type ArenaAuthorityDiagnostics = {
   activePeers: number;
 };
 
-export type ArenaAuthorityEffectCue = {
-  id: string;
-  kind: "contact";
-  contactKind: "contact" | "trigger";
-  tick: number;
-  colliderA: string;
-  colliderB: string;
-};
-
 export type ArenaPublicParticipantStatus =
   | "lobby"
   | "active"
@@ -64,6 +55,7 @@ export type ArenaPublicMatchState = {
   stageInstanceId: string;
   startedAtTick: number;
   stageStartedAtTick?: number | undefined;
+  physicsStageStartedAtTick: number;
   deadlineTick?: number | undefined;
   membershipRevision: number;
 };
@@ -166,7 +158,6 @@ export type ArenaSnapshot = {
   inputAcksByPeerId: Record<string, number>;
   actorControlsByMemberId: Record<string, ArenaActorControlFrame>;
   removedMemberIds: string[];
-  effects: ArenaAuthorityEffectCue[];
   serverTime: number;
   authority: ArenaAuthorityDiagnostics;
 };
@@ -233,10 +224,6 @@ export function readArenaSnapshot(value: unknown): ArenaSnapshot | undefined {
     !isRecord(value.inputAcksByPeerId) ||
     !isRecord(value.actorControlsByMemberId) ||
     !boundedIdArray(value.removedMemberIds, 64) ||
-    !Array.isArray(value.effects) ||
-    value.effects.length > 128 ||
-    !value.effects.every(isAuthorityEffectCue) ||
-    new Set(value.effects.map((effect) => effect.id)).size !== value.effects.length ||
     !nonNegativeFinite(value.serverTime) ||
     !isAuthorityDiagnostics(value.authority)
   ) {
@@ -385,6 +372,7 @@ function isPublicMatchState(value: unknown): value is ArenaPublicMatchState {
     boundedId(value.stageInstanceId) &&
     nonNegativeSafeInteger(value.startedAtTick) &&
     (value.stageStartedAtTick === undefined || nonNegativeSafeInteger(value.stageStartedAtTick)) &&
+    nonNegativeSafeInteger(value.physicsStageStartedAtTick) &&
     (value.deadlineTick === undefined || nonNegativeSafeInteger(value.deadlineTick)) &&
     nonNegativeSafeInteger(value.membershipRevision)
   );
@@ -501,24 +489,6 @@ function readActorControlMap(
     };
   }
   return result;
-}
-
-function isAuthorityEffectCue(value: unknown): value is ArenaAuthorityEffectCue {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    value.id.length > 0 &&
-    value.id.length <= 256 &&
-    value.kind === "contact" &&
-    (value.contactKind === "contact" || value.contactKind === "trigger") &&
-    nonNegativeSafeInteger(value.tick) &&
-    typeof value.colliderA === "string" &&
-    value.colliderA.length > 0 &&
-    value.colliderA.length <= 128 &&
-    typeof value.colliderB === "string" &&
-    value.colliderB.length > 0 &&
-    value.colliderB.length <= 128
-  );
 }
 
 function readStringMap(value: Record<string, unknown>): Record<string, string> | undefined {

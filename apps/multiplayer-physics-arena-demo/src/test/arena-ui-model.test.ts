@@ -205,6 +205,7 @@ function arenaSnapshot(phase: ArenaSnapshot["phase"]): ArenaSnapshot {
       stageInstanceId: "match.1:stage.circuit-forge:1",
       startedAtTick: 0,
       stageStartedAtTick: 0,
+      physicsStageStartedAtTick: 0,
       deadlineTick: phase === "results" ? 180 : phase === "running" ? 5_440 : undefined,
       membershipRevision: 1
     },
@@ -282,7 +283,6 @@ function arenaSnapshot(phase: ArenaSnapshot["phase"]): ArenaSnapshot {
     inputAcksByPeerId: { "peer.0": 40 },
     actorControlsByMemberId: {},
     removedMemberIds: [],
-    effects: [],
     serverTime: 1_000,
     authority: {
       receivedInputBundles: 0,

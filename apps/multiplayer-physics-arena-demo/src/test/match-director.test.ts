@@ -101,6 +101,57 @@ describe("Knockout Arena match director", () => {
     director.dispose();
   });
 
+  it("starts from a selected stage, completes the remaining bracket, and keeps it for rematch", () => {
+    const director = createArenaMatchDirector({
+      stageRules: [
+        createArenaStageRule(stage("qualifier", 20, "stage.qualifier", 2)),
+        createArenaStageRule(stage("brawl", 20, "stage.brawl", 1)),
+        createArenaStageRule(stage("final", 20, "stage.final", 1))
+      ],
+      initialStageIndex: 1,
+      countdownTicks: 1,
+      resultsTicks: 1
+    });
+
+    expect(director.snapshot()).toMatchObject({
+      phase: "lobby",
+      stageIndex: 1,
+      stageCount: 3,
+      stageId: "stage.brawl"
+    });
+    advance(director, 0, 1, ["a", "b"], ["a", "b"]);
+    advance(director, 1, 1, ["a", "b"], ["a", "b"]);
+    expect(advance(director, 2, 1, ["a", "b"], ["b"])).toMatchObject({
+      snapshot: { phase: "results", stageIndex: 1 },
+      actions: [{ type: "stage-completed", finalStage: false }]
+    });
+    expect(advance(director, 3, 1, ["a", "b"], ["b"])).toMatchObject({
+      snapshot: { phase: "countdown", stageIndex: 2 },
+      actions: [{ type: "stage-prepared", stageId: "stage.final" }]
+    });
+    advance(director, 4, 1, ["b"], ["b"]);
+    expect(advance(director, 5, 1, ["b"], ["b"])).toMatchObject({
+      snapshot: { phase: "results", stageIndex: 2, winnerParticipantId: "b" },
+      actions: [{ type: "stage-completed", finalStage: true }]
+    });
+    expect(advance(director, 6, 1, ["b"], ["b"])).toMatchObject({
+      snapshot: { phase: "countdown", round: 2, stageIndex: 1 },
+      actions: [{ type: "rematch-reset", stageId: "stage.brawl" }]
+    });
+    director.dispose();
+  });
+
+  it("rejects an initial stage outside the compiled bracket", () => {
+    expect(() =>
+      createArenaMatchDirector({
+        stageRules: [createArenaStageRule(stage("final", 20))],
+        initialStageIndex: 1,
+        countdownTicks: 1,
+        resultsTicks: 1
+      })
+    ).toThrow("initialStageIndex must reference an existing stage");
+  });
+
   it("completes a qualifier when the required finish count is reached", () => {
     const director = createArenaMatchDirector({
       stageRules: [createArenaStageRule(stage("qualifier", 120, "stage.race", 2))],

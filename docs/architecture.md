@@ -346,6 +346,11 @@ Camera 是 gameplay/session 能力，不是 App Host 标准服务，也不是 Ph
 
 Physics 是 gameplay/session 能力和多后端 facade，不是 Renderer、Input 或 App Host 默认标准服务。Physics Core 定义 body、collider、material、query、contact event、trace、Save contributor 和标准 GameModule helper；Rapier、Matter.js、Phaser Physics 等底层能力通过 backend adapter 或 Driver runtime slice 接入。
 
+Kinematic transform 必须区分普通 simulation target 与已完成 tick 的 authority correction：前者让 backend solver 推导接触速度，
+后者在 rollback reconcile/hard correction 中立即安装快照 pose。该选择通过 Physics Core 的稳定 update option 传给 adapter，
+Multiplayer/App 不能在 Renderer 中另建 authority transform 旁路。具体语义见
+`docs/adr/0055-kinematic-target-and-authority-correction.md`。
+
 独立物理库使用 `@gamekit/physics-*` adapter。Phaser Arcade / Matter Physics 这类绑定在 Phaser Scene runtime 内的能力由 `@gamekit/driver-phaser` 持有外部 runtime，再暴露 physics backend adapter；adapter 不单独创建 Phaser.Game 或 Scene。Gameplay 通过 World component、Physics query 和低频 contact event 消费物理事实，不保存 backend native handle、broadphase cache 或 contact manifold。
 
 Fixed-step Physics module 可以提供 opt-in transient interpolation store 给 Renderer sync 和 Camera follow target 共用。该 store 不改变 World authority、Save 或 multiplayer snapshot，也不成为 Renderer/Camera 对 Physics 的包级依赖；组合层负责显式注入，并通过可选 policy 提供游戏尺度相关的不连续判定或表现曲线，Physics Core 不写死玩法阈值。

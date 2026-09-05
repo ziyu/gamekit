@@ -2,6 +2,7 @@ import type { NavigationLayoutDefinition } from "@gamekit/navigation-core";
 import type { NavigationNavMeshSource } from "@gamekit/navigation-navmesh";
 import type {
   PhysicsColliderDefinition,
+  PhysicsMaterialDefinition,
   PhysicsPredictionIslandEnvironment,
   PhysicsPredictionIslandMemberDefinition,
   PhysicsShapeDefinition,
@@ -48,6 +49,7 @@ export type CompiledArenaHazardSchedule = {
   periodTicks: number;
   phaseTicks: number;
   activeTicks: number;
+  activationProgress: number;
   axis: "x" | "y" | "z";
   origin: PhysicsVector;
   size: { width: number; height: number; depth: number };
@@ -115,7 +117,7 @@ export function compileArenaCourse(options: {
     ),
     ...course.props.map(propMember)
   ].sort(compareId);
-  const navigation = compileNavigation(course);
+  const navigation = compileNavigation(course, hazardsById);
   const presentationPlacements = [
     ...course.staticLayout.map(staticPresentation),
     ...course.hazards.map((placement) => hazardPresentation(placement, course)),
@@ -267,17 +269,40 @@ function propMember(
       position: cloneVector(placement.position),
       damping: { linear: 0.65, angular: 0.55 },
       continuousCollisionDetection: true,
-      userData: { sourceId: placement.id, presentationId: placement.presentationId }
+      userData: {
+        sourceId: placement.id,
+        presentationId: placement.presentationId,
+        authoredMass: placement.mass
+      }
     },
     colliders: [
       {
         id: `${placement.id}.collider`,
         shape: structuredClone(placement.shape) as PhysicsShapeDefinition,
-        material: placement.material,
+        material: arenaPropMaterialId(placement.id),
         userData: { sourceId: placement.id }
       }
     ]
   };
+}
+
+export function compileArenaPropMaterial(
+  placement: Readonly<ArenaDynamicPropPlacementDefinition>
+): PhysicsMaterialDefinition {
+  const volume =
+    placement.shape.type === "sphere"
+      ? (4 / 3) * Math.PI * placement.shape.radius ** 3
+      : placement.shape.width * placement.shape.height * placement.shape.depth;
+  return {
+    id: arenaPropMaterialId(placement.id),
+    friction: 0.65,
+    restitution: 0.45,
+    density: placement.mass / Math.max(0.001, volume)
+  };
+}
+
+function arenaPropMaterialId(placementId: string): string {
+  return `arena.prop-material.${placementId}`;
 }
 
 function compileHazardSchedule(
@@ -292,6 +317,7 @@ function compileHazardSchedule(
     periodTicks: definition.schedule.periodTicks,
     phaseTicks: definition.schedule.phaseTicks,
     activeTicks: definition.schedule.activeTicks,
+    activationProgress: definition.schedule.activationProgress ?? 0,
     axis: placement.axis ?? "x",
     origin: cloneVector(placement.position),
     size: { ...placement.size },
@@ -300,11 +326,42 @@ function compileHazardSchedule(
   };
 }
 
-function compileNavigation(course: ArenaCourseDefinition): CompiledArenaCourse["navigation"] {
+function compileNavigation(
+  course: ArenaCourseDefinition,
+  hazardsById: ReadonlyMap<string, ArenaHazardDefinition>
+): CompiledArenaCourse["navigation"] {
   const vertices: NavigationNavMeshSource["vertices"] = [];
   const triangles: NavigationNavMeshSource["triangles"] = [];
-  for (const placement of [...course.staticLayout].sort(compareId)) {
-    if (placement.navigationArea === undefined) continue;
+  const walkablePlacements = [
+    ...course.staticLayout
+      .filter((placement) => placement.navigationArea !== undefined)
+      .map((placement) => ({
+        id: placement.id,
+        position: placement.position,
+        size: placement.size,
+        area: placement.navigationArea!,
+        tags: [`source:${placement.id}`, `course:${course.id}`]
+      })),
+    ...course.hazards.flatMap((placement) => {
+      const kind = hazardsById.get(placement.definition.id)?.kind;
+      if (kind !== "moving-platform" && kind !== "crumble-floor") return [];
+      return [
+        {
+          id: placement.id,
+          position: placement.position,
+          size: placement.size,
+          area: "walkable" as const,
+          tags: [
+            `source:${placement.id}`,
+            `course:${course.id}`,
+            "dynamic-support",
+            `hazard:${kind}`
+          ]
+        }
+      ];
+    })
+  ].sort(compareId);
+  for (const placement of walkablePlacements) {
     const base = vertices.length;
     const halfWidth = placement.size.width / 2;
     const halfDepth = placement.size.depth / 2;
@@ -331,10 +388,9 @@ function compileNavigation(course: ArenaCourseDefinition): CompiledArenaCourse["
         z: elevation
       }
     );
-    const tags = [`source:${placement.id}`, `course:${course.id}`];
     triangles.push(
-      { a: base, b: base + 1, c: base + 2, area: placement.navigationArea, tags },
-      { a: base, b: base + 2, c: base + 3, area: placement.navigationArea, tags }
+      { a: base, b: base + 1, c: base + 2, area: placement.area, tags: placement.tags },
+      { a: base, b: base + 2, c: base + 3, area: placement.area, tags: placement.tags }
     );
   }
   const sourceId = `navigation.source.${course.id}`;

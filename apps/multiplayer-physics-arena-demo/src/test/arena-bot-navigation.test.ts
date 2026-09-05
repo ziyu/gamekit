@@ -38,10 +38,13 @@ describe("Knockout Arena bot navigation", () => {
       const result = navigation.queries.poll(requestId);
       expect(result).toMatchObject({ status: "complete", route: { kind: "field" } });
       if (result.status !== "complete") throw new Error("Expected a complete Recast route");
-      expect(navigation.queries.sampleRoute(result.route.routeId, start)).toMatchObject({
+      const sample = navigation.queries.sampleRoute(result.route.routeId, start);
+      expect(sample).toMatchObject({
         status: "valid",
         direction: { x: expect.any(Number), y: expect.any(Number) }
       });
+      if (sample.status !== "valid") throw new Error("Expected a valid Recast route sample");
+      expect(sample.direction.y).toBeLessThan(0);
       expect(navigation.snapshot()).toMatchObject({
         activeStageIndex: 0,
         artifacts: 3,

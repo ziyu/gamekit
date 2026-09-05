@@ -127,6 +127,7 @@ function hazardDataType(): DataTypeDefinition<ArenaHazardDefinition> {
         ...positiveInteger(document, schedule.periodTicks, "schedule.periodTicks"),
         ...nonNegativeInteger(document, schedule.phaseTicks, "schedule.phaseTicks"),
         ...positiveInteger(document, schedule.activeTicks, "schedule.activeTicks"),
+        ...ratio(document, schedule.activationProgress ?? 0, "schedule.activationProgress"),
         ...(schedule.activeTicks <= schedule.periodTicks
           ? []
           : [
@@ -195,6 +196,42 @@ function itemDataType(): DataTypeDefinition<ArenaItemDefinition> {
         ...nonNegative(document, item.action.launchSpeed, "action.launchSpeed"),
         ...positive(document, item.action.baseImpulse, "action.baseImpulse"),
         ...nonNegative(document, item.action.areaRadius, "action.areaRadius"),
+        ...(item.effect.impulseMode === "directional" ||
+        item.effect.impulseMode === "radial" ||
+        item.effect.impulseMode === "pull" ||
+        item.effect.impulseMode === "launch"
+          ? []
+          : [
+              diagnostic(
+                document,
+                "arena.item_impulse_mode",
+                "effect.impulseMode must be directional, radial, pull, or launch",
+                "effect.impulseMode"
+              )
+            ]),
+        ...ratio(document, item.effect.instabilityDelta, "effect.instabilityDelta"),
+        ...positive(document, item.effect.staggerMultiplier, "effect.staggerMultiplier"),
+        ...((item.effect.impulseMode === "radial" || item.effect.impulseMode === "pull") &&
+        item.action.mode !== "throw-area"
+          ? [
+              diagnostic(
+                document,
+                "arena.item_area_effect_mode",
+                "Radial and pull effects require a throw-area action",
+                "effect.impulseMode"
+              )
+            ]
+          : []),
+        ...(item.effect.impulseMode === "launch" && item.action.mode !== "melee"
+          ? [
+              diagnostic(
+                document,
+                "arena.item_launch_effect_mode",
+                "Launch effects require a melee action",
+                "effect.impulseMode"
+              )
+            ]
+          : []),
         ...nonNegativeInteger(document, item.respawn.ticks, "respawn.ticks"),
         ...nonBlank(document, item.presentationId, "presentationId"),
         ...(item.networkStrategy === "predicted-entity" || item.networkStrategy === "authority-only"

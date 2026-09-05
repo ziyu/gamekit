@@ -3,52 +3,35 @@ import { describe, expect, it } from "vitest";
 
 import { createArenaClientEffectController } from "../client/arena-effects";
 import { ARENA_DEFINITION_VERSION, ARENA_ISLAND_ID, ARENA_SCHEMA_VERSION } from "../shared/config";
-import type { ArenaAuthorityEffectCue, ArenaSnapshot } from "../shared/protocol";
+import type { ArenaSnapshot } from "../shared/protocol";
 
 describe("Knockout Arena speculative effects", () => {
-  it("deduplicates replayed jump and contact anticipation before authority confirmation", () => {
+  it("ignores ordinary physics contacts while settling semantic jump feedback", () => {
     const presented: string[] = [];
     const effects = createArenaClientEffectController(1, (event) => {
       presented.push(`${event.kind}:${event.phase}`);
     });
     effects.anticipateJump({ memberId: "player.0", inputSequence: 7, predictionTick: 10 });
     effects.anticipateJump({ memberId: "player.0", inputSequence: 7, predictionTick: 10 });
-    const contact = localContact(20);
-    effects.anticipateContacts([contact, contact], "player.0");
-
-    effects.reconcile(
-      snapshot(24, 1, 7, [
-        {
-          id: "authority.contact.20",
-          kind: "contact",
-          contactKind: "contact",
-          tick: 22,
-          colliderA: "player.0.collider",
-          colliderB: "prop.cube.0.collider"
-        }
-      ]),
-      "peer.0"
-    );
+    const contact = groundContact(20);
+    const current = snapshot(24, 1, 7);
+    effects.anticipateItemContacts([contact, contact], current, "peer.0");
+    effects.reconcile(current, "peer.0");
 
     expect(effects.diagnostics()).toMatchObject({
-      presentation: { anticipated: 2, confirmed: 2, cancelled: 0 },
-      journal: { duplicates: 2, pending: 0, confirmed: 2 }
+      presentation: { anticipated: 1, confirmed: 1, cancelled: 0 },
+      journal: { duplicates: 1, pending: 0, confirmed: 1 }
     });
-    expect(presented).toEqual([
-      "jump:anticipate",
-      "contact:anticipate",
-      "jump:confirm",
-      "contact:confirm"
-    ]);
+    expect(presented).toEqual(["jump:anticipate", "jump:confirm"]);
     effects.dispose();
   });
 
   it("cancels unresolved anticipation on generation reset and expiry", () => {
     const effects = createArenaClientEffectController();
-    effects.anticipateContacts([localContact(10)], "player.0");
-    effects.reconcile(snapshot(20, 2, 0, []), "peer.0");
-    effects.anticipateContacts([localContact(21)], "player.0");
-    effects.reconcile(snapshot(70, 2, 0, []), "peer.0");
+    effects.anticipateJump({ memberId: "player.0", inputSequence: 10, predictionTick: 10 });
+    effects.reconcile(snapshot(20, 2, 0), "peer.0");
+    effects.anticipateJump({ memberId: "player.0", inputSequence: 20, predictionTick: 21 });
+    effects.reconcile(snapshot(70, 2, 0), "peer.0");
 
     expect(effects.diagnostics()).toMatchObject({
       presentation: { cancelled: 2 },
@@ -94,14 +77,14 @@ describe("Knockout Arena speculative effects", () => {
   });
 });
 
-function localContact(tick: number): PhysicsPredictionIslandContact {
+function groundContact(tick: number): PhysicsPredictionIslandContact {
   return {
     phase: "enter",
     kind: "contact",
     colliderA: "player.0.collider",
-    colliderB: "prop.cube.0.collider",
+    colliderB: "circuit.floor.collider",
     bodyA: "player.0",
-    bodyB: "prop.cube.0",
+    bodyB: "circuit.floor",
     sensor: false,
     tick
   };
@@ -121,7 +104,7 @@ function itemContact(tick: number): PhysicsPredictionIslandContact {
 }
 
 function itemSnapshot(tick: number, settled = false): ArenaSnapshot {
-  const value = snapshot(tick, 1, 9, []);
+  const value = snapshot(tick, 1, 9);
   value.participants.push({
     id: "bot.0",
     kind: "bot",
@@ -177,12 +160,7 @@ function itemSnapshot(tick: number, settled = false): ArenaSnapshot {
   return value;
 }
 
-function snapshot(
-  tick: number,
-  round: number,
-  acknowledgedSequence: number,
-  effects: ArenaAuthorityEffectCue[]
-): ArenaSnapshot {
+function snapshot(tick: number, round: number, acknowledgedSequence: number): ArenaSnapshot {
   return {
     schemaVersion: ARENA_SCHEMA_VERSION,
     phase: "running",
@@ -201,6 +179,7 @@ function snapshot(
       stageInstanceId: `match.${round}:stage.circuit-forge:1`,
       startedAtTick: tick,
       stageStartedAtTick: tick,
+      physicsStageStartedAtTick: tick,
       membershipRevision: round
     },
     participants: [
@@ -235,7 +214,6 @@ function snapshot(
       "player.0": { sequence: tick, moveX: 0, moveZ: 0, jump: false }
     },
     removedMemberIds: [],
-    effects,
     serverTime: tick * (1000 / 60),
     authority: {
       receivedInputBundles: 0,

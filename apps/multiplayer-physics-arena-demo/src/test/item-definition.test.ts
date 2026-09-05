@@ -16,14 +16,24 @@ describe("Knockout Arena item definition compiler", () => {
       "item.foam-ball",
       "item.energy-block",
       "item.blast-orb",
-      "item.foam-hammer"
+      "item.foam-hammer",
+      "item.gravity-orb",
+      "item.spring-glove",
+      "item.stun-baton"
     ]);
-    expect(manifest.spawns).toEqual([
-      expect.objectContaining({ id: "item.0", definitionId: "item.foam-ball" }),
-      expect.objectContaining({ id: "item.1", definitionId: "item.energy-block" }),
-      expect.objectContaining({ id: "item.2", definitionId: "item.blast-orb" }),
-      expect.objectContaining({ id: "item.3", definitionId: "item.foam-hammer" })
-    ]);
+    expect(manifest.spawns).toHaveLength(12);
+    expect(manifest.spawns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "item.0", definitionId: "item.foam-ball" }),
+        expect.objectContaining({ id: "item.1", definitionId: "item.energy-block" }),
+        expect.objectContaining({ id: "item.2", definitionId: "item.blast-orb" }),
+        expect.objectContaining({ id: "item.3", definitionId: "item.foam-hammer" }),
+        expect.objectContaining({ id: "item.4", definitionId: "item.gravity-orb" }),
+        expect.objectContaining({ id: "item.5", definitionId: "item.spring-glove" }),
+        expect.objectContaining({ id: "item.6", definitionId: "item.stun-baton" }),
+        expect.objectContaining({ id: "item.11", definitionId: "item.stun-baton" })
+      ])
+    );
     expect(manifest.definitions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -35,6 +45,20 @@ describe("Knockout Arena item definition compiler", () => {
           id: "item.foam-hammer",
           activeState: "melee-active",
           networkStrategy: "authority-only"
+        }),
+        expect.objectContaining({
+          id: "item.gravity-orb",
+          impulseMode: "pull",
+          activeState: "triggered"
+        }),
+        expect.objectContaining({
+          id: "item.spring-glove",
+          impulseMode: "launch"
+        }),
+        expect.objectContaining({
+          id: "item.stun-baton",
+          instabilityDelta: 0.3,
+          staggerMultiplier: 2.35
         })
       ])
     );
@@ -69,6 +93,11 @@ describe("Knockout Arena item definition compiler", () => {
         launchSpeed: 10,
         baseImpulse: 4,
         areaRadius: 0
+      },
+      effect: {
+        impulseMode: "directional" as const,
+        instabilityDelta: 0.1,
+        staggerMultiplier: 1
       },
       respawn: { mode: "timed" as const, ticks: 3 },
       presentationId: "presentation.fixture",

@@ -53,6 +53,14 @@ describe("Knockout Circuit presented state", () => {
       carrying: true,
       instability: 0.42
     });
+    expect(runtime.snapshot().items).toEqual([
+      expect.objectContaining({
+        itemId: "item.0",
+        definitionId: "item.foam-ball",
+        ownerMemberId: "player.0",
+        state: "carried"
+      })
+    ]);
     expect(runtime.actor("bot.0")).toMatchObject({
       local: false,
       baseState: "fall",
@@ -136,6 +144,12 @@ describe("Knockout Circuit presented state", () => {
       carrying: true
     });
     expect(runtime.actor("player.0")?.actionNormalizedTime).toBeCloseTo(0.5, 2);
+    expect(runtime.snapshot().items[0]).toMatchObject({
+      itemId: "item.0",
+      ownerMemberId: "player.0",
+      state: "windup",
+      normalizedActionTime: 0.5
+    });
     expect(runtime.diagnostics().phaseSeeks).toBe(1);
 
     state.tick = 26;
@@ -278,6 +292,7 @@ function arenaSnapshot(tick: number, participants: ArenaPublicParticipantState[]
       stageInstanceId: "match.1:stage.circuit-forge:1",
       startedAtTick: 0,
       stageStartedAtTick: 0,
+      physicsStageStartedAtTick: 0,
       membershipRevision: 1
     },
     participants,
@@ -298,7 +313,6 @@ function arenaSnapshot(tick: number, participants: ArenaPublicParticipantState[]
     inputAcksByPeerId: { "peer.0": tick },
     actorControlsByMemberId: {},
     removedMemberIds: [],
-    effects: [],
     serverTime: tick * ARENA_FIXED_STEP_MS,
     authority: {
       receivedInputBundles: 0,

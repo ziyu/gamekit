@@ -68,15 +68,42 @@ participant、item、combat、match projection 合并为每个 actor 唯一的�
 
 - World item 使用 instance/generation visual identity；predicted spawn 与 authority takeover不能复制 mesh。
 - Carried item绑定语义 socket，presentation自行解析 Three node/bone；gameplay不保存 native target。
+- Pickup commit 后复用同一个 visual object 并从 world root 转挂到角色 socket；world body despawn 不等于 visual dispose。Drop/throw
+  递增 generation 后再恢复 world visual，避免拾取瞬间消失、闪烁或出现双份模型。
 - Pickup candidate有轻量 outline/reticle，authority claim后才进入最终 carry状态；reject快速淡出而非瞬间生成第二件物品。
 - Throw显示 charge和方向，但不显示无法兑现的精确命中线；impact point来自 authority/predicted空间事实。
 - Hazard具有 warning → active → recover 的统一视觉语汇；颜色、灯带、机械动作和音频共同表达 phase。
 - Collapsing tile在 collision仍有效时不能视觉完全消失，在 collision移除后不能继续表现为安全落脚面。
 
+### 场景元素真实性契约
+
+任何视觉上被设计成玩法机关的元素都必须对应一个可验证的 gameplay fact，不能用静态模型冒充可交互内容：
+
+- `rotating-sweeper`、`piston`、`moving-platform`、`crumble-floor` 的机械主体必须直接跟随 prediction island body transform；轴、行程和碰撞轮廓与 Course schedule 一致。
+- `conveyor`、`wind-zone`、`bounce-pad`、`shrinking-zone` 即使通过 volume/body command 生效，也必须把方向、强度、活动 phase 和作用范围表现为持续机械动画；不能只改变 emissive 颜色。
+- 传送带板条/滚轴方向必须与实际 impulse 轴一致；风机和风流必须与推力方向一致；弹跳板压缩/回弹必须与 launch cadence 一致；收缩环必须读取 replicated `safeScale`。
+- 建筑门架、观众舱、广播环、护栏信标等不参与 gameplay 的元素应明确保持在 atmosphere 层。它们可以运行环境动画，但轮廓、材质和布局不能伪装成有碰撞或伤害的机关。
+- 每种 authored hazard 必须同时有物理/区域命令测试和 presentation motion 测试；新增 hazard kind 不能只依赖通用静态盒 fallback 通过验收。
+
+开发/验收构建可通过 `?hazard-audit=1` 打开只读的 Real Interaction Audit。它按当前 stage 枚举全部 hazard 与 dynamic prop，选择
+实例后把观察相机对准其可视根节点，并同时公开 member id/kind/phase、prediction tick/body transform、authority tick/body
+transform、visual root transform 与首个辅助动画 part。审计面板不能改变 Physics、Match 或 schedule，只作为真实浏览器证据面。
+面板还必须在单一 `data-evidence` 读面中输出当前 stage 全部实例，避免短 stage 或远程浏览器逐项点击延迟导致跨 generation
+污染；单项 selector 只负责观察相机，不是批量验收的唯一入口。
+
+活动参与者的 Renderer/Camera/Feedback 始终优先读取 prediction island。淘汰或纯 spectator 客户端没有 gameplay prediction domain
+时，表现层统一降级读取同一份 authority frame；审计明确标为 `AUTHORITY FALLBACK`，不能冒充本地预测。该 fallback 只读且不生成
+input、replay、contact gameplay 或 authority fact，保证观战者仍能看到后续 stage 的机关、道具和角色，而不为 spectator 维持无用 rollback history。
+
 ## VFX 与 Effect Journal
 
-可预测反馈：jump/dive impulse、pickup reach、throw release、轻接触、落地、局部镜头冲击。Authority-only或需要确认的反馈：
-item owner、有效 hit、instability/stagger、KO、qualification、winner、item respawn。
+可预测反馈：jump/dive impulse、pickup reach、throw release，以及已经被 item/contact resolver 分类为潜在命中的局部
+`item-hit`。Authority-only或需要确认的反馈：item owner、有效 hit、instability/stagger、KO、qualification、winner、
+item respawn。
+
+普通 Physics solver contact 是空间事实，不是表现语义：地面、墙面、玩家拥挤和 solver 短暂分离后的 contact enter 都不能直接
+触发受击闪光、impact 音效或镜头震动。真正的受击表现只由 `combat.hits` 确认；落地反馈应来自 character motor 的 grounded
+边沿及落地速度，机关冲击应由 hazard resolver 产出的显式 impact 事实驱动。不得用 collider 名称黑名单修补普通接触误报。
 
 所有 replay-sensitive effect由 speculative journal提供 stable identity和 anticipate/confirm/cancel/replace。Renderer、Audio、Camera
 和 UI consumer不各建 dedupe Set。
@@ -138,7 +165,8 @@ Stage intro、results和winner podium可以使用app-ownedThree native camera，
 
 ### 页面
 
-- Title/Connection：服务器状态、离线练习入口、辅助设置。
+- Title/Connection：服务器状态、房间码、显示名、创建房间的起始场景选择和辅助设置。起始场景默认显示随机抽签；加入已有房间时
+  该控件不覆盖房间 authority 已确定的赛程。
 - Lobby：room code、participant/bot roster、ready/content compatibility、输入设备。
 - Loading：required content进度、等待成员、错误/重试。
 - Stage Intro：目标、晋级名额、关键机关/道具说明。

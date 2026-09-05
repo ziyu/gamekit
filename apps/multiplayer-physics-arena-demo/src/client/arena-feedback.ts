@@ -14,6 +14,7 @@ export type ArenaFeedbackSnapshot = {
   };
   hazards: Array<{
     memberId: string;
+    kind: ReturnType<typeof sampleArenaStageHazards>[number]["kind"];
     phase: ArenaHazardPhase;
     nextTransitionTick: number;
   }>;
@@ -85,9 +86,13 @@ export function createArenaFeedbackRuntime(audio: GameAudio): ArenaFeedbackRunti
           : sampleArenaStageHazards({
               stageIndex: snapshot.match.stageIndex,
               tick: predictedState?.tick ?? snapshot.frame.tick,
-              stageStartedAtTick: snapshot.match.stageStartedAtTick ?? snapshot.match.startedAtTick
-            }).map(({ memberId, phase, nextTransitionTick }) => ({
+              stageStartedAtTick:
+                snapshot.match.stageStartedAtTick === undefined
+                  ? (predictedState?.tick ?? snapshot.frame.tick)
+                  : snapshot.match.physicsStageStartedAtTick
+            }).map(({ memberId, kind, phase, nextTransitionTick }) => ({
               memberId,
+              kind,
               phase,
               nextTransitionTick
             }));
@@ -186,6 +191,15 @@ export function createArenaFeedbackRuntime(audio: GameAudio): ArenaFeedbackRunti
     hazards: ArenaFeedbackSnapshot["hazards"]
   ): void {
     const retained = new Set<string>();
+    const listenerPosition = latestState?.members.find(
+      (member) => member.id === feedback.camera.targetMemberId
+    )?.body.position;
+    const pending: Array<{
+      hazard: ArenaFeedbackSnapshot["hazards"][number];
+      signature: string;
+      position: { x: number; y: number; z?: number | undefined } | undefined;
+      distance: number;
+    }> = [];
     for (const hazard of hazards) {
       retained.add(hazard.memberId);
       const signature = `${snapshot?.match.stageInstanceId}:${hazard.phase}:${hazard.nextTransitionTick}`;
@@ -195,6 +209,27 @@ export function createArenaFeedbackRuntime(audio: GameAudio): ArenaFeedbackRunti
       if (hazard.phase !== "warning" && hazard.phase !== "active") continue;
       const position = latestState?.members.find((member) => member.id === hazard.memberId)?.body
         .position;
+      pending.push({
+        hazard,
+        signature,
+        position,
+        distance:
+          position === undefined || listenerPosition === undefined
+            ? Number.POSITIVE_INFINITY
+            : Math.hypot(
+                position.x - listenerPosition.x,
+                position.y - listenerPosition.y,
+                (position.z ?? 0) - (listenerPosition.z ?? 0)
+              )
+      });
+    }
+    pending.sort(
+      (left, right) =>
+        Number(left.hazard.phase === "active") - Number(right.hazard.phase === "active") ||
+        left.distance - right.distance ||
+        left.hazard.memberId.localeCompare(right.hazard.memberId)
+    );
+    for (const { hazard, signature, position } of pending.slice(0, 8)) {
       audio.sfx.play(
         hazard.phase === "warning" ? ARENA_AUDIO_IDS.hazardWarning : ARENA_AUDIO_IDS.hazardActive,
         {
@@ -291,10 +326,6 @@ function effectPosition(
       ? event.effectId.slice("jump:".length, event.effectId.lastIndexOf(":"))
       : snapshot?.participants.find((participant) => participant.id === participantId)
           ?.actorMemberId;
-  const member = state?.members.find(
-    (candidate) =>
-      candidate.id === explicitMemberId ||
-      (event.kind === "contact" && event.effectId.includes(candidate.id))
-  );
+  const member = state?.members.find((candidate) => candidate.id === explicitMemberId);
   return member === undefined ? undefined : { ...member.body.position };
 }

@@ -58,13 +58,24 @@ describe("Knockout Arena compiled stage course", () => {
 
     expect(first).toEqual(replay);
     expect(first.map(({ memberId }) => memberId)).toEqual([
-      "circuit.sweeper",
-      "circuit.moving-bridge",
-      "circuit.piston-gate"
+      "circuit.conveyor-left",
+      "circuit.conveyor-right",
+      "circuit.sweeper-alpha",
+      "circuit.sweeper-beta",
+      "circuit.piston-left",
+      "circuit.piston-center",
+      "circuit.piston-right",
+      "circuit.bounce-left",
+      "circuit.bounce-right",
+      "circuit.wind-left",
+      "circuit.wind-right",
+      "circuit.moving-bridge-left",
+      "circuit.moving-bridge-right",
+      "circuit.cargo-sweeper"
     ]);
     expect(first.every(({ nextTransitionTick }) => nextTransitionTick > 480)).toBe(true);
-    expect(nextCycle.find(({ memberId }) => memberId === "circuit.sweeper")?.patch).toEqual(
-      first.find(({ memberId }) => memberId === "circuit.sweeper")?.patch
+    expect(nextCycle.find(({ memberId }) => memberId === "circuit.sweeper-alpha")?.patch).toEqual(
+      first.find(({ memberId }) => memberId === "circuit.sweeper-alpha")?.patch
     );
   });
 
@@ -77,7 +88,13 @@ describe("Knockout Arena compiled stage course", () => {
       .sort((left, right) => (left.routeOrder ?? 0) - (right.routeOrder ?? 0));
 
     expect(circuit.participantSpawns).toHaveLength(8);
-    expect(routeVolumes.map(({ routeOrder }) => routeOrder)).toEqual([1, 2, 3]);
+    expect(routeVolumes.map(({ routeOrder }) => routeOrder)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    const startZ =
+      circuit.participantSpawns.reduce((sum, spawn) => sum + (spawn.position.z ?? 0), 0) /
+      circuit.participantSpawns.length;
+    const finishZ = routeVolumes.at(-1)?.position.z ?? startZ;
+    expect(Math.abs(startZ - finishZ)).toBeGreaterThanOrEqual(17.8 * 10);
+    expect(circuit.memberDefinitions).toHaveLength(19);
     for (const spawn of circuit.participantSpawns) {
       expect(insideBounds(spawn.position, circuit.bounds)).toBe(true);
       expect(routeVolumes.every((volume) => insideBounds(volume.position, circuit.bounds))).toBe(
@@ -90,6 +107,31 @@ describe("Knockout Arena compiled stage course", () => {
   });
 
   it("produces deterministic conveyor, wind, launch-pad and shrinking-zone body commands", () => {
+    const circuit = planArenaHazardBodyCommands({
+      stageIndex: 0,
+      tick: 18,
+      stageStartedAtTick: 0,
+      bodies: [
+        dynamicBody("actor.conveyor", { x: -5.5, y: 1.1, z: -12 }),
+        dynamicBody("actor.wind", { x: -6, y: 1.3, z: -130 }),
+        dynamicBody("actor.bounce", { x: -6, y: 1.1, z: -108 })
+      ]
+    });
+    expect(circuit.find(({ memberId }) => memberId === "actor.conveyor")?.command).toMatchObject({
+      type: "linear-impulse",
+      impulse: { z: expect.any(Number) }
+    });
+    expect(circuit.find(({ memberId }) => memberId === "actor.wind")?.command).toMatchObject({
+      type: "linear-impulse",
+      impulse: { x: expect.any(Number) }
+    });
+    expect(circuit.find(({ memberId }) => memberId === "actor.bounce")?.command).toMatchObject({
+      type: "linear-impulse",
+      impulse: { y: expect.any(Number) }
+    });
+    expect(linearImpulseFor(circuit, "actor.conveyor").z).toBeGreaterThanOrEqual(0.05);
+    expect(linearImpulseFor(circuit, "actor.bounce").y).toBeGreaterThanOrEqual(4.5);
+
     const scrap = planArenaHazardBodyCommands({
       stageIndex: 1,
       tick: 18,
@@ -131,6 +173,17 @@ function dynamicBody(id: string, position: { x: number; y: number; z: number }) 
     linearVelocity: { x: 0, y: 0, z: 0 },
     sleeping: false
   };
+}
+
+function linearImpulseFor(
+  commands: ReturnType<typeof planArenaHazardBodyCommands>,
+  memberId: string
+) {
+  const command = commands.find((candidate) => candidate.memberId === memberId)?.command;
+  if (command?.type !== "linear-impulse") {
+    throw new Error(`Missing linear impulse for ${memberId}`);
+  }
+  return command.impulse;
 }
 
 function insideBounds(

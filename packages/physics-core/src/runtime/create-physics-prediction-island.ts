@@ -569,7 +569,9 @@ export function createPhysicsPredictionIsland(
           vectorDistance(localBody.position, authorityMember.body.position)
         );
         if (bodyStateRequiresPatch(localBody, authorityMember.body)) {
-          scene.updateBody(definition.body.id, bodyStatePatch(authorityMember.body));
+          scene.updateBody(definition.body.id, bodyStatePatch(authorityMember.body), {
+            kinematicTransformMode: "teleport"
+          });
         }
       }
       let auxiliaryCorrection = false;
@@ -684,7 +686,9 @@ export function createPhysicsPredictionIsland(
             definition = availableDefinitions.get(authorityMember.id)!;
             spawnMember(definition, false);
           }
-          scene.updateBody(definition.body.id, bodyStatePatch(authorityMember.body));
+          scene.updateBody(definition.body.id, bodyStatePatch(authorityMember.body), {
+            kinematicTransformMode: "teleport"
+          });
         }
         generation = snapshot.generation;
         currentTick = snapshot.tick;

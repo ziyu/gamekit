@@ -255,7 +255,11 @@ export type PhysicsScene<TNative = unknown> = {
   id: PhysicsSceneId;
 
   createBody(definition: PhysicsBodyDefinition): PhysicsBodyId;
-  updateBody(id: PhysicsBodyId, patch: PhysicsBodyPatch): void;
+  updateBody(
+    id: PhysicsBodyId,
+    patch: PhysicsBodyPatch,
+    options?: { kinematicTransformMode?: "target" | "teleport" }
+  ): void;
   applyBodyCommand?(command: PhysicsBodyCommand): PhysicsBodyCommandResult;
   destroyBody(id: PhysicsBodyId): void;
 
@@ -294,6 +298,11 @@ Adapter 规则：
 - `PhysicsSceneConfig.materialDefinitions` 是 scene-local material registry。Adapter 必须把 collider 的 friction、
   restitution、density 和 combine rule 映射到底层 solver；未知 material id 必须报错。高速动态 body 通过
   `continuousCollisionDetection` 显式启用 backend CCD，不能靠放大 collider 掩盖 tunneling。
+- Kinematic body 的 position/rotation patch 默认是下一次 fixed step 的 target；Rapier adapter 必须用 next-kinematic API，
+  让 solver 能从位移推导速度并真实推动接触对象。Rollback reconcile、hard correction 和 authoritative baseline 安装则显式传
+  `kinematicTransformMode: "teleport"`，表示快照已经是该 tick 完成后的 pose，当前 tick 必须立即可读。两种语义不能由 adapter
+  根据调用栈猜测，也不能把 authority correction 留成 pending target 后被下一帧覆盖。详见
+  [`ADR 0055`](../adr/0055-kinematic-target-and-authority-correction.md)。
 
 ## Body Command
 

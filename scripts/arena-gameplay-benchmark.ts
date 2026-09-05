@@ -27,6 +27,7 @@ import {
   createArenaMemberDefinitions
 } from "../apps/multiplayer-physics-arena-demo/src/shared/arena-definition";
 import { arenaParticipantCommandEpoch } from "../apps/multiplayer-physics-arena-demo/src/shared/arena-identity";
+import { createArenaPhysicsMaterialDefinitions } from "../apps/multiplayer-physics-arena-demo/src/shared/arena-physics-materials";
 import {
   ARENA_ACTION_KIND,
   ARENA_DEFINITION_VERSION,
@@ -755,14 +756,7 @@ function arenaScene() {
   return {
     dimension: "3d" as const,
     gravity: { x: 0, y: -18, z: 0 },
-    materialDefinitions: [
-      { id: "course", friction: 0.85, restitution: 0.05 },
-      { id: "ice", friction: 0.08, restitution: 0.04 },
-      { id: "mud", friction: 0.98, restitution: 0.01 },
-      { id: "actor", friction: 0.55, restitution: 0.08, density: 1 },
-      { id: "prop", friction: 0.65, restitution: 0.45, density: 0.7 },
-      { id: "hazard", friction: 0.45, restitution: 0.3 }
-    ]
+    materialDefinitions: createArenaPhysicsMaterialDefinitions({ content: ARENA_COMPILED_CONTENT })
   };
 }
 

@@ -57,6 +57,15 @@ export type PhysicsBodyPatch = {
   userData?: Record<string, unknown>;
 };
 
+export type PhysicsBodyUpdateOptions = {
+  /**
+   * Kinematic bodies normally interpret position and rotation as the target of
+   * the next simulation step so they can impart solver velocity. Rollback and
+   * authoritative correction can explicitly install an already-simulated pose.
+   */
+  kinematicTransformMode?: "target" | "teleport";
+};
+
 export type PhysicsBodyCommandWakePolicy = "wake" | "preserve";
 
 export type PhysicsLinearImpulseCommandPayload = {
@@ -400,7 +409,7 @@ export type PhysicsSceneSnapshot = {
 export type PhysicsScene<TNative = unknown> = {
   readonly id: PhysicsSceneId;
   createBody(definition: PhysicsBodyDefinition): PhysicsBodyId;
-  updateBody(id: PhysicsBodyId, patch: PhysicsBodyPatch): void;
+  updateBody(id: PhysicsBodyId, patch: PhysicsBodyPatch, options?: PhysicsBodyUpdateOptions): void;
   applyBodyCommand?(command: PhysicsBodyCommand): PhysicsBodyCommandResult;
   destroyBody(id: PhysicsBodyId): void;
   createCollider(definition: PhysicsColliderDefinition): PhysicsColliderId;

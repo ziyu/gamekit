@@ -49,10 +49,21 @@ export type ArenaPresentedActorState = {
   actionNormalizedTime?: number | undefined;
 };
 
+export type ArenaPresentedItemState = {
+  itemId: string;
+  definitionId: string;
+  instanceGeneration: number;
+  ownerParticipantId: string;
+  ownerMemberId: string;
+  state: "carried" | "windup";
+  normalizedActionTime: number;
+};
+
 export type ArenaPresentationSnapshot = {
   generation: number;
   sourceGeneration?: string | number | undefined;
   actors: ArenaPresentedActorState[];
+  items: ArenaPresentedItemState[];
 };
 
 export type ArenaPresentationDiagnostics = {
@@ -110,6 +121,7 @@ export function createArenaPresentationRuntime(): ArenaPresentationRuntime {
     traceLimit: 256
   });
   const actors = new Map<string, ArenaPresentedActorState>();
+  const items = new Map<string, ArenaPresentedItemState>();
   const controllers = new Map<string, string>();
   const phaseSignatures = new Map<string, string>();
   const phaseExecutions = new Map<string, string>();
@@ -134,6 +146,7 @@ export function createArenaPresentationRuntime(): ArenaPresentationRuntime {
         phaseSignatures.clear();
         phaseExecutions.clear();
         consumedEffects.clear();
+        items.clear();
         for (const controllerId of controllers.values()) animator.reset(controllerId, generation);
       }
       if (snapshot === undefined || predictedState === undefined) {
@@ -143,6 +156,47 @@ export function createArenaPresentationRuntime(): ArenaPresentationRuntime {
 
       const motorStates = readMotorStates(predictedState);
       const bodies = new Map(predictedState.members.map((member) => [member.id, member.body]));
+      const actorMemberIdByParticipantId = new Map(
+        snapshot.participants.flatMap((participant) =>
+          participant.actorMemberId === undefined
+            ? []
+            : [[participant.id, participant.actorMemberId] as const]
+        )
+      );
+      const desiredItems = new Set<string>();
+      for (const item of snapshot.items) {
+        if (
+          item.ownerParticipantId === undefined ||
+          (item.state !== "carried" && item.state !== "windup")
+        ) {
+          continue;
+        }
+        const ownerMemberId = actorMemberIdByParticipantId.get(item.ownerParticipantId);
+        if (ownerMemberId === undefined || !bodies.has(ownerMemberId)) continue;
+        desiredItems.add(item.id);
+        const durationTicks = Math.max(
+          1,
+          (item.deadlineTick ?? item.stateChangedAtTick + 1) - item.stateChangedAtTick
+        );
+        items.set(item.id, {
+          itemId: item.id,
+          definitionId: item.definitionId,
+          instanceGeneration: item.instanceGeneration,
+          ownerParticipantId: item.ownerParticipantId,
+          ownerMemberId,
+          state: item.state,
+          normalizedActionTime:
+            item.state === "windup"
+              ? Math.max(
+                  0,
+                  Math.min(1, (predictedState.tick - item.stateChangedAtTick) / durationTicks)
+                )
+              : 0
+        });
+      }
+      for (const itemId of items.keys()) {
+        if (!desiredItems.has(itemId)) items.delete(itemId);
+      }
       const desiredMembers = new Set<string>();
       for (const participant of snapshot.participants) {
         const memberId = participant.actorMemberId;
@@ -250,7 +304,10 @@ export function createArenaPresentationRuntime(): ArenaPresentationRuntime {
         ...(sourceGeneration === undefined ? {} : { sourceGeneration }),
         actors: [...actors.values()]
           .sort((left, right) => left.memberId.localeCompare(right.memberId))
-          .map((actor) => ({ ...actor }))
+          .map((actor) => ({ ...actor })),
+        items: [...items.values()]
+          .sort((left, right) => left.itemId.localeCompare(right.itemId))
+          .map((item) => ({ ...item }))
       };
     },
     actor(memberId) {
@@ -275,6 +332,7 @@ export function createArenaPresentationRuntime(): ArenaPresentationRuntime {
       disposed = true;
       animator.dispose();
       actors.clear();
+      items.clear();
       controllers.clear();
       phaseSignatures.clear();
       phaseExecutions.clear();
@@ -427,9 +485,6 @@ function resolveEffectTarget(
   if (event.kind === "item-hit") {
     const participantId = event.effectId.split(":").at(-1);
     return [...actors.values()].find((actor) => actor.participantId === participantId)?.memberId;
-  }
-  if (event.kind === "contact") {
-    return [...actors.keys()].find((memberId) => event.effectId.includes(memberId));
   }
   return [...actors.values()].find((actor) => actor.local)?.memberId;
 }

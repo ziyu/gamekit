@@ -103,7 +103,7 @@ Player Input / Authority AI
 
 - 2 名真人 + 6 名 authority bots 的默认阵容，12 人 profile 用于压力验证。
 - Circuit Forge 资格赛、Scrap Yard 道具乱斗和 Crown Collapse 决赛。
-- 至少 10 类机关/表面、4 类可拾取道具、3 种 bot archetype。
+- 至少 10 类机关/表面、7 类可拾取道具、3 种 bot archetype；Scrap Yard 默认提供 12 个道具实例，避免参与者只能争抢少量样品。
 - 完整大厅、stage intro、比赛 HUD、KO feed、观战、stage results、match results 和 rematch。
 - 键鼠与标准 gamepad 操作，以及输入提示、震动开关、镜头强度和颜色/音量辅助设置。
 

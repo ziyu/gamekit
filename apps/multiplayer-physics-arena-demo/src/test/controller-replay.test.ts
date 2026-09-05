@@ -11,12 +11,14 @@ import {
 import { initRapier3dPhysicsBackend } from "@gamekit/physics-rapier3d";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { ARENA_COMPILED_CONTENT } from "../content/default-content";
 import {
   ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
   createArenaCharacterIntent,
   createArenaCharacterMotorContributor
 } from "../shared/arena-control";
 import { ARENA_ENVIRONMENT, createArenaMemberDefinitions } from "../shared/arena-definition";
+import { createArenaPhysicsMaterialDefinitions } from "../shared/arena-physics-materials";
 import { ARENA_FIXED_STEP_MS } from "../shared/config";
 
 const LATENCY_MS = 150;
@@ -120,12 +122,9 @@ function createHarness(): {
     scene: {
       dimension: "3d",
       gravity: { x: 0, y: -18, z: 0 },
-      materialDefinitions: [
-        { id: "course", friction: 0.85, restitution: 0.05 },
-        { id: "ice", friction: 0.08, restitution: 0.04 },
-        { id: "mud", friction: 0.98, restitution: 0.01 },
-        { id: "actor", friction: 0.55, restitution: 0.08, density: 1 }
-      ]
+      materialDefinitions: createArenaPhysicsMaterialDefinitions({
+        content: ARENA_COMPILED_CONTENT
+      })
     }
   });
   return { island, contributor };

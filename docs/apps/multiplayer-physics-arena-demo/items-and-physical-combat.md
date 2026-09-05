@@ -44,6 +44,11 @@ type ArenaItemDefinition = {
     baseImpulse: number;
     areaRadius: number;
   };
+  effect: {
+    impulseMode: "directional" | "radial" | "pull" | "launch";
+    instabilityDelta: number;
+    staggerMultiplier: number;
+  };
   respawn: { mode: "timed" | "none"; ticks: number };
   presentationId: string;
   networkStrategy: "predicted-entity" | "authority-only";
@@ -53,7 +58,7 @@ type ArenaItemDefinition = {
 Definition id、instance id 和 generation 必须分开。一次 pickup 后再 throw 的物理 body 使用同一个 item instance 但递增
 generation；旧 generation 的 contact、prediction、effect 或 delayed snapshot 不能结束新实例。
 
-Definition Compiler 验证有限数值、shape、kind/action 对应、throw/melee 空间参数、respawn policy、stable presentation/socket id、
+Definition Compiler 验证有限数值、shape、kind/action/effect 对应、throw/melee 空间参数、respawn policy、stable presentation/socket id、
 definition/spawn 唯一性和容量，并从 compiled stage item pool + spawn set 生成稳定 manifest。Authority Runtime 只接受与启动时 compiled
 definition 完全一致的 manifest，不能信任业务层临时拼出的部分定义。
 
@@ -103,6 +108,8 @@ Item Authority Runtime 对 instance、command result 和 transition trace 分别
 
 - 每名角色默认一个 carry slot。扩展多 slot 需要新的明确 UI/输入设计，不能静默堆叠。
 - Carried item 使用稳定 socket semantic（例如 `hand.primary`），不把 Three bone/native object 写入 gameplay state。
+- Pickup 不删除 item presentation identity；同一个 instance/generation visual 从 world root 转挂到 owner socket，直到 drop/throw
+  生成下一 generation。持有期间只移除 solver body，不能让道具模型消失或另造一件纯装饰复制品。
 - Carry profile 可以修改角色 max speed、acceleration、dive、jump、turn rate 和被击落时 drop policy。
 - Carry modifier 作为 `arena.item-carry` auxiliary command 在 Character Motor 之后执行；它与 Physics checkpoint 同 tick
   capture/restore/replay。Authority 与 Client 必须从同一 item owner/definition 生成 command，不能只在表现层调移动速度。
@@ -130,14 +137,21 @@ instability delta 分别进入空间响应和属性响应。
 
 ## 首组道具
 
-| 道具   | 行为                               | Physics/Combat 策略                          | 约束                                 |
-| ------ | ---------------------------------- | -------------------------------------------- | ------------------------------------ |
-| 泡沫球 | 快速拾取、短蓄力、快速投掷、弹跳   | predicted dynamic entity + contact hit       | 有限 bounce/hit/lifetime；轻 impulse |
-| 能量块 | 携带降速、长蓄力、重投、可再次拾取 | predicted dynamic entity + shape/contact hit | CCD、重 impulse、低最大速度          |
-| 冲击球 | 投掷后 fuse 或首次碰撞触发范围冲击 | predicted entity + authority area delivery   | 一次 trigger、稳定半径、命中去重     |
-| 泡沫锤 | carried windup 后近战弧，也可 drop | GAS phase + Combat melee shape               | 朝向/预兆清晰；无 native joint       |
+| 道具     | 行为                                 | Physics/Combat 策略                          | 约束                                                  |
+| -------- | ------------------------------------ | -------------------------------------------- | ----------------------------------------------------- |
+| 泡沫球   | 快速拾取、短蓄力、快速投掷、弹跳     | predicted dynamic entity + contact hit       | 有限 bounce/hit/lifetime；轻 impulse                  |
+| 能量块   | 携带降速、长蓄力、重投、可再次拾取   | predicted dynamic entity + directional hit   | CCD、重 impulse、低最大速度                           |
+| 爆破球   | 投掷后首次有效碰撞触发范围外推       | predicted entity + authority radial delivery | 一次 trigger、稳定半径、命中去重                      |
+| 泡沫锤   | carried windup 后近战横扫，也可 drop | GAS phase + directional melee delivery       | 朝向/预兆清晰；无 native joint                        |
+| 引力球   | 投掷后把范围内对手拉向爆心           | predicted entity + authority pull delivery   | 只允许 area action；拉力方向由 authority 空间事实计算 |
+| 弹簧拳套 | 快速近战上挑，把目标打向空中         | GAS phase + launch melee delivery            | launch 只允许 melee；水平力受限，垂直力有硬上限       |
+| 电击棍   | 短距离轻推，但快速累积失衡并延长硬直 | GAS effect + high-stagger melee delivery     | 单次 instability 与 stagger multiplier 均有上限       |
 
-所有 hit/bounce/fuse/lifetime、charge curve、carry modifier、effect reference 和 presentation id 都来自 Data；session、render
+`impulseMode` 决定空间响应：`directional` 沿命中方向、`radial` 从爆心外推、`pull` 反向拉向爆心、`launch`
+以受限水平力和显著垂直力上挑。`instabilityDelta` 与 `staggerMultiplier` 分别驱动 GAS 属性和角色硬直；它们不从
+`baseImpulse` 暗中推导，因此低推力高控制与高推力低控制可以形成不同玩法身份。
+
+所有 hit/bounce/fuse/lifetime、charge curve、carry modifier、impulse/effect profile 和 presentation id 都来自 Data；session、render
 或 input 文件不维护道具 id switch。
 
 ## Instability、Stagger 与 Knockback

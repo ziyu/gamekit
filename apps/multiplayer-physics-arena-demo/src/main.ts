@@ -7,6 +7,7 @@ import { initRapier3dPhysicsBackend } from "@gamekit/physics-rapier3d";
 import { createArenaGameAudio } from "./client/arena-audio-content";
 import { createArenaFeedbackRuntime } from "./client/arena-feedback";
 import { createArenaInputController } from "./client/arena-input";
+import { createArenaHazardAudit } from "./client/arena-hazard-audit";
 import { createArenaWebAudioBackend } from "./client/arena-web-audio-backend";
 import { createArenaDefinitionMap } from "./shared/arena-definition";
 import { createArenaVisual } from "./client/arena-visual";
@@ -23,6 +24,7 @@ import {
   type ArenaSessionIntent
 } from "./client/session";
 import { renderArenaUi, updateArenaUi } from "./client/ui";
+import { readArenaStageSelection } from "./shared/arena-stage-selection";
 
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("Missing #app element.");
@@ -48,6 +50,7 @@ async function boot(rootElement: HTMLElement): Promise<void> {
   const renderer = requireValue(context.renderer, "Three renderer");
   const native = renderer.native() as ThreeRendererNative;
   const visual = createArenaVisual(native, createArenaDefinitionMap());
+  const hazardAudit = createArenaHazardAudit(ui.viewport);
   const audio = createArenaGameAudio(createArenaWebAudioBackend());
   const feedback = createArenaFeedbackRuntime(audio);
   const serverConfig = await loadArenaServerConfig();
@@ -80,6 +83,7 @@ async function boot(rootElement: HTMLElement): Promise<void> {
         sessionId: ui.sessionInput.value,
         displayName: ui.nameInput.value,
         intent,
+        stageSelection: readArenaStageSelection(ui.stageSelect.value),
         physicsBackend,
         readInput: input.sample,
         onEffect(event) {
@@ -127,21 +131,40 @@ async function boot(rootElement: HTMLElement): Promise<void> {
     lastFrame = now;
     configured.host.tick(delta, now);
     session?.tick(delta);
+    const snapshot = session?.snapshot();
     const predictedState = session?.predictedState();
-    const presentation = session?.presentation() ?? { generation: 0, actors: [] };
+    const simulationState = predictedState ?? snapshot?.frame;
+    const stateSource =
+      predictedState !== undefined
+        ? "predicted"
+        : snapshot !== undefined
+          ? "authority-fallback"
+          : "unavailable";
+    const presentation = session?.presentation() ?? { generation: 0, actors: [], items: [] };
     feedback.sync({
-      snapshot: session?.snapshot(),
-      predictedState,
+      snapshot,
+      predictedState: simulationState,
       presentation,
       localMemberId: session?.localMemberId(),
       deltaMs: delta
     });
     const feedbackSnapshot = feedback.snapshot();
-    visual.update(predictedState, session?.localMemberId(), delta, presentation, feedbackSnapshot);
+    visual.update(simulationState, session?.localMemberId(), delta, presentation, feedbackSnapshot);
+    const auditMemberIds =
+      snapshot === undefined ? [] : visual.inspectableMembers(snapshot.match.stageIndex);
+    hazardAudit?.update({
+      snapshot,
+      predictedState: simulationState,
+      stateSource,
+      hazards: feedbackSnapshot.hazards,
+      list: visual.inspectableMembers,
+      select: visual.inspect,
+      visuals: visual.inspections(auditMemberIds)
+    });
     if (now - lastUiUpdate >= 100) {
       updateArenaUi(
         ui,
-        session?.snapshot(),
+        snapshot,
         session?.localMemberId(),
         {
           ...(session?.telemetry() ?? { status: "offline" }),
@@ -172,6 +195,7 @@ async function boot(rootElement: HTMLElement): Promise<void> {
       resizeObserver.disconnect();
       input.dispose();
       visual.destroy();
+      hazardAudit?.destroy();
       feedback.dispose();
       audio.dispose();
       void session?.dispose();

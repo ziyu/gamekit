@@ -15,7 +15,7 @@ Knockout Arena只有在功能闭环、多人故障、Physics/AI性能、内容�
 - Late join进入next-match；disconnect/reconnect/forfeit不会复制participant或复活淘汰者。
 - 键鼠与standard gamepad都能移动、camera、jump、dive、pickup、use、charge、throw、drop和spectate。
 - Ground/slope/step/moving platform/coyote/jump buffer/dive/stagger/carry在真实Rapier3D场景行为稳定。
-- 四类道具完成world→pickup→carry→use/throw/drop→spent/respawn；双人争抢只有一个owner。
+- 七类道具完成world→pickup→carry→use/throw/drop→spent/respawn；拾取后同一模型保持在手中，双人争抢只有一个owner。
 - 10类机关/表面有可读预兆、正确collision/volume和稳定schedule；三个stage可完成并能强制收敛。
 - Bots能路线推进、避险、争抢道具、攻击脆弱目标、恢复stuck，并与玩家使用同一intent/authority校验。
 - HUD、spectator、stage/match results能解释晋级、淘汰、KO/environment、item和winner因果。
@@ -64,6 +64,11 @@ Knockout Arena只有在功能闭环、多人故障、Physics/AI性能、内容�
 - 视觉朝向、camera、hazard warning、carried item、impact、spectator、results一致且可读。
 - Console无application error；上游明确deprecation可单独记录但不能掩盖runtime error。
 - 1080p、viewport resize、高DPI和窄窗口下主视图/HUD/telemetry不互相破坏。
+- 使用 `?hazard-audit=1` 对每个 stage 的全部 authored hazard 与 dynamic prop 逐项选择：每项必须同时存在 prediction body、
+  authority body 和可视根节点；transform hazard 跨时间采样必须证明三者同向变化，volume hazard 必须证明 phase/axis/strength
+  对应可视机械动作和真实 body command。
+- 当前默认内容的浏览器实例基线为 Circuit Forge 19 项、Scrap Yard 12 项、Crown Collapse 5 项，共 36 项；任何缺失 body、
+  空 visual evidence、整块静态假支撑、错误尺寸或 prediction/authority 长期分叉都直接失败，不能用单张总览截图代替逐项结果。
 
 ## Network Fault Matrix
 
@@ -146,6 +151,8 @@ effect journal、render/audio资源均回到声明的idle/disposed上限。
 - Schema/ref/version/signature和required asset compatibility。
 - Spawn clearance、required route、slope/step/profile和finish/checkpoint顺序。
 - Hazard任意phase安全性与sudden-death强制收敛。
+- Transform hazard 使用真实 Rapier 跨周期位移/旋转；volume hazard 对 dynamic body 产生真实 impulse；authored prop mass 映射为
+  backend mass。Moving platform 与 crumble floor 不得有覆盖主要 footprint 的近同高静态假支撑。
 - Kill/safe/objective/item volume合法性和collision/presentation对齐。
 - Item/network/action/effect/body引用、lifetime/capacity完整。
 - Bot route/portal、item候选和stuck recovery fixture。

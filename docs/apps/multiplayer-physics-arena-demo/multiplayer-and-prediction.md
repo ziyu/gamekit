@@ -81,7 +81,6 @@ type ArenaSnapshot = {
   inputAcksByPeerId: Record<string, number>;
   actorControlsByMemberId: Record<string, ArenaActorControl>;
   eliminatedMemberIds: string[];
-  effects: ArenaAuthorityEffectCue[];
   serverTime: number;
 };
 ```
@@ -98,10 +97,20 @@ id；`itemActions` 公开 command 的 `windup/confirmed/rejected` 结果。两�
 
 `combat.actors` 公开 authority instability、stagger deadline 与 last hit tick；`combat.hits` 公开稳定 hit ticket、source/target、
 item generation、impulse 和命中后的 instability，两者各有 64 条硬上限。它们是表现、KO feed 与 fault-matrix settlement 的
-只读事实，不进入客户端 gameplay 回写；客户端的 contact cue 不能自行生成命中、属性或 KO。
+只读事实，不进入客户端 gameplay 回写。原始 Physics contact 只进入 authority gameplay resolver，不进入 App snapshot，也不能
+自行生成命中、属性、KO 或受击表现；客户端只能根据稳定 `combat.hits` 确认预测的 item-hit。
 
 `match.membershipRevision` 必须与 Physics frame 一致。Stage result 只追加 authority settlement，late join/reconnect 读取同一份
 participant/result projection 恢复当前语义状态，不从客户端缓存重建晋级或 winner。
+
+`match.stageStartedAtTick` 属于 authority host/match 时间轴；`match.physicsStageStartedAtTick` 是当前 Physics island generation 内的
+stage 起点。Hazard sampler 在 authority 和 prediction 两端都使用 physics tick + physics start tick，不能把 host authority tick 与
+新建 island 的局部 tick 混用。Stage transition 必须在同一个 action 中记录新的 Physics 起点并复制给客户端；否则机关会在
+authority 或 prediction 一端冻结在 phase 0。
+
+Authority frame 对 kinematic body 的 pose 已经是该 tick 完成后的状态。标准 prediction island reconcile 使用 Physics Scene 的
+显式 authority-correction/teleport 语义立即安装该 pose；普通 hazard patch 仍是 next-step target。应用和 Renderer 不再为旋转杆、
+活塞、墙或移动平台手写 authority transform 旁路，详见 [`ADR 0055`](../../adr/0055-kinematic-target-and-authority-correction.md)。
 
 每条客户端 continuous input 与离散 item action 都携带 `authorityEpoch = frame generation + participant revision`。Server 在进入
 gameplay owner 前同时核对 peer binding、participant status 和 epoch；disconnect/reconnect、stage reset 或 membership churn 前发送但

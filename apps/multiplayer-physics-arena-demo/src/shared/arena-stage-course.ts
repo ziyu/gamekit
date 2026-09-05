@@ -14,6 +14,7 @@ export type ArenaHazardPhase = "idle" | "warning" | "active" | "recovery";
 
 export type ArenaHazardSample = {
   memberId: string;
+  kind: CompiledArenaHazardSchedule["kind"];
   phase: ArenaHazardPhase;
   active: boolean;
   nextTransitionTick: number;
@@ -36,6 +37,9 @@ const ALL_COURSE_MEMBER_IDS = new Set(
     stage.courseProjection.memberDefinitions.map(({ id }) => id)
   )
 );
+const CONVEYOR_IMPULSE_PER_STRENGTH = 0.012;
+const WIND_IMPULSE_PER_STRENGTH = 0.055;
+const BOUNCE_IMPULSE_PER_STRENGTH = 0.34;
 
 export function planArenaStageInstallation(options: {
   stageIndex: number;
@@ -110,7 +114,13 @@ export function sampleArenaStageHazards(options: {
   const elapsedTicks = Math.max(0, options.tick - options.stageStartedAtTick);
   const stageProgress = Math.min(1, elapsedTicks / stage.definition.durationTicks);
   return schedules.map((schedule) =>
-    sampleHazard(schedule, elapsedTicks, options.tick, stageProgress)
+    sampleHazard(
+      schedule,
+      elapsedTicks,
+      options.tick,
+      stageProgress,
+      stage.definition.durationTicks
+    )
   );
 }
 
@@ -130,7 +140,7 @@ export function planArenaHazardBodyCommands(options: {
     if (!sample.active) continue;
     const schedule = schedulesByMemberId.get(sample.memberId)!;
     for (const body of options.bodies) {
-      if (body.kind !== "dynamic" || !insideHazard(body.position, schedule)) continue;
+      if (body.kind !== "dynamic" || !insideHazard(body.position, schedule, sample)) continue;
       const command = hazardBodyCommand(schedule, sample, body, options.tick);
       if (command !== undefined) commands.push({ memberId: body.id, command });
     }
@@ -148,12 +158,39 @@ function sampleHazard(
   schedule: CompiledArenaHazardSchedule,
   elapsedTicks: number,
   absoluteTick: number,
-  stageProgress: number
+  stageProgress: number,
+  stageDurationTicks: number
 ): ArenaHazardSample {
   const cycleTick = positiveModulo(elapsedTicks + schedule.phaseTicks, schedule.periodTicks);
   const warningTicks = Math.min(30, Math.max(6, Math.floor(schedule.periodTicks * 0.12)));
   const recoveryTicks = Math.min(24, Math.max(6, Math.floor(schedule.periodTicks * 0.08)));
-  const active = cycleTick < schedule.activeTicks;
+  const progress = cycleTick / schedule.periodTicks;
+  const activeProgress = Math.min(1, cycleTick / Math.max(1, schedule.activeTicks));
+  const activationTick = Math.ceil(schedule.activationProgress * stageDurationTicks);
+  const enabled = stageProgress >= schedule.activationProgress;
+  const active = enabled && (schedule.kind === "crumble-floor" || cycleTick < schedule.activeTicks);
+  if (!enabled) {
+    const ticksUntilActivation = Math.max(1, activationTick - elapsedTicks);
+    const phase: ArenaHazardPhase = ticksUntilActivation <= warningTicks ? "warning" : "idle";
+    return {
+      memberId: schedule.memberId,
+      kind: schedule.kind,
+      phase,
+      active: false,
+      nextTransitionTick: absoluteTick + ticksUntilActivation,
+      patch: hazardPatch(schedule, progress, activeProgress, false, stageProgress)
+    };
+  }
+  if (schedule.kind === "crumble-floor") {
+    return {
+      memberId: schedule.memberId,
+      kind: schedule.kind,
+      phase: "active",
+      active: true,
+      nextTransitionTick: absoluteTick + Math.max(1, stageDurationTicks - elapsedTicks),
+      patch: hazardPatch(schedule, progress, activeProgress, true, stageProgress)
+    };
+  }
   const phase: ArenaHazardPhase = active
     ? "active"
     : cycleTick >= schedule.periodTicks - warningTicks
@@ -170,10 +207,15 @@ function sampleHazard(
           ? schedule.periodTicks
           : schedule.periodTicks - warningTicks;
   const nextTransitionTick = absoluteTick + Math.max(1, nextBoundary - cycleTick);
-  const progress = cycleTick / schedule.periodTicks;
-  const activeProgress = Math.min(1, cycleTick / Math.max(1, schedule.activeTicks));
   const patch = hazardPatch(schedule, progress, activeProgress, active, stageProgress);
-  return { memberId: schedule.memberId, phase, active, nextTransitionTick, patch };
+  return {
+    memberId: schedule.memberId,
+    kind: schedule.kind,
+    phase,
+    active,
+    nextTransitionTick,
+    patch
+  };
 }
 
 function hazardPatch(
@@ -200,19 +242,42 @@ function hazardPatch(
     const extension = active ? Math.sin(activeProgress * Math.PI) * schedule.travel : 0;
     return { position: offsetAlongAxis(schedule.origin, schedule.axis, extension) };
   }
+  if (schedule.kind === "crusher" || schedule.kind === "extending-wall") {
+    const extension = active ? Math.sin(activeProgress * Math.PI) * schedule.travel : 0;
+    return {
+      position: offsetAlongAxis(schedule.origin, schedule.axis, extension),
+      userData: { hazardStrength: active ? schedule.strength : 0 }
+    };
+  }
   if (schedule.kind === "crumble-floor") {
+    const collapsed = stageProgress >= schedule.activationProgress;
+    const collapseProgress = Math.min(
+      1,
+      stageProgress / Math.max(0.001, schedule.activationProgress)
+    );
     return {
       position: offsetAlongAxis(
         schedule.origin,
         "y",
-        stageProgress < 0.3 || active ? 0 : -Math.max(2, schedule.travel)
+        collapsed ? -Math.max(2, schedule.travel) : 0
       ),
-      userData: { collapseProgress: stageProgress }
+      userData: { collapseProgress, collapsed }
     };
   }
   if (schedule.kind === "shrinking-zone") {
-    const pulse = Math.max(0.18, 1 - stageProgress * 0.82);
-    return { userData: { hazardStrength: schedule.strength, safeScale: pulse } };
+    const localProgress = Math.max(
+      0,
+      (stageProgress - schedule.activationProgress) /
+        Math.max(0.001, 1 - schedule.activationProgress)
+    );
+    const safeScale = Math.max(0.2, 1 - localProgress * 0.8);
+    return {
+      userData: {
+        hazardStrength: active ? schedule.strength : 0,
+        safeScale,
+        convergenceActive: active
+      }
+    };
   }
   return {
     position: structuredClone(schedule.origin),
@@ -229,21 +294,21 @@ function hazardBodyCommand(
   if (schedule.kind === "conveyor") {
     return {
       type: "linear-impulse",
-      impulse: axisVector(schedule.axis, schedule.strength * 0.006),
+      impulse: axisVector(schedule.axis, schedule.strength * CONVEYOR_IMPULSE_PER_STRENGTH),
       wake: "wake"
     };
   }
   if (schedule.kind === "wind-zone" && tick % 6 === 0) {
     return {
       type: "linear-impulse",
-      impulse: axisVector(schedule.axis, schedule.strength * 0.035),
+      impulse: axisVector(schedule.axis, schedule.strength * WIND_IMPULSE_PER_STRENGTH),
       wake: "wake"
     };
   }
-  if (schedule.kind === "bounce-pad" && tick % 18 === 0) {
+  if (schedule.kind === "bounce-pad" && tick % 6 === 0 && body.linearVelocity.y < 1.2) {
     return {
       type: "linear-impulse",
-      impulse: { x: 0, y: schedule.strength * 0.18, z: 0 },
+      impulse: { x: 0, y: schedule.strength * BOUNCE_IMPULSE_PER_STRENGTH, z: 0 },
       wake: "wake"
     };
   }
@@ -267,11 +332,16 @@ function hazardBodyCommand(
   return undefined;
 }
 
-function insideHazard(position: PhysicsVector, schedule: CompiledArenaHazardSchedule): boolean {
+function insideHazard(
+  position: PhysicsVector,
+  schedule: CompiledArenaHazardSchedule,
+  sample: ArenaHazardSample
+): boolean {
+  const center = sample.patch.position ?? schedule.origin;
   return (
-    Math.abs(position.x - schedule.origin.x) <= schedule.size.width / 2 + 0.8 &&
-    Math.abs(position.y - schedule.origin.y) <= schedule.size.height / 2 + 1.2 &&
-    Math.abs((position.z ?? 0) - (schedule.origin.z ?? 0)) <= schedule.size.depth / 2 + 0.8
+    Math.abs(position.x - center.x) <= schedule.size.width / 2 + 0.8 &&
+    Math.abs(position.y - center.y) <= schedule.size.height / 2 + 1.2 &&
+    Math.abs((position.z ?? 0) - (center.z ?? 0)) <= schedule.size.depth / 2 + 0.8
   );
 }
 

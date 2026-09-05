@@ -15,6 +15,7 @@ import {
   type PhysicsPredictionIslandAuxiliaryState,
   type PhysicsPredictionIslandCommand,
   type PhysicsPredictionIslandContact,
+  type PhysicsPredictionIslandHardCorrectResult,
   type PhysicsPredictionIslandMemberDefinition,
   type PhysicsPredictionIslandMemberState,
   type PhysicsPredictionIslandStateSnapshot
@@ -87,6 +88,7 @@ export type StandardMultiplayerPhysicsArenaPredictionDiagnostics = {
   contacts: number;
   predictedMemberRegistrations: number;
   predictedMemberRegistrationFailures: number;
+  lastBaselineResult?: PhysicsPredictionIslandHardCorrectResult | undefined;
   lastReconciliation?: StandardMultiplayerPhysicsPredictionReconcileResult | undefined;
   island?: ReturnType<PhysicsPredictionIsland["diagnostics"]> | undefined;
 };
@@ -289,6 +291,7 @@ function createArenaRuntime<
   let predictedMemberRegistrationFailures = 0;
   let predictedMemberCommandSequence = Number.MAX_SAFE_INTEGER;
   let latestAppSnapshot: TSnapshot | undefined;
+  let lastBaselineResult: PhysicsPredictionIslandHardCorrectResult | undefined;
   let lastReconciliation: StandardMultiplayerPhysicsPredictionReconcileResult | undefined;
 
   return {
@@ -462,6 +465,7 @@ function createArenaRuntime<
           : { auxiliaryContributors: options.createAuxiliaryContributors() })
       });
       const baseline = nextIsland.hardCorrect(frame, definitions);
+      lastBaselineResult = baseline;
       if (baseline.status !== "corrected") {
         nextIsland.dispose();
         status = "baseline-rejected";
@@ -530,6 +534,7 @@ function createArenaRuntime<
       contacts,
       predictedMemberRegistrations,
       predictedMemberRegistrationFailures,
+      ...(lastBaselineResult === undefined ? {} : { lastBaselineResult }),
       ...(lastReconciliation === undefined ? {} : { lastReconciliation }),
       ...(island === undefined ? {} : { island: island.diagnostics() })
     };

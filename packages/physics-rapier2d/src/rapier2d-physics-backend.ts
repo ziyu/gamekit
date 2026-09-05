@@ -220,10 +220,10 @@ function createRapier2dPhysicsScene(
       });
       return id;
     },
-    updateBody(id, patch) {
+    updateBody(id, patch, options) {
       assertActive();
       const record = requireBody(bodies, id);
-      applyBodyPatch(record, patch);
+      applyBodyPatch(record, patch, options?.kinematicTransformMode ?? "target");
     },
     applyBodyCommand(command) {
       assertActive();
@@ -639,10 +639,14 @@ function requireCollider(
   return record;
 }
 
-function applyBodyPatch(record: Rapier2dBodyRecord, patch: PhysicsBodyPatch): void {
+function applyBodyPatch(
+  record: Rapier2dBodyRecord,
+  patch: PhysicsBodyPatch,
+  kinematicTransformMode: "target" | "teleport"
+): void {
   if (patch.position !== undefined) {
     const position = cloneVector2(patch.position, "body.patch.position");
-    if (record.kind === "kinematic") {
+    if (record.kind === "kinematic" && kinematicTransformMode === "target") {
       record.body.setNextKinematicTranslation(position);
     } else {
       record.body.setTranslation(position, true);
@@ -650,7 +654,7 @@ function applyBodyPatch(record: Rapier2dBodyRecord, patch: PhysicsBodyPatch): vo
   }
   if (patch.rotation !== undefined) {
     const rotation = rotationToAngle(patch.rotation, "body.patch.rotation");
-    if (record.kind === "kinematic") {
+    if (record.kind === "kinematic" && kinematicTransformMode === "target") {
       record.body.setNextKinematicRotation(rotation);
     } else {
       record.body.setRotation(rotation, true);

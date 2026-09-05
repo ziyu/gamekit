@@ -7,12 +7,15 @@ import {
 } from "@gamekit/multiplayer-core";
 import { describe, expect, it } from "vitest";
 
+import { ARENA_COMPILED_CONTENT } from "../content/default-content";
+import { ARENA_CONTENT_VERSION } from "../content/pack";
 import {
   ARENA_INPUT_KIND,
   ARENA_ROOM_NAME,
   ARENA_SNAPSHOT_KIND,
   arenaPlayerMemberId
 } from "../shared/config";
+import { ARENA_STAGE_SELECTION_METADATA_KEY } from "../shared/arena-stage-selection";
 import { arenaParticipantCommandEpoch } from "../shared/arena-identity";
 import { readArenaSnapshot, type ArenaSnapshot } from "../shared/protocol";
 import { KnockoutArenaRoom } from "../server/arena-room";
@@ -106,8 +109,13 @@ describe("Knockout Arena Room authority", () => {
 
       const latestA = snapshotsA.at(-1)!;
       const latestB = snapshotsB.at(-1)!;
+      const qualifier = ARENA_COMPILED_CONTENT.stages[0]!;
+      const qualifierMemberCount =
+        qualifier.courseProjection.participantSpawns.length +
+        qualifier.courseProjection.memberDefinitions.length +
+        qualifier.courseProjection.itemSpawns.length;
       expect(latestA.frame.islandId).toBe("knockout.full-arena");
-      expect(latestA.frame.members).toHaveLength(15);
+      expect(latestA.frame.members).toHaveLength(qualifierMemberCount);
       expect(latestA.frame.auxiliary).toMatchObject([
         {
           id: "arena.item-carry",
@@ -116,7 +124,7 @@ describe("Knockout Arena Room authority", () => {
         },
         {
           id: "character.motor",
-          version: "1.0.0",
+          version: ARENA_CONTENT_VERSION,
           state: { version: 1 }
         }
       ]);
@@ -150,12 +158,70 @@ describe("Knockout Arena Room authority", () => {
         moveZ: -1,
         sequence: 2
       });
-      expect(running.frame.members).toHaveLength(15);
+      expect(running.frame.members).toHaveLength(qualifierMemberCount);
     } finally {
       unsubscribeA();
       unsubscribeB();
       await clientA.dispose();
       await clientB.dispose();
+      await server.dispose();
+    }
+  }, 15_000);
+
+  it("installs the authority-selected opening scene, actors, and item manifest", async () => {
+    const server = await createGameKitColyseusServer({
+      roomName: ARENA_ROOM_NAME,
+      roomClass: KnockoutArenaRoom
+    });
+    const client = createClient(server.endpoint, "scene-host");
+    const snapshots: ArenaSnapshot[] = [];
+    const unsubscribe = client.subscribe((message) => captureSnapshot(message, snapshots));
+
+    try {
+      await client.createSession({
+        id: "knockout-scrap-yard",
+        kind: "private",
+        authority: "server-authoritative",
+        localPeer: { id: "scene-host", displayName: "Scene Host", role: "host" },
+        metadata: { [ARENA_STAGE_SELECTION_METADATA_KEY]: "stage.scrap-yard" }
+      });
+      await waitFor(() =>
+        snapshots.some(
+          (snapshot) =>
+            snapshot.match.stageIndex === 1 &&
+            snapshot.playerIdsByPeerId["scene-host"] === arenaPlayerMemberId(0)
+        )
+      );
+
+      const snapshot = snapshots.at(-1)!;
+      const stage = ARENA_COMPILED_CONTENT.stages[1]!;
+      const expectedMemberCount =
+        stage.courseProjection.participantSpawns.length +
+        stage.courseProjection.memberDefinitions.length +
+        stage.courseProjection.itemSpawns.length;
+      expect(snapshot.match).toMatchObject({
+        stageIndex: 1,
+        stageCount: 3,
+        stageId: "stage.scrap-yard",
+        stageKind: "brawl"
+      });
+      expect(snapshot.frame.generation).toBe("m1.s2.r1");
+      expect(snapshot.frame.members).toHaveLength(expectedMemberCount);
+      expect(snapshot.frame.members.some((member) => member.id === "scrap.crusher-west")).toBe(
+        true
+      );
+      expect(snapshot.frame.members.some((member) => member.id === "circuit.sweeper-alpha")).toBe(
+        false
+      );
+      expect(snapshot.items).toHaveLength(stage.courseProjection.itemSpawns.length);
+      expect(
+        snapshot.items.every((item) =>
+          stage.items.some((definition) => definition.id === item.definitionId)
+        )
+      ).toBe(true);
+    } finally {
+      unsubscribe();
+      await client.dispose();
       await server.dispose();
     }
   }, 15_000);

@@ -7,10 +7,12 @@ import {
   type PhysicsPredictionIslandStateSnapshot
 } from "../packages/physics-core/src";
 import { initRapier3dPhysicsBackend } from "../packages/physics-rapier3d/src";
+import { ARENA_COMPILED_CONTENT } from "../apps/multiplayer-physics-arena-demo/src/content/default-content";
 import {
   ARENA_ENVIRONMENT,
   createArenaMemberDefinitions
 } from "../apps/multiplayer-physics-arena-demo/src/shared/arena-definition";
+import { createArenaPhysicsMaterialDefinitions } from "../apps/multiplayer-physics-arena-demo/src/shared/arena-physics-materials";
 import {
   ARENA_DEFINITION_VERSION,
   ARENA_FIXED_STEP_MS,
@@ -150,14 +152,9 @@ function runArenaCase(input: {
       scene: {
         dimension: "3d",
         gravity: { x: 0, y: -18, z: 0 },
-        materialDefinitions: [
-          { id: "course", friction: 0.85, restitution: 0.05 },
-          { id: "ice", friction: 0.08, restitution: 0.04 },
-          { id: "mud", friction: 0.98, restitution: 0.01 },
-          { id: "actor", friction: 0.55, restitution: 0.08, density: 1 },
-          { id: "prop", friction: 0.65, restitution: 0.45, density: 0.7 },
-          { id: "hazard", friction: 0.45, restitution: 0.3 }
-        ]
+        materialDefinitions: createArenaPhysicsMaterialDefinitions({
+          content: ARENA_COMPILED_CONTENT
+        })
       }
     });
     const rollbackAt = input.simulatedTicks - input.rollbackTicks;

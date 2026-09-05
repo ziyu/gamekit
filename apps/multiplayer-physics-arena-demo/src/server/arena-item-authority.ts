@@ -131,6 +131,7 @@ export function createArenaItemAuthorityCoordinator(options: {
   stages: readonly Readonly<CompiledArenaStage>[];
   participants: ArenaParticipantRegistry;
   initialStageInstanceId: string;
+  initialStageIndex?: number | undefined;
   initialGeneration: ArenaGeneration;
   initialTick: number;
 }): ArenaItemAuthorityCoordinator {
@@ -154,7 +155,7 @@ export function createArenaItemAuthorityCoordinator(options: {
   const initialItems = runtime.installStage({
     stageInstanceId: options.initialStageInstanceId,
     generation: options.initialGeneration,
-    manifest: catalog.manifests[0]!,
+    manifest: catalog.manifests[options.initialStageIndex ?? 0]!,
     tick: options.initialTick
   });
   let stageItemsNeedReset = false;

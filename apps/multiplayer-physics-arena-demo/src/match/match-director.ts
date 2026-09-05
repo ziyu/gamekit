@@ -89,6 +89,7 @@ export function createArenaMatchDirector(options: {
   stageRules: readonly ArenaStageRule[];
   countdownTicks: number;
   resultsTicks: number;
+  initialStageIndex?: number | undefined;
   traceCapacity?: number | undefined;
 }): ArenaMatchDirector {
   const stageRules = [...options.stageRules];
@@ -100,6 +101,11 @@ export function createArenaMatchDirector(options: {
   }
   const countdownTicks = positiveInteger(options.countdownTicks, "countdownTicks");
   const resultsTicks = positiveInteger(options.resultsTicks, "resultsTicks");
+  const initialStageIndex = stageIndexValue(
+    options.initialStageIndex ?? 0,
+    stageRules.length,
+    "initialStageIndex"
+  );
   const traceCapacity = positiveInteger(
     options.traceCapacity ?? DEFAULT_TRACE_CAPACITY,
     "traceCapacity"
@@ -108,7 +114,7 @@ export function createArenaMatchDirector(options: {
   let phase: ArenaMatchPhase = "lobby";
   let round = 1;
   let matchId = matchIdentity(round);
-  let stageIndex = 0;
+  let stageIndex = initialStageIndex;
   let stageInstanceId = stageIdentity(matchId, currentRule().id, stageIndex);
   let phaseInstance = 1;
   let startedAtTick = 0;
@@ -185,7 +191,7 @@ export function createArenaMatchDirector(options: {
         } else {
           round += 1;
           matchId = matchIdentity(round);
-          stageIndex = 0;
+          stageIndex = initialStageIndex;
           stageInstanceId = stageIdentity(matchId, currentRule().id, stageIndex);
           transition(
             input.connectedHumans > 0 ? "countdown" : "lobby",
@@ -331,6 +337,13 @@ function stageIdentity(matchId: string, stageId: string, stageIndex: number): st
 function positiveInteger(value: number, path: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new Error(`Arena match director ${path} must be a positive integer`);
+  }
+  return value;
+}
+
+function stageIndexValue(value: number, stageCount: number, path: string): number {
+  if (!Number.isSafeInteger(value) || value < 0 || value >= stageCount) {
+    throw new Error(`Arena match director ${path} must reference an existing stage`);
   }
   return value;
 }

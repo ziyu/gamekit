@@ -51,12 +51,20 @@ generation 安装，不能退回各端手写一套 course 常量。
 
 空间结构：
 
-1. Start Grid：宽起点、低风险 slope，用于拥堵和基础转向。
-2. Conveyor Split：两条不同速度/方向传送带，中间有可推动轻球。
-3. Piston Gates：交错活塞门与短安全区，要求观察 phase 而不是盲冲。
-4. Sweeper Deck：旋转杆、弹射板和冰面组合，提供高风险捷径。
-5. Moving Bridge：左右移动平台与有限 step/jump 路线。
-6. Finish Portal：独立 finish sensor 与防止反向刷 checkpoint 的 route order。
+资格赛有效路线至少为初始短场地的十倍，默认约 216 个世界单位，并在 90 秒 deadline 内保持直跑与受阻恢复余量。
+
+1. Start Grid：宽起点与整齐发车格，用于拥堵和基础转向。
+2. Conveyor Split：左右反向传送带，允许选安全线或借力加速。
+3. Twin Sweeper Deck：两组错相旋转杆与短安全区，训练观察和时机。
+4. Piston Gauntlet：三道错相横向活塞，保留可读的等待窗口。
+5. Bounce Foundry：双弹跳板与分流通道，允许主动跳过拥堵。
+6. Wind Tunnel：左右反向风区，要求持续修正而不是锁死输入。
+7. Moving Bridge：两条错相横移平台跨越真实断口；玩家必须搭桥、跳跃或等待平台靠近，桥下不能再铺一整块可直接通过的主地板。
+8. Cargo Run：旋转杆、可推动轻球、重箱与可拾取泡沫球产生物理互动。
+9. Ice Sprint / Finish Portal：双冰面冲刺后进入独立 finish sensor。
+
+全程使用 7 个 checkpoint 加 1 个 finish 的连续 route order；每段门架、灯带、路面引导、侧栏和远景设施都从编译内容
+派生或围绕其 bounds 生成，不能继续按旧 25 单位短场地写死。
 
 资格赛机关不能形成无法恢复的永久封路；required route validator 必须证明每个 schedule window 内存在可完成路径。
 正式表现必须把 authored checkpoint/finish volume 映射为可读的赛道地标，而不是显示调试 collider：每个 checkpoint 使用不同色的
@@ -84,30 +92,31 @@ Stage 后半段扩大 hazard 或缩小安全区，保证 deadline 前收敛；�
 
 空间结构：
 
-- 多环形 tile 平台，tile 按 authority schedule warning → unstable → falling → absent。
+- 中央 collapse band 连接南北安全平台，按 authority schedule warning → unstable → falling → absent；下方没有静态支撑面冒充坍塌。
 - 中心/外圈轮换的安全区，防止永久龟缩。
 - 单一 rotating sweeper 与间歇 launch pad 提供可读的位移压力。
 - 少量高价值 item spawn，respawn 次数有限。
 
-Tile 被移除时必须改变 Physics member/static revision 与 Navigation blocker；视觉坍塌只是表现，不能先于 authority
-collision 消失。Stage schedule 需要确保最终只保留有限落脚区域并触发 sudden death。
+Tile 被移除时必须由 authority 将 Physics body 永久移出可碰撞区域，或销毁 member 并推进对应 revision；同时更新
+Navigation blocker。视觉坍塌只是表现，不能先于 authority collision 消失。Stage schedule 需要确保最终只保留有限落脚区域并触发
+sudden death。
 
 ## 机关目录
 
-| 机关/表面        | Simulation                    | Gameplay 语义                        | Prediction 要求                                |
-| ---------------- | ----------------------------- | ------------------------------------ | ---------------------------------------------- |
-| Rotating sweeper | deterministic kinematic body  | 推挤/击飞                            | tick schedule 与全岛 replay                    |
-| Moving platform  | deterministic kinematic body  | 承载/移动落点                        | motor 继承同 tick platform velocity            |
-| Piston gate      | deterministic kinematic body  | 周期阻挡/撞击                        | 有界 travel、warning phase、CCD                |
-| Crusher          | kinematic pair + hazard phase | 强 stagger/淘汰风险                  | authority impact；client contact anticipation  |
-| Conveyor         | surface/external velocity     | 持续水平移动                         | stable surface id；motor 合成速度              |
-| Wind zone        | gameplay volume               | 对 actor/item 施加有限 force/impulse | authority schedule + predicted body command    |
-| Launch pad       | sensor + one-shot impulse     | 定向弹射                             | enter ticket 去重；不能 resting 每 tick触发    |
-| Extending wall   | kinematic body                | 改变路线/掩体                        | membership/layout revision 与 Nav invalidation |
-| Ice/mud          | surface profile               | traction/braking 修改                | controller consumes stable surface definition  |
-| Collapsing tile  | staged body/member lifecycle  | 落脚面消失                           | warning fact + authority member revision       |
-| Kill volume      | authority gameplay volume     | 提交 elimination                     | 客户端只提示风险，不提交胜负                   |
-| Objective/finish | sensor + match rule           | 积分/checkpoint/完成                 | authority ticket 与 route order 去重           |
+| 机关/表面        | Simulation                        | Gameplay 语义                        | Prediction 要求                                |
+| ---------------- | --------------------------------- | ------------------------------------ | ---------------------------------------------- |
+| Rotating sweeper | deterministic kinematic body      | 推挤/击飞                            | tick schedule 与全岛 replay                    |
+| Moving platform  | deterministic kinematic body      | 承载/移动落点                        | motor 继承同 tick platform velocity            |
+| Piston gate      | deterministic kinematic body      | 周期阻挡/撞击                        | 有界 travel、warning phase、CCD                |
+| Crusher          | kinematic pair + hazard phase     | 强 stagger/淘汰风险                  | authority impact；client contact anticipation  |
+| Conveyor         | surface/external velocity         | 持续水平移动                         | stable surface id；motor 合成速度              |
+| Wind zone        | gameplay volume                   | 对 actor/item 施加有限 force/impulse | authority schedule + predicted body command    |
+| Launch pad       | sensor + one-shot impulse         | 定向弹射                             | enter ticket 去重；不能 resting 每 tick触发    |
+| Extending wall   | kinematic body                    | 改变路线/掩体                        | membership/layout revision 与 Nav invalidation |
+| Ice/mud          | surface profile                   | traction/braking 修改                | controller consumes stable surface definition  |
+| Collapsing tile  | staged body pose/member lifecycle | 落脚面消失                           | warning fact + authority pose/member revision  |
+| Kill volume      | authority gameplay volume         | 提交 elimination                     | 客户端只提示风险，不提交胜负                   |
+| Objective/finish | sensor + match rule               | 积分/checkpoint/完成                 | authority ticket 与 route order 去重           |
 
 ## Deterministic Hazard Schedule
 
@@ -122,8 +131,9 @@ transform/strength、next transition tick 和 public warning。
 - `sampleArenaStageHazards` 是 authority 与 prediction 的共享纯 sampler；kinematic patch 和对 dynamic body 的一次性 command 都由
   绝对 stage tick、稳定 placement id 与当前 body facts 计算。传送带逐 tick 施加小冲量，风区与收缩区按固定 tick bucket
   施加冲量，launch pad 使用固定周期 ticket，保证 rollback 重放不依赖本地累计状态。
-- Crumble floor 与 shrinking zone 的强度只随 stage 总进度单调变化，周期 phase 只控制 warning/active/recovery；不能用周期
-  pulse 把已经收缩的决胜区域重新放大。
+- `activationProgress` 声明强制收敛机关开始介入的 stage 总进度；它是 content signature 的一部分，范围必须为 0..1。
+- Crumble floor 与 shrinking zone 的强度只随 stage 总进度单调变化；collapse band 一旦坠落就保持 absent，不能周期恢复；
+  shrinking zone 不能用 phase pulse 把已经收缩的决胜区域重新放大。
 
 ## Surface 与 Gameplay Volume
 
@@ -160,6 +170,8 @@ kinematic schedule 或自由 dynamic body 表达，不偷渡 Rapier joint handle
 - Dynamic hazard 对 Navigation 使用 blocker/cost/revision，只影响长期路线；最终 timing/avoidance 由 AI steering/Physics 验证。
 - Presentation mesh 可以更复杂，但 collision silhouette 与 warning zone 必须可读且不误导。
 - Kill/finish/objective volume 在 DevTools 可视化，正式 Renderer 不显示调试 collider。
+- 每个 Hazard Definition 必须声明唯一可读的机械语义：Transform hazard 的可见主体跟随 body，Volume hazard 的持续动画跟随 axis/strength/phase。只提供碰撞盒、冲量或发光而没有可读运动，不算完成的场景元素。
+- 非玩法场景设施必须在内容和表现命名上与 hazard 分离；氛围动画不能生成 gameplay command，玩法机关也不能靠纯氛围动画伪装生效。
 
 ## Prediction Island Membership
 
@@ -190,12 +202,14 @@ kinematic schedule 或自由 dynamic body 表达，不偷渡 Rapier joint handle
 - Hazard 在任意 schedule phase 不永久封死所有 required route，除非 stage rule 明确进入 sudden death。
 - Kill volume、safe zone、finish/objective、item spawn 不重叠非法区域。
 - Kinematic travel bounds、速度、impulse、member/lifetime 上限。
+- Moving platform / crumble floor 的投影范围不能被同高度静态 layout 大面积覆盖；validator 必须以
+  `arena.validation.hazard_support` 拒绝这种“视觉在动但路线不需要机关”的假支撑。
 - Item respawn clearance 与离 active participant/hazard 的安全 policy。
 - Stage 可以在 deadline 内强制收敛，不依赖 bot/玩家自发合作。
 - Authority/client compiler 的 layout/member/schedule signature 一致。
 
 同步 validator 是 Course compiler 的硬门，任何 error 都拒绝生成默认 runtime content；真实 Recast bake 与 required route 查询通过
-`validate:content` 在构建/CI执行，不把 WASM bake 放进 match startup。当前标准三关分别验证 24 条资格赛分段路线、6 条乱斗
+`validate:content` 在构建/CI执行，不把 WASM bake 放进 match startup。当前标准三关分别验证 64 条资格赛分段路线、6 条乱斗
 目标路线和 3 条决赛安全区路线。Profile 直接使用 Course 的 agent radius/height/slope，发现几何断路时修改场地或显式 portal，
 不能放宽 controller 不具备的 climb 能力。
 

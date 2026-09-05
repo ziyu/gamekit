@@ -164,8 +164,8 @@ summary:focus-visible,
   background: radial-gradient(circle at 50% 74%, rgb(93 234 255 / 0.24), transparent 36%);
 }
 
-.arena-effect-flash.is-active.is-contact {
-  animation: contact-flash 360ms ease-out;
+.arena-effect-flash.is-active.is-item-hit {
+  animation: item-hit-flash 360ms ease-out;
   background: radial-gradient(circle at 50% 60%, transparent 20%, rgb(255 79 216 / 0.26) 76%);
 }
 
@@ -391,7 +391,8 @@ summary:focus-visible,
   letter-spacing: 0.16em;
 }
 
-.arena-field input {
+.arena-field input,
+.arena-field select {
   width: 100%;
   min-width: 0;
   padding: 10px;
@@ -408,7 +409,28 @@ summary:focus-visible,
     box-shadow 140ms ease;
 }
 
-.arena-field input:focus {
+.arena-field select {
+  padding-right: 30px;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--cyan) 50%),
+    linear-gradient(135deg, var(--cyan) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size:
+    5px 5px,
+    5px 5px;
+  cursor: pointer;
+}
+
+.arena-field.is-wide {
+  grid-column: 1 / -1;
+}
+
+.arena-field input:focus,
+.arena-field select:focus {
   border-color: var(--cyan);
   box-shadow: 0 0 0 3px rgb(93 234 255 / 0.09);
 }
@@ -754,6 +776,69 @@ summary:focus-visible,
   backdrop-filter: blur(20px);
 }
 
+.arena-hazard-audit {
+  position: absolute;
+  z-index: 32;
+  top: 92px;
+  right: 28px;
+  display: grid;
+  gap: 7px;
+  width: min(360px, calc(100vw - 56px));
+  padding: 12px;
+  color: var(--paper);
+  border: 1px solid rgb(68 230 255 / 0.45);
+  border-radius: 10px;
+  background: rgb(3 8 22 / 0.9);
+  box-shadow: 0 18px 54px rgb(0 0 0 / 0.5);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  pointer-events: auto;
+}
+
+.arena-hazard-audit__kicker {
+  color: var(--cyan);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.arena-hazard-audit__title {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arena-hazard-audit__status {
+  color: #aeb9d7;
+  font-size: 9px;
+}
+
+.arena-hazard-audit__select {
+  width: 100%;
+  padding: 8px 9px;
+  color: var(--paper);
+  border: 1px solid rgb(164 180 255 / 0.24);
+  border-radius: 6px;
+  background: #10172b;
+}
+
+.arena-hazard-audit__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.arena-hazard-audit__actions button {
+  padding: 7px;
+  color: #06101d;
+  border: 0;
+  border-radius: 6px;
+  background: var(--cyan);
+  font-size: 9px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .arena-telemetry summary {
   display: flex;
   align-items: center;
@@ -868,7 +953,7 @@ summary:focus-visible,
   }
 }
 
-@keyframes contact-flash {
+@keyframes item-hit-flash {
   0% {
     opacity: 0;
   }

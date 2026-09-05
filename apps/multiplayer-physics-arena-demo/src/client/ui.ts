@@ -1,4 +1,8 @@
 import type { ArenaSnapshot } from "../shared/protocol";
+import {
+  ARENA_RANDOM_STAGE_SELECTION,
+  arenaStageSelectionOptions
+} from "../shared/arena-stage-selection";
 import type { ArenaEffectPresentationEvent } from "./arena-effects";
 import {
   buildArenaUiViewModel,
@@ -13,6 +17,7 @@ export type ArenaUi = {
   viewport: HTMLElement;
   sessionInput: HTMLInputElement;
   nameInput: HTMLInputElement;
+  stageSelect: HTMLSelectElement;
   createButton: HTMLButtonElement;
   joinButton: HTMLButtonElement;
   disconnectButton: HTMLButtonElement;
@@ -172,8 +177,19 @@ export function renderArenaUi(root: HTMLElement): ArenaUi {
   sessionInput.maxLength = 32;
   const nameInput = input("text", randomName(), "Display name");
   nameInput.maxLength = 18;
+  const stageSelect = document.createElement("select");
+  stageSelect.setAttribute("aria-label", "Starting scene");
+  for (const option of arenaStageSelectionOptions()) {
+    const target = document.createElement("option");
+    target.value = option.value;
+    target.textContent = option.label;
+    stageSelect.append(target);
+  }
+  stageSelect.value = ARENA_RANDOM_STAGE_SELECTION;
   const fieldGrid = element("div", "arena-fields");
-  fieldGrid.append(field("ROOM CODE", sessionInput), field("CALLSIGN", nameInput));
+  const stageField = field("OPENING SCENE", stageSelect);
+  stageField.classList.add("is-wide");
+  fieldGrid.append(field("ROOM CODE", sessionInput), field("CALLSIGN", nameInput), stageField);
   const createButton = button("CREATE ROOM", "is-primary");
   const joinButton = button("JOIN RACE");
   const disconnectButton = button("LEAVE CIRCUIT", "is-quiet");
@@ -283,6 +299,7 @@ export function renderArenaUi(root: HTMLElement): ArenaUi {
     viewport,
     sessionInput,
     nameInput,
+    stageSelect,
     createButton,
     joinButton,
     disconnectButton,
@@ -346,6 +363,7 @@ export function renderArenaUi(root: HTMLElement): ArenaUi {
       disconnectButton.disabled = busy || root.dataset.connection !== "online";
       sessionInput.disabled = busy;
       nameInput.disabled = busy;
+      stageSelect.disabled = busy;
     },
     pushLog(message) {
       logSequence += 1;

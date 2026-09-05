@@ -15,11 +15,11 @@ describe("Knockout Arena item authority integration", () => {
     const fixture = await createFixture("arena-item-integration");
     try {
       advanceUntil(fixture.authority, (snapshot) => snapshot.phase === "running", 240);
-      expect(fixture.authority.latestSnapshot().items).toHaveLength(1);
+      expect(fixture.authority.latestSnapshot().items).toHaveLength(3);
 
       let inputSequence = 0;
       let bothInRange = false;
-      for (let sequence = 1; sequence <= 90; sequence += 1) {
+      for (let sequence = 1; sequence <= 180; sequence += 1) {
         inputSequence = sequence;
         await Promise.all([
           sendInput(fixture.authority, fixture.clientA, "peer.a", sequence, 0.58, -0.82),
@@ -87,9 +87,12 @@ describe("Knockout Arena item authority integration", () => {
       expect(claimed.items[0]).toMatchObject({ state: "carried", instanceGeneration: 1 });
       expect(claimed.items[0]?.ownerParticipantId).toBeDefined();
       expect(claimed.items[0]?.bodyMemberId).toBeUndefined();
-      expect(claimed.itemActions.filter((action) => action.status === "confirmed")).toHaveLength(1);
-      expect(claimed.itemActions.filter((action) => action.status === "rejected")).toHaveLength(1);
-      expect(claimed.itemActions).toHaveLength(2);
+      const humanClaimActions = claimed.itemActions.filter((action) =>
+        action.id.startsWith("peer.")
+      );
+      expect(humanClaimActions.filter((action) => action.status === "confirmed")).toHaveLength(1);
+      expect(humanClaimActions.filter((action) => action.status === "rejected")).toHaveLength(1);
+      expect(humanClaimActions).toHaveLength(2);
 
       const ownerPeerId = claimed.participants.find(
         (participant) => participant.id === claimed.items[0]?.ownerParticipantId

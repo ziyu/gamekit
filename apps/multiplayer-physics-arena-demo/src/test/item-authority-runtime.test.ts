@@ -9,7 +9,7 @@ describe("Knockout Arena item authority runtime", () => {
     const manifest = scrapManifest();
     const runtime = createArenaItemAuthorityRuntime({
       definitions: manifest.definitions,
-      instanceCapacity: 8,
+      instanceCapacity: 16,
       commandCapacity: 16,
       traceCapacity: 32
     });
@@ -131,7 +131,7 @@ describe("Knockout Arena item authority runtime", () => {
       ])
     );
     expect(runtime.diagnostics()).toMatchObject({
-      instances: 4,
+      instances: 12,
       commands: 7,
       appliedCommands: 5,
       duplicateCommands: 1,
@@ -210,7 +210,7 @@ describe("Knockout Arena item authority runtime", () => {
       tick: 3
     })[0]!;
     expect(second.id).not.toBe(first.id);
-    expect(runtime.diagnostics()).toMatchObject({ commands: 0, resets: 2, instances: 4 });
+    expect(runtime.diagnostics()).toMatchObject({ commands: 0, resets: 2, instances: 12 });
     expect(runtime.trace()).toHaveLength(4);
 
     expect(() =>

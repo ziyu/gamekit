@@ -99,6 +99,7 @@ describe("standard multiplayer Physics Arena prediction", () => {
     expect(arena.diagnostics()).toMatchObject({
       status: "active",
       baselineInstalls: 1,
+      lastBaselineResult: { status: "corrected", correctedMembers: 1 },
       authorityTick: 0,
       island: { members: 1, tick: 0 }
     });

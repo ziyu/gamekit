@@ -113,6 +113,13 @@ title
 
 ## Lobby、Loading 与开始
 
+- 创建房间时可以选择本场的起始 stage，也可以选择 `random`。浏览器创建菜单默认 `random`；随机结果只能由 Room authority
+  在建房时解析一次，并通过公开 match projection 让所有客户端进入同一个 stage，客户端不能各自抽签。没有携带该 metadata 的旧
+  客户端仍从 Stage 1 开始。
+- 选择的是完整淘汰赛的起点，不是把任意资格赛强行改成单场决赛：从 Stage 1 开始会运行 1→2→3，从 Stage 2 开始会运行
+  2→3，从 Stage 3 开始则直接进行决赛。Rematch 保留房间选定的起点，继续产生合法的唯一 winner。
+- Authority 必须用同一个 resolved stage index 初始化 Match Director、角色/场景 Physics members、道具 manifest、AI/Nav stage 和
+  generation。只切换 UI 标题或只切换渲染场景都属于非法的分裂状态。
 - 标准阵容为 8 名 participant。真人占用有效 player slot，剩余位置由 bots 在 match 开始时一次性补齐。
 - 已进入 running stage 后的新连接成为 spectator/next-match，不替换当前 bot 或已淘汰参与者。
 - Lobby 保存 display name、ready、输入能力摘要与 compatibility；角色数值和 bot 难度来自 match profile。

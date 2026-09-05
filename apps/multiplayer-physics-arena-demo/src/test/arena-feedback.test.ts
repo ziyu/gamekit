@@ -39,6 +39,7 @@ describe("Knockout Circuit feedback presentation", () => {
     };
     const presentation = {
       generation: 1,
+      items: [],
       actors: [
         presented("player.0", "player.0", false),
         presented("bot.0", "bot.0", false),
@@ -105,8 +106,8 @@ describe("Knockout Circuit feedback presentation", () => {
     });
 
     const effect = {
-      effectId: "contact:bot.0.collider|hazard.collider:contact:12",
-      kind: "contact" as const,
+      effectId: "item-hit:item.foam-ball:bot.0:12",
+      kind: "item-hit" as const,
       phase: "confirm" as const,
       tick: 12
     };
@@ -184,6 +185,7 @@ function arenaSnapshot(tick: number): ArenaSnapshot {
       stageInstanceId: "match.1:stage.circuit-forge:1",
       startedAtTick: 0,
       stageStartedAtTick: 0,
+      physicsStageStartedAtTick: 0,
       membershipRevision: 1
     },
     participants: [
@@ -236,7 +238,6 @@ function arenaSnapshot(tick: number): ArenaSnapshot {
     inputAcksByPeerId: { "peer.0": tick },
     actorControlsByMemberId: {},
     removedMemberIds: ["player.0"],
-    effects: [],
     serverTime: tick * ARENA_FIXED_STEP_MS,
     authority: {
       receivedInputBundles: 0,

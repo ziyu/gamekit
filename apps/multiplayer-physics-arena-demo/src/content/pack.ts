@@ -26,7 +26,7 @@ import {
 } from "./types";
 
 export const ARENA_CONTENT_PACK_ID = "knockout-arena.base";
-export const ARENA_CONTENT_VERSION = "1.0.0";
+export const ARENA_CONTENT_VERSION = "1.3.0";
 export const ARENA_DEFAULT_MATCH_RULE_ID = "match.knockout.standard";
 
 const items: ArenaItemDefinition[] = [
@@ -34,6 +34,7 @@ const items: ArenaItemDefinition[] = [
     physics: physicsItem({ type: "sphere", radius: 0.48 }, 0.75, 0.5, 0.72, 22, 240, 4),
     carry: carryItem(1, 1, "drop"),
     action: actionItem("throw-contact", 8, 30, 240, 24, 12, 5, 0),
+    effect: effectItem("directional", 0.1, 0.85),
     respawn: { mode: "timed", ticks: 240 },
     presentationId: "presentation.foam-ball",
     networkStrategy: "predicted-entity"
@@ -50,6 +51,7 @@ const items: ArenaItemDefinition[] = [
     ),
     carry: carryItem(0.72, 0.86, "drop"),
     action: actionItem("throw-contact", 24, 60, 300, 45, 8, 11, 0),
+    effect: effectItem("directional", 0.16, 1.05),
     respawn: { mode: "timed", ticks: 300 },
     presentationId: "presentation.energy-block",
     networkStrategy: "predicted-entity"
@@ -58,6 +60,7 @@ const items: ArenaItemDefinition[] = [
     physics: physicsItem({ type: "sphere", radius: 0.65 }, 1.6, 0.45, 0.35, 18, 180, 1),
     carry: carryItem(0.88, 0.95, "spend"),
     action: actionItem("throw-area", 18, 45, 90, 60, 10, 8, 3.8),
+    effect: effectItem("radial", 0.13, 0.9),
     respawn: { mode: "timed", ticks: 360 },
     presentationId: "presentation.blast-orb",
     networkStrategy: "predicted-entity"
@@ -74,8 +77,52 @@ const items: ArenaItemDefinition[] = [
     ),
     carry: carryItem(0.82, 0.92, "drop"),
     action: actionItem("melee", 14, 0, 12, 36, 0, 8, 1.8),
+    effect: effectItem("directional", 0.14, 1.2),
     respawn: { mode: "timed", ticks: 300 },
     presentationId: "presentation.foam-hammer",
+    networkStrategy: "authority-only"
+  }),
+  item("item.gravity-orb", "area", {
+    physics: physicsItem({ type: "sphere", radius: 0.58 }, 1.35, 0.38, 0.28, 17, 180, 1),
+    carry: carryItem(0.9, 0.96, "spend"),
+    action: actionItem("throw-area", 20, 42, 84, 66, 9.5, 7, 4.6),
+    effect: effectItem("pull", 0.11, 0.95),
+    respawn: { mode: "timed", ticks: 330 },
+    presentationId: "presentation.gravity-orb",
+    networkStrategy: "predicted-entity"
+  }),
+  item("item.spring-glove", "melee", {
+    physics: physicsItem(
+      { type: "box", width: 0.7, height: 0.72, depth: 0.95 },
+      1.5,
+      0.62,
+      0.36,
+      11,
+      300,
+      0
+    ),
+    carry: carryItem(0.9, 0.98, "drop"),
+    action: actionItem("melee", 10, 0, 10, 42, 0, 7.5, 1.65),
+    effect: effectItem("launch", 0.08, 0.72),
+    respawn: { mode: "timed", ticks: 300 },
+    presentationId: "presentation.spring-glove",
+    networkStrategy: "authority-only"
+  }),
+  item("item.stun-baton", "melee", {
+    physics: physicsItem(
+      { type: "box", width: 0.3, height: 1.25, depth: 0.3 },
+      1.1,
+      0.58,
+      0.2,
+      10,
+      300,
+      0
+    ),
+    carry: carryItem(0.94, 0.97, "drop"),
+    action: actionItem("melee", 8, 0, 8, 54, 0, 3.4, 1.55),
+    effect: effectItem("directional", 0.3, 2.35),
+    respawn: { mode: "timed", ticks: 300 },
+    presentationId: "presentation.stun-baton",
     networkStrategy: "authority-only"
   })
 ];
@@ -117,25 +164,31 @@ const botProfiles: ArenaBotSkillProfileDefinition[] = [
 ];
 
 const botArchetypes: ArenaBotArchetypeDefinition[] = [
-  bot("bot.sprinter", "sprinter", "bot.profile.sprinter", ["item.foam-ball"], {
+  bot("bot.sprinter", "sprinter", "bot.profile.sprinter", ["item.foam-ball", "item.spring-glove"], {
     advance: 1.35,
     survive: 1,
     acquireItem: 0.55,
     attack: 0.35,
     objective: 0.9
   }),
-  bot("bot.brawler", "brawler", "bot.profile.brawler", ["item.foam-hammer", "item.energy-block"], {
-    advance: 0.75,
-    survive: 1.1,
-    acquireItem: 1,
-    attack: 1.45,
-    objective: 1
-  }),
+  bot(
+    "bot.brawler",
+    "brawler",
+    "bot.profile.brawler",
+    ["item.foam-hammer", "item.energy-block", "item.stun-baton"],
+    {
+      advance: 0.75,
+      survive: 1.1,
+      acquireItem: 1,
+      attack: 1.45,
+      objective: 1
+    }
+  ),
   bot(
     "bot.opportunist",
     "opportunist",
     "bot.profile.opportunist",
-    ["item.blast-orb", "item.foam-ball"],
+    ["item.blast-orb", "item.gravity-orb", "item.foam-ball"],
     {
       advance: 0.9,
       survive: 1.15,
@@ -148,124 +201,346 @@ const botArchetypes: ArenaBotArchetypeDefinition[] = [
 
 const hazards: ArenaHazardDefinition[] = [
   hazard("hazard.circuit.sweeper", "rotating-sweeper", "kinematic", 240, 0, 240),
+  hazard("hazard.circuit.sweeper-beta", "rotating-sweeper", "kinematic", 210, 75, 210),
+  hazard("hazard.circuit.sweeper-cargo", "rotating-sweeper", "kinematic", 270, 135, 270),
   hazard("hazard.circuit.platform", "moving-platform", "kinematic", 300, 45, 300),
-  hazard("hazard.circuit.piston", "piston", "kinematic", 180, 30, 72),
+  hazard("hazard.circuit.platform-late", "moving-platform", "kinematic", 300, 195, 300),
+  hazard("hazard.circuit.piston-a", "piston", "kinematic", 180, 0, 72),
+  hazard("hazard.circuit.piston-b", "piston", "kinematic", 180, 60, 72),
+  hazard("hazard.circuit.piston-c", "piston", "kinematic", 180, 120, 72),
+  hazard("hazard.circuit.conveyor-left", "conveyor", "kinematic", 300, 0, 300),
+  hazard("hazard.circuit.conveyor-right", "conveyor", "kinematic", 300, 150, 300),
+  hazard("hazard.circuit.wind-left", "wind-zone", "sensor", 210, 35, 96),
+  hazard("hazard.circuit.wind-right", "wind-zone", "sensor", 210, 140, 96),
+  hazard("hazard.circuit.bounce-left", "bounce-pad", "sensor", 120, 0, 120),
+  hazard("hazard.circuit.bounce-right", "bounce-pad", "sensor", 120, 60, 120),
   hazard("hazard.scrap.conveyor", "conveyor", "kinematic", 300, 0, 300),
   hazard("hazard.scrap.wind", "wind-zone", "sensor", 210, 35, 90),
   hazard("hazard.scrap.bounce", "bounce-pad", "sensor", 120, 0, 120),
-  hazard("hazard.crown.floor", "crumble-floor", "kinematic", 360, 60, 240),
-  hazard("hazard.crown.zone", "shrinking-zone", "sensor", 900, 0, 900)
+  hazard("hazard.scrap.crusher-a", "crusher", "kinematic", 210, 0, 90),
+  hazard("hazard.scrap.crusher-b", "crusher", "kinematic", 210, 105, 90),
+  hazard("hazard.scrap.wall-west", "extending-wall", "kinematic", 270, 30, 120),
+  hazard("hazard.scrap.wall-east", "extending-wall", "kinematic", 270, 165, 120),
+  hazard("hazard.scrap.zone", "shrinking-zone", "sensor", 900, 0, 900, 0.55),
+  hazard("hazard.crown.floor", "crumble-floor", "kinematic", 360, 60, 240, 0.3),
+  hazard("hazard.crown.zone", "shrinking-zone", "sensor", 900, 0, 900, 0.25),
+  hazard("hazard.crown.sweeper", "rotating-sweeper", "kinematic", 240, 45, 240),
+  hazard("hazard.crown.bounce", "bounce-pad", "sensor", 150, 30, 150)
 ];
 
 const spawnSets: ArenaSpawnSetDefinition[] = [
   spawnSet("spawn.circuit", [
-    ...participantPoints(8, 5.4),
+    ...participantPoints(8, 9),
     {
       id: "item.0",
       kind: "item",
-      position: { x: 0, y: 1.2, z: 2.2 },
+      position: { x: 0, y: 1.2, z: 1 },
+      definition: ref(ARENA_ITEM_TYPE, "item.foam-ball")
+    },
+    {
+      id: "item.1",
+      kind: "item",
+      position: { x: 5, y: 1.2, z: -124 },
+      definition: ref(ARENA_ITEM_TYPE, "item.foam-ball")
+    },
+    {
+      id: "item.2",
+      kind: "item",
+      position: { x: 0, y: 1.2, z: -184 },
       definition: ref(ARENA_ITEM_TYPE, "item.foam-ball")
     }
   ]),
   spawnSet("spawn.scrap", [
     ...participantPoints(6, 6, 36),
     ...itemPoints(
-      ["item.foam-ball", "item.energy-block", "item.blast-orb", "item.foam-hammer"],
+      [
+        "item.foam-ball",
+        "item.energy-block",
+        "item.blast-orb",
+        "item.foam-hammer",
+        "item.gravity-orb",
+        "item.spring-glove",
+        "item.stun-baton"
+      ],
       36,
-      -0.5
+      -4
+    ),
+    ...itemPoints(
+      [
+        "item.foam-ball",
+        "item.energy-block",
+        "item.gravity-orb",
+        "item.spring-glove",
+        "item.stun-baton"
+      ],
+      36,
+      4,
+      7
     )
   ]),
   spawnSet("spawn.crown", [
     ...participantPoints(3, 5, 72),
-    ...itemPoints(["item.foam-ball", "item.foam-hammer"], 72, -1)
+    ...itemPoints(
+      ["item.foam-ball", "item.foam-hammer", "item.gravity-orb", "item.spring-glove"],
+      72,
+      -1
+    )
   ])
 ];
 
 const courses: ArenaCourseDefinition[] = [
-  course("course.circuit-forge", "spawn.circuit", {
-    bounds: { min: { x: -12, y: -6, z: -15 }, max: { x: 12, y: 8, z: 8 } },
-    staticLayout: [
-      staticBox("circuit.floor", "floor", 0, -0.5, -2.5, 22, 1, 25, "course", "walkable"),
-      staticBox("circuit.ramp-left", "ramp", -7.8, 0.45, -7.2, 4.5, 0.9, 4.8, "course", "walkable"),
-      staticBox("circuit.ramp-right", "ramp", 7.8, 0.45, -7.2, 4.5, 0.9, 4.8, "course", "walkable"),
-      staticBox(
-        "circuit.finish-deck",
-        "finish-deck",
-        0,
-        0.2,
-        -12.4,
-        8,
-        0.4,
-        2.4,
-        "course",
-        "walkable"
-      )
-    ],
-    hazards: [
-      hazardPlacement(
-        "circuit.sweeper",
-        "hazard.circuit.sweeper",
-        0,
-        1,
-        -2,
-        13,
-        0.55,
-        0.55,
-        "y",
-        0,
-        9
-      ),
-      hazardPlacement(
-        "circuit.moving-bridge",
-        "hazard.circuit.platform",
-        -5.8,
-        1.2,
-        -9,
-        4.2,
-        0.5,
-        3.2,
-        "y",
-        2.3,
-        0
-      ),
-      hazardPlacement(
-        "circuit.piston-gate",
-        "hazard.circuit.piston",
-        0,
-        1.3,
-        -5.7,
-        2.2,
-        2.6,
-        1.2,
-        "x",
-        7.2,
-        12
-      )
-    ],
-    props: [
-      propSphere("circuit.prop.ball", 0, 1.1, 0, 0.85, 0.8, "presentation.prop-ball"),
-      propBox(
-        "circuit.prop.block-left",
-        -3.2,
-        1,
-        -4,
-        1.4,
-        1.4,
-        1.4,
-        1.4,
-        "presentation.prop-block"
-      ),
-      propBox("circuit.prop.block-right", 3.2, 1, -4, 1.4, 1.4, 1.4, 1.4, "presentation.prop-block")
-    ],
-    volumes: [
-      volume("circuit.kill", "kill", 0, -4.5, -3, 28, 3, 34),
-      volume("circuit.checkpoint.1", "checkpoint", 0, 1.2, 0, 20, 3, 1.5, 1),
-      volume("circuit.checkpoint.2", "checkpoint", 0, 1.2, -7.5, 20, 4, 1.5, 2),
-      volume("circuit.finish", "finish", 0, 1.8, -12.4, 8, 3, 1.2, 3)
-    ],
-    navigation: navigationProfile(),
-    presentation: { themeId: "circuit-forge", accent: "#44e6ff", skyline: "orbital-forge" }
-  }),
+  course(
+    "course.circuit-forge",
+    "spawn.circuit",
+    {
+      bounds: { min: { x: -20, y: -8, z: -216 }, max: { x: 20, y: 12, z: 14 } },
+      staticLayout: [
+        staticBox("circuit.floor-start", "floor", 0, -0.5, -66, 24, 1, 160, "course", "walkable"),
+        staticBox("circuit.floor-finish", "floor", 0, -0.5, -187, 24, 1, 54, "course", "walkable"),
+        staticBox("circuit.start-deck", "platform", 0, 0.1, 8, 22, 0.2, 10, "course", "walkable"),
+        staticBox("circuit.ice-left", "platform", -5.5, 0.06, -198, 10, 0.12, 14, "ice", "slick"),
+        staticBox("circuit.ice-right", "platform", 5.5, 0.06, -198, 10, 0.12, 14, "ice", "slick"),
+        staticBox(
+          "circuit.finish-deck",
+          "finish-deck",
+          0,
+          0.2,
+          -207,
+          12,
+          0.4,
+          8,
+          "course",
+          "walkable"
+        ),
+        ...courseSideWalls("circuit", 12.35, -100, 228)
+      ],
+      hazards: [
+        hazardPlacement(
+          "circuit.conveyor-left",
+          "hazard.circuit.conveyor-left",
+          -5.5,
+          0.13,
+          -12,
+          10.5,
+          0.26,
+          18,
+          "z",
+          0,
+          4.5
+        ),
+        hazardPlacement(
+          "circuit.conveyor-right",
+          "hazard.circuit.conveyor-right",
+          5.5,
+          0.13,
+          -12,
+          10.5,
+          0.26,
+          18,
+          "z",
+          0,
+          -5.5
+        ),
+        hazardPlacement(
+          "circuit.sweeper-alpha",
+          "hazard.circuit.sweeper",
+          0,
+          1,
+          -40,
+          18,
+          0.55,
+          0.55,
+          "y",
+          0,
+          9
+        ),
+        hazardPlacement(
+          "circuit.sweeper-beta",
+          "hazard.circuit.sweeper-beta",
+          0,
+          1,
+          -52,
+          16,
+          0.55,
+          0.55,
+          "y",
+          0,
+          9
+        ),
+        hazardPlacement(
+          "circuit.piston-left",
+          "hazard.circuit.piston-a",
+          -9,
+          1.35,
+          -72,
+          2.2,
+          2.7,
+          1.4,
+          "x",
+          8,
+          12
+        ),
+        hazardPlacement(
+          "circuit.piston-center",
+          "hazard.circuit.piston-b",
+          -4,
+          1.35,
+          -80,
+          2.2,
+          2.7,
+          1.4,
+          "x",
+          8,
+          12
+        ),
+        hazardPlacement(
+          "circuit.piston-right",
+          "hazard.circuit.piston-c",
+          1,
+          1.35,
+          -88,
+          2.2,
+          2.7,
+          1.4,
+          "x",
+          8,
+          12
+        ),
+        hazardPlacement(
+          "circuit.bounce-left",
+          "hazard.circuit.bounce-left",
+          -6,
+          0.12,
+          -108,
+          8,
+          0.24,
+          10,
+          "y",
+          0,
+          14
+        ),
+        hazardPlacement(
+          "circuit.bounce-right",
+          "hazard.circuit.bounce-right",
+          6,
+          0.12,
+          -108,
+          8,
+          0.24,
+          10,
+          "y",
+          0,
+          14
+        ),
+        hazardPlacement(
+          "circuit.wind-left",
+          "hazard.circuit.wind-left",
+          -6,
+          1.8,
+          -130,
+          10,
+          3.6,
+          18,
+          "x",
+          0,
+          9
+        ),
+        hazardPlacement(
+          "circuit.wind-right",
+          "hazard.circuit.wind-right",
+          6,
+          1.8,
+          -130,
+          10,
+          3.6,
+          18,
+          "x",
+          0,
+          -9
+        ),
+        hazardPlacement(
+          "circuit.moving-bridge-left",
+          "hazard.circuit.platform",
+          -5.5,
+          0.2,
+          -153,
+          9,
+          0.4,
+          14,
+          "x",
+          2.5,
+          0
+        ),
+        hazardPlacement(
+          "circuit.moving-bridge-right",
+          "hazard.circuit.platform-late",
+          5.5,
+          0.2,
+          -153,
+          9,
+          0.4,
+          14,
+          "x",
+          2.5,
+          0
+        ),
+        hazardPlacement(
+          "circuit.cargo-sweeper",
+          "hazard.circuit.sweeper-cargo",
+          0,
+          1,
+          -176,
+          17,
+          0.6,
+          0.6,
+          "y",
+          0,
+          10
+        )
+      ],
+      props: [
+        propSphere("circuit.prop.ball-left", -6, 1.2, -181, 1.1, 1.4, "presentation.prop-ball"),
+        propSphere("circuit.prop.ball-center", 0, 1.2, -182, 1.1, 1.4, "presentation.prop-ball"),
+        propSphere("circuit.prop.ball-right", 6, 1.2, -181, 1.1, 1.4, "presentation.prop-ball"),
+        propBox(
+          "circuit.prop.block-left",
+          -4,
+          1.15,
+          -185,
+          1.8,
+          1.8,
+          1.8,
+          2.2,
+          "presentation.prop-block"
+        ),
+        propBox(
+          "circuit.prop.block-right",
+          4,
+          1.15,
+          -185,
+          1.8,
+          1.8,
+          1.8,
+          2.2,
+          "presentation.prop-block"
+        )
+      ],
+      volumes: [
+        volume("circuit.kill", "kill", 0, -5.5, -101, 34, 4, 240),
+        volume("circuit.checkpoint.1", "checkpoint", 0, 1.4, -25, 23, 4, 2, 1),
+        volume("circuit.checkpoint.2", "checkpoint", 0, 1.4, -61, 23, 4, 2, 2),
+        volume("circuit.checkpoint.3", "checkpoint", 0, 1.4, -97, 23, 4, 2, 3),
+        volume("circuit.checkpoint.4", "checkpoint", 0, 1.4, -118, 23, 4, 2, 4),
+        volume("circuit.checkpoint.5", "checkpoint", 0, 1.4, -141, 23, 4, 2, 5),
+        volume("circuit.checkpoint.6", "checkpoint", 0, 1.4, -164, 23, 4, 2, 6),
+        volume("circuit.checkpoint.7", "checkpoint", 0, 1.4, -190, 23, 4, 2, 7),
+        volume("circuit.finish", "finish", 0, 1.8, -207.5, 12, 4, 2, 8)
+      ],
+      navigation: navigationProfile(),
+      presentation: { themeId: "circuit-forge", accent: "#44e6ff", skyline: "orbital-forge" }
+    },
+    2
+  ),
   course("course.scrap-yard", "spawn.scrap", {
     bounds: { min: { x: 23, y: -6, z: -14 }, max: { x: 49, y: 9, z: 13 } },
     staticLayout: [
@@ -314,7 +589,60 @@ const courses: ArenaCourseDefinition[] = [
         "y",
         0,
         13
-      )
+      ),
+      hazardPlacement(
+        "scrap.crusher-west",
+        "hazard.scrap.crusher-a",
+        31.5,
+        4.1,
+        3.2,
+        3.4,
+        1,
+        3.4,
+        "y",
+        -3,
+        15
+      ),
+      hazardPlacement(
+        "scrap.crusher-east",
+        "hazard.scrap.crusher-b",
+        40.5,
+        4.1,
+        -3.2,
+        3.4,
+        1,
+        3.4,
+        "y",
+        -3,
+        15
+      ),
+      hazardPlacement(
+        "scrap.wall-west",
+        "hazard.scrap.wall-west",
+        25.7,
+        1.5,
+        3.5,
+        1,
+        3,
+        5,
+        "x",
+        4.3,
+        9
+      ),
+      hazardPlacement(
+        "scrap.wall-east",
+        "hazard.scrap.wall-east",
+        46.3,
+        1.5,
+        -3.5,
+        1,
+        3,
+        5,
+        "x",
+        -4.3,
+        9
+      ),
+      hazardPlacement("scrap.shrinking-zone", "hazard.scrap.zone", 36, 1.4, 0, 20, 3, 20, "x", 0, 5)
     ],
     props: [
       propBox("scrap.prop.heavy-a", 33, 1.1, 1, 1.7, 1.7, 1.7, 4.5, "presentation.scrap-crate"),
@@ -333,15 +661,10 @@ const courses: ArenaCourseDefinition[] = [
   course("course.crown-collapse", "spawn.crown", {
     bounds: { min: { x: 59, y: -7, z: -13 }, max: { x: 85, y: 9, z: 13 } },
     staticLayout: [
-      staticBox("crown.center", "platform", 72, 0, 0, 7, 0.8, 7, "course", "walkable"),
-      staticBox("crown.north", "platform", 72, 0, -6.2, 9, 0.8, 4.2, "ice", "slick"),
-      staticBox("crown.south", "platform", 72, 0, 6.2, 9, 0.8, 4.2, "ice", "slick"),
-      staticBox("crown.west", "platform", 65.8, 0, 0, 4.2, 0.8, 9, "ice", "slick"),
-      staticBox("crown.east", "platform", 78.2, 0, 0, 4.2, 0.8, 9, "ice", "slick"),
-      staticBox("crown.bridge-north", "platform", 72, 0, -3.8, 2.6, 0.8, 1.2, "course", "walkable"),
-      staticBox("crown.bridge-south", "platform", 72, 0, 3.8, 2.6, 0.8, 1.2, "course", "walkable"),
-      staticBox("crown.bridge-west", "platform", 68.2, 0, 0, 1.2, 0.8, 2.6, "course", "walkable"),
-      staticBox("crown.bridge-east", "platform", 75.8, 0, 0, 1.2, 0.8, 2.6, "course", "walkable")
+      staticBox("crown.north", "platform", 72, 0, -5.2, 18, 0.8, 5, "ice", "slick"),
+      staticBox("crown.south", "platform", 72, 0, 5.2, 18, 0.8, 5, "ice", "slick"),
+      staticBox("crown.apron-north", "platform", 72, 0, -2.15, 18, 0.8, 1.1, "course", "walkable"),
+      staticBox("crown.apron-south", "platform", 72, 0, 2.15, 18, 0.8, 1.1, "course", "walkable")
     ],
     hazards: [
       hazardPlacement(
@@ -354,10 +677,48 @@ const courses: ArenaCourseDefinition[] = [
         0.7,
         3.2,
         "z",
-        8,
+        6,
         0
       ),
-      hazardPlacement("crown.shrinking-zone", "hazard.crown.zone", 72, 1.4, 0, 21, 3, 21, "x", 7, 8)
+      hazardPlacement(
+        "crown.shrinking-zone",
+        "hazard.crown.zone",
+        72,
+        1.4,
+        0,
+        21,
+        3,
+        21,
+        "x",
+        0,
+        8
+      ),
+      hazardPlacement(
+        "crown.sweeper",
+        "hazard.crown.sweeper",
+        72,
+        1.05,
+        0,
+        17,
+        0.55,
+        0.55,
+        "y",
+        0,
+        10
+      ),
+      hazardPlacement(
+        "crown.launch-pad",
+        "hazard.crown.bounce",
+        72,
+        0.55,
+        -5.2,
+        4,
+        0.3,
+        3,
+        "y",
+        0,
+        13
+      )
     ],
     props: [propSphere("crown.prop.core", 72, 1.1, 0, 1, 3.2, "presentation.crown-core")],
     volumes: [
@@ -381,7 +742,9 @@ const stages: ArenaStageDefinition[] = [
   ),
   stage("stage.crown-collapse", "final", "course.crown-collapse", 1, 4_500, [
     "item.foam-ball",
-    "item.foam-hammer"
+    "item.foam-hammer",
+    "item.gravity-orb",
+    "item.spring-glove"
   ])
 ];
 
@@ -469,6 +832,14 @@ function actionItem(
   };
 }
 
+function effectItem(
+  impulseMode: ArenaItemDefinition["effect"]["impulseMode"],
+  instabilityDelta: number,
+  staggerMultiplier: number
+): ArenaItemDefinition["effect"] {
+  return { impulseMode, instabilityDelta, staggerMultiplier };
+}
+
 function bot(
   id: string,
   role: ArenaBotArchetypeDefinition["role"],
@@ -528,9 +899,15 @@ function hazard(
   bodyKind: ArenaHazardDefinition["bodyKind"],
   periodTicks: number,
   phaseTicks: number,
-  activeTicks: number
+  activeTicks: number,
+  activationProgress = 0
 ): ArenaHazardDefinition {
-  return { id, kind, bodyKind, schedule: { periodTicks, phaseTicks, activeTicks } };
+  return {
+    id,
+    kind,
+    bodyKind,
+    schedule: { periodTicks, phaseTicks, activeTicks, activationProgress }
+  };
 }
 
 function spawnSet(id: string, points: ArenaSpawnPointDefinition[]): ArenaSpawnSetDefinition {
@@ -555,9 +932,14 @@ function participantPoints(count: number, z: number, centerX = 0): ArenaSpawnPoi
   }));
 }
 
-function itemPoints(ids: string[], centerX = 0, z = -1.5): ArenaSpawnPointDefinition[] {
+function itemPoints(
+  ids: string[],
+  centerX = 0,
+  z = -1.5,
+  idOffset = 0
+): ArenaSpawnPointDefinition[] {
   return ids.map((id, index) => ({
-    id: `item.${index}`,
+    id: `item.${idOffset + index}`,
     kind: "item",
     position: { x: centerX + (index - (ids.length - 1) / 2) * 2.4, y: 1.2, z },
     definition: ref(ARENA_ITEM_TYPE, id)
@@ -567,14 +949,36 @@ function itemPoints(ids: string[], centerX = 0, z = -1.5): ArenaSpawnPointDefini
 function course(
   id: string,
   spawnSetId: string,
-  definition: Omit<ArenaCourseDefinition, "id" | "definitionVersion" | "spawnSet">
+  definition: Omit<ArenaCourseDefinition, "id" | "definitionVersion" | "spawnSet">,
+  version = 1
 ): ArenaCourseDefinition {
   return {
     id,
-    definitionVersion: `${id}.v1`,
+    definitionVersion: `${id}.v${version}`,
     spawnSet: ref(ARENA_SPAWN_SET_TYPE, spawnSetId),
     ...definition
   };
+}
+
+function courseSideWalls(
+  prefix: string,
+  x: number,
+  centerZ: number,
+  depth: number
+): ArenaStaticPlacementDefinition[] {
+  return [-1, 1].map((side) =>
+    staticBox(
+      `${prefix}.rail.${side < 0 ? "left" : "right"}`,
+      "wall",
+      side * x,
+      1.35,
+      centerZ,
+      0.7,
+      2.7,
+      depth,
+      "course"
+    )
+  );
 }
 
 function staticBox(

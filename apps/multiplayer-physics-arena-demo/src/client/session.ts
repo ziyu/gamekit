@@ -32,6 +32,7 @@ import {
 } from "../items/item-physics";
 import { ARENA_ENVIRONMENT, createArenaDefinitionMap } from "../shared/arena-definition";
 import { arenaParticipantCommandEpoch } from "../shared/arena-identity";
+import { createArenaPhysicsMaterialDefinitions } from "../shared/arena-physics-materials";
 import {
   ARENA_CHARACTER_MOTOR_CONTRIBUTOR_ID,
   createArenaCharacterControlCommands,
@@ -57,6 +58,11 @@ import {
   arenaAuthorityPeerId
 } from "../shared/config";
 import { readArenaSnapshot, type ArenaSnapshot } from "../shared/protocol";
+import {
+  ARENA_RANDOM_STAGE_SELECTION,
+  ARENA_STAGE_SELECTION_METADATA_KEY,
+  type ArenaStageSelection
+} from "../shared/arena-stage-selection";
 import { planArenaHazardBodyCommands, sampleArenaStageHazards } from "../shared/arena-stage-course";
 
 export type ArenaClientInput = {
@@ -108,6 +114,7 @@ export async function createArenaClientSession(options: {
   sessionId: string;
   displayName: string;
   intent: ArenaSessionIntent;
+  stageSelection?: ArenaStageSelection | undefined;
   physicsBackend: PhysicsBackendAdapter;
   readInput(): ArenaClientInput;
   onEffect?(event: ArenaEffectPresentationEvent): void;
@@ -142,7 +149,10 @@ export async function createArenaClientSession(options: {
       id: normalizeSessionId(options.sessionId),
       kind: "private",
       authority: "server-authoritative",
-      localPeer
+      localPeer,
+      metadata: {
+        [ARENA_STAGE_SELECTION_METADATA_KEY]: options.stageSelection ?? ARENA_RANDOM_STAGE_SELECTION
+      }
     });
   } else {
     await runtime.joinSession({
@@ -199,15 +209,10 @@ export async function createArenaClientSession(options: {
       scene: {
         dimension: "3d",
         gravity: { x: 0, y: -18, z: 0 },
-        materialDefinitions: [
-          { id: "course", friction: 0.85, restitution: 0.05 },
-          { id: "ice", friction: 0.08, restitution: 0.04 },
-          { id: "mud", friction: 0.98, restitution: 0.01 },
-          { id: "actor", friction: 0.55, restitution: 0.08, density: 1 },
-          { id: "prop", friction: 0.65, restitution: 0.45, density: 0.7 },
-          { id: "hazard", friction: 0.45, restitution: 0.3 },
-          ...itemCatalog.definitions.map(createArenaItemPhysicsMaterial)
-        ]
+        materialDefinitions: createArenaPhysicsMaterialDefinitions({
+          content: ARENA_COMPILED_CONTENT,
+          additional: itemCatalog.definitions.map(createArenaItemPhysicsMaterial)
+        })
       }
     },
     createAuxiliaryContributors() {
@@ -307,7 +312,10 @@ export async function createArenaClientSession(options: {
         ...sampleArenaStageHazards({
           stageIndex: snapshot.match.stageIndex,
           tick: predictionTick,
-          stageStartedAtTick: snapshot.match.stageStartedAtTick ?? snapshot.match.startedAtTick
+          stageStartedAtTick:
+            snapshot.match.stageStartedAtTick === undefined
+              ? predictionTick
+              : snapshot.match.physicsStageStartedAtTick
         }).map((hazard) => ({
           type: "patch" as const,
           memberId: hazard.memberId,
@@ -316,7 +324,10 @@ export async function createArenaClientSession(options: {
         ...planArenaHazardBodyCommands({
           stageIndex: snapshot.match.stageIndex,
           tick: predictionTick,
-          stageStartedAtTick: snapshot.match.stageStartedAtTick ?? snapshot.match.startedAtTick,
+          stageStartedAtTick:
+            snapshot.match.stageStartedAtTick === undefined
+              ? predictionTick
+              : snapshot.match.physicsStageStartedAtTick,
           bodies: snapshot.frame.members.map(({ body }) => body)
         }).map((hazard) => ({
           type: "body-command" as const,
@@ -326,7 +337,6 @@ export async function createArenaClientSession(options: {
       ];
     },
     onContacts(contacts) {
-      effects.anticipateContacts(contacts, latestSnapshot?.playerIdsByPeerId[peerId]);
       effects.anticipateItemContacts(contacts, latestSnapshot, peerId);
     }
   });
@@ -492,7 +502,8 @@ export async function createArenaClientSession(options: {
           maxCheckpointBytes: arenaDiagnostics.island?.maxCheckpointBytesObserved ?? 0,
           replayBudgetOverflows: arenaDiagnostics.island?.replayBudgetOverflows ?? 0,
           predictedItemMembers: arenaDiagnostics.predictedMemberRegistrations,
-          predictedItemMemberFailures: arenaDiagnostics.predictedMemberRegistrationFailures
+          predictedItemMemberFailures: arenaDiagnostics.predictedMemberRegistrationFailures,
+          baseline: arenaDiagnostics.lastBaselineResult
         },
         effects: effects.diagnostics(),
         presentation: presentation.diagnostics()

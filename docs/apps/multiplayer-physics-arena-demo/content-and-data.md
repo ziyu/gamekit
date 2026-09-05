@@ -85,10 +85,22 @@ service。
 Hazard definition包含simulation kind、body/member template、schedule、warning、impact profile、collision filter、capacity和
 presentation。Schedule使用stage tick/seed，随机分支有稳定RNG stream id。
 
+Schedule 的 `activationProgress` 是 0..1 的可选比例，用于把 crumble/shrinking 等强制收敛机制与 stage 总进度对齐；authority、
+prediction、AI perception 和 presentation 都消费编译后的同一值，不能各自写一个启动阈值。Hazard travel bounds 必须按 axis 与
+kind 计算完整极值，moving/crumble projection 还要校验没有近同高静态 support 覆盖其主要 footprint。
+
 Surface definition把Physics material与character/audiovisual modifier关联，但不复制底层friction事实。Volume definition声明shape、
 semantic kind、filter、enter/exit/cooldown和authority policy。
 
 Course层只placement definition，不能按id switch解释某一机关行为。
+
+Dynamic prop placement 的 authored `mass` 不能只留在内容描述里。Compiler 根据 sphere/box collider 体积生成 placement-specific
+Physics material density，使 Rapier 实际 body mass 与 authored mass 一致；authority 和 prediction 注册同一组 material definitions。
+测试必须从真实 backend 读取 mass 或碰撞响应，不能只断言 Data 字段存在。
+
+Arena Physics scene 的基础材质、compiled prop 材质和调用方附加材质统一通过
+`createArenaPhysicsMaterialDefinitions(...)` 组合。Authority、client prediction、benchmark、stability 和完整场景测试不能各自维护
+材质清单；新增 content placement 后，所有这些入口必须自动获得相同 material definition，并在重复 id 时启动失败。
 
 ## Item Definition
 
@@ -98,6 +110,7 @@ Item definition引用：
 - carry modifier与socket semantic。
 - GAS ability execution和Combat delivery/effect。
 - throw/charge/fuse/bounce/hit/lifetime/respawn和hard capacity。
+- directional/radial/pull/launch impulse mode、instability delta 与 stagger multiplier。
 - predicted-entity或authority-only network strategy。
 - Animator/Renderer/Audio/VFX presentation binding。
 
@@ -105,7 +118,7 @@ Data validation确保引用strategy所需能力完整：predicted entity必须�
 fuse item必须有trigger/area policy；任何hit item必须有hit/lifetime上限。
 
 Compiler 输出扁平、只读的 runtime profile，包括 shape/material 数值、CCD/speed/lifetime/bounce 上限、carry socket/modifier/drop、
-action timing/charge/launch/impulse/radius、respawn、presentation 与 network strategy。Item authority 按 compiled profile 工作，不能再次
+action timing/charge/launch/impulse/radius、impulse mode/instability/stagger、respawn、presentation 与 network strategy。Item authority 按 compiled profile 工作，不能再次
 读取 DataRegistry 或按 item id 分支。
 
 ## Character 与 AI Definition

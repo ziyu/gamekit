@@ -41,7 +41,10 @@ describe("Knockout Arena content and identity", () => {
       "bot.profile.opportunist",
       "bot.profile.sprinter"
     ]);
-    expect(content.stages[1]?.items).toHaveLength(4);
+    expect(content.stages[1]?.items).toHaveLength(7);
+    expect(
+      content.stages[1]?.spawnSet.points.filter((point) => point.kind === "item")
+    ).toHaveLength(12);
     expect(content.stages.every((stage) => stage.bots.length === 3)).toBe(true);
     expect(content.stages[0]?.bots.map(({ role }) => role)).toEqual([
       "sprinter",
@@ -222,6 +225,11 @@ function itemEntry(id: string) {
         launchSpeed: 10,
         baseImpulse: 4,
         areaRadius: 0
+      },
+      effect: {
+        impulseMode: "directional" as const,
+        instabilityDelta: 0.1,
+        staggerMultiplier: 1
       },
       respawn: { mode: "none" as const, ticks: 0 },
       presentationId: "presentation.fixture",

@@ -48,6 +48,7 @@ import {
   createArenaCharacterMotorContributor
 } from "../shared/arena-control";
 import { arenaGenerationKey, arenaParticipantCommandEpoch } from "../shared/arena-identity";
+import { createArenaPhysicsMaterialDefinitions } from "../shared/arena-physics-materials";
 import {
   planArenaHazardBodyCommands,
   planArenaStageInstallation,
@@ -74,11 +75,7 @@ import {
   type ArenaMatchPhase,
   type ArenaMoveInput
 } from "../shared/config";
-import {
-  readArenaMoveInput,
-  type ArenaAuthorityEffectCue,
-  type ArenaSnapshot
-} from "../shared/protocol";
+import { readArenaMoveInput, type ArenaSnapshot } from "../shared/protocol";
 import {
   createArenaItemAuthorityCoordinator,
   type ArenaCommittedItemCombatAction,
@@ -126,7 +123,6 @@ export type ArenaAuthorityRetainedState = {
   inputs: number;
   inputAcks: number;
   actorControls: number;
-  authorityEffects: number;
   rankingFacts: number;
   stageEntrants: number;
   stageResults: number;
@@ -150,21 +146,21 @@ export type CreateArenaAuthorityRuntimeOptions = {
   backend: PhysicsBackendAdapter;
   sessionId: string;
   authorityPeerId: string;
+  initialStageIndex?: number | undefined;
   navigation?: ArenaBotNavigationRuntime | undefined;
   now?: () => number;
 };
 
 const COUNTDOWN_MS = 3_000;
 const RESULTS_DURATION_MS = 5_000;
-const AUTHORITY_EFFECT_RETENTION_TICKS = 60;
-const MAX_AUTHORITY_EFFECTS = 128;
 
 export function createArenaAuthorityRuntime(
   options: CreateArenaAuthorityRuntimeOptions
 ): ArenaAuthorityRuntime {
   const now = options.now ?? (() => Date.now());
-  const definitions = createArenaMemberDefinitions();
   const content = ARENA_COMPILED_CONTENT;
+  const initialStageIndex = options.initialStageIndex ?? 0;
+  const definitions = createArenaMemberDefinitions(initialStageIndex);
   const participants = createArenaParticipantRegistry({
     capacity: 64,
     traceCapacity: 256
@@ -174,6 +170,7 @@ export function createArenaAuthorityRuntime(
     stageRules: content.stages.map((stage) => createArenaStageRule(stage.definition)),
     countdownTicks: Math.ceil(COUNTDOWN_MS / ARENA_FIXED_STEP_MS),
     resultsTicks: Math.ceil(RESULTS_DURATION_MS / ARENA_FIXED_STEP_MS),
+    initialStageIndex,
     traceCapacity: 128
   });
   const impactLedger = createArenaImpactLedger({
@@ -186,11 +183,12 @@ export function createArenaAuthorityRuntime(
     maxAssists: 3
   });
   const characterMotor = createArenaCharacterMotorContributor();
-  const initialGeneration = { match: 1, stage: 1, membershipRevision: 1 };
+  const initialGeneration = { match: 1, stage: initialStageIndex + 1, membershipRevision: 1 };
   const itemAuthority = createArenaItemAuthorityCoordinator({
     stages: content.stages,
     participants,
     initialStageInstanceId: director.snapshot().stageInstanceId,
+    initialStageIndex,
     initialGeneration,
     initialTick: 0
   });
@@ -217,15 +215,10 @@ export function createArenaAuthorityRuntime(
     scene: {
       dimension: "3d",
       gravity: { x: 0, y: -18, z: 0 },
-      materialDefinitions: [
-        { id: "course", friction: 0.85, restitution: 0.05 },
-        { id: "ice", friction: 0.08, restitution: 0.04 },
-        { id: "mud", friction: 0.98, restitution: 0.01 },
-        { id: "actor", friction: 0.55, restitution: 0.08, density: 1 },
-        { id: "prop", friction: 0.65, restitution: 0.45, density: 0.7 },
-        { id: "hazard", friction: 0.45, restitution: 0.3 },
-        ...itemAuthority.materialDefinitions()
-      ]
+      materialDefinitions: createArenaPhysicsMaterialDefinitions({
+        content,
+        additional: itemAuthority.materialDefinitions()
+      })
     }
   });
   const projection = createStandardMultiplayerPhysicsArenaAuthorityProjection({
@@ -235,7 +228,6 @@ export function createArenaAuthorityRuntime(
   const inputsByPeerId = new Map<string, ArenaMoveInput>();
   const inputAcksByPeerId = new Map<string, number>();
   const actorControlsByMemberId = new Map<string, ArenaActorControlFrame>();
-  const authorityEffects = new Map<string, ArenaAuthorityEffectCue>();
   const rankingSpatialFacts = new Map<
     string,
     {
@@ -260,6 +252,7 @@ export function createArenaAuthorityRuntime(
   const stageResults: ArenaStageSettlement[] = [];
   let latestPayloadBytes = 0;
   let stageInstallationPending = false;
+  let physicsStageStartedAtTick = 0;
   let disposed = false;
   let cachedIslandState: ReturnType<PhysicsPredictionIsland["state"]> | undefined;
   let botPerceptionState = captureBotPerceptionState(0);
@@ -438,7 +431,6 @@ export function createArenaAuthorityRuntime(
         inputs: inputsByPeerId.size,
         inputAcks: inputAcksByPeerId.size,
         actorControls: actorControlsByMemberId.size,
-        authorityEffects: authorityEffects.size,
         rankingFacts: rankingSpatialFacts.size,
         stageEntrants: stageEntrantParticipantIds.size,
         stageResults: stageResults.length,
@@ -476,7 +468,6 @@ export function createArenaAuthorityRuntime(
       inputAcksByPeerId.clear();
       actorControlsByMemberId.clear();
       cachedIslandState = undefined;
-      authorityEffects.clear();
       rankingSpatialFacts.clear();
       stageEntrantParticipantIds.clear();
       stageResults.length = 0;
@@ -515,7 +506,8 @@ export function createArenaAuthorityRuntime(
       }
       const match = director.snapshot();
       const canClaimInitialSeat =
-        match.stageIndex === 0 && (match.phase === "lobby" || match.phase === "countdown");
+        match.stageIndex === initialStageIndex &&
+        (match.phase === "lobby" || match.phase === "countdown");
       const slot = canClaimInitialSeat
         ? participants
             .list()
@@ -579,6 +571,7 @@ export function createArenaAuthorityRuntime(
     });
     for (const action of result.actions) {
       if (action.type === "stage-started") {
+        physicsStageStartedAtTick = island.tick();
         activateStageParticipants(authorityTick, action.stageInstanceId);
       } else if (action.type === "stage-completed") {
         settleStageParticipants(authorityTick, action.reason, action.winnerParticipantId);
@@ -601,7 +594,6 @@ export function createArenaAuthorityRuntime(
         resetArenaRoundPhysics(island, arenaGenerationKey(generation));
         stageInstallationPending = true;
         installStageItems(action.stageIndex, action.stageInstanceId, authorityTick, generation);
-        authorityEffects.clear();
         rankingSpatialFacts.clear();
         impactLedger.reset();
         combatAuthority.reset(authorityTick);
@@ -701,7 +693,6 @@ export function createArenaAuthorityRuntime(
     resetArenaRoundPhysics(island, arenaGenerationKey(generation));
     stageInstallationPending = true;
     installStageItems(stageIndex, stageInstanceId, authorityTick, generation);
-    authorityEffects.clear();
     rankingSpatialFacts.clear();
     impactLedger.reset();
     combatAuthority.reset(authorityTick);
@@ -1053,18 +1044,25 @@ export function createArenaAuthorityRuntime(
     }
 
     const match = director.snapshot();
+    const hazardStageStartedAtTick =
+      match.stageStartedAtTick === undefined ? targetTick : physicsStageStartedAtTick;
     for (const hazard of sampleArenaStageHazards({
       stageIndex: match.stageIndex,
       tick: targetTick,
-      stageStartedAtTick: match.stageStartedAtTick ?? match.startedAtTick
+      stageStartedAtTick: hazardStageStartedAtTick
     })) {
       queuePatch(hazard.memberId, hazard.patch);
     }
+    const pendingDespawnMemberIds = new Set(
+      commands.flatMap((command) => (command.type === "despawn" ? [command.memberId] : []))
+    );
     for (const hazard of planArenaHazardBodyCommands({
       stageIndex: match.stageIndex,
       tick: targetTick,
-      stageStartedAtTick: match.stageStartedAtTick ?? match.startedAtTick,
-      bodies: readIslandState().members.map(({ body }) => body)
+      stageStartedAtTick: hazardStageStartedAtTick,
+      bodies: readIslandState().members.flatMap(({ id, body }) =>
+        pendingDespawnMemberIds.has(id) ? [] : [body]
+      )
     })) {
       commands.push({
         type: "body-command",
@@ -1191,27 +1189,6 @@ export function createArenaAuthorityRuntime(
     for (const contact of contacts) {
       if (contact.phase !== "enter") continue;
       resolveItemContactCombat(contact, currentTick);
-      const [colliderA, colliderB] = [contact.colliderA, contact.colliderB].sort();
-      if (colliderA === undefined || colliderB === undefined) continue;
-      const id = `round.${director.snapshot().round}:${contact.tick}:${contact.kind}:${colliderA}|${colliderB}`;
-      authorityEffects.set(id, {
-        id,
-        kind: "contact",
-        contactKind: contact.kind,
-        tick: contact.tick,
-        colliderA,
-        colliderB
-      });
-    }
-    for (const [id, effect] of authorityEffects) {
-      if (effect.tick < currentTick - AUTHORITY_EFFECT_RETENTION_TICKS) {
-        authorityEffects.delete(id);
-      }
-    }
-    while (authorityEffects.size > MAX_AUTHORITY_EFFECTS) {
-      const oldest = authorityEffects.keys().next().value as string | undefined;
-      if (oldest === undefined) break;
-      authorityEffects.delete(oldest);
     }
   }
 
@@ -1404,6 +1381,7 @@ export function createArenaAuthorityRuntime(
         durationTicks: match.durationTicks,
         stageInstanceId: match.stageInstanceId,
         startedAtTick: match.startedAtTick,
+        physicsStageStartedAtTick,
         ...(match.stageStartedAtTick === undefined
           ? {}
           : { stageStartedAtTick: match.stageStartedAtTick }),
@@ -1480,9 +1458,6 @@ export function createArenaAuthorityRuntime(
           ? [definition.id]
           : [];
       }),
-      effects: [...authorityEffects.values()].sort(
-        (left, right) => left.tick - right.tick || left.id.localeCompare(right.id)
-      ),
       serverTime: now(),
       authority: {
         receivedInputBundles: diagnostics?.receivedInputs ?? 0,

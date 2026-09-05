@@ -27,7 +27,11 @@ import {
   createArenaBotSensorSamplers,
   type ArenaBotPerceptionSource
 } from "./perception";
-import { navigateArenaBotToFact, releaseArenaBotNavigation } from "./navigation-task";
+import {
+  isArenaTraversalHazard,
+  navigateArenaBotToFact,
+  releaseArenaBotNavigation
+} from "./navigation-task";
 
 const ARENA_BOT_ACTION_QUEUE_LIMIT = 32;
 
@@ -679,8 +683,16 @@ function recoverExecutor(source: ArenaBotPerceptionSource): AiTaskExecutor {
 }
 
 function moveAwayFromHazard(context: AiTaskContext, source: ArenaBotPerceptionSource): AiTaskStep {
-  const hazard = nearestFact(context, ARENA_HAZARD_FACT);
+  const hazard = nearestHazardThreat(context);
   if (hazard?.position === undefined) {
+    return navigateArenaBotToFact(
+      context,
+      source,
+      latestFact(context, ARENA_OBJECTIVE_FACT),
+      "field"
+    );
+  }
+  if (objectiveStageKind(context) === "qualifier") {
     return navigateArenaBotToFact(
       context,
       source,
@@ -756,10 +768,25 @@ function deadlinePressure(context: AiAgentReadContext): number {
 }
 
 function hazardRisk(context: AiAgentReadContext): number {
-  const hazard = nearestFact(context, ARENA_HAZARD_FACT);
+  const hazard = nearestHazardThreat(context);
   if (hazard === undefined) return 0;
   const distance = numeric(hazard.metadata?.distance);
-  return clamp01((hazard.value === true ? 0.75 : 0.35) + Math.max(0, 1 - distance / 8) * 0.4);
+  const proximity = Math.max(0, 1 - distance / 8);
+  return clamp01(proximity * (hazard.value === true ? 1 : 0.45));
+}
+
+function nearestHazardThreat(context: AiAgentReadContext): AiPerceptionFact | undefined {
+  return context
+    .facts()
+    .filter(
+      (fact) =>
+        fact.key === ARENA_HAZARD_FACT && !isArenaTraversalHazard(String(fact.metadata?.kind ?? ""))
+    )
+    .sort(
+      (left, right) =>
+        factDistance(left) - factDistance(right) ||
+        (left.subjectId ?? "").localeCompare(right.subjectId ?? "")
+    )[0];
 }
 
 function impactRisk(context: AiAgentReadContext): number {

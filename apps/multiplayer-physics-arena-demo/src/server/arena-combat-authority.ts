@@ -346,12 +346,11 @@ export function createArenaCombatAuthorityCoordinator(options: {
     const chargeScale = 0.65 + Math.max(0, Math.min(1, context.charge)) * 0.35;
     const impulseMagnitude =
       context.definition.baseImpulse * chargeScale * (1 + instability * 1.15);
-    const direction = normalizeHorizontal(context.direction);
-    const impulse = {
-      x: direction.x * impulseMagnitude,
-      y: Math.max(1.5, impulseMagnitude * 0.18),
-      z: (direction.z ?? 0) * impulseMagnitude
-    };
+    const impulse = resolveArenaItemImpulse(
+      context.definition,
+      context.direction,
+      impulseMagnitude
+    );
     const impactId = `${hit.ticketId}:impact`;
     const recorded = options.impactLedger.record({
       id: impactId,
@@ -373,7 +372,10 @@ export function createArenaCombatAuthorityCoordinator(options: {
       targetMemberId: target.actorMemberId,
       impulse
     });
-    const staggerDurationMs = Math.min(900, 120 + impulseMagnitude * 18 + instability * 220);
+    const staggerDurationMs = Math.min(
+      1_200,
+      (120 + impulseMagnitude * 18 + instability * 220) * context.definition.staggerMultiplier
+    );
     pendingStaggerByParticipantId.set(
       target.id,
       Math.max(pendingStaggerByParticipantId.get(target.id) ?? 0, staggerDurationMs)
@@ -450,7 +452,7 @@ function createCombatDataRegistry(definitions: readonly ArenaCompiledItemDefinit
           {
             attribute: ARENA_INSTABILITY_ATTRIBUTE_ID,
             operation: "add",
-            value: Math.min(0.45, 0.05 + definition.baseImpulse / 80)
+            value: definition.instabilityDelta
           }
         ]
       };
@@ -509,6 +511,33 @@ function normalizeHorizontal(value: PhysicsVector): PhysicsVector {
   return length <= 0.0001
     ? { x: 0, y: 0, z: -1 }
     : { x: value.x / length, y: 0, z: (value.z ?? 0) / length };
+}
+
+export function resolveArenaItemImpulse(
+  definition: Pick<ArenaCompiledItemDefinition, "impulseMode">,
+  directionValue: PhysicsVector,
+  impulseMagnitude: number
+): PhysicsVector {
+  const direction = normalizeHorizontal(directionValue);
+  if (definition.impulseMode === "pull") {
+    return {
+      x: -direction.x * impulseMagnitude,
+      y: Math.max(1.1, impulseMagnitude * 0.1),
+      z: -(direction.z ?? 0) * impulseMagnitude
+    };
+  }
+  if (definition.impulseMode === "launch") {
+    return {
+      x: direction.x * impulseMagnitude * 0.32,
+      y: Math.max(5.5, impulseMagnitude * 0.9),
+      z: (direction.z ?? 0) * impulseMagnitude * 0.32
+    };
+  }
+  return {
+    x: direction.x * impulseMagnitude,
+    y: Math.max(1.5, impulseMagnitude * 0.18),
+    z: (direction.z ?? 0) * impulseMagnitude
+  };
 }
 
 function emptyPhysicsQueries(): PhysicsQueries {

@@ -111,6 +111,8 @@ export type ArenaHazardKind =
   | "rotating-sweeper"
   | "moving-platform"
   | "piston"
+  | "crusher"
+  | "extending-wall"
   | "conveyor"
   | "wind-zone"
   | "bounce-pad"
@@ -125,6 +127,7 @@ export type ArenaHazardDefinition = {
     periodTicks: number;
     phaseTicks: number;
     activeTicks: number;
+    activationProgress?: number | undefined;
   };
 };
 
@@ -162,6 +165,11 @@ export type ArenaItemDefinition = {
     launchSpeed: number;
     baseImpulse: number;
     areaRadius: number;
+  };
+  effect: {
+    impulseMode: "directional" | "radial" | "pull" | "launch";
+    instabilityDelta: number;
+    staggerMultiplier: number;
   };
   respawn: {
     mode: "timed" | "none";

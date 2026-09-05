@@ -19,12 +19,13 @@ describe("Knockout Arena multi-stage authority", () => {
         stageCount: 3,
         stageKind: "qualifier"
       });
+      expect(qualifier).not.toHaveProperty("effects");
       expect(qualifier.qualifierProgress).toHaveLength(8);
       expect(qualifier.qualifierProgress).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             checkpointCount: 0,
-            checkpointTotal: 2,
+            checkpointTotal: 7,
             finished: false,
             normalizedProgress: 0
           })
@@ -150,7 +151,6 @@ describe("Knockout Arena multi-stage authority", () => {
         inputs: 0,
         inputAcks: 0,
         actorControls: 0,
-        authorityEffects: 0,
         rankingFacts: 0,
         stageEntrants: 0,
         stageResults: 0,

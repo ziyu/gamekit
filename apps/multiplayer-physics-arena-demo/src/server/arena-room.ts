@@ -11,6 +11,11 @@ import { prepareArenaBotNavigationRuntime } from "../ai/navigation";
 import { ARENA_COMPILED_CONTENT } from "../content/default-content";
 import { ARENA_FIXED_STEP_MS, ARENA_MESSAGE_TYPE, arenaAuthorityPeerId } from "../shared/config";
 import {
+  ARENA_STAGE_SELECTION_METADATA_KEY,
+  readArenaStageSelection,
+  resolveArenaStageSelection
+} from "../shared/arena-stage-selection";
+import {
   createArenaAuthorityRuntime,
   type ArenaAuthorityRuntime,
   type ArenaAuthorityRuntimeSnapshot
@@ -35,12 +40,24 @@ export class KnockoutArenaRoom extends Room {
     }
     const sessionId = options.sessionId ?? this.roomId;
     const authorityPeerId = arenaAuthorityPeerId(sessionId);
+    const legacyOpeningStage = readArenaStageSelection(
+      ARENA_COMPILED_CONTENT.stages[0]!.definition.id
+    );
+    if (legacyOpeningStage === undefined) {
+      throw new Error("Knockout Arena content has no valid opening stage.");
+    }
+    const requestedStage =
+      readArenaStageSelection(options.metadata?.[ARENA_STAGE_SELECTION_METADATA_KEY]) ??
+      legacyOpeningStage;
+    const stageSelection = resolveArenaStageSelection(requestedStage);
     this.maxClients = 8;
     this.metadata = {
       gamekit: {
         kind: options.sessionKind ?? "private",
         authority: "server-authoritative",
-        demo: "knockout-circuit"
+        demo: "knockout-circuit",
+        requestedStage: stageSelection.requested,
+        initialStageId: stageSelection.stageId
       }
     };
     const bridge = createColyseusRoomRuntimeBridge<
@@ -72,7 +89,8 @@ export class KnockoutArenaRoom extends Room {
           backend,
           navigation,
           sessionId,
-          authorityPeerId
+          authorityPeerId,
+          initialStageIndex: stageSelection.stageIndex
         });
         return {
           tick(frame) {

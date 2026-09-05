@@ -249,7 +249,7 @@ function emitSteering(
     y += (dy / distance) * strength;
   }
   for (const hazard of frame.hazards) {
-    const avoidance = hazardAvoidance(self.position.x, self.position.z ?? 0, hazard);
+    const avoidance = hazardAvoidance(self.position.x, self.position.z ?? 0, hazard, preferred);
     x += avoidance.x;
     y += avoidance.y;
     if (avoidance.jump) context.emit({ type: "action", actionId: "jump" });
@@ -264,8 +264,12 @@ function emitSteering(
 function hazardAvoidance(
   x: number,
   y: number,
-  hazard: ArenaBotVisibleHazard
+  hazard: ArenaBotVisibleHazard,
+  preferred: NavigationPoint
 ): { x: number; y: number; jump: boolean } {
+  if (isArenaTraversalHazard(hazard.kind)) {
+    return { x: 0, y: 0, jump: false };
+  }
   if (hazard.phase === "idle" || hazard.phase === "recovery") {
     return { x: 0, y: 0, jump: false };
   }
@@ -276,11 +280,27 @@ function hazardAvoidance(
   const influence = radius + (hazard.active ? 2.2 : 1.2);
   if (distance >= influence || distance <= 0.001) return { x: 0, y: 0, jump: false };
   const strength = (1 - distance / influence) * (hazard.active ? 1.25 : 0.5);
+  const preferredLength = Math.hypot(preferred.x, preferred.y);
+  const forward =
+    preferredLength <= 0.001
+      ? { x: -dy / distance, y: dx / distance }
+      : { x: preferred.x / preferredLength, y: preferred.y / preferredLength };
+  const lateral = { x: -forward.y, y: forward.x };
+  const side = dx * lateral.x + dy * lateral.y < 0 ? -1 : 1;
   return {
-    x: (dx / distance) * strength,
-    y: (dy / distance) * strength,
+    x: lateral.x * side * strength,
+    y: lateral.y * side * strength,
     jump: hazard.active && distance <= radius + 0.9
   };
+}
+
+export function isArenaTraversalHazard(kind: string): boolean {
+  return (
+    kind === "conveyor" ||
+    kind === "moving-platform" ||
+    kind === "bounce-pad" ||
+    kind === "wind-zone"
+  );
 }
 
 function progressState(

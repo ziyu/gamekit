@@ -23,6 +23,7 @@ describe("Knockout Arena protocol", () => {
         stageInstanceId: "match.1:stage.circuit-forge:1",
         startedAtTick: 6,
         stageStartedAtTick: 6,
+        physicsStageStartedAtTick: 2,
         membershipRevision: 1
       },
       participants: [
@@ -66,7 +67,6 @@ describe("Knockout Arena protocol", () => {
         "player.0": { sequence: 9, moveX: 1, moveZ: 0, jump: false }
       },
       removedMemberIds: [],
-      effects: [],
       serverTime: 100,
       authority: {
         receivedInputBundles: 1,

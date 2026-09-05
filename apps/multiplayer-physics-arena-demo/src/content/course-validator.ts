@@ -27,6 +27,7 @@ export type ArenaContentValidationIssue = {
     | "arena.validation.safe_zone"
     | "arena.validation.hazard_bounds"
     | "arena.validation.hazard_schedule"
+    | "arena.validation.hazard_support"
     | "arena.validation.projection"
     | "arena.validation.navigation_source"
     | "arena.validation.navigation_bake"
@@ -337,7 +338,9 @@ function validateHazards(
       schedule.activeTicks <= 0 ||
       schedule.activeTicks > schedule.periodTicks ||
       schedule.phaseTicks < 0 ||
-      schedule.phaseTicks >= schedule.periodTicks
+      schedule.phaseTicks >= schedule.periodTicks ||
+      schedule.activationProgress < 0 ||
+      schedule.activationProgress > 1
     ) {
       issues.push(
         issue(
@@ -348,24 +351,63 @@ function validateHazards(
         )
       );
     }
+    if (schedule.kind === "moving-platform" || schedule.kind === "crumble-floor") {
+      const supportTop = schedule.origin.y + schedule.size.height / 2;
+      const overlappingSupport = stage.course.staticLayout.find((placement) => {
+        if (Math.abs(placement.position.y + placement.size.height / 2 - supportTop) > 0.55) {
+          return false;
+        }
+        return (
+          overlapLength(
+            schedule.origin.x - schedule.size.width / 2,
+            schedule.origin.x + schedule.size.width / 2,
+            placement.position.x - placement.size.width / 2,
+            placement.position.x + placement.size.width / 2
+          ) >=
+            schedule.size.width * 0.85 &&
+          overlapLength(
+            (schedule.origin.z ?? 0) - schedule.size.depth / 2,
+            (schedule.origin.z ?? 0) + schedule.size.depth / 2,
+            (placement.position.z ?? 0) - placement.size.depth / 2,
+            (placement.position.z ?? 0) + placement.size.depth / 2
+          ) >=
+            schedule.size.depth * 0.85
+        );
+      });
+      if (overlappingSupport !== undefined) {
+        issues.push(
+          issue(
+            "arena.validation.hazard_support",
+            stage,
+            schedule.placementId,
+            `${schedule.kind} is gameplay-inert because ${overlappingSupport.id} fully supports it`
+          )
+        );
+      }
+    }
+    const movementAxis = schedule.kind === "crumble-floor" ? "y" : schedule.axis;
     const axisExtent =
-      (schedule.axis === "x"
+      (movementAxis === "x"
         ? schedule.size.width
-        : schedule.axis === "y"
+        : movementAxis === "y"
           ? schedule.size.height
           : schedule.size.depth) / 2;
-    const origin = schedule.origin[schedule.axis] ?? 0;
-    const min = stage.course.bounds.min[schedule.axis] ?? 0;
-    const max = stage.course.bounds.max[schedule.axis] ?? 0;
-    const positionalTravel =
-      schedule.kind === "moving-platform" ||
-      schedule.kind === "piston" ||
-      schedule.kind === "crumble-floor"
-        ? schedule.travel
-        : 0;
+    const origin = schedule.origin[movementAxis] ?? 0;
+    const min = stage.course.bounds.min[movementAxis] ?? 0;
+    const max = stage.course.bounds.max[movementAxis] ?? 0;
+    const travelRange =
+      schedule.kind === "moving-platform"
+        ? { min: -Math.abs(schedule.travel), max: Math.abs(schedule.travel) }
+        : schedule.kind === "crumble-floor"
+          ? { min: -Math.abs(schedule.travel), max: 0 }
+          : schedule.kind === "piston" ||
+              schedule.kind === "crusher" ||
+              schedule.kind === "extending-wall"
+            ? { min: Math.min(0, schedule.travel), max: Math.max(0, schedule.travel) }
+            : { min: 0, max: 0 };
     if (
-      origin - axisExtent - positionalTravel < min ||
-      origin + axisExtent + positionalTravel > max
+      origin - axisExtent + travelRange.min < min ||
+      origin + axisExtent + travelRange.max > max
     ) {
       issues.push(
         issue(
@@ -377,6 +419,15 @@ function validateHazards(
       );
     }
   }
+}
+
+function overlapLength(
+  leftMin: number,
+  leftMax: number,
+  rightMin: number,
+  rightMax: number
+): number {
+  return Math.max(0, Math.min(leftMax, rightMax) - Math.max(leftMin, rightMin));
 }
 
 function validateProjection(

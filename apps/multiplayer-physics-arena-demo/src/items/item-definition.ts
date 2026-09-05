@@ -30,6 +30,9 @@ export type ArenaCompiledItemDefinition = {
   launchSpeed: number;
   baseImpulse: number;
   areaRadius: number;
+  impulseMode: ArenaItemDefinition["effect"]["impulseMode"];
+  instabilityDelta: number;
+  staggerMultiplier: number;
   respawnMode: ArenaItemDefinition["respawn"]["mode"];
   respawnTicks: number;
   presentationId: string;
@@ -152,6 +155,7 @@ function compileDefinition(definition: Readonly<ArenaItemDefinition>): ArenaComp
     !ratio(definition.carry.jumpMultiplier) ||
     (definition.carry.dropPolicy !== "drop" && definition.carry.dropPolicy !== "spend") ||
     !validAction(definition) ||
+    !validEffect(definition) ||
     !validRespawn(definition) ||
     !validId(definition.presentationId) ||
     (definition.networkStrategy !== "predicted-entity" &&
@@ -182,6 +186,9 @@ function compileDefinition(definition: Readonly<ArenaItemDefinition>): ArenaComp
     launchSpeed: definition.action.launchSpeed,
     baseImpulse: definition.action.baseImpulse,
     areaRadius: definition.action.areaRadius,
+    impulseMode: definition.effect.impulseMode,
+    instabilityDelta: definition.effect.instabilityDelta,
+    staggerMultiplier: definition.effect.staggerMultiplier,
     respawnMode: definition.respawn.mode,
     respawnTicks: definition.respawn.ticks,
     presentationId: definition.presentationId,
@@ -228,6 +235,22 @@ function validAction(definition: Readonly<ArenaItemDefinition>): boolean {
       ? action.launchSpeed === 0 && action.areaRadius > 0
       : action.launchSpeed > 0) &&
     (action.mode !== "throw-area" || action.areaRadius > 0)
+  );
+}
+
+function validEffect(definition: Readonly<ArenaItemDefinition>): boolean {
+  const effect = definition.effect;
+  return (
+    (effect.impulseMode === "directional" ||
+      effect.impulseMode === "radial" ||
+      effect.impulseMode === "pull" ||
+      effect.impulseMode === "launch") &&
+    inclusiveRatio(effect.instabilityDelta) &&
+    positiveFinite(effect.staggerMultiplier) &&
+    (effect.impulseMode === "radial" || effect.impulseMode === "pull"
+      ? definition.action.mode === "throw-area"
+      : true) &&
+    (effect.impulseMode === "launch" ? definition.action.mode === "melee" : true)
   );
 }
 

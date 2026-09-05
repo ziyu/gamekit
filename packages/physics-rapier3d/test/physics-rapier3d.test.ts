@@ -25,6 +25,41 @@ beforeAll(async () => {
 });
 
 describe("Rapier 3D physics backend", () => {
+  it("distinguishes kinematic next-step targets from immediate authority correction", () => {
+    const scene = backend.createScene({ gravity: { x: 0, y: 0, z: 0 } });
+    scene.createBody({
+      id: "kinematic.body",
+      kind: "kinematic",
+      position: { x: 0, y: 0, z: 0 }
+    });
+
+    scene.updateBody("kinematic.body", {
+      position: { x: 2, y: 0, z: 0 },
+      rotation: { x: 0, y: Math.PI / 3, z: 0 }
+    });
+    expect(scene.getBodyState("kinematic.body")).toMatchObject({
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 }
+    });
+    scene.step(1000 / 60);
+    expect(scene.getBodyState("kinematic.body")?.position.x).toBeCloseTo(2, 6);
+
+    scene.updateBody(
+      "kinematic.body",
+      {
+        position: { x: 7, y: 1, z: -3 },
+        rotation: { x: 0, y: -Math.PI / 2, z: 0 }
+      },
+      { kinematicTransformMode: "teleport" }
+    );
+    const corrected = scene.getBodyState("kinematic.body")!;
+    expect(corrected.position).toEqual({ x: 7, y: 1, z: -3 });
+    expect((corrected.rotation as PhysicsQuaternion).y).toBeCloseTo(-Math.SQRT1_2, 6);
+    expect((corrected.rotation as PhysicsQuaternion).w).toBeCloseTo(Math.SQRT1_2, 6);
+
+    scene.dispose();
+  });
+
   it("restores solver-owned CCD bodies with material response from a full checkpoint", () => {
     const scene = backend.createScene({
       id: "rapier3d.prediction-island.checkpoint",

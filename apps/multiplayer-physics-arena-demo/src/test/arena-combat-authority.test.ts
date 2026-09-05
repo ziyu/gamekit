@@ -4,10 +4,40 @@ import { compileArenaContent, createArenaDataRegistry } from "../content/registr
 import { compileArenaItemCatalog } from "../items/item-definition";
 import { createArenaImpactLedger } from "../match/impact-ledger";
 import { createArenaParticipantRegistry } from "../match/participant-registry";
-import { createArenaCombatAuthorityCoordinator } from "../server/arena-combat-authority";
+import {
+  createArenaCombatAuthorityCoordinator,
+  resolveArenaItemImpulse
+} from "../server/arena-combat-authority";
 import { ARENA_FIXED_STEP_MS } from "../shared/config";
 
 describe("Knockout Arena Combat/GAS authority bridge", () => {
+  it("resolves directional, pull, and launch item identities into distinct impulses", () => {
+    const catalog = compileArenaItemCatalog(compileArenaContent(createArenaDataRegistry()).stages);
+    const definition = (id: string) => catalog.definitions.find((item) => item.id === id)!;
+
+    expect(
+      resolveArenaItemImpulse(definition("item.energy-block"), { x: 1, y: 0, z: 0 }, 8)
+    ).toEqual({
+      x: 8,
+      y: 1.5,
+      z: 0
+    });
+    expect(
+      resolveArenaItemImpulse(definition("item.gravity-orb"), { x: 1, y: 0, z: 0 }, 8)
+    ).toEqual({
+      x: -8,
+      y: 1.1,
+      z: -0
+    });
+    expect(
+      resolveArenaItemImpulse(definition("item.spring-glove"), { x: 1, y: 0, z: 0 }, 8)
+    ).toEqual({
+      x: 2.56,
+      y: 7.2,
+      z: 0
+    });
+  });
+
   it("deduplicates hit tickets and carries instability, stagger, impulse, and KO attribution", () => {
     const participants = createArenaParticipantRegistry();
     participants.register({
