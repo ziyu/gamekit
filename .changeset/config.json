@@ -46,7 +46,8 @@
       "@gamekit/navigation-graph",
       "@gamekit/navigation-grid",
       "@gamekit/navigation-navmesh",
-      "@gamekit/navigation-recast"
+      "@gamekit/navigation-recast",
+      "@gamekit/character-controller"
     ]
   ],
   "ignore": ["@gamekit/platform-tauri", "abyss-delve", "sandbox"],
