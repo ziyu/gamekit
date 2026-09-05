@@ -40,12 +40,29 @@
     "multiplayer-demo": "0.1.0",
     "@gamekit/multiplayer-colyseus": "0.1.0-alpha.3",
     "@gamekit/multiplayer-core": "0.1.0-alpha.3",
-    "@gamekit/multiplayer-memory": "0.1.0-alpha.3"
+    "@gamekit/multiplayer-memory": "0.1.0-alpha.3",
+    "multiplayer-outpost-siege-demo": "0.1.0",
+    "@gamekit/ai-core": "0.1.0-alpha.5",
+    "@gamekit/animator-core": "0.1.0-alpha.5",
+    "@gamekit/audio-core": "0.1.0-alpha.5",
+    "@gamekit/combat": "0.1.0-alpha.5",
+    "@gamekit/navigation-core": "0.1.0-alpha.5",
+    "@gamekit/navigation-graph": "0.1.0-alpha.5",
+    "@gamekit/navigation-grid": "0.1.0-alpha.5",
+    "@gamekit/navigation-navmesh": "0.1.0-alpha.5",
+    "@gamekit/navigation-recast": "0.1.0-alpha.5"
   },
   "changesets": [
+    "ai-core-runtime",
+    "animator-core-runtime",
+    "audio-core-runtime",
     "auto-4124991c",
     "auto-pr-12",
     "auto-pr-14",
+    "combat-gas-ability-delivery",
+    "gameplay-foundation-host-tooling",
+    "gas-ability-execution-lifecycle",
+    "managed-client-replication-runtime",
     "multiplayer-authority-action-queue",
     "multiplayer-authority-peer-release",
     "multiplayer-authority-snapshot-publisher",
@@ -53,7 +70,12 @@
     "multiplayer-prediction-buffer",
     "multiplayer-presentation-helper",
     "multiplayer-usable-baseline",
+    "navigation-core-and-graph",
+    "outpost-nonvisual-profile-fixtures",
+    "phaser-animation-assets",
+    "physics-prediction-island",
     "standard-physics-and-multiplayer-modules",
-    "three-driver"
+    "three-driver",
+    "web-element-viewport-composition"
   ]
 }

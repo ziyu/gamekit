@@ -1,6 +1,14 @@
 # @gamekit/multiplayer-memory
 
-## 0.1.0-alpha.4
+## 0.1.0-alpha.6
+
+### Patch Changes
+
+- Updated dependencies [c73f533]
+- Updated dependencies [94c5113]
+  - @gamekit/multiplayer-core@0.1.0-alpha.6
+
+## 0.1.0-alpha.5
 
 ### Patch Changes
 
@@ -12,7 +20,7 @@
 - Updated dependencies [42c830b]
 - Updated dependencies [c2b4371]
 - Updated dependencies [116b3bd]
-  - @gamekit/multiplayer-core@0.1.0-alpha.4
+  - @gamekit/multiplayer-core@0.1.0-alpha.5
 
 ## 0.1.0-alpha.3
 

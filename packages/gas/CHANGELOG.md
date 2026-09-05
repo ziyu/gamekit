@@ -1,5 +1,18 @@
 # @gamekit/gas
 
+## 0.1.0-alpha.6
+
+### Patch Changes
+
+- 16bf100: Add a bounded, entity-backed ability execution lifecycle with phase policies, request deduplication, cancellation, TCA integration, trace correlation, and checkpoint restoration while preserving instant ability compatibility.
+  - @gamekit/core@0.1.0-alpha.6
+  - @gamekit/event-bus@0.1.0-alpha.6
+  - @gamekit/world@0.1.0-alpha.6
+  - @gamekit/game-runtime@0.1.0-alpha.6
+  - @gamekit/data@0.1.0-alpha.6
+  - @gamekit/tca@0.1.0-alpha.6
+  - @gamekit/save@0.1.0-alpha.6
+
 ## 0.1.0-alpha.5
 
 ### Patch Changes

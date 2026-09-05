@@ -2,10 +2,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertLockstepWorkspaceState } from "./release-workspace-state.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const coreManifest = JSON.parse(readFileSync(join(root, "packages/core/package.json"), "utf8"));
 const version = process.env.GAMEKITS_RELEASE_VERSION ?? coreManifest.version;
+assertLockstepWorkspaceState({ releaseVersion: version, root });
 const distTag = process.env.GAMEKITS_NPM_TAG ?? inferDistTag(version);
 const tagName = process.env.GAMEKITS_GIT_TAG ?? `v${version}`;
 const releaseName = process.env.GAMEKITS_GITHUB_RELEASE_NAME ?? `GameKits ${version}`;

@@ -34,7 +34,19 @@
       "@gamekit/driver-three",
       "@gamekit/app-host",
       "@gamekit/react-ui",
-      "@gamekit/devtools-ui"
+      "@gamekit/devtools-ui",
+      "@gamekit/multiplayer-core",
+      "@gamekit/multiplayer-memory",
+      "@gamekit/multiplayer-colyseus",
+      "@gamekit/combat",
+      "@gamekit/ai-core",
+      "@gamekit/animator-core",
+      "@gamekit/audio-core",
+      "@gamekit/navigation-core",
+      "@gamekit/navigation-graph",
+      "@gamekit/navigation-grid",
+      "@gamekit/navigation-navmesh",
+      "@gamekit/navigation-recast"
     ]
   ],
   "ignore": ["@gamekit/platform-tauri", "abyss-delve", "sandbox"],
