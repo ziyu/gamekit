@@ -1,7 +1,7 @@
 import {
-  createMultiplayerPredictedSpawnRegistry,
-  type MultiplayerPredictedSpawnRegistry
-} from "@gamekit/multiplayer-core";
+  createStandardMultiplayerPhysicsPredictionDomain,
+  type StandardMultiplayerPhysicsPredictionDomain
+} from "@gamekit/app-host";
 import {
   createPhysicsPredictionIsland,
   type PhysicsBackendAdapter,
@@ -61,11 +61,8 @@ export type MultiplayerPhysicsProjectileDiagnostics = {
   owner: ReturnType<PhysicsPredictionIsland["diagnostics"]>;
   authority: ReturnType<PhysicsPredictionIsland["diagnostics"]>;
   predictedSpawns: ReturnType<
-    MultiplayerPredictedSpawnRegistry<
-      PhysicsPredictionIslandMemberDefinition,
-      PhysicsPredictionIslandMemberState
-    >["diagnostics"]
-  >;
+    StandardMultiplayerPhysicsPredictionDomain["diagnostics"]
+  >["lifecycle"]["spawns"];
   ownerContacts: number;
   authorityContacts: number;
   deferredSnapshots: number;
@@ -141,23 +138,28 @@ export function createMultiplayerPhysicsProjectileRuntime(options: {
   let remoteSnapshots = 0;
   const shots = new Map<string, PhysicalShot>();
   const projectileByCollider = new Map<string, string>();
+  const shotByMemberId = new Map<string, PhysicalShot>();
   const targetByCollider = new Map(
     MULTIPLAYER_PROJECTILE_TARGETS.map((target) => [targetColliderId(target.id), target.id])
   );
   const matchStatusByCorrelation = new Map<string, string>();
-  const matchedAuthoritySpawns = new Set<string>();
   const ownerIsland = createIsland("owner", generation, options.tick);
   const authorityIsland = createIsland("authority", generation, options.tick);
-  const spawnRegistry = createMultiplayerPredictedSpawnRegistry<
-    PhysicsPredictionIslandMemberDefinition,
-    PhysicsPredictionIslandMemberState
-  >({
+  const predictionDomain = createStandardMultiplayerPhysicsPredictionDomain({
+    kind: "physics-projectile",
     generation,
+    stepMs: FIXED_DELTA_MS,
+    island: ownerIsland,
     maxPending: 64,
     maxResolved: 128,
     maxAgeTicks: 300,
-    clonePredicted: cloneMember,
-    cloneAuthority: cloneMemberState
+    maxBindings: 128,
+    resolveAuthoritySpawn(member) {
+      const shot = shotByMemberId.get(member.id);
+      return shot === undefined
+        ? undefined
+        : { correlationId: shot.correlationId, tick: shot.spawnTick };
+    }
   });
 
   return {
@@ -202,13 +204,10 @@ export function createMultiplayerPhysicsProjectileRuntime(options: {
       };
       queueShot(ownerIsland, command, member);
       rememberShot(command, member);
-      spawnRegistry.register({
-        kind: "physics-projectile",
+      predictionDomain.registerPredicted({
         correlationId: command.correlationId,
-        generation,
-        localId: member.id,
         tick: spawnTick,
-        value: member
+        member
       });
       matchStatusByCorrelation.set(command.correlationId, "predicted");
       return cloneFireCommand(command);
@@ -245,7 +244,7 @@ export function createMultiplayerPhysicsProjectileRuntime(options: {
       ownerContacts += classifyContacts(ownerAdvance.contacts).length;
       const contacts = classifyContacts(authorityAdvance.contacts);
       authorityContacts += contacts.length;
-      spawnRegistry.expire(tick);
+      predictionDomain.expire(tick);
       let hasActiveShot = false;
       for (const shot of shots.values()) {
         if (tick >= shot.spawnTick && tick < shot.despawnTick) {
@@ -265,8 +264,11 @@ export function createMultiplayerPhysicsProjectileRuntime(options: {
         deferredSnapshots += 1;
         return "deferred";
       }
-      matchAuthoritySpawns(snapshot);
-      const reconciliation = ownerIsland.reconcile(snapshot);
+      const managed = predictionDomain.reconcile(snapshot);
+      for (const match of managed.lifecycle.matches) {
+        matchStatusByCorrelation.set(match.binding.correlationId, match.match.status);
+      }
+      const reconciliation = managed.reconciliation;
       latestReconciliation = {
         ...reconciliation,
         authorityTick: snapshot.tick
@@ -306,9 +308,9 @@ export function createMultiplayerPhysicsProjectileRuntime(options: {
         return;
       }
       shots.delete(correlationId);
+      shotByMemberId.delete(shot.memberId);
       projectileByCollider.delete(shot.colliderId);
       matchStatusByCorrelation.delete(correlationId);
-      matchedAuthoritySpawns.delete(correlationId);
     },
     targetPosition(targetId, view) {
       const memberId = targetMemberId(targetId);
@@ -330,12 +332,11 @@ export function createMultiplayerPhysicsProjectileRuntime(options: {
       deferredSnapshots = 0;
       remoteSnapshots = 0;
       shots.clear();
+      shotByMemberId.clear();
       projectileByCollider.clear();
       matchStatusByCorrelation.clear();
-      matchedAuthoritySpawns.clear();
-      ownerIsland.reset(generation, tick);
+      predictionDomain.reset(generation, tick);
       authorityIsland.reset(generation, tick);
-      spawnRegistry.reset(generation);
       if (faultInjection) {
         commandSequence += 1;
         authorityIsland.queue({
@@ -351,7 +352,7 @@ export function createMultiplayerPhysicsProjectileRuntime(options: {
       return {
         owner: ownerIsland.diagnostics(),
         authority: authorityIsland.diagnostics(),
-        predictedSpawns: spawnRegistry.diagnostics(),
+        predictedSpawns: predictionDomain.diagnostics().lifecycle.spawns,
         ownerContacts,
         authorityContacts,
         deferredSnapshots,
@@ -363,12 +364,11 @@ export function createMultiplayerPhysicsProjectileRuntime(options: {
     },
     dispose() {
       shots.clear();
+      shotByMemberId.clear();
       projectileByCollider.clear();
       matchStatusByCorrelation.clear();
-      matchedAuthoritySpawns.clear();
       remoteSnapshot = undefined;
-      spawnRegistry.dispose();
-      ownerIsland.dispose();
+      predictionDomain.dispose();
       authorityIsland.dispose();
     }
   };
@@ -454,14 +454,16 @@ export function createMultiplayerPhysicsProjectileRuntime(options: {
     if (colliderId === undefined) {
       throw new Error(`Physics projectile is missing its collider: ${command.correlationId}`);
     }
-    shots.set(command.correlationId, {
+    const shot = {
       correlationId: command.correlationId,
       memberId: member.id,
       colliderId,
       targetId: command.targetId,
       spawnTick: command.spawnTick,
       despawnTick: command.despawnTick
-    });
+    };
+    shots.set(command.correlationId, shot);
+    shotByMemberId.set(member.id, shot);
     projectileByCollider.set(colliderId, command.correlationId);
   }
 
@@ -497,28 +499,6 @@ export function createMultiplayerPhysicsProjectileRuntime(options: {
       }
     }
     return facts;
-  }
-
-  function matchAuthoritySpawns(snapshot: PhysicsPredictionIslandStateSnapshot): void {
-    for (const shot of shots.values()) {
-      if (matchedAuthoritySpawns.has(shot.correlationId)) {
-        continue;
-      }
-      const authorityMember = snapshot.members.find((member) => member.id === shot.memberId);
-      if (authorityMember === undefined) {
-        continue;
-      }
-      const match = spawnRegistry.match({
-        kind: "physics-projectile",
-        correlationId: shot.correlationId,
-        generation,
-        authorityId: shot.memberId,
-        tick: shot.spawnTick,
-        value: authorityMember
-      });
-      matchStatusByCorrelation.set(shot.correlationId, match.status);
-      matchedAuthoritySpawns.add(shot.correlationId);
-    }
   }
 
   function findRemoteMember(memberId: string): PhysicsBodyState | undefined {
@@ -650,12 +630,6 @@ function cloneFireCommand(
     firePosition: { ...command.firePosition },
     fireVelocity: { ...command.fireVelocity }
   };
-}
-
-function cloneMember(
-  member: PhysicsPredictionIslandMemberDefinition
-): PhysicsPredictionIslandMemberDefinition {
-  return structuredClone(member);
 }
 
 function cloneMemberState(

@@ -8,10 +8,7 @@ import {
 } from "@gamekit/combat";
 import { createStandardCombatKinematicProjectilePresentationTransition } from "@gamekit/app-host";
 import type { DataRegistry } from "@gamekit/data";
-import {
-  createMultiplayerAuthorityTimeline,
-  createMultiplayerPredictedSpawnRegistry
-} from "@gamekit/multiplayer-core";
+import { createMultiplayerPredictedLifecycleDomain } from "@gamekit/multiplayer-core";
 import {
   createPhysicsLayoutDefinitions,
   raycast as raycastPhysicsScene,
@@ -87,11 +84,6 @@ type ActorProxy = {
   colliderIds: string[];
 };
 
-type ProjectileSpawnBinding = {
-  authorityProjectileId: string;
-  predictedProjectileId?: string | undefined;
-};
-
 const UNBOUND_GENERATION = "outpost.unbound";
 const OUTPOST_PROJECTILE_SPAWN_KIND = "combat.kinematic-projectile";
 const LOCAL_FIRE_POSITION_TOLERANCE = 32;
@@ -117,22 +109,6 @@ export function createOutpostClientProjectilePrediction(options: {
   };
   const actorProxies = new Map<string, ActorProxy>();
   const actorIdByColliderId = new Map<string, string>();
-  const predictedIdByCorrelation = new Map<string, string>();
-  const spawnBindings = new Map<string, ProjectileSpawnBinding>();
-  const authorityTimeline = createMultiplayerAuthorityTimeline({
-    stepMs: OUTPOST_PROJECTILE_FIXED_DELTA_MS
-  });
-  const spawnRegistry = createMultiplayerPredictedSpawnRegistry<
-    CombatKinematicProjectileRecord,
-    CombatKinematicProjectileRecord
-  >({
-    generation: UNBOUND_GENERATION,
-    maxPending: 16,
-    maxResolved: OUTPOST_PROJECTILE_RECORD_LIMIT,
-    maxAgeTicks: Math.ceil(1_000 / OUTPOST_PROJECTILE_FIXED_DELTA_MS),
-    clonePredicted: cloneCombatKinematicProjectileRecord,
-    cloneAuthority: cloneCombatKinematicProjectileRecord
-  });
   const presentationTransition = createStandardCombatKinematicProjectilePresentationTransition({
     reconciliation: {
       timeline: "shot-relative",
@@ -178,7 +154,39 @@ export function createOutpostClientProjectilePrediction(options: {
           };
     }
   });
-  let generation = UNBOUND_GENERATION;
+  const lifecycle = createMultiplayerPredictedLifecycleDomain<
+    CombatKinematicProjectileRecord,
+    CombatKinematicProjectileRecord
+  >({
+    kind: OUTPOST_PROJECTILE_SPAWN_KIND,
+    generation: UNBOUND_GENERATION,
+    stepMs: OUTPOST_PROJECTILE_FIXED_DELTA_MS,
+    maxPending: 16,
+    maxResolved: OUTPOST_PROJECTILE_RECORD_LIMIT,
+    maxAgeTicks: Math.ceil(1_000 / OUTPOST_PROJECTILE_FIXED_DELTA_MS),
+    maxBindings: OUTPOST_PROJECTILE_RECORD_LIMIT,
+    clonePredicted: cloneCombatKinematicProjectileRecord,
+    cloneAuthority: cloneCombatKinematicProjectileRecord,
+    hooks: {
+      onPredictionRemoved({ prediction, reason, atTick, detail }) {
+        localRuntime.cancel(
+          prediction.localId,
+          atTick,
+          reason === "expired" ? "prediction-timeout" : (detail ?? reason)
+        );
+        presentationTransition.remove(prediction.generation, prediction.correlationId);
+      },
+      onBindingRemoved({ binding }) {
+        presentationTransition.remove(binding.generation, binding.correlationId);
+      },
+      onReset({ generation }) {
+        const nextGeneration = String(generation);
+        localRuntime.reset(nextGeneration);
+        authorityRecords.reset(nextGeneration);
+        presentationTransition.reset();
+      }
+    }
+  });
   let disposed = false;
 
   return {
@@ -187,35 +195,31 @@ export function createOutpostClientProjectilePrediction(options: {
       if (frame === undefined) {
         return;
       }
-      if (frame.generation !== generation) {
-        generation = frame.generation;
-        localRuntime.reset(generation);
-        authorityRecords.reset(generation);
-        authorityTimeline.reset();
-        spawnRegistry.reset(generation);
-        presentationTransition.reset();
-        predictedIdByCorrelation.clear();
-        spawnBindings.clear();
-      }
-      authorityTimeline.sync(frame.authorityElapsedMs, elapsed);
+      const records = frame.records.filter(
+        (record) => String(record.generation) === frame.generation
+      );
+      lifecycle.sync({
+        generation: frame.generation,
+        authorityTime: frame.authorityElapsedMs,
+        localTime: elapsed,
+        authoritySpawns: records.map((record) => ({
+          correlationId: record.correlationId,
+          authorityId: record.projectileId,
+          tick: record.fireTick,
+          value: record
+        }))
+      });
       syncActorProxies(frame.actors);
       scene.step(0);
-      authorityRecords.reset(generation);
-      const authorityRecordIds = new Set<string>();
-      for (const record of frame.records) {
-        if (String(record.generation) === generation) {
-          authorityRecordIds.add(record.projectileId);
-          authorityRecords.upsert(record);
-          matchAuthoritySpawn(record);
-        }
+      authorityRecords.reset(frame.generation);
+      for (const record of records) {
+        authorityRecords.upsert(record);
       }
-      pruneSpawnBindings(authorityRecordIds);
-      expirePredictedSpawns(authorityTimelineTick(elapsed));
-      prunePredictedCorrelationIds();
-      localRuntime.advanceTo(authorityTimelineTick(elapsed));
+      localRuntime.advanceTo(lifecycle.authorityTick(elapsed));
     },
     anticipate(input) {
       assertActive();
+      const generation = String(lifecycle.generation());
       if (generation === UNBOUND_GENERATION) {
         return undefined;
       }
@@ -238,7 +242,7 @@ export function createOutpostClientProjectilePrediction(options: {
         generation,
         definitionId: OUTPOST_RIFLE_PROJECTILE_DEFINITION_ID,
         definitionVersion: OUTPOST_RIFLE_PROJECTILE_DEFINITION_VERSION,
-        fireTick: authorityTimelineTick(input.elapsed),
+        fireTick: lifecycle.authorityTick(input.elapsed),
         firePosition: origin,
         fireVelocity: {
           x: direction.x * (projectile.speed ?? 0),
@@ -246,40 +250,18 @@ export function createOutpostClientProjectilePrediction(options: {
         }
       });
       if (result.record !== undefined) {
-        const registered = spawnRegistry.register({
-          kind: OUTPOST_PROJECTILE_SPAWN_KIND,
+        lifecycle.register({
           correlationId: input.correlationId,
-          generation,
           localId: projectileId,
           tick: result.record.fireTick,
           value: result.record
         });
-        if (registered.status === "registered" || registered.status === "duplicate") {
-          predictedIdByCorrelation.delete(input.correlationId);
-          predictedIdByCorrelation.set(input.correlationId, projectileId);
-          trimCorrelationMap(predictedIdByCorrelation);
-        }
-        if (registered.evicted !== undefined) {
-          predictedIdByCorrelation.delete(registered.evicted.correlationId);
-          localRuntime.cancel(
-            registered.evicted.localId,
-            authorityTimelineTick(input.elapsed),
-            "prediction-capacity"
-          );
-        }
       }
       return result.record;
     },
     cancel(correlationId, elapsed, reason = "rejected") {
       assertActive();
-      spawnRegistry.reject(
-        { kind: OUTPOST_PROJECTILE_SPAWN_KIND, correlationId, generation },
-        reason
-      );
-      const projectileId = predictedIdByCorrelation.get(correlationId);
-      if (projectileId !== undefined) {
-        localRuntime.cancel(projectileId, authorityTimelineTick(elapsed), reason);
-      }
+      lifecycle.reject(correlationId, lifecycle.authorityTick(elapsed), reason);
     },
     sample(projectileId, elapsed) {
       assertActive();
@@ -300,31 +282,23 @@ export function createOutpostClientProjectilePrediction(options: {
       if (direct !== undefined) {
         return direct;
       }
-      for (const [correlationId, predictedId] of predictedIdByCorrelation) {
-        if (predictedId === projectileId) {
-          return correlationId;
-        }
-      }
-      return undefined;
+      return lifecycle.correlationId(projectileId);
     },
     hasLocalPrediction(projectileId) {
       assertActive();
       if (localRuntime.getRecord(projectileId) !== undefined) {
         return true;
       }
-      const correlationId = authorityRecords.get(projectileId)?.correlationId;
-      return (
-        correlationId !== undefined &&
-        localRuntime.getRecord(predictedIdByCorrelation.get(correlationId) ?? "") !== undefined
-      );
+      const local = lifecycle.localIdentity(projectileId);
+      return local !== undefined && localRuntime.getRecord(local.localId) !== undefined;
     },
     diagnostics() {
       assertActive();
-      const timelineDiagnostics = authorityTimeline.diagnostics();
+      const lifecycleDiagnostics = lifecycle.diagnostics();
       const transitionDiagnostics = presentationTransition.diagnostics();
       return {
-        authorityTick: timelineDiagnostics.authorityTick,
-        preventedTimelineRewinds: timelineDiagnostics.preventedRewinds,
+        authorityTick: lifecycleDiagnostics.timeline.authorityTick,
+        preventedTimelineRewinds: lifecycleDiagnostics.timeline.preventedRewinds,
         acceptedAuthorityTimelines: transitionDiagnostics.confirmedTrajectories,
         correctedTrajectories: transitionDiagnostics.correctedTrajectories,
         activeCorrections: transitionDiagnostics.activeCorrections,
@@ -343,17 +317,11 @@ export function createOutpostClientProjectilePrediction(options: {
       }
       localRuntime.dispose();
       authorityRecords.dispose();
-      spawnRegistry.dispose();
+      lifecycle.dispose();
       presentationTransition.dispose();
-      predictedIdByCorrelation.clear();
-      spawnBindings.clear();
       scene.dispose();
     }
   };
-
-  function authorityTimelineTick(elapsed: number): number {
-    return authorityTimeline.tick(elapsed);
-  }
 
   function sampleProjectile(
     projectileId: string,
@@ -361,19 +329,19 @@ export function createOutpostClientProjectilePrediction(options: {
   ): CombatKinematicProjectileSample | undefined {
     let predicted = localRuntime.getRecord(projectileId);
     let authoritative = authorityRecords.get(projectileId);
-    const correlationId = predicted?.correlationId ?? authoritative?.correlationId;
+    const correlationId =
+      predicted?.correlationId ??
+      authoritative?.correlationId ??
+      lifecycle.correlationId(projectileId);
     if (correlationId !== undefined) {
-      const binding = spawnBindings.get(correlationId);
-      predicted ??= localRuntime.getRecord(
-        binding?.predictedProjectileId ??
-          predictedIdByCorrelation.get(correlationId) ??
-          projectileId
-      );
-      authoritative ??= authorityRecords.get(binding?.authorityProjectileId ?? projectileId);
+      const binding = lifecycle.binding(correlationId);
+      const local = lifecycle.localIdentity(correlationId);
+      predicted ??= localRuntime.getRecord(binding?.localId ?? local?.localId ?? projectileId);
+      authoritative ??= authorityRecords.get(binding?.authorityId ?? projectileId);
     }
     const presentationTick = Math.max(
       0,
-      authorityTimeline.sampleTick(elapsed) -
+      lifecycle.authoritySampleTick(elapsed) -
         (predicted === undefined
           ? REMOTE_PROJECTILE_PRESENTATION_DELAY_MS / OUTPOST_PROJECTILE_FIXED_DELTA_MS
           : 0)
@@ -384,62 +352,6 @@ export function createOutpostClientProjectilePrediction(options: {
       authorityTick: presentationTick,
       elapsedMs: elapsed
     });
-  }
-
-  function matchAuthoritySpawn(record: CombatKinematicProjectileRecord): void {
-    const existing = spawnBindings.get(record.correlationId);
-    if (existing?.authorityProjectileId === record.projectileId) {
-      return;
-    }
-    if (existing !== undefined) {
-      presentationTransition.remove(generation, record.correlationId);
-    }
-    const match = spawnRegistry.match({
-      kind: OUTPOST_PROJECTILE_SPAWN_KIND,
-      correlationId: record.correlationId,
-      generation,
-      authorityId: record.projectileId,
-      tick: record.fireTick,
-      value: record
-    });
-    if (match.status === "stale-generation") {
-      return;
-    }
-    const predictedProjectileId =
-      match.predicted?.localId ?? predictedIdByCorrelation.get(record.correlationId);
-    spawnBindings.delete(record.correlationId);
-    spawnBindings.set(record.correlationId, {
-      authorityProjectileId: record.projectileId,
-      ...(predictedProjectileId === undefined ? {} : { predictedProjectileId })
-    });
-    trimCorrelationMap(spawnBindings);
-  }
-
-  function pruneSpawnBindings(authorityRecordIds: ReadonlySet<string>): void {
-    for (const [correlationId, binding] of spawnBindings) {
-      if (!authorityRecordIds.has(binding.authorityProjectileId)) {
-        spawnBindings.delete(correlationId);
-        presentationTransition.remove(generation, correlationId);
-      }
-    }
-    trimCorrelationMap(spawnBindings);
-  }
-
-  function expirePredictedSpawns(tick: number): void {
-    for (const expired of spawnRegistry.expire(tick)) {
-      predictedIdByCorrelation.delete(expired.correlationId);
-      localRuntime.cancel(expired.localId, tick, "prediction-timeout");
-      presentationTransition.remove(generation, expired.correlationId);
-    }
-  }
-
-  function prunePredictedCorrelationIds(): void {
-    for (const [correlationId, projectileId] of predictedIdByCorrelation) {
-      if (localRuntime.getRecord(projectileId) === undefined) {
-        predictedIdByCorrelation.delete(correlationId);
-      }
-    }
-    trimCorrelationMap(predictedIdByCorrelation);
   }
 
   function syncActorProxies(actors: readonly OutpostReplicatedActor[]): void {
@@ -599,14 +511,4 @@ function normalizedDirection(vector: {
 
 function safeId(value: string): string {
   return value.replace(/[^a-zA-Z0-9_.-]/g, "_");
-}
-
-function trimCorrelationMap<TValue>(values: Map<string, TValue>): void {
-  while (values.size > OUTPOST_PROJECTILE_RECORD_LIMIT) {
-    const oldest = values.keys().next().value as string | undefined;
-    if (oldest === undefined) {
-      return;
-    }
-    values.delete(oldest);
-  }
 }

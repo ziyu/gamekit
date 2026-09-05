@@ -2,6 +2,13 @@ import { createMultiplayerAuthorityBindingStore } from "./authority-binding";
 import { createBoundedQueue } from "./bounded-queue";
 import { createMultiplayerError, multiplayerErrorCodes } from "./errors";
 import {
+  createMultiplayerFixedStepInputInbox,
+  type MultiplayerFixedStepInputGapPolicy,
+  type MultiplayerFixedStepInputGeneration,
+  type MultiplayerFixedStepInputInbox,
+  type MultiplayerFixedStepInputInboxDiagnostics
+} from "./fixed-step-input";
+import {
   MULTIPLAYER_ACTION_KIND,
   MULTIPLAYER_AUTHORITY_CHANNEL,
   MULTIPLAYER_INPUT_KIND,
@@ -32,9 +39,30 @@ type QueuedAction<TAction> = QueuedPayload<TAction> & {
 
 type QueuedInput<TInput> = QueuedPayload<TInput> & {
   sourceKey: string;
+  fixedStepSequence?: number | undefined;
 };
 
 export type MultiplayerAuthorityInputQueueMode = "fifo" | "latest";
+
+export type MultiplayerAuthorityInputDeliveryOptions<TInput> =
+  | { mode: "single" }
+  | {
+      mode: "redundant-bundle";
+      maxSources?: number | undefined;
+      maxBufferedFramesPerSource?: number | undefined;
+      maxGapTicks?: number | undefined;
+      gapPolicy?: MultiplayerFixedStepInputGapPolicy | undefined;
+      cloneInput?(input: TInput): TInput;
+      neutralInput?(context: {
+        sourceId: string;
+        generation: MultiplayerFixedStepInputGeneration;
+        sequence: number;
+      }): TInput;
+      generation?(
+        message: MultiplayerMessageEnvelope,
+        binding: MultiplayerAuthorityBinding
+      ): MultiplayerFixedStepInputGeneration;
+    };
 
 export type MultiplayerAuthorityHostLoopOptions<TAction, TInput, TSnapshot> = {
   runtime: MultiplayerRuntime;
@@ -44,6 +72,7 @@ export type MultiplayerAuthorityHostLoopOptions<TAction, TInput, TSnapshot> = {
   inputKind?: string;
   snapshotKind?: string;
   snapshotVersion?: string;
+  snapshotIntervalTicks?: number;
   readAction?(payload: unknown, message: MultiplayerMessageEnvelope): TAction | undefined;
   readInput?(payload: unknown, message: MultiplayerMessageEnvelope): TInput | undefined;
   inputSequence?(input: TInput, message: MultiplayerMessageEnvelope): number | undefined;
@@ -52,6 +81,7 @@ export type MultiplayerAuthorityHostLoopOptions<TAction, TInput, TSnapshot> = {
   maxQueuedActionsPerSource?: number;
   maxQueuedActions?: number;
   inputQueueMode?: MultiplayerAuthorityInputQueueMode;
+  inputDelivery?: MultiplayerAuthorityInputDeliveryOptions<TInput> | undefined;
   maxInputsPerSourcePerTick?: number;
   maxQueuedInputsPerSource?: number;
   maxQueuedInputs?: number;
@@ -93,6 +123,7 @@ export type MultiplayerAuthorityLoopDiagnostics = {
   rejectedMessages: number;
   lastRejected?: MultiplayerAuthorityRejectedPayload;
   lastBroadcastError?: string;
+  fixedStepInput?: MultiplayerFixedStepInputInboxDiagnostics | undefined;
 };
 
 export type MultiplayerAuthorityHostLoop = {
@@ -137,6 +168,7 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
   const actionKind = options.actionKind ?? MULTIPLAYER_ACTION_KIND;
   const inputKind = options.inputKind ?? MULTIPLAYER_INPUT_KIND;
   const snapshotKind = options.snapshotKind ?? MULTIPLAYER_SNAPSHOT_KIND;
+  const snapshotIntervalTicks = normalizeSnapshotIntervalTicks(options.snapshotIntervalTicks);
   const maxActionsPerSourcePerTick = normalizePerSourceLimit(options.maxActionsPerSourcePerTick, 8);
   const maxQueuedActionsPerSource = normalizeQueueLimit(
     options.maxQueuedActionsPerSource,
@@ -167,6 +199,18 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
   let activeFrame: MultiplayerAuthorityTickContext | undefined;
   let publishChain: Promise<void> = Promise.resolve();
   let disposed = false;
+  if (options.inputDelivery?.mode === "redundant-bundle" && inputQueueMode !== "fifo") {
+    throw new Error("Redundant fixed-step input delivery requires fifo authority input order.");
+  }
+  const bundledInputInbox = createBundledInputInbox(
+    options.inputDelivery,
+    maxQueuedInputs,
+    maxQueuedInputsPerSource
+  );
+  const bundledInputSources = new Map<
+    string,
+    { message: MultiplayerMessageEnvelope; generation: MultiplayerFixedStepInputGeneration }
+  >();
 
   const unsubscribe = options.runtime.subscribe((message) => {
     if (message.kind === actionKind) {
@@ -225,6 +269,33 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       return;
     }
 
+    if (bundledInputInbox !== undefined && options.inputDelivery?.mode === "redundant-bundle") {
+      const generation =
+        options.inputDelivery.generation?.(message, options.binding.current()) ??
+        options.binding.current().sessionId;
+      const result = bundledInputInbox.ingest({
+        sourceId: message.sourcePeerId,
+        generation,
+        bundle: message.payload,
+        decode(payload) {
+          return options.readInput ? options.readInput(payload, message) : (payload as TInput);
+        }
+      });
+      if (result.status !== "accepted" || result.rejected > 0) {
+        rejectMessage(
+          message,
+          result.status === "source-capacity" ? "input-source-capacity" : "invalid-input-bundle",
+          "Fixed-step input bundle could not be accepted."
+        );
+        diagnostics.rejectedInputs += 1;
+      }
+      if (result.status === "accepted") {
+        bundledInputSources.set(message.sourcePeerId, { message, generation });
+      }
+      refreshQueueDiagnostics();
+      return;
+    }
+
     const payload = options.readInput
       ? options.readInput(message.payload, message)
       : (message.payload as TInput);
@@ -234,6 +305,14 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       return;
     }
 
+    enqueueDecodedInput(message, payload);
+  }
+
+  function enqueueDecodedInput(
+    message: MultiplayerMessageEnvelope,
+    payload: TInput,
+    fixedStepSequence?: number
+  ): void {
     const sourceKey = options.inputSequenceKey?.(payload, message) ?? message.sourcePeerId;
     const queuedLatest = latestQueuedInputBySource.get(sourceKey);
     if (inputQueueMode === "latest" && queuedLatest !== undefined) {
@@ -257,7 +336,12 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       return;
     }
 
-    const entry = { message, payload, sourceKey };
+    const entry = {
+      message,
+      payload,
+      sourceKey,
+      ...(fixedStepSequence === undefined ? {} : { fixedStepSequence })
+    };
     if (!inputQueue.enqueue(entry)) {
       rejectMessage(message, "input-queue-full", "Input queue is full for this room.");
       diagnostics.rejectedInputs += 1;
@@ -310,7 +394,11 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
   }
 
   function processInput(entry: QueuedInput<TInput>): void {
-    const sequenceDecision = acceptsInputSequence(entry.payload, entry.message);
+    const sequenceDecision = acceptsInputSequence(
+      entry.payload,
+      entry.message,
+      entry.fixedStepSequence
+    );
     if (!sequenceDecision.allowed) {
       rejectMessage(entry.message, sequenceDecision.code, sequenceDecision.reason);
       diagnostics.rejectedInputs += 1;
@@ -335,6 +423,7 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
   }
 
   function processQueuedInputs(): void {
+    processBundledInputs();
     if (!Number.isFinite(maxInputsPerSourcePerTick)) {
       while (inputQueue.length > 0) {
         const entry = inputQueue.dequeue();
@@ -365,6 +454,31 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       processedBySource.set(sourceKey, processed + 1);
     }
     refreshQueueDiagnostics();
+  }
+
+  function processBundledInputs(): void {
+    if (bundledInputInbox === undefined) {
+      return;
+    }
+    const perSourceLimit = Number.isFinite(maxInputsPerSourcePerTick)
+      ? maxInputsPerSourcePerTick
+      : maxQueuedInputsPerSource;
+    for (const [sourceId, source] of bundledInputSources) {
+      for (let index = 0; index < perSourceLimit; index += 1) {
+        const result = bundledInputInbox.consume({ sourceId, generation: source.generation });
+        if (result.status !== "input" && result.status !== "gap-filled") {
+          break;
+        }
+        const message: MultiplayerMessageEnvelope = {
+          ...source.message,
+          payload: result.frame.payload,
+          sequence: result.frame.sequence,
+          ...(result.frame.tick === undefined ? {} : { tick: result.frame.tick }),
+          ...(result.frame.timestamp === undefined ? {} : { timestamp: result.frame.timestamp })
+        };
+        enqueueDecodedInput(message, result.frame.payload, result.frame.sequence);
+      }
+    }
   }
 
   function acceptsQueuedInputReplacement(
@@ -402,15 +516,26 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
   function refreshQueueDiagnostics(): void {
     diagnostics.queuedActions = actionQueue.length;
     diagnostics.maxQueuedActions = Math.max(diagnostics.maxQueuedActions, actionQueue.length);
-    diagnostics.queuedInputs = inputQueue.length;
+    const fixedStepInput = bundledInputInbox?.diagnostics();
+    diagnostics.queuedInputs = inputQueue.length + (fixedStepInput?.queuedFrames ?? 0);
     diagnostics.maxQueuedInputs = Math.max(diagnostics.maxQueuedInputs, inputQueue.length);
+    if (fixedStepInput === undefined) {
+      delete diagnostics.fixedStepInput;
+    } else {
+      diagnostics.fixedStepInput = fixedStepInput;
+      diagnostics.maxQueuedInputs = Math.max(
+        diagnostics.maxQueuedInputs,
+        inputQueue.length + fixedStepInput.queuedFrames
+      );
+    }
   }
 
   function acceptsInputSequence(
     input: TInput,
-    message: MultiplayerMessageEnvelope
+    message: MultiplayerMessageEnvelope,
+    fixedStepSequence?: number
   ): MultiplayerAuthorityDecision {
-    const sequence = options.inputSequence?.(input, message);
+    const sequence = fixedStepSequence ?? options.inputSequence?.(input, message);
     if (sequence === undefined) {
       return { allowed: true };
     }
@@ -468,6 +593,8 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       }
     }
     inputSequenceKeysByPeerId.delete(peerId);
+    bundledInputInbox?.release(peerId);
+    bundledInputSources.delete(peerId);
     refreshQueueDiagnostics();
   }
 
@@ -593,6 +720,10 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       binding: options.binding.current(),
       tick: frame.tick
     };
+    if (frame.tick % snapshotIntervalTicks !== 0) {
+      diagnostics.committedTicks += 1;
+      return Promise.resolve();
+    }
     let payload: TSnapshot;
     try {
       payload = captureSnapshot(context);
@@ -631,9 +762,37 @@ export function createMultiplayerAuthorityHostLoop<TAction, TInput, TSnapshot>(
       inputSequences.clear();
       inputSequenceKeysByPeerId.clear();
       inputSequencePeerIdsByKey.clear();
+      bundledInputInbox?.dispose();
+      bundledInputSources.clear();
       refreshQueueDiagnostics();
     }
   };
+}
+
+function createBundledInputInbox<TInput>(
+  delivery: MultiplayerAuthorityInputDeliveryOptions<TInput> | undefined,
+  maxQueuedInputs: number,
+  maxQueuedInputsPerSource: number
+): MultiplayerFixedStepInputInbox<TInput> | undefined {
+  if (delivery?.mode !== "redundant-bundle") {
+    return undefined;
+  }
+  const maxBufferedFramesPerSource = Math.min(
+    delivery.maxBufferedFramesPerSource ?? maxQueuedInputsPerSource,
+    maxQueuedInputs
+  );
+  const maxSources = Math.min(
+    delivery.maxSources ?? Math.max(1, Math.floor(maxQueuedInputs / maxBufferedFramesPerSource)),
+    maxQueuedInputs
+  );
+  return createMultiplayerFixedStepInputInbox({
+    maxSources,
+    maxBufferedFramesPerSource,
+    ...(delivery.maxGapTicks === undefined ? {} : { maxGapTicks: delivery.maxGapTicks }),
+    ...(delivery.gapPolicy === undefined ? {} : { gapPolicy: delivery.gapPolicy }),
+    ...(delivery.cloneInput === undefined ? {} : { cloneInput: delivery.cloneInput }),
+    ...(delivery.neutralInput === undefined ? {} : { neutralInput: delivery.neutralInput })
+  });
 }
 
 export function createMultiplayerLocalAuthorityLoop<TAction, TInput, TSnapshot>(
@@ -769,6 +928,14 @@ function normalizeMaxInputsPerSourcePerTick(value: number | undefined): number {
     : Math.max(1, Math.floor(value));
 }
 
+function normalizeSnapshotIntervalTicks(value: number | undefined): number {
+  const resolved = value ?? 1;
+  if (!Number.isSafeInteger(resolved) || resolved <= 0) {
+    throw new RangeError("Authority snapshot interval must be a positive safe integer.");
+  }
+  return resolved;
+}
+
 function normalizePerSourceLimit(value: number | undefined, defaultValue: number): number {
   return value === undefined || !Number.isFinite(value)
     ? defaultValue
@@ -901,7 +1068,10 @@ function cloneDiagnostics(
       : { lastRejected: { ...diagnostics.lastRejected } }),
     ...(diagnostics.lastBroadcastError === undefined
       ? {}
-      : { lastBroadcastError: diagnostics.lastBroadcastError })
+      : { lastBroadcastError: diagnostics.lastBroadcastError }),
+    ...(diagnostics.fixedStepInput === undefined
+      ? {}
+      : { fixedStepInput: { ...diagnostics.fixedStepInput } })
   };
 }
 

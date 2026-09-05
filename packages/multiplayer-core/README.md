@@ -242,6 +242,153 @@ const renderState = prediction.present({
 
 Managed replication normally subscribes to normalized Runtime envelopes. A provider-native mapping can instead configure `snapshotSource`; this source exclusively replaces the default subscription, while Core continues to own authority gating, playback, prediction and reconciliation. The optional `current()` returns the latest full normalized snapshot, allowing Core to recover an initial provider callback that arrived before the Runtime authority binding was ready. Source messages use `sequence` for monotonic provider state versions and `tick` for gameplay simulation time, so multiple provider revisions in one tick remain legal. Ordinary Runtime envelope transport sequence is not interpreted as provider state version. Authority binding or session changes reset the source ordering watermark together with playback and prediction state.
 
+## Typed Replication Schema
+
+When snapshot shape is stable, compile the repeated ingress, identity, ack, state, and presentation declarations into one client binding:
+
+```ts
+const players = defineMultiplayerReplicationEntityPresentation<ArenaSnapshot, PlayerSnapshot>({
+  id: "arena.players",
+  select: (snapshot) => snapshot.players,
+  identity: (player) => player.networkId,
+  generation: (player) => player.generation,
+  fields: [
+    { id: "position", kind: "vector2", read: (player) => player.position },
+    { id: "facing", kind: "angle-radians", read: (player) => player.facing }
+  ]
+});
+
+const schema = defineMultiplayerReplicationSchema<ArenaSnapshot, string, PlayerSnapshot>({
+  id: "arena.snapshot",
+  version: "arena.v2",
+  decode: decodeArenaSnapshot,
+  tick: (snapshot) => snapshot.tick,
+  time: (snapshot) => snapshot.tick * tickMs,
+  presentation: [players],
+  local: {
+    select: (snapshot, playerId) => snapshot.players.find((player) => player.id === playerId),
+    acknowledgedSequence: (snapshot, playerId) => snapshot.inputAcks[playerId]
+  }
+}).bindClient({
+  identity: () => localPlayerId,
+  state: (player) => toPredictedState(player)
+});
+
+createMultiplayerClientReplication({
+  runtime,
+  installContext,
+  options: {
+    schema,
+    prediction: {
+      buffer,
+      readInput,
+      encodeInput
+    },
+    applyFrame
+  }
+});
+```
+
+The app-owned decoder remains the untrusted provider payload boundary. The compiler rejects an explicitly mismatched message schema version, invalid tick, or decoder exception and creates generation-aware, length-framed presentation keys. It does not scan decorators, recursively reflect arbitrary objects, replace Colyseus/Protobuf serializers, or require a `NetworkObject` base class. Low-level callbacks and extra presentation tracks can be combined with the schema for custom netcode.
+
+## Predicted Lifecycle Domains
+
+Event-started objects and predicted entities use `createMultiplayerPredictedLifecycleDomain()` instead of composing a spawn registry and authority timeline in the app:
+
+```ts
+const projectiles = createMultiplayerPredictedLifecycleDomain<ProjectileRecord, ProjectileRecord>({
+  kind: "combat.projectile",
+  generation: "unbound",
+  stepMs: 50,
+  maxPending: 16,
+  maxBindings: 128,
+  hooks: {
+    onPredictionRemoved({ prediction, atTick, reason }) {
+      predictedRuntime.cancel(prediction.localId, atTick, reason);
+    },
+    onReset({ generation }) {
+      predictedRuntime.reset(String(generation));
+    }
+  }
+});
+
+projectiles.register({
+  correlationId: command.correlationId,
+  localId: predictedRecord.projectileId,
+  tick: predictedRecord.fireTick,
+  value: predictedRecord
+});
+
+projectiles.sync({
+  generation: snapshot.generation,
+  authorityTime: snapshot.elapsedMs,
+  localTime: frame.elapsedMs,
+  authoritySpawns: snapshot.projectiles.map((record) => ({
+    correlationId: record.correlationId,
+    authorityId: record.projectileId,
+    tick: record.fireTick,
+    value: record
+  }))
+});
+```
+
+Core owns generation reset, monotonic authority time, predicted/authority identity, matching, rejection, expiry, binding pruning, capacity and diagnostics. The hook boundary only releases domain-specific speculative simulation or presentation state. Combat, Physics and the game still own deterministic trajectory/solver behavior and authoritative gameplay results. Low-level `createMultiplayerPredictedSpawnRegistry()` and `createMultiplayerAuthorityTimeline()` remain available for custom netcode and standard domain implementations.
+
+## Speculative Effects
+
+Replayed simulation must not replay Audio, Camera shake, Renderer objects, UI feedback, or gameplay commits. Use `createMultiplayerSpeculativeEffectJournal()` for reversible local feedback:
+
+```ts
+const effects = createMultiplayerSpeculativeEffectJournal<LocalMuzzleFlash, AuthorityShot>({
+  generation: binding.generation,
+  maxPending: 16,
+  maxResolved: 64,
+  maxAgeTicks: 120,
+  hooks: {
+    onAnticipate: showLocalMuzzleFlash,
+    onConfirm: ({ effect }) => retainMuzzleFlash(effect.effectId),
+    onCancel: ({ effect }) => removeMuzzleFlash(effect.effectId),
+    onReplace: ({ effect, authority }) => replaceMuzzleFlash(effect.effectId, authority)
+  }
+});
+
+effects.anticipate({ effectId: `${command.correlationId}:muzzle`, tick, value: flash });
+effects.resolve({
+  effectId: `${result.correlationId}:muzzle`,
+  generation: result.generation,
+  tick: result.tick,
+  outcome: "confirm",
+  authority: result.shot
+});
+```
+
+The stable effect id suppresses repeated anticipation during rollback replay and settles a result at most once. The journal bounds pending and resolved identities, cancels pending effects on expiry/capacity/reset/dispose, remembers authority results that arrive before local anticipation, isolates hook failures, and exposes diagnostics. Hooks may only manage reversible speculative feedback. Damage, cost, inventory, GAS/TCA transitions, and other authoritative facts remain outside the journal and commit only on authority.
+
+## Multi-Domain Rollback Checkpoints
+
+When one prediction domain must rewind several independently owned state sources, use `createMultiplayerRollbackCoordinator()` with explicit contributors:
+
+```ts
+const rollback = createMultiplayerRollbackCoordinator({
+  generation: binding.generation,
+  maxHistoryTicks: 120,
+  maxCheckpointBytes: 512 * 1024,
+  maxHistoryBytes: 16 * 1024 * 1024,
+  contributors: [
+    worldRollbackContributor,
+    createMultiplayerRngRollbackContributor(game.rng),
+    physicsRollbackContributor
+  ]
+});
+
+rollback.capture(simulationTick);
+const restored = rollback.restore(authorityTick);
+```
+
+Contributors declare stable `id`/`order`, isolated capture data, pre-restore validation, deterministic restore, byte measurement, and a state hash. The coordinator captures all contributors at one generation/tick, enforces per-checkpoint and total-history budgets, restores in stable order only after every validation passes, drops invalid future checkpoints, and exposes the combined hash and diagnostics. A contributor restore exception can still leave a partially restored external runtime; callers must treat `restore-failed` as a hard-correction/rebuild boundary. `createMultiplayerRngRollbackContributor()` uses the seeded RNG's exact captured stream position. World, Physics, GAS, TCA, and app adapters remain owned by their domain/app composition rather than becoming dependencies of Multiplayer Core.
+
+Applications using `@gamekit/app-host` normally call `createStandardMultiplayerRollbackDomain()` instead of assembling the standard contributors themselves. It accepts an explicit World component/entity scope, seeded RNG, Physics handle, optional gameplay contributors, and history/byte budgets, then installs the default World `100` → RNG `150` → Physics `200` order. The lower-level coordinator remains available when a domain has different ownership dependencies.
+
 ## Peer / Player Binding
 
 Use `createMultiplayerPeerPlayerBindingStore()` to bind provider peers to app players, display names, slots and active, spectator, next-round or leave states:

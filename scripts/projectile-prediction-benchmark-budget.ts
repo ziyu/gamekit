@@ -78,6 +78,12 @@ const BUDGETS: Budget[] = [
   {
     suite: "predicted-spawn-matching",
     where: { spawns: 100_000 },
+    metric: "microsecondsPerSpawn",
+    maximum: 40
+  },
+  {
+    suite: "predicted-spawn-matching",
+    where: { spawns: 100_000 },
     metric: "pendingOrderEntries",
     maximum: 16
   },
@@ -86,6 +92,18 @@ const BUDGETS: Budget[] = [
     where: { spawns: 100_000 },
     metric: "resolvedEntries",
     maximum: 2_048
+  },
+  {
+    suite: "predicted-spawn-matching",
+    where: { spawns: 100_000 },
+    metric: "bindings",
+    maximum: 1
+  },
+  {
+    suite: "predicted-spawn-matching",
+    where: { spawns: 100_000 },
+    metric: "localIdentities",
+    maximum: 1
   },
   {
     suite: "physics-island-rollback",
@@ -104,6 +122,12 @@ const BUDGETS: Budget[] = [
     where: { rounds: 20, members: 24, simulatedTicks: 120, rollbackTicks: 30 },
     metric: "maxHistoryEntries",
     maximum: 121
+  },
+  {
+    suite: "physics-island-rollback",
+    where: { rounds: 20, members: 24, simulatedTicks: 120, rollbackTicks: 30 },
+    metric: "hardCorrectionFailures",
+    maximum: 0
   },
   {
     suite: "physics-island-rollback",

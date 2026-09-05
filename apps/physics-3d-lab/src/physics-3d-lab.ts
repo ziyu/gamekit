@@ -1,6 +1,12 @@
 import { createEventBus } from "@gamekit/event-bus";
 import { createGame, type GameRuntime } from "@gamekit/game-runtime";
 import {
+  createCharacterMotorState,
+  type CharacterControlIntent,
+  type CharacterMotorDiagnostics,
+  type CharacterMotorState
+} from "@gamekit/character-controller";
+import {
   PhysicsBodyComponent,
   PhysicsColliderComponent,
   PhysicsTransformComponent,
@@ -26,6 +32,10 @@ import {
 } from "@gamekit/physics-core";
 import type { Rapier3dPhysicsNative } from "@gamekit/physics-rapier3d";
 import { createMemoryWorld } from "./memory-world";
+import {
+  createPhysics3dCharacterIntent,
+  stepPhysics3dCharacter
+} from "./physics-3d-character-controller";
 
 export const PHYSICS_3D_GROUPS = {
   actor: 0b0001,
@@ -38,7 +48,7 @@ export type Physics3dLabShape = "box" | "sphere" | "capsule";
 export type Physics3dLabQueryMode = "point" | "overlap-box" | "overlap-sphere";
 export type Physics3dLabCameraPreset = "overview" | "side" | "probe" | "free";
 export type Physics3dLabGroupPreset = "all" | "actor-only" | "sensor-only";
-export type Physics3dLabRole = "floor" | "drop" | "spinner" | "trigger";
+export type Physics3dLabRole = "floor" | "drop" | "spinner" | "trigger" | "character";
 
 export type Physics3dLabObject = {
   id: string;
@@ -68,6 +78,10 @@ export type Physics3dLabSnapshot = {
   queryHits: PhysicsQueryResult[];
   traces: PhysicsTraceEntry[];
   spinnerQuaternion?: PhysicsQuaternion | undefined;
+  character: {
+    state: CharacterMotorState;
+    diagnostics?: CharacterMotorDiagnostics | undefined;
+  };
   nativeSummary: {
     backend: string;
     bodyCount: number;
@@ -86,6 +100,7 @@ export type Physics3dLab = {
   setGroupPreset(preset: Physics3dLabGroupPreset): Physics3dLabSnapshot;
   setCameraPreset(preset: Physics3dLabCameraPreset): Physics3dLabSnapshot;
   setQueryPoint(point: PhysicsVector): Physics3dLabSnapshot;
+  setCharacterIntent(intent: CharacterControlIntent): void;
   spawnDrop(): Physics3dLabSnapshot;
   snapshot(): Physics3dLabSnapshot;
 };
@@ -115,6 +130,9 @@ export function createPhysics3dLab(
   let contacts: PhysicsContactEvent[] = [];
   let recentContacts: PhysicsContactEvent[] = [];
   let nextDropId = 1;
+  let characterState = createCharacterMotorState();
+  let characterDiagnostics: CharacterMotorDiagnostics | undefined;
+  let characterIntent = neutralCharacterIntent();
   const traceStore = createPhysicsTraceStore({ limit: 90 });
 
   const rebuild = (): void => {
@@ -127,6 +145,9 @@ export function createPhysics3dLab(
     contacts = [];
     recentContacts = [];
     nextDropId = 4;
+    characterState = createCharacterMotorState();
+    characterDiagnostics = undefined;
+    characterIntent = neutralCharacterIntent();
     traceStore.clear();
     flushSceneState();
   };
@@ -160,6 +181,11 @@ export function createPhysics3dLab(
       queryHits,
       traces: traceStore.list().slice(-12),
       spinnerQuaternion,
+      character: {
+        state: structuredClone(characterState),
+        diagnostics:
+          characterDiagnostics === undefined ? undefined : structuredClone(characterDiagnostics)
+      },
       nativeSummary: readNativeSummary(scene)
     };
   };
@@ -170,7 +196,19 @@ export function createPhysics3dLab(
         return captureSnapshot();
       }
       updateSpinner(scene, elapsedMs);
-      const result = scene.step(Math.max(0, Math.min(deltaMs, 100)));
+      const stepDeltaMs = Math.max(0, Math.min(deltaMs, 100));
+      if (stepDeltaMs > 0) {
+        const character = stepPhysics3dCharacter({
+          scene,
+          state: characterState,
+          intent: characterIntent,
+          tick: stepCount + 1,
+          deltaMs: stepDeltaMs
+        });
+        characterState = character.state;
+        characterDiagnostics = character.diagnostics;
+      }
+      const result = scene.step(stepDeltaMs);
       elapsedMs += deltaMs;
       stepCount += 1;
       contacts = result.contacts;
@@ -246,6 +284,9 @@ export function createPhysics3dLab(
       };
       return captureSnapshot();
     },
+    setCharacterIntent(intent) {
+      characterIntent = structuredClone(intent);
+    },
     spawnDrop() {
       records.push(createDrop(scene, nextDropId++, shape));
       flushSceneState();
@@ -287,6 +328,17 @@ function createSceneObjects(
       position: { x: 0, y: -2, z: 0 },
       shape: { type: "box", width: 8, height: 0.35, depth: 6 },
       filter: wallFilter()
+    }),
+    createBodyWithCollider(scene, {
+      id: "character",
+      role: "character",
+      kind: "dynamic",
+      position: { x: -2.6, y: 0.2, z: 1.7 },
+      shape: { type: "capsule", radius: 0.36, height: 0.78 },
+      filter: actorFilter(),
+      damping: { linear: 1.8, angular: 7 },
+      lockedAxes: ["rotation-x", "rotation-z"],
+      continuousCollisionDetection: true
     }),
     createBodyWithCollider(scene, {
       id: "spinner",
@@ -354,6 +406,8 @@ function createBodyWithCollider(
     sensor?: boolean | undefined;
     filter?: { groups: string[]; collidesWith: string[] } | undefined;
     damping?: { linear?: number; angular?: number } | undefined;
+    lockedAxes?: string[] | undefined;
+    continuousCollisionDetection?: boolean | undefined;
   }
 ): LabBodyRecord {
   const bodyId = scene.createBody({
@@ -362,7 +416,11 @@ function createBodyWithCollider(
     position: options.position,
     ...(options.rotation === undefined ? {} : { rotation: options.rotation }),
     ...(options.linearVelocity === undefined ? {} : { linearVelocity: options.linearVelocity }),
-    ...(options.damping === undefined ? {} : { damping: options.damping })
+    ...(options.damping === undefined ? {} : { damping: options.damping }),
+    ...(options.lockedAxes === undefined ? {} : { lockedAxes: options.lockedAxes }),
+    ...(options.continuousCollisionDetection === undefined
+      ? {}
+      : { continuousCollisionDetection: options.continuousCollisionDetection })
   });
   const colliderId = scene.createCollider({
     id: `collider.${options.id}`,
@@ -481,7 +539,7 @@ function shapeDefinition(shape: Physics3dLabShape): PhysicsShapeDefinition {
 }
 
 function actorFilter() {
-  return { groups: ["actor"], collidesWith: ["wall", "sensor", "query"] };
+  return { groups: ["actor"], collidesWith: ["actor", "wall", "sensor", "query"] };
 }
 
 function wallFilter() {
@@ -498,6 +556,17 @@ function cloneVector(vector: PhysicsVector): PhysicsVector {
     y: vector.y,
     z: vector.z ?? 0
   };
+}
+
+function neutralCharacterIntent(): CharacterControlIntent {
+  return createPhysics3dCharacterIntent({
+    sequence: 0,
+    moveX: 0,
+    moveZ: 0,
+    jumpPressed: false,
+    jumpHeld: false,
+    divePressed: false
+  });
 }
 
 function eulerToQuaternion(rotation: Required<PhysicsVector>): PhysicsQuaternion {

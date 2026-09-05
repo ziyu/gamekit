@@ -17,8 +17,12 @@ import type {
 } from "./types";
 import {
   createMultiplayerClientReplication,
-  type MultiplayerClientReplicationOptions
+  type MultiplayerClientPredictionEncodeContext,
+  type MultiplayerClientReplicationFrameContext,
+  type MultiplayerClientReplicationOptions,
+  type MultiplayerClientReplicationSnapshotContext
 } from "./client-replication";
+import type { MultiplayerAuthorityBinding } from "./authority-types";
 import { createBoundedQueue } from "./bounded-queue";
 
 export type MultiplayerBridgeInstallContext = {
@@ -107,6 +111,57 @@ export type MultiplayerPresentationBridgeOptions<
   applySample(ctx: MultiplayerPresentationApplyContext<TSnapshot, TInstallContext>): void;
 };
 
+export type MultiplayerClientPredictionDomainCreateContext<
+  TInstallContext extends MultiplayerBridgeInstallContext
+> = {
+  installContext: TInstallContext;
+  runtime: MultiplayerRuntime;
+  binding: MultiplayerAuthorityBinding;
+};
+
+export type MultiplayerClientPredictionDomainInputContext<
+  TSnapshot,
+  TInput,
+  TInstallContext extends MultiplayerBridgeInstallContext
+> = MultiplayerClientPredictionEncodeContext<TSnapshot, TInput, TInstallContext> & {
+  encodedInput: unknown;
+};
+
+export type MultiplayerClientPredictionDomainRuntime<
+  TInstallContext extends MultiplayerBridgeInstallContext,
+  TSnapshot,
+  TInput,
+  TPredictedState
+> = {
+  applyAuthoritative?(
+    context: MultiplayerClientReplicationSnapshotContext<TSnapshot, TInstallContext>
+  ): void;
+  applyInput?(
+    context: MultiplayerClientPredictionDomainInputContext<TSnapshot, TInput, TInstallContext>
+  ): void;
+  applyFrame?(
+    context: MultiplayerClientReplicationFrameContext<TSnapshot, TPredictedState, TInstallContext>
+  ): void;
+  diagnostics?(): object;
+  dispose(): void;
+};
+
+export type MultiplayerClientPredictionDomainDescriptor<
+  TInstallContext extends MultiplayerBridgeInstallContext,
+  TSnapshot,
+  TInput,
+  TPredictedState
+> = {
+  id: string;
+  create(
+    context: MultiplayerClientPredictionDomainCreateContext<TInstallContext>
+  ): MultiplayerClientPredictionDomainRuntime<TInstallContext, TSnapshot, TInput, TPredictedState>;
+};
+
+export type MultiplayerClientPredictionDomainView = {
+  diagnostics(): Readonly<Record<string, object | undefined>>;
+};
+
 export type MultiplayerModuleOptions<
   TInstallContext extends MultiplayerBridgeInstallContext,
   TSnapshot = any,
@@ -126,6 +181,13 @@ export type MultiplayerModuleOptions<
     TPredictedState,
     TInstallContext
   >;
+  clientPredictionDomains?: readonly MultiplayerClientPredictionDomainDescriptor<
+    TInstallContext,
+    TSnapshot,
+    TInput,
+    TPredictedState
+  >[];
+  exposeClientPredictionDomains?(view: MultiplayerClientPredictionDomainView | undefined): void;
 };
 
 /** @deprecated Use MultiplayerModuleOptions. */
@@ -145,6 +207,12 @@ export function createMultiplayerModule<
   options: MultiplayerModuleOptions<TInstallContext, TSnapshot, TInput, TPredictedState>
 ): GameModule<TInstallContext> {
   const moduleId = options.id ?? "gamekit.multiplayer.bridge";
+  const predictionDomainDescriptors = validatePredictionDomainDescriptors(
+    options.clientPredictionDomains ?? []
+  );
+  if (predictionDomainDescriptors.length > 0 && options.clientReplication === undefined) {
+    throw new Error("Client prediction domains require managed client replication.");
+  }
   const commandKinds = new Set(options.commandKinds ?? ["game.command"]);
   const commandQueueCapacity = normalizePositiveInteger(options.commandQueue?.capacity, 256);
   const maxCommandsPerTick = normalizePositiveInteger(options.commandQueue?.maxPerTick, 64);
@@ -170,6 +238,19 @@ export function createMultiplayerModule<
         expired: 0
       };
       const cleanup: Array<() => void> = [];
+      const predictionDomains = createPredictionDomainManager<
+        TInstallContext,
+        TSnapshot,
+        TInput,
+        TPredictedState
+      >(ctx, options.runtime, predictionDomainDescriptors);
+      if (predictionDomainDescriptors.length > 0) {
+        options.exposeClientPredictionDomains?.(predictionDomains.view);
+        cleanup.push(() => {
+          predictionDomains.dispose();
+          options.exposeClientPredictionDomains?.(undefined);
+        });
+      }
 
       function emitQueueDiagnostics(code?: string, messageId?: string): void {
         queueDiagnostics.queued = queue.length;
@@ -303,15 +384,20 @@ export function createMultiplayerModule<
       }
 
       if (options.clientReplication) {
+        const clientReplicationOptions = wrapClientReplicationWithPredictionDomains(
+          options.clientReplication,
+          predictionDomains
+        );
         const clientReplication = createMultiplayerClientReplication({
           runtime: options.runtime,
           installContext: ctx,
-          options: options.clientReplication
+          options: clientReplicationOptions
         });
         ctx.systems.register({
           id: options.clientReplication.id ?? `${moduleId}.client-replication`,
           update(frame = {}) {
             clientReplication.update(frame);
+            predictionDomains.syncBinding(clientReplication.binding());
           }
         });
         cleanup.push(() => clientReplication.dispose());
@@ -363,6 +449,217 @@ export function createMultiplayerModule<
       };
     }
   };
+}
+
+type ActivePredictionDomain<
+  TInstallContext extends MultiplayerBridgeInstallContext,
+  TSnapshot,
+  TInput,
+  TPredictedState
+> = {
+  bindingKey: string;
+  runtime: MultiplayerClientPredictionDomainRuntime<
+    TInstallContext,
+    TSnapshot,
+    TInput,
+    TPredictedState
+  >;
+};
+
+type PredictionDomainManager<
+  TInstallContext extends MultiplayerBridgeInstallContext,
+  TSnapshot,
+  TInput,
+  TPredictedState
+> = {
+  authoritative(
+    context: MultiplayerClientReplicationSnapshotContext<TSnapshot, TInstallContext>
+  ): void;
+  input(
+    context: MultiplayerClientPredictionDomainInputContext<TSnapshot, TInput, TInstallContext>
+  ): void;
+  frame(
+    context: MultiplayerClientReplicationFrameContext<TSnapshot, TPredictedState, TInstallContext>
+  ): void;
+  syncBinding(binding: MultiplayerAuthorityBinding | undefined): void;
+  view: MultiplayerClientPredictionDomainView;
+  dispose(): void;
+};
+
+function createPredictionDomainManager<
+  TInstallContext extends MultiplayerBridgeInstallContext,
+  TSnapshot,
+  TInput,
+  TPredictedState
+>(
+  installContext: TInstallContext,
+  multiplayer: MultiplayerRuntime,
+  descriptors: readonly MultiplayerClientPredictionDomainDescriptor<
+    TInstallContext,
+    TSnapshot,
+    TInput,
+    TPredictedState
+  >[]
+): PredictionDomainManager<TInstallContext, TSnapshot, TInput, TPredictedState> {
+  const active = new Map<
+    string,
+    ActivePredictionDomain<TInstallContext, TSnapshot, TInput, TPredictedState>
+  >();
+  let disposed = false;
+
+  const manager: PredictionDomainManager<TInstallContext, TSnapshot, TInput, TPredictedState> = {
+    authoritative(context) {
+      forEachDomain(context.binding, (domain) => domain.applyAuthoritative?.(context));
+    },
+    input(context) {
+      forEachDomain(context.binding, (domain) => domain.applyInput?.(context));
+    },
+    frame(context) {
+      forEachDomain(context.binding, (domain) => domain.applyFrame?.(context));
+    },
+    syncBinding(binding) {
+      if (disposed) {
+        return;
+      }
+      const nextKey = binding === undefined ? undefined : predictionDomainBindingKey(binding);
+      for (const [id, entry] of active) {
+        if (nextKey === undefined || entry.bindingKey !== nextKey) {
+          entry.runtime.dispose();
+          active.delete(id);
+        }
+      }
+    },
+    view: {
+      diagnostics() {
+        return Object.freeze(
+          Object.fromEntries(
+            descriptors.map((descriptor) => [
+              descriptor.id,
+              active.get(descriptor.id)?.runtime.diagnostics?.()
+            ])
+          )
+        );
+      }
+    },
+    dispose() {
+      if (disposed) {
+        return;
+      }
+      disposed = true;
+      for (const entry of active.values()) {
+        entry.runtime.dispose();
+      }
+      active.clear();
+    }
+  };
+  return manager;
+
+  function forEachDomain(
+    binding: MultiplayerAuthorityBinding,
+    callback: (
+      domain: MultiplayerClientPredictionDomainRuntime<
+        TInstallContext,
+        TSnapshot,
+        TInput,
+        TPredictedState
+      >
+    ) => void
+  ): void {
+    if (disposed) {
+      return;
+    }
+    const bindingKey = predictionDomainBindingKey(binding);
+    for (const descriptor of descriptors) {
+      let entry = active.get(descriptor.id);
+      if (entry === undefined || entry.bindingKey !== bindingKey) {
+        entry?.runtime.dispose();
+        entry = {
+          bindingKey,
+          runtime: descriptor.create({ installContext, runtime: multiplayer, binding })
+        };
+        active.set(descriptor.id, entry);
+      }
+      callback(entry.runtime);
+    }
+  }
+}
+
+function wrapClientReplicationWithPredictionDomains<
+  TInstallContext extends MultiplayerBridgeInstallContext,
+  TSnapshot,
+  TInput,
+  TPredictedState
+>(
+  options: MultiplayerClientReplicationOptions<TSnapshot, TInput, TPredictedState, TInstallContext>,
+  domains: PredictionDomainManager<TInstallContext, TSnapshot, TInput, TPredictedState>
+): MultiplayerClientReplicationOptions<TSnapshot, TInput, TPredictedState, TInstallContext> {
+  const prediction = options.prediction;
+  return {
+    ...options,
+    applyAuthoritative(context) {
+      domains.authoritative(context);
+      options.applyAuthoritative?.(context);
+    },
+    ...(prediction === undefined
+      ? {}
+      : {
+          prediction: {
+            ...prediction,
+            encodeInput(context) {
+              const encodedInput = prediction.encodeInput(context);
+              domains.input({ ...context, encodedInput });
+              return encodedInput;
+            }
+          }
+        }),
+    applyFrame(context) {
+      domains.frame(context);
+      options.applyFrame(context);
+    }
+  };
+}
+
+function validatePredictionDomainDescriptors<
+  TInstallContext extends MultiplayerBridgeInstallContext,
+  TSnapshot,
+  TInput,
+  TPredictedState
+>(
+  descriptors: readonly MultiplayerClientPredictionDomainDescriptor<
+    TInstallContext,
+    TSnapshot,
+    TInput,
+    TPredictedState
+  >[]
+): readonly MultiplayerClientPredictionDomainDescriptor<
+  TInstallContext,
+  TSnapshot,
+  TInput,
+  TPredictedState
+>[] {
+  const ids = new Set<string>();
+  for (const descriptor of descriptors) {
+    const id = descriptor.id.trim();
+    if (id.length === 0) {
+      throw new Error("Client prediction domain id must not be empty.");
+    }
+    if (ids.has(id)) {
+      throw new Error(`Duplicate client prediction domain: ${id}`);
+    }
+    ids.add(id);
+  }
+  return descriptors;
+}
+
+function predictionDomainBindingKey(binding: MultiplayerAuthorityBinding): string {
+  return JSON.stringify([
+    binding.sessionId,
+    binding.mode,
+    binding.authorityEndpoint?.kind,
+    binding.authorityEndpoint?.id,
+    binding.authorityPeerId,
+    binding.localPlayerId
+  ]);
 }
 
 /** @deprecated Use createMultiplayerModule. */

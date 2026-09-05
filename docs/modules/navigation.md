@@ -115,7 +115,7 @@ Backend 使用 `submitPath/pollPath/cancelPath/releasePath`。同步 Backend 可
 
 Path sampler 在多个 segment 对当前位置等距时选择 route 顺序更靠后的 segment，保证共享 waypoint 等可消歧位置继续向 goal 前进。`direction` 是从 route projection 指向 `nextPoint` 的路线偏好，不是可以无界积分的最终位移；移动集成应把 `nextPoint` 作为局部 steering target，消除 cross-track 偏差，并将单步位移钳制到 target 距离或连续消费跨 waypoint 的剩余步长。
 
-Field 是 Backend-owned 共享资源。Core route retention 与 Backend `retainRoute/releaseRoute` 对称；Backend 只能淘汰未被 request 或公开 route 持有的 field。Core 不缓存 field handle，Backend 以 goal/profile/cost/revision 语义复用实际计算场，并以独立 generation identity 防止旧 route 的延迟 release 误减新 field 引用。Core 不读取 node、cell、polygon、portal 或 native field state；具体边界见 ADR 0040。
+Field 是 Backend-owned 共享资源。Core route retention 与 Backend `retainRoute/releaseRoute` 对称；Backend 只能淘汰未被 request 或公开 route 持有的 field。Core 不缓存 field handle，Backend 以 goal/profile/cost/revision 语义复用实际计算场，并以独立 generation identity 防止旧 route 的延迟 release 误减新 field 引用。Backend 保留整棵 field tree 的失效依赖；每个完成请求只向 Core 投影该起点实际路线的依赖，不能为每个共享者复制完整 topology dependency tree。Core 不读取 node、cell、polygon、portal 或 native field state；具体边界见 ADR 0040。
 
 ## Revision、障碍与失效
 

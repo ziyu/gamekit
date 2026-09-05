@@ -1,6 +1,7 @@
 import type { CompiledAudioCatalog } from "../catalog/audio-catalog";
 import { nonNegativeInteger } from "../catalog/validation";
 import { createAudioError } from "../contracts/errors";
+import type { PlaybackInstanceState } from "../contracts/playback";
 import type { PlaybackCoordinator } from "../playback/playback-coordinator";
 import type { AudioDiagnosticSink } from "../observability/audio-diagnostics";
 import type { SpatialAudioController } from "../spatial/spatial-audio";
@@ -34,6 +35,18 @@ export function createSoundEffects(options: {
   const dedupe = new Map<string, DedupeEntry>();
   const retriggered = new Map<string, number>();
   const selection: SfxVariationState = { sequence: new Map(), previous: new Map() };
+  const activeSfx = new Map<string, PlaybackInstanceState>();
+  const unsubscribePlayback = options.playback.subscribe((event) => {
+    if (event.category !== "sfx" || event.type === "marker") {
+      return;
+    }
+    if (event.type === "stopped" || event.type === "completed" || event.type === "failed") {
+      activeSfx.delete(event.instanceId);
+      return;
+    }
+    const state = options.playback.get(event.instanceId);
+    if (state !== undefined) activeSfx.set(event.instanceId, state);
+  });
   let rejected = 0;
   let deduplicated = 0;
   let distanceCulled = 0;
@@ -85,10 +98,11 @@ export function createSoundEffects(options: {
         return { status: "rejected", reason: "no-playable-layer" };
       }
       const priority = input.priority ?? event.priority ?? 0;
+      if (requiresLiveConcurrencyState(event)) refreshActiveSfx();
       const decision = decideSfxConcurrency({
         event,
         definitions: options.catalog.concurrency,
-        active: options.playback.list({ category: "sfx" }),
+        active: [...activeSfx.values()],
         ...(input.ownerId === undefined ? {} : { ownerId: input.ownerId }),
         ...(input.emitterId === undefined ? {} : { emitterId: input.emitterId }),
         priority,
@@ -177,6 +191,7 @@ export function createSoundEffects(options: {
       };
     },
     update(now) {
+      refreshActiveSfx();
       for (const [key, entry] of dedupe) {
         if (now - entry.timestamp > dedupeWindowMs) {
           dedupe.delete(key);
@@ -195,6 +210,8 @@ export function createSoundEffects(options: {
       trim(retriggered, maxDedupeEntries);
     },
     dispose() {
+      unsubscribePlayback();
+      activeSfx.clear();
       dedupe.clear();
       retriggered.clear();
       selection.sequence.clear();
@@ -230,6 +247,23 @@ export function createSoundEffects(options: {
     dedupe.delete(key);
     dedupe.set(key, { timestamp, ...(instanceId === undefined ? {} : { instanceId }) });
     trim(dedupe, maxDedupeEntries);
+  }
+
+  function requiresLiveConcurrencyState(
+    event: import("./sfx-event-definition").SfxEventDefinition
+  ): boolean {
+    return (event.concurrency ?? []).some((id) => {
+      const definition = options.catalog.concurrency.get(id);
+      return definition?.scope === "emitter" || definition?.resolution === "stop-quietest";
+    });
+  }
+
+  function refreshActiveSfx(): void {
+    for (const instanceId of activeSfx.keys()) {
+      const state = options.playback.get(instanceId);
+      if (state === undefined) activeSfx.delete(instanceId);
+      else activeSfx.set(instanceId, state);
+    }
   }
 }
 

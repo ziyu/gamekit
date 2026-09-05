@@ -10,6 +10,7 @@ import {
   panPhysics3dFreeCamera,
   zoomPhysics3dFreeCamera
 } from "./physics-3d-free-camera";
+import { createPhysics3dCharacterIntent } from "./physics-3d-character-controller";
 import {
   PHYSICS_3D_GROUPS,
   createPhysics3dLab,
@@ -36,8 +37,8 @@ describe("Physics 3D Lab runtime", () => {
     expect(snapshot.scene).toMatchObject({
       backend: "physics-3d-lab.test",
       dimension: "3d",
-      bodyCount: 6,
-      colliderCount: 6
+      bodyCount: 7,
+      colliderCount: 7
     });
     expect(snapshot.objects.map((object) => object.role)).toContain("drop");
     expect(snapshot.recentContacts.map((contact) => `${contact.kind}.${contact.phase}`)).toContain(
@@ -47,8 +48,8 @@ describe("Physics 3D Lab runtime", () => {
     expect(snapshot.spinnerQuaternion?.w).toBeTypeOf("number");
     expect(snapshot.nativeSummary).toMatchObject({
       backend: "rapier3d",
-      bodyCount: 6,
-      colliderCount: 6
+      bodyCount: 7,
+      colliderCount: 7
     });
     expect(snapshot.cameraPreset).toBe("free");
     expect(lab.setCameraPreset("free").cameraPreset).toBe("free");
@@ -104,6 +105,7 @@ describe("Physics 3D Lab runtime", () => {
 
     expect(snapshot.objects.map((object) => object.id)).toEqual([
       "floor",
+      "character",
       "spinner",
       "trigger",
       "drop-1",
@@ -111,6 +113,49 @@ describe("Physics 3D Lab runtime", () => {
       "drop-3"
     ]);
     expect(lab.spawnDrop().objects.map((object) => object.id)).toContain("drop-4");
+
+    lab.dispose();
+  });
+
+  it("drives the visible Rapier actor through the shared character motor", () => {
+    const lab = createPhysics3dLab(backend);
+    let snapshot = stepLab(lab, 90);
+    const before = snapshot.objects.find((object) => object.role === "character")!;
+
+    lab.setCharacterIntent(
+      createPhysics3dCharacterIntent({
+        sequence: 1,
+        moveX: 1,
+        moveZ: 0,
+        jumpPressed: false,
+        jumpHeld: false,
+        divePressed: false
+      })
+    );
+    snapshot = stepLab(lab, 18);
+    const moved = snapshot.objects.find((object) => object.role === "character")!;
+
+    expect(moved.position.x).toBeGreaterThan(before.position.x);
+    expect(snapshot.character.diagnostics).toMatchObject({
+      sequence: 1,
+      queryCount: 2
+    });
+
+    lab.setCharacterIntent(
+      createPhysics3dCharacterIntent({
+        sequence: 2,
+        moveX: 0,
+        moveZ: 0,
+        jumpPressed: true,
+        jumpHeld: true,
+        divePressed: false
+      })
+    );
+    snapshot = lab.step(1000 / 60);
+    const jumped = snapshot.objects.find((object) => object.role === "character")!;
+
+    expect(snapshot.character.state.lastConsumedJumpSequence).toBe(2);
+    expect(jumped.linearVelocity.y).toBeGreaterThan(0);
 
     lab.dispose();
   });

@@ -65,6 +65,7 @@ packages/
   camera-core/
 
   physics-core/
+  character-controller/
   physics-rapier2d/
   physics-rapier3d/
   physics-matter/
@@ -138,6 +139,7 @@ game-runtime → core / world / event-bus
 world-koota → world / core / koota
 input-dom/input-tauri → input-core
 physics-core → core / event-bus / game-runtime / world / data / save
+character-controller → core / data / physics-core
 physics-rapier2d → physics-core / core / @dimforge/rapier2d-compat
 physics-rapier3d → physics-core / core / @dimforge/rapier3d-compat
 physics-matter → physics-core / core / matter-js
@@ -239,6 +241,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 | `@gamekit/input-dom` / `@gamekit/input-tauri`                                         | App Service adapter                           | DOM/Web Gamepad/Tauri 输入来源接入；Phaser runtime input 来源由 Phaser Driver 暴露。                                                                                                       |
 | `@gamekit/camera-core`                                                                | Game Module toolkit                           | CameraController、CameraRig、camera system/action helper；不作为 App Host 标准服务。                                                                                                       |
 | `@gamekit/physics-core`                                                               | Game Module toolkit                           | 统一 Physics facade、body/collider/query/contact 协议、标准 physics module helper。                                                                                                        |
+| `@gamekit/character-controller`                                                       | Game Module toolkit                           | 玩家/AI 共用的 backend-neutral locomotion intent、pure motor、Data 与 diagnostics；通过 Physics 协议输出 patch/command，不拥有输入、AI、表现或多人生命周期。                               |
 | `@gamekit/physics-rapier2d` / `@gamekit/physics-rapier3d` / `@gamekit/physics-matter` | Game Module backend adapter                   | 独立物理库 adapter；Rapier 按 2D / 3D 分包，第三方类型不进入 physics-core 或 gameplay 公共 API。                                                                                           |
 | `@gamekit/combat`                                                                     | Game Module toolkit                           | 通用 effect delivery、target relationship、hit resolution、projectile/hitscan/area executor，以及 kinematic projectile record/reconciliation/presentation transition；不定义具体游戏数值。 |
 | `@gamekit/ai-core`                                                                    | Game Module toolkit                           | 感知记忆、Utility goal、Task lifecycle、预算调度和 trace；不拥有 World、Physics、Navigation backend 或游戏行为。                                                                           |
@@ -263,8 +266,8 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 | `@gamekit/save`                                                                       | 混合：App Service + Game Module bridge        | 存储 adapter 和 profile 是应用服务；snapshot capture/restore 是游戏模块桥接。                                                                                                              |
 | `@gamekit/devtools`                                                                   | App Service / tooling                         | 观察 Host、Data、Physics、TCA、GAS、Multiplayer、profiler，不进入 gameplay loop。                                                                                                          |
 | `@gamekit/devtools-ui`                                                                | App/tooling UI package                        | DevTools launcher、shell、标准面板；依赖 DevTools runtime，不进入 gameplay loop。                                                                                                          |
-| `@gamekit/world`                                                                      | Runtime facade                                | ECS facade。                                                                                                                                                                               |
-| `@gamekit/world-koota`                                                                | Runtime adapter                               | Koota adapter。                                                                                                                                                                            |
+| `@gamekit/world`                                                                      | Runtime facade                                | ECS facade；基础 `GameWorld` 保持最小 CRUD/query，可选 `CheckpointGameWorld` 提供稳定 identity restore。                                                                                   |
+| `@gamekit/world-koota`                                                                | Runtime adapter                               | Koota adapter；实现基础 facade 与可选稳定 identity checkpoint capability。                                                                                                                 |
 | `@gamekit/core` / `@gamekit/event-bus` / `@gamekit/game-runtime`                      | Core Runtime                                  | 薄内核、事件、GameModule lifecycle。                                                                                                                                                       |
 
 ## 模块设计索引
@@ -277,6 +280,7 @@ App Host 可以提供“标准游戏模块”装配入口，但标准游戏模�
 - Input：`docs/modules/input.md`
 - Camera：`docs/modules/camera.md`
 - Physics：`docs/modules/physics.md`
+- Character Controller：`docs/modules/character-controller.md`
 - Combat：`docs/modules/combat.md`
 - AI：`docs/modules/ai.md`
 - Navigation：`docs/modules/navigation.md`
@@ -342,9 +346,16 @@ Camera 是 gameplay/session 能力，不是 App Host 标准服务，也不是 Ph
 
 Physics 是 gameplay/session 能力和多后端 facade，不是 Renderer、Input 或 App Host 默认标准服务。Physics Core 定义 body、collider、material、query、contact event、trace、Save contributor 和标准 GameModule helper；Rapier、Matter.js、Phaser Physics 等底层能力通过 backend adapter 或 Driver runtime slice 接入。
 
+Kinematic transform 必须区分普通 simulation target 与已完成 tick 的 authority correction：前者让 backend solver 推导接触速度，
+后者在 rollback reconcile/hard correction 中立即安装快照 pose。该选择通过 Physics Core 的稳定 update option 传给 adapter，
+Multiplayer/App 不能在 Renderer 中另建 authority transform 旁路。具体语义见
+`docs/adr/0055-kinematic-target-and-authority-correction.md`。
+
 独立物理库使用 `@gamekit/physics-*` adapter。Phaser Arcade / Matter Physics 这类绑定在 Phaser Scene runtime 内的能力由 `@gamekit/driver-phaser` 持有外部 runtime，再暴露 physics backend adapter；adapter 不单独创建 Phaser.Game 或 Scene。Gameplay 通过 World component、Physics query 和低频 contact event 消费物理事实，不保存 backend native handle、broadphase cache 或 contact manifold。
 
 Fixed-step Physics module 可以提供 opt-in transient interpolation store 给 Renderer sync 和 Camera follow target 共用。该 store 不改变 World authority、Save 或 multiplayer snapshot，也不成为 Renderer/Camera 对 Physics 的包级依赖；组合层负责显式注入，并通过可选 policy 提供游戏尺度相关的不连续判定或表现曲线，Physics Core 不写死玩法阈值。
+
+Character Controller 是独立可选 gameplay toolkit。它消费 world-space semantic intent 与 Physics body/query 事实，维护可 checkpoint 的 grounded/coyote/jump-buffer/dive/recovery/stagger state，并输出 backend-neutral body patch/command。Pure motor 不依赖 Input、Camera、Renderer、AI、Multiplayer 或具体 Physics backend；玩家与 AI 必须通过同一 intent/transition，runtime strategy 只负责稳定 query 与 backend 映射。具体边界见 `docs/modules/character-controller.md` 与 `docs/adr/0052-reusable-character-controller-toolkit.md`。
 
 详细设计见 `docs/modules/physics.md`，facade / adapter 决策背景见 `docs/adr/0010-unified-physics-facade.md`，query / cast / filter 公共协议见 `docs/adr/0011-physics-query-and-filter-api.md`。
 
@@ -436,15 +447,35 @@ Multiplayer 负责多人会话、连接、消息、玩家身份映射、authorit
 
 `@gamekit/multiplayer-core` 定义 GameKit 侧稳定 facade、App Host service shape、GameModule bridge、语义 command、authority decision、authority binding、标准复制 helper、diagnostics 和 adapter conformance helper，不依赖具体网络 SDK，也不自研通用 room server、matchmaker、reconnect、presence 或 provider state sync。Colyseus、Nakama、PartyKit、平台联机 SDK 或其他成熟后端通过 `@gamekit/multiplayer-<backend>` adapter 接入。线上 remote payload 默认是不可信输入，权威 host/server 必须重新验证 command/input 后再改写 gameplay 状态；client 只有绑定到明确 authority endpoint 后才能应用 authoritative snapshot/patch。单机/offline 绑定 local authority endpoint，省略网络 IO，但不省略 authority validation、tick boundary 或 snapshot presentation。
 
-标准 Multiplayer GameModule 可以通过 `clientReplication` 配置启用 Core 托管的客户端复制 lifecycle。Core 自动订阅并验证 authority snapshot、推进 remote playback/declared track projection、按配置频率采样和发送 local input、用有界 prediction-lead window 施加 backpressure、维护 prediction buffer，并根据 snapshot ack 执行 reconciliation/replay/correction smoothing；app 只声明 snapshot decoder、timeline、remote track、deterministic prediction transition、local predicted-state field 和统一的 frame writer，不在网络 callback、外部 render loop 或字段回调中手写调度与标准插值数学。Provider-native state sync 可以通过 provider-neutral `snapshotSource` 替换默认 envelope subscription；该 source 是互斥 authority 输入，可选 `current()` 让 Core 在 binding 就绪后补取 initial full state，provider update sequence 负责同 gameplay tick 内排序，binding/session reset 同时清空其排序水位。Transition 可以提供只读 diagnostics；Physics transition 还可内部复用 sequence checkpoint，避免一致的 solver state 被每份 snapshot 无意义 rewind。权威 World/Physics/Save 与 transient presented/predicted state 始终分离。具体决策见 `docs/adr/0028-managed-client-replication-runtime.md`、`docs/adr/0029-declarative-prediction-state-presentation.md` 和 `docs/adr/0030-backend-driven-physics-prediction-transition.md`。
+标准 Multiplayer GameModule 可以通过 `clientReplication` 配置启用 Core 托管的客户端复制 lifecycle。Core 自动订阅并验证 authority snapshot、推进 remote playback/declared track projection、按配置频率采样和发送 local input、用有界 prediction-lead window 施加 backpressure、维护 prediction buffer，并根据 snapshot ack 执行 reconciliation/replay/correction smoothing；app 只声明 snapshot decoder、timeline、remote track、deterministic prediction transition、local predicted-state field 和统一的 frame writer，不在网络 callback、外部 render loop 或字段回调中手写调度与标准插值数学。两个真实应用出现相同 decoder/tick/local identity/ack/presentation mapping 后，普通路径可用 `defineMultiplayerReplicationSchema(...)` 和 `defineMultiplayerReplicationEntityPresentation(...)` 把这些声明编译为一个 client binding；managed replication 直接消费 binding，统一拒绝 schema version mismatch、非法 tick 和 decoder failure，并生成 generation-aware presentation key/track。它是可选 typed schema compiler，不递归反射业务对象、不替代 provider serializer，也不要求 NetworkObject 基类；特殊 netcode 仍可传低层 callback。Provider-native state sync 可以通过 provider-neutral `snapshotSource` 替换默认 envelope subscription；该 source 是互斥 authority 输入，可选 `current()` 让 Core 在 binding 就绪后补取 initial full state，provider update sequence 负责同 gameplay tick 内排序，binding/session reset 同时清空其排序水位。Transition 可以提供只读 diagnostics；Physics transition 还可内部复用 sequence checkpoint，避免一致的 solver state 被每份 snapshot 无意义 rewind。权威 World/Physics/Save 与 transient presented/predicted state 始终分离。具体决策见 `docs/adr/0028-managed-client-replication-runtime.md`、`docs/adr/0029-declarative-prediction-state-presentation.md`、`docs/adr/0030-backend-driven-physics-prediction-transition.md` 和 `docs/adr/0048-managed-prediction-domains-and-rollback-contracts.md`。
 
-Prediction 必须按对象和因果复杂度选择策略，而不是把 render anticipation、单主体移动 replay 和完整 physics rollback 当作同一能力。瞬时攻击使用服务端 lag compensation 的 hitscan；可确定重放的长寿命弹丸使用有界 fire/finish data；与动态对象复杂交互的对象才进入 predicted entity + prediction-island resimulation；无需即时空间结果的对象保持 authority-only。Multiplayer Core 拥有通用 history、`createMultiplayerPredictedSpawnRegistry(...)` identity matching、`createMultiplayerAuthorityTimeline(...)` 单调 authority presentation time、`createMultiplayerTimeAlignedPresentationTransition(...)` lifecycle-relative handoff、rollback lifecycle 和 diagnostics，不依赖 Physics/Combat；Physics Core 拥有单主体 transition，以及要求 backend full-scene checkpoint capability、完整成员快照和有界 history/member/command 的 `createPhysicsPredictionIsland(...)`；Combat 拥有 projectile strategy、空间 record、shot-relative reconciliation 和 authority result 语义；App Host 用 `createStandardCombatKinematicProjectilePresentationTransition(...)` 提供标准跨模块组合。App 只能组合这些边界并提供内容/场景 policy，不能重建通用 generation、match、expiry、timeline 或 correction runtime。只会继承显示位置的 handoff 不能用于会碰撞、停止、bounce 或销毁的对象。详细提案见 `docs/adr/0047-selective-network-prediction-and-projectile-strategies.md`。
+Prediction 必须按对象和因果复杂度选择策略，而不是把 render anticipation、单主体移动 replay 和完整 physics rollback 当作同一能力。瞬时攻击使用服务端 lag compensation 的 hitscan；可确定重放的长寿命弹丸使用有界 fire/finish data；与动态对象复杂交互的对象才进入 predicted entity + prediction-island resimulation；无需即时空间结果的对象保持 authority-only。Multiplayer Core 通过 managed prediction domain 统一 generation、identity、authority timeline、confirm/reject/expire、binding、hard reset、容量和 diagnostics，并保留 `createMultiplayerPredictedSpawnRegistry(...)`、`createMultiplayerAuthorityTimeline(...)`、`createMultiplayerTimeAlignedPresentationTransition(...)` 等低层 escape hatch；Physics Core 拥有单主体 transition，以及要求 backend full-scene checkpoint capability、完整成员快照和有界 history/member/command 的 `createPhysicsPredictionIsland(...)`。Prediction island 在可重放历史内执行 reconcile/replay，历史或成员契约不完整时通过显式 `hardCorrect(...)` 安装权威 baseline 并清除不再安全的命令/history；App Host 的 `createStandardMultiplayerPhysicsPredictionDomain(...)` 把 managed identity lifecycle、island reconciliation 与该 hard-correction fallback 组成默认跨模块路径。跨 World、Physics、RNG 或其他模块的同 tick rewind 使用 `createMultiplayerRollbackCoordinator(...)` 组合显式 contributor；World 通过不扩张基础 `GameWorld` 的可选 `CheckpointGameWorld` 与显式 component/entity selector 捕获稳定 entity/component 集合，App Host 提供默认顺序为 World 100、RNG 150、Physics 200 的标准 contributor；普通应用通过 `createStandardMultiplayerRollbackDomain(...)` 一次声明 World scope、RNG、Physics handle、额外 gameplay contributor 和预算，不自行重建组合顺序。每个 contributor 必须提供稳定顺序、capture/validate/restore、byte measurement 和 state hash，Multiplayer Core 不反向依赖具体 domain；所有 contributor 在任何写入前完成 validation，World 先恢复稳定 entity identity，Physics 再重建对应 component/backend state。Seeded RNG 暴露精确 stream state capture/restore，避免 replay 消耗不同随机序列。Combat 拥有 projectile strategy、空间 record、shot-relative reconciliation 和 authority result 语义。App 只提供内容/场景 policy、typed payload mapping、缺失 authority member definition、确定性 transition 与最终 writer，不重建通用 generation、match、expiry、timeline、binding、跨模块 restore 顺序或 correction runtime。回滚 replay 中的可撤销表现通过 `createMultiplayerSpeculativeEffectJournal(...)` 以稳定 effect identity 去重，并由 authority confirm/cancel/replace；不可重复提交权威 damage、GAS/TCA/EventBus 事实，也不能在 replay 中直接触发 Audio、Camera、Renderer 或 UI side effect。只会继承显示位置的 handoff 不能用于会碰撞、停止、bounce 或销毁的对象。详细决策见 `docs/adr/0047-selective-network-prediction-and-projectile-strategies.md` 和 `docs/adr/0048-managed-prediction-domains-and-rollback-contracts.md`。
+
+多人高互动刚体 arena 通过 Multiplayer GameModule 的 provider-neutral client prediction-domain bridge 接入，而不是
+让 `createMultiplayerClientReplication(...)` 或 Multiplayer Core 理解 Physics。App Host 的标准 Physics Arena adapter
+组合 client binding lifecycle、完整 authority arena frame、prediction island、membership revision、hard correction、
+可选 island-owned auxiliary contributor、rollback contributor 与 speculative effect journal；authority projection 只生成
+provider-neutral island state 与显式 auxiliary state envelope，provider wire serializer 继续留在 app/backend boundary。
+严格逐 step prediction 使用可选的 bounded redundant input
+bundle 和 authority fixed-step inbox，使有损 delivery 下的 duplicate/gap/ack 仍由统一协议管理；未配置时保持现有单帧
+input 路径。真实交互集合由 authority 显式声明为完整因果闭包；缺失成员、
+definition version 不一致或 history/byte/replay 预算溢出时必须安装完整 baseline 或降级 authority-only。首选正确性基线
+是单个完整 arena island，自动 partition/merge/split 必须作为后续可选 policy，不能由客户端根据距离静默猜测。Arena
+island 与通用 World/Physics rollback contributor 不得重复捕获同一 solver state；character motor 等决定同 tick Physics
+command 的少量状态必须作为 island auxiliary contributor 一起 capture/restore/replay/reset，不能由 app 在 reconcile 前后
+另跑一套历史。具体决策见 `docs/adr/0049-standard-multiplayer-physics-arena-prediction.md` 和
+`docs/adr/0053-arena-auxiliary-replay-contributors.md`。
+
+`@gamekit/multiplayer-core` 还提供可包裹任意 backend 的确定性 network-condition simulator，使用手动虚拟时钟、固定
+seed、选择性 message predicate 和有界 delivery queue 注入 latency、jitter、loss 与 duplicate。它只改变消息 delivery，
+不拥有第二套 session、authority 或 prediction clock；真实 provider 行为仍由 adapter integration/e2e 验证。具体决策见
+`docs/adr/0050-deterministic-multiplayer-network-condition-simulator.md`。
 
 Server-authoritative Room 可以持有 headless App Host、GameRuntime、World、Physics 和 replication lifecycle；browser creator 只拥有 app-defined party leader 权限，不成为 authority clock owner。复杂 provider-native state sync 的字段级 Schema 与 mapping 留在 app provider boundary，backend package 只提供通用 typed hook、source/version/resync gate 和 redacted diagnostics。Room-owned 与 host-authoritative 模式共享 authority contract，但不能共享 host-leave-close policy。
 
 Room-side backend bridge 可以把已经由 provider Room 拥有的 session 映射成 `MultiplayerBackendAdapter/Connection`，再统一交给 `multiplayer-core` 的 `createMultiplayerRuntime()` 暴露 server-side facade；它不能手写第二套 MultiplayerRuntime/session 状态机。Bridge 还可以组合单一 simulation interval、peer/client active index、envelope ingress/egress 与 app-provided runtime lifecycle，但不能替 app 创建 gameplay Room、解析 participant 权限或持有字段级 Schema；server facade 也不能通过自连 Room 再创建第二条 provider connection/tick lifecycle。具体决策见 `docs/adr/0025-colyseus-room-owned-runtime-bridge.md`。
 
-详细设计见 `docs/modules/multiplayer.md`，决策背景见 `docs/adr/0010-multiplayer-core-and-backend-adapters.md`、`docs/adr/0012-mature-multiplayer-backend-adapter.md`、`docs/adr/0013-standard-authoritative-replication-boundary.md`、`docs/adr/0016-room-owned-server-authority-lifecycle.md`、`docs/adr/0017-app-owned-colyseus-field-schema-boundary.md`、`docs/adr/0028-managed-client-replication-runtime.md` 和 `docs/adr/0047-selective-network-prediction-and-projectile-strategies.md`。
+详细设计见 `docs/modules/multiplayer.md`，决策背景见 `docs/adr/0010-multiplayer-core-and-backend-adapters.md`、`docs/adr/0012-mature-multiplayer-backend-adapter.md`、`docs/adr/0013-standard-authoritative-replication-boundary.md`、`docs/adr/0016-room-owned-server-authority-lifecycle.md`、`docs/adr/0017-app-owned-colyseus-field-schema-boundary.md`、`docs/adr/0028-managed-client-replication-runtime.md`、`docs/adr/0047-selective-network-prediction-and-projectile-strategies.md`、`docs/adr/0049-standard-multiplayer-physics-arena-prediction.md` 和 `docs/adr/0050-deterministic-multiplayer-network-condition-simulator.md`。
 
 ## 包内架构约定
 

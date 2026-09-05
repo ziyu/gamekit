@@ -310,6 +310,109 @@ importers:
         specifier: ^3.1.3
         version: 3.2.4(@types/node@22.19.18)(tsx@4.21.0)
 
+  apps/multiplayer-physics-arena-demo:
+    dependencies:
+      '@colyseus/core':
+        specifier: ^0.17.44
+        version: 0.17.44(@colyseus/better-call@1.3.3)(@colyseus/schema@4.0.27(typescript@5.9.3))(@colyseus/ws-transport@0.17.13)(express@5.2.1)
+      '@gamekit/ai-core':
+        specifier: workspace:*
+        version: link:../../packages/ai-core
+      '@gamekit/animator-core':
+        specifier: workspace:*
+        version: link:../../packages/animator-core
+      '@gamekit/app-host':
+        specifier: workspace:*
+        version: link:../../packages/app-host
+      '@gamekit/asset':
+        specifier: workspace:*
+        version: link:../../packages/asset
+      '@gamekit/audio-core':
+        specifier: workspace:*
+        version: link:../../packages/audio-core
+      '@gamekit/character-controller':
+        specifier: workspace:*
+        version: link:../../packages/character-controller
+      '@gamekit/combat':
+        specifier: workspace:*
+        version: link:../../packages/combat
+      '@gamekit/data':
+        specifier: workspace:*
+        version: link:../../packages/data
+      '@gamekit/driver-core':
+        specifier: workspace:*
+        version: link:../../packages/driver-core
+      '@gamekit/driver-three':
+        specifier: workspace:*
+        version: link:../../packages/driver-three
+      '@gamekit/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
+      '@gamekit/game-runtime':
+        specifier: workspace:*
+        version: link:../../packages/game-runtime
+      '@gamekit/gas':
+        specifier: workspace:*
+        version: link:../../packages/gas
+      '@gamekit/multiplayer-colyseus':
+        specifier: workspace:*
+        version: link:../../packages/multiplayer-colyseus
+      '@gamekit/multiplayer-core':
+        specifier: workspace:*
+        version: link:../../packages/multiplayer-core
+      '@gamekit/navigation-core':
+        specifier: workspace:*
+        version: link:../../packages/navigation-core
+      '@gamekit/navigation-navmesh':
+        specifier: workspace:*
+        version: link:../../packages/navigation-navmesh
+      '@gamekit/navigation-recast':
+        specifier: workspace:*
+        version: link:../../packages/navigation-recast
+      '@gamekit/physics-core':
+        specifier: workspace:*
+        version: link:../../packages/physics-core
+      '@gamekit/physics-rapier3d':
+        specifier: workspace:*
+        version: link:../../packages/physics-rapier3d
+      '@gamekit/platform-core':
+        specifier: workspace:*
+        version: link:../../packages/platform-core
+      '@gamekit/platform-web':
+        specifier: workspace:*
+        version: link:../../packages/platform-web
+      '@gamekit/renderer-core':
+        specifier: workspace:*
+        version: link:../../packages/renderer-core
+      '@gamekit/world-koota':
+        specifier: workspace:*
+        version: link:../../packages/world-koota
+      three:
+        specifier: ^0.181.2
+        version: 0.181.2
+    devDependencies:
+      '@gamekit/multiplayer-memory':
+        specifier: workspace:*
+        version: link:../../packages/multiplayer-memory
+      '@gamekit/test-utils':
+        specifier: workspace:*
+        version: link:../../packages/test-utils
+      '@types/node':
+        specifier: ^22.15.17
+        version: 22.19.18
+      '@types/three':
+        specifier: ^0.184.1
+        version: 0.184.1
+      tsx:
+        specifier: ^4.19.4
+        version: 4.21.0
+      vite:
+        specifier: ^6.3.5
+        version: 6.4.2(@types/node@22.19.18)(tsx@4.21.0)
+      vitest:
+        specifier: ^3.1.3
+        version: 3.2.4(@types/node@22.19.18)(tsx@4.21.0)
+
   apps/physics-2d-lab:
     dependencies:
       '@gamekit/event-bus':
@@ -340,6 +443,9 @@ importers:
       '@gamekit/app-host':
         specifier: workspace:*
         version: link:../../packages/app-host
+      '@gamekit/character-controller':
+        specifier: workspace:*
+        version: link:../../packages/character-controller
       '@gamekit/driver-core':
         specifier: workspace:*
         version: link:../../packages/driver-core
@@ -404,6 +510,9 @@ importers:
       '@gamekit/camera-core':
         specifier: workspace:*
         version: link:../../packages/camera-core
+      '@gamekit/character-controller':
+        specifier: workspace:*
+        version: link:../../packages/character-controller
       '@gamekit/combat':
         specifier: workspace:*
         version: link:../../packages/combat
@@ -419,6 +528,9 @@ importers:
       '@gamekit/devtools-ui':
         specifier: workspace:*
         version: link:../../packages/devtools-ui
+      '@gamekit/driver-core':
+        specifier: workspace:*
+        version: link:../../packages/driver-core
       '@gamekit/driver-phaser':
         specifier: workspace:*
         version: link:../../packages/driver-phaser
@@ -467,6 +579,12 @@ importers:
       '@gamekit/physics-rapier2d':
         specifier: workspace:*
         version: link:../../packages/physics-rapier2d
+      '@gamekit/physics-rapier3d':
+        specifier: workspace:*
+        version: link:../../packages/physics-rapier3d
+      '@gamekit/platform-core':
+        specifier: workspace:*
+        version: link:../../packages/platform-core
       '@gamekit/platform-web':
         specifier: workspace:*
         version: link:../../packages/platform-web
@@ -500,6 +618,9 @@ importers:
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
+      three:
+        specifier: ^0.181.2
+        version: 0.181.2
     devDependencies:
       '@gamekit/test-utils':
         specifier: workspace:*
@@ -510,6 +631,9 @@ importers:
       '@types/react-dom':
         specifier: ^18.3.1
         version: 18.3.7(@types/react@18.3.28)
+      '@types/three':
+        specifier: ^0.184.1
+        version: 0.184.1
       vite:
         specifier: ^6.3.5
         version: 6.4.2(@types/node@22.19.18)(tsx@4.21.0)
@@ -670,6 +794,9 @@ importers:
       '@gamekit/ui-core':
         specifier: workspace:*
         version: link:../ui-core
+      '@gamekit/world':
+        specifier: workspace:*
+        version: link:../world
 
   packages/asset:
     dependencies:
@@ -694,6 +821,18 @@ importers:
       '@gamekit/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/character-controller:
+    dependencies:
+      '@gamekit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@gamekit/data':
+        specifier: workspace:*
+        version: link:../data
+      '@gamekit/physics-core':
+        specifier: workspace:*
+        version: link:../physics-core
 
   packages/combat:
     dependencies:

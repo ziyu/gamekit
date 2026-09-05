@@ -25,6 +25,30 @@ beforeAll(async () => {
 });
 
 describe("Rapier 2D physics backend", () => {
+  it("installs an authority pose immediately without changing default kinematic targets", () => {
+    const scene = backend.createScene({ gravity: { x: 0, y: 0 } });
+    scene.createBody({ id: "kinematic.body", kind: "kinematic", position: { x: 0, y: 0 } });
+
+    scene.updateBody("kinematic.body", { position: { x: 2, y: 0 }, rotation: Math.PI / 3 });
+    expect(scene.getBodyState("kinematic.body")).toMatchObject({
+      position: { x: 0, y: 0 },
+      rotation: 0
+    });
+    scene.step(1000 / 60);
+    expect(scene.getBodyState("kinematic.body")?.position.x).toBeCloseTo(2, 6);
+
+    scene.updateBody(
+      "kinematic.body",
+      { position: { x: 7, y: 1 }, rotation: -Math.PI / 2 },
+      { kinematicTransformMode: "teleport" }
+    );
+    const corrected = scene.getBodyState("kinematic.body")!;
+    expect(corrected.position).toEqual({ x: 7, y: 1 });
+    expect(corrected.rotation).toBeCloseTo(-Math.PI / 2, 6);
+
+    scene.dispose();
+  });
+
   it("keeps speculative contact solving aligned with continuous authority stepping", () => {
     const sceneConfig = { gravity: { x: 0, y: 0 } } as const;
     const wallBody = {

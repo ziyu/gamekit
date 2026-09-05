@@ -17,6 +17,7 @@ import {
   buildGraphRouteField,
   extractGraphPath,
   projectGraphPoint,
+  routeFieldDependencies,
   sampleGraphRouteField
 } from "../search";
 
@@ -237,9 +238,7 @@ export function createGraphNavigationBackendRuntime(
         cost,
         startProjection,
         goalProjection,
-        dependencies: [...field.treeDependencies.values()].map((dependency) => ({
-          ...dependency
-        }))
+        dependencies: routeFieldDependencies(field, startNodeId, graph)
       };
     }
     const path = extractGraphPath(field, startNodeId, graph);

@@ -105,7 +105,10 @@ function captureEntity(
       ? {}
       : {
           body: {
-            definition: structuredClone(body.definition),
+            definition:
+              bodyState === undefined
+                ? structuredClone(body.definition)
+                : definitionWithoutState(body.definition),
             enabled: body.enabled,
             syncFromWorld: body.syncFromWorld,
             syncVelocityFromWorld: body.syncVelocityFromWorld,
@@ -277,6 +280,17 @@ function definitionWithState(
     ...(state.rotation === undefined ? {} : { rotation: state.rotation }),
     ...(state.angularVelocity === undefined ? {} : { angularVelocity: state.angularVelocity })
   };
+}
+
+function definitionWithoutState(definition: PhysicsBodyDefinition): PhysicsBodyDefinition {
+  const {
+    position: _position,
+    rotation: _rotation,
+    linearVelocity: _linearVelocity,
+    angularVelocity: _angularVelocity,
+    ...base
+  } = structuredClone(definition);
+  return base;
 }
 
 function omitBodyId(state: PhysicsBodyState): PhysicsCheckpointBodyState {

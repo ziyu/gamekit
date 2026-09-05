@@ -48,7 +48,12 @@ export function renderPhysics3dLabShell(root: HTMLElement): Physics3dLabUi {
   const header = element("header", "physics-3d-lab__header");
   header.append(
     element("p", "physics-3d-lab__eyebrow", "GameKit Physics"),
-    element("h1", "physics-3d-lab__title", "Physics 3D Lab")
+    element("h1", "physics-3d-lab__title", "Physics 3D Lab"),
+    element(
+      "p",
+      "physics-3d-lab__character-hint",
+      "Focus the viewport · WASD move · Space jump · Shift dive"
+    )
   );
 
   const status = element("section", "physics-3d-lab__status");
@@ -198,6 +203,7 @@ export function updatePhysics3dLabUi(ui: Physics3dLabUi, snapshot: Physics3dLabS
     statusTile("Colliders", String(snapshot.scene.colliderCount)),
     statusTile("Contacts", String(snapshot.scene.activeContactCount)),
     statusTile("Query", String(snapshot.queryHits.length)),
+    statusTile("Motor", snapshot.character.state.mode),
     statusTile("Step", String(snapshot.stepCount))
   );
   ui.snapshot.textContent = JSON.stringify(
@@ -208,6 +214,12 @@ export function updatePhysics3dLabUi(ui: Physics3dLabUi, snapshot: Physics3dLabS
       groupPreset: snapshot.groupPreset,
       cameraPreset: snapshot.cameraPreset,
       queryPoint: snapshot.queryPoint,
+      character: {
+        mode: snapshot.character.state.mode,
+        grounded: snapshot.character.state.grounded,
+        facingYaw: snapshot.character.state.facingYaw,
+        diagnostics: snapshot.character.diagnostics
+      },
       objects: snapshot.objects.map((object) => ({
         id: object.id,
         role: object.role,

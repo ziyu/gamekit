@@ -123,6 +123,7 @@ describe("Graph navigation backend", () => {
   it("shares one goal-keyed reverse route field across many starts", () => {
     const graph = lineGraph(128);
     const backend = createGraphNavigationBackend({ graph, maxRouteFields: 4 });
+    let nearestGoalDependencies: NavigationBackendPathResult["dependencies"];
     for (let index = 0; index < 1000; index += 1) {
       const start = index % 127;
       const result = findPath(backend, {
@@ -134,7 +135,12 @@ describe("Graph navigation backend", () => {
         routeKind: "field"
       });
       expect(result.status).toBe("complete");
+      if (start === 126) nearestGoalDependencies = result.dependencies;
     }
+    expect(nearestGoalDependencies).toEqual([
+      { kind: "edge", id: "edge.126" },
+      { kind: "area", id: "ground" }
+    ]);
     expect(backend.snapshot().details).toMatchObject({
       routeFields: 1,
       nodes: 128,

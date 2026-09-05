@@ -72,7 +72,10 @@ export function createRealtimeArenaPresentation(
           jitterMultiplier: 2,
           ...options.adaptiveDelay
         };
-  const tracks = createArenaPresentationTracks(snapDistance);
+  const tracks = createRealtimeArenaPresentationTracks<RealtimeArenaSnapshot>(
+    (snapshot) => snapshot,
+    snapDistance
+  );
   const projector = createSnapshotPresentationProjector(tracks);
   const playback = createSnapshotPlayback<RealtimeArenaSnapshot>({
     interpolationDelayMs,
@@ -83,10 +86,7 @@ export function createRealtimeArenaPresentation(
       return entry.snapshot.tick * REALTIME_ARENA_TICK_MS;
     },
     shouldReset(previous, next) {
-      return (
-        previous !== undefined &&
-        (next.tick < previous.tick || shouldSnapPhase(previous.phase, next.phase))
-      );
+      return shouldResetRealtimeArenaPresentation(previous, next);
     }
   });
   let activeSample: SnapshotPlaybackSample<RealtimeArenaSnapshot> | undefined;
@@ -174,7 +174,7 @@ export function createRealtimeArenaPresentation(
     },
     present(snapshot, deltaMs, frameOptions = {}) {
       prepareFrame(snapshot, deltaMs, frameOptions);
-      return projectArenaSnapshot(
+      return projectRealtimeArenaSnapshot(
         requireActiveSample(activeSample),
         snapshot,
         activePresented ?? projector.present(requireActiveSample(activeSample)),
@@ -208,7 +208,7 @@ function writeVector2(target: NetworkVector2, value: NetworkVector2): void {
   target.y = value.y;
 }
 
-function projectArenaSnapshot(
+export function projectRealtimeArenaSnapshot(
   sample: SnapshotPlaybackSample<RealtimeArenaSnapshot>,
   fallback: RealtimeArenaSnapshot,
   presented: PresentedSnapshotTracks,
@@ -335,22 +335,23 @@ function cloneArenaSnapshot(snapshot: RealtimeArenaSnapshot): RealtimeArenaSnaps
   };
 }
 
-function createArenaPresentationTracks(
-  snapDistance: number
-): Array<SnapshotPresentationTrack<RealtimeArenaSnapshot>> {
+export function createRealtimeArenaPresentationTracks<TSnapshot>(
+  readSnapshot: (snapshot: TSnapshot) => RealtimeArenaSnapshot,
+  snapDistance = DEFAULT_SNAP_DISTANCE
+): Array<SnapshotPresentationTrack<TSnapshot>> {
   return [
-    defineSnapshotVector2Track<RealtimeArenaSnapshot>({
+    defineSnapshotVector2Track<TSnapshot>({
       snapDistance,
-      selectInto(snapshot, writer) {
-        for (const player of snapshot.players) {
+      selectInto(source, writer) {
+        for (const player of readSnapshot(source).players) {
           writer.add(playerKey(player.id), player.position);
         }
       }
     }),
-    defineSnapshotVector2Track<RealtimeArenaSnapshot>({
+    defineSnapshotVector2Track<TSnapshot>({
       snapDistance,
-      selectInto(snapshot, writer) {
-        for (const core of snapshot.cores) {
+      selectInto(source, writer) {
+        for (const core of readSnapshot(source).cores) {
           if (core.carriedByPlayerId === undefined) {
             writer.add(coreKey(core.id), core.position);
           }
@@ -369,6 +370,16 @@ function shouldSnapPhase(
   }
 
   return next === "lobby" || next === "countdown" || previous === "results";
+}
+
+export function shouldResetRealtimeArenaPresentation(
+  previous: RealtimeArenaSnapshot | undefined,
+  next: RealtimeArenaSnapshot
+): boolean {
+  return (
+    previous !== undefined &&
+    (next.tick < previous.tick || shouldSnapPhase(previous.phase, next.phase))
+  );
 }
 
 function playerKey(playerId: string): string {

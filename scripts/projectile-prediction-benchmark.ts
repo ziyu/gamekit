@@ -6,7 +6,7 @@ import {
   type CombatKinematicProjectileDefinition,
   type CombatKinematicProjectileRecord
 } from "../packages/combat/src";
-import { createMultiplayerPredictedSpawnRegistry } from "../packages/multiplayer-core/src";
+import { createMultiplayerPredictedLifecycleDomain } from "../packages/multiplayer-core/src";
 import {
   createMemoryPhysicsBackend,
   createPhysicsPredictionIsland,
@@ -51,7 +51,7 @@ console.log(
         ownerFireFixtureCreation: "excluded",
         ownerSweep: "real memory-physics scene query",
         physicsIsland:
-          "full-scene checkpoint capture, late-command restore, and whole-island resimulation",
+          "full-scene checkpoint capture, late-command restore, whole-island resimulation, and authority hard correction",
         reports: ["p50", "p95", "max", "hard bounds", "dispose retained state"]
       },
       suites,
@@ -213,43 +213,50 @@ function runRemoteReconstruction(): ProjectilePredictionBenchmarkCase {
 
 function runPredictedSpawnMatching(): ProjectilePredictionBenchmarkCase {
   const spawns = 100_000;
-  const registry = createMultiplayerPredictedSpawnRegistry<number, number>({
+  const domain = createMultiplayerPredictedLifecycleDomain<number, number>({
+    kind: "projectile",
     generation: 1,
     maxPending: 2_048,
     maxResolved: 2_048,
-    maxAgeTicks: spawns
+    maxAgeTicks: spawns,
+    maxBindings: 2_048
   });
   const start = process.cpuUsage();
   for (let index = 0; index < spawns; index += 1) {
     const correlationId = `shot-${index}`;
-    registry.register({
-      kind: "projectile",
+    domain.register({
       correlationId,
-      generation: 1,
       localId: `local-${index}`,
       tick: index,
       value: index
     });
-    registry.match({
-      kind: "projectile",
-      correlationId,
+    domain.sync({
       generation: 1,
-      authorityId: `authority-${index}`,
-      tick: index + 1,
-      value: index
+      authorityTime: index,
+      localTime: index,
+      authoritySpawns: [
+        {
+          correlationId,
+          authorityId: `authority-${index}`,
+          tick: index + 1,
+          value: index
+        }
+      ]
     });
   }
   const durationMs = elapsedCpuMs(start);
-  const diagnostics = registry.diagnostics();
-  registry.dispose();
+  const diagnostics = domain.diagnostics();
+  domain.dispose();
   return {
     spawns,
     durationMs: round(durationMs),
     microsecondsPerSpawn: round((durationMs * 1_000) / spawns),
-    pendingAfterMatch: diagnostics.pending,
-    pendingOrderEntries: diagnostics.pendingOrderEntries,
-    resolvedEntries: diagnostics.resolved,
-    matched: diagnostics.matched
+    pendingAfterMatch: diagnostics.spawns.pending,
+    pendingOrderEntries: diagnostics.spawns.pendingOrderEntries,
+    resolvedEntries: diagnostics.spawns.resolved,
+    matched: diagnostics.spawns.matched,
+    bindings: diagnostics.bindings,
+    localIdentities: diagnostics.localIdentities
   };
 }
 
@@ -262,6 +269,8 @@ function runPhysicsIslandRollback(): ProjectilePredictionBenchmarkCase {
   let maxHistoryBytes = 0;
   let maxHistoryEntries = 0;
   let resimulatedTicks = 0;
+  let hardCorrections = 0;
+  let hardCorrectionFailures = 0;
   let retainedAfterDispose = 0;
   for (let roundIndex = 0; roundIndex < rounds; roundIndex += 1) {
     const islandMembers: PhysicsPredictionIslandMemberDefinition[] = Array.from(
@@ -300,11 +309,18 @@ function runPhysicsIslandRollback(): ProjectilePredictionBenchmarkCase {
       memberId: "member-0",
       patch: { linearVelocity: { x: 2, y: 0 } }
     });
+    const authorityBaseline = island.state();
+    authorityBaseline.members[0]!.body.position.x += 0.5;
+    const hardCorrection = island.hardCorrect(authorityBaseline);
+    if (hardCorrection.status !== "corrected") {
+      hardCorrectionFailures += 1;
+    }
     samples.push(elapsedCpuMs(start));
     const diagnostics = island.diagnostics();
     maxHistoryBytes = Math.max(maxHistoryBytes, diagnostics.historyBytes);
     maxHistoryEntries = Math.max(maxHistoryEntries, diagnostics.historyEntries);
     resimulatedTicks += diagnostics.resimulatedTicks;
+    hardCorrections += diagnostics.hardCorrections;
     island.dispose();
     const disposed = island.diagnostics();
     retainedAfterDispose += disposed.members + disposed.historyEntries + disposed.commands;
@@ -321,6 +337,8 @@ function runPhysicsIslandRollback(): ProjectilePredictionBenchmarkCase {
     maxHistoryBytes,
     maxHistoryEntries,
     resimulatedTicks,
+    hardCorrections,
+    hardCorrectionFailures,
     retainedAfterDispose
   };
 }

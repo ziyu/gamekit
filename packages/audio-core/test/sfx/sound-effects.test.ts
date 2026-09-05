@@ -76,6 +76,27 @@ describe("SoundEffects", () => {
     });
   });
 
+  it("keeps concurrency membership synchronized with playback lifecycle stops", () => {
+    const audio = createGameAudio({ backend: createMemoryAudioBackend(), ...baseCatalog() });
+    const first = audio.sfx.play("sfx.weapon", { priority: 4 });
+    const second = audio.sfx.play("sfx.weapon", { priority: 4 });
+    if (
+      first.status === "rejected" ||
+      first.status === "deduplicated" ||
+      second.status === "rejected" ||
+      second.status === "deduplicated"
+    ) {
+      throw new Error("Expected initial SFX playback");
+    }
+    expect(first.handle.stop()).toBe(true);
+    expect(audio.sfx.play("sfx.weapon", { priority: 0 })).toMatchObject({
+      status: "playing",
+      stoppedInstanceIds: []
+    });
+    expect(audio.sfx.snapshot().stoppedForConcurrency).toBe(0);
+    audio.dispose();
+  });
+
   it("advances delayed playback only for the elapsed time after its scheduled start", () => {
     const audio = createGameAudio({ backend: createMemoryAudioBackend(), ...baseCatalog() });
     const played = audio.sfx.play("sfx.weapon", { delayMs: 100, startOffsetMs: 250 });

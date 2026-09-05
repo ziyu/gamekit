@@ -2,6 +2,8 @@ import { GameError } from "@gamekit/core";
 import type {
   PhysicsBackendAdapter,
   PhysicsBackendCapabilities,
+  PhysicsBodyCommand,
+  PhysicsBodyCommandResult,
   PhysicsBodyDefinition,
   PhysicsBodyId,
   PhysicsBodyPatch,
@@ -89,6 +91,12 @@ export function createMemoryPhysicsBackend(
           fullScene: true,
           deterministicReplay: true
         },
+        bodyCommands: {
+          linearImpulse: true,
+          applicationPoint: true,
+          angularImpulse: true,
+          wakePolicy: true
+        },
         custom: {
           queryModes: "any,closest,all",
           querySorting: "distance",
@@ -167,6 +175,18 @@ function createMemoryPhysicsScene(
       if (patch.gravityScale !== undefined) {
         body.gravityScale = patch.gravityScale;
       }
+    },
+    applyBodyCommand(command) {
+      assertActive();
+      const body = bodies.get(command.bodyId);
+      if (body === undefined) {
+        return bodyCommandResult(
+          command,
+          "body-missing",
+          `Missing physics body: ${command.bodyId}`
+        );
+      }
+      return applyMemoryBodyCommand(body, command, dimension);
     },
     destroyBody(id) {
       assertActive();
@@ -409,6 +429,134 @@ function patchBodyState(state: PhysicsBodyState, patch: PhysicsBodyPatch): Physi
       : { angularVelocity: cloneRotation(patch.angularVelocity) }),
     ...(patch.sleeping === undefined ? {} : { sleeping: patch.sleeping }),
     ...(patch.userData === undefined ? {} : { userData: { ...patch.userData } })
+  };
+}
+
+function applyMemoryBodyCommand(
+  body: MemoryBodyRecord,
+  command: PhysicsBodyCommand,
+  dimension: "2d" | "3d"
+): PhysicsBodyCommandResult {
+  if (body.state.kind !== "dynamic") {
+    return bodyCommandResult(
+      command,
+      "body-kind-mismatch",
+      `Physics body command requires a dynamic body: ${command.bodyId}`
+    );
+  }
+  if (command.type === "linear-impulse") {
+    if (
+      !validVectorForDimension(command.impulse, dimension) ||
+      (command.point !== undefined && !validVectorForDimension(command.point, dimension))
+    ) {
+      return bodyCommandResult(command, "invalid-command", "Linear impulse vectors are invalid");
+    }
+    body.state = {
+      ...body.state,
+      linearVelocity: addVectors(body.state.linearVelocity, command.impulse),
+      sleeping: command.wake === "preserve" ? body.state.sleeping : false
+    };
+    if (command.point !== undefined) {
+      body.state = applyPointAngularImpulse(body.state, command.point, command.impulse, dimension);
+    }
+    return bodyCommandResult(command, "applied");
+  }
+  const angularImpulse = readAngularImpulse(command.impulse, dimension);
+  if (angularImpulse === undefined) {
+    return bodyCommandResult(command, "invalid-command", "Angular impulse dimension is invalid");
+  }
+  body.state = {
+    ...body.state,
+    angularVelocity: addAngularVelocity(body.state.angularVelocity, angularImpulse, dimension),
+    sleeping: command.wake === "preserve" ? body.state.sleeping : false
+  };
+  return bodyCommandResult(command, "applied");
+}
+
+function applyPointAngularImpulse(
+  state: PhysicsBodyState,
+  point: PhysicsVector,
+  impulse: PhysicsVector,
+  dimension: "2d" | "3d"
+): PhysicsBodyState {
+  const offset = {
+    x: point.x - state.position.x,
+    y: point.y - state.position.y,
+    z: (point.z ?? 0) - (state.position.z ?? 0)
+  };
+  if (dimension === "2d") {
+    const torque = offset.x * impulse.y - offset.y * impulse.x;
+    const current = typeof state.angularVelocity === "number" ? state.angularVelocity : 0;
+    return { ...state, angularVelocity: current + torque };
+  }
+  const torque = {
+    x: offset.y * (impulse.z ?? 0) - offset.z * impulse.y,
+    y: offset.z * impulse.x - offset.x * (impulse.z ?? 0),
+    z: offset.x * impulse.y - offset.y * impulse.x
+  };
+  return {
+    ...state,
+    angularVelocity: addAngularVelocity(state.angularVelocity, torque, dimension)
+  };
+}
+
+function addAngularVelocity(
+  current: PhysicsRotation | undefined,
+  impulse: number | PhysicsVector,
+  dimension: "2d" | "3d"
+): PhysicsRotation {
+  if (dimension === "2d") {
+    return (
+      (typeof current === "number" ? current : 0) + (typeof impulse === "number" ? impulse : 0)
+    );
+  }
+  const currentVector = isPhysicsVector(current) ? current : { x: 0, y: 0, z: 0 };
+  const impulseVector = typeof impulse === "number" ? { x: 0, y: 0, z: impulse } : impulse;
+  return addVectors(currentVector, impulseVector);
+}
+
+function readAngularImpulse(
+  impulse: PhysicsRotation,
+  dimension: "2d" | "3d"
+): number | PhysicsVector | undefined {
+  if (dimension === "2d") {
+    return typeof impulse === "number" && Number.isFinite(impulse) ? impulse : undefined;
+  }
+  return isPhysicsVector(impulse) && impulse.z !== undefined ? cloneVector(impulse) : undefined;
+}
+
+function validVectorForDimension(vector: PhysicsVector, dimension: "2d" | "3d"): boolean {
+  if (
+    !Number.isFinite(vector.x) ||
+    !Number.isFinite(vector.y) ||
+    (vector.z !== undefined && !Number.isFinite(vector.z))
+  ) {
+    return false;
+  }
+  return dimension === "3d" || vector.z === undefined || vector.z === 0;
+}
+
+function isPhysicsVector(value: PhysicsRotation | undefined): value is PhysicsVector {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !("w" in value) &&
+    Number.isFinite(value.x) &&
+    Number.isFinite(value.y) &&
+    (value.z === undefined || Number.isFinite(value.z))
+  );
+}
+
+function bodyCommandResult(
+  command: PhysicsBodyCommand,
+  status: PhysicsBodyCommandResult["status"],
+  reason?: string
+): PhysicsBodyCommandResult {
+  return {
+    status,
+    bodyId: command.bodyId,
+    commandType: command.type,
+    ...(reason === undefined ? {} : { reason })
   };
 }
 

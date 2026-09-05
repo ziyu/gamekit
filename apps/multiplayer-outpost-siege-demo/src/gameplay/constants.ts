@@ -6,6 +6,7 @@ export const OUTPOST_NETWORK_TIMING = Object.freeze({
   tickRateHz: 20,
   tickMs: 1000 / 20
 });
+export const OUTPOST_COLYSEUS_SCHEMA_VERSION = "outpost.field-state.v10";
 export const OUTPOST_PREVIEW_SEED = "outpost-siege.preview.v1";
 export const OUTPOST_PREVIEW_PLAYER_ID = "outpost.preview.player";
 

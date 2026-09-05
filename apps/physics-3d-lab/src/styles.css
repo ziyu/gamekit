@@ -171,6 +171,13 @@ pre {
   letter-spacing: 0;
 }
 
+.physics-3d-lab__character-hint {
+  margin: 0.45rem 0 0;
+  color: color-mix(in srgb, #a1afa3 82%, #66e2ff 18%);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
 .physics-3d-lab__status {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

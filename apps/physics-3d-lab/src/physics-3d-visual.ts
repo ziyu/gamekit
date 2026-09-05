@@ -254,6 +254,9 @@ function createMaterial(role: Physics3dLabRole, sensor: boolean): THREE.MeshStan
 }
 
 function colorForRole(role: Physics3dLabRole): number {
+  if (role === "character") {
+    return 0x66e2ff;
+  }
   if (role === "drop") {
     return 0x91d887;
   }

@@ -26,6 +26,8 @@
       "@gamekit/event-bus": ["packages/event-bus/src/index.ts"],
       "@gamekit/game-runtime": ["packages/game-runtime/src/index.ts"],
       "@gamekit/camera-core": ["packages/camera-core/src/index.ts"],
+      "@gamekit/character-controller": ["packages/character-controller/src/index.ts"],
+      "@gamekit/physics-core/testing": ["packages/physics-core/src/testing/index.ts"],
       "@gamekit/physics-core": ["packages/physics-core/src/index.ts"],
       "@gamekit/physics-rapier2d": ["packages/physics-rapier2d/src/index.ts"],
       "@gamekit/physics-rapier3d": ["packages/physics-rapier3d/src/index.ts"],

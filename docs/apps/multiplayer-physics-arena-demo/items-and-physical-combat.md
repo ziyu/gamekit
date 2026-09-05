@@ -1,0 +1,253 @@
+# Knockout Arena 道具与物理战斗
+
+## 领域边界
+
+Arena Item domain 拥有道具定义、pickup claim、owner、carry/use/throw/drop、world respawn 和公开 item projection。
+GAS 拥有 action execution/cooldown/effect，Combat 拥有 target validation、delivery、hit ticket 与去重，Physics 拥有真实 body、
+contact、query 和 impulse。任何一层都不能重建其他层的生命周期。
+
+游戏不以传统 HP 清空作为主要淘汰条件。道具和机关通过 Physics impulse、instability 与 stagger 改变位置优势；离开有效
+场地才由 Match authority 提交 elimination。
+
+## Identity 与 Definition
+
+```ts
+type ArenaItemInstanceId = string;
+type ArenaItemGeneration = number;
+
+type ArenaItemDefinition = {
+  id: string;
+  kind: "throwable" | "impact" | "area" | "melee";
+  physics: {
+    shape: SphereShape | BoxShape;
+    mass: number;
+    friction: number;
+    restitution: number;
+    continuousCollisionDetection: boolean;
+    maxLinearSpeed: number;
+    lifetimeTicks: number;
+    maxBounces: number;
+  };
+  carry: {
+    socket: string;
+    speedMultiplier: number;
+    jumpMultiplier: number;
+    dropPolicy: "drop" | "spend";
+  };
+  action: {
+    mode: "throw-contact" | "throw-area" | "melee";
+    windupTicks: number;
+    maxChargeTicks: number;
+    activeTicks: number;
+    cooldownTicks: number;
+    launchSpeed: number;
+    baseImpulse: number;
+    areaRadius: number;
+  };
+  effect: {
+    impulseMode: "directional" | "radial" | "pull" | "launch";
+    instabilityDelta: number;
+    staggerMultiplier: number;
+  };
+  respawn: { mode: "timed" | "none"; ticks: number };
+  presentationId: string;
+  networkStrategy: "predicted-entity" | "authority-only";
+};
+```
+
+Definition id、instance id 和 generation 必须分开。一次 pickup 后再 throw 的物理 body 使用同一个 item instance 但递增
+generation；旧 generation 的 contact、prediction、effect 或 delayed snapshot 不能结束新实例。
+
+Definition Compiler 验证有限数值、shape、kind/action/effect 对应、throw/melee 空间参数、respawn policy、stable presentation/socket id、
+definition/spawn 唯一性和容量，并从 compiled stage item pool + spawn set 生成稳定 manifest。Authority Runtime 只接受与启动时 compiled
+definition 完全一致的 manifest，不能信任业务层临时拼出的部分定义。
+
+## 生命周期
+
+```txt
+spawning
+  -> world
+  -> pickup-pending
+  -> carried
+  -> windup
+  -> committed
+  -> released / melee-active / triggered
+  -> spent / world
+  -> cooldown
+  -> respawning
+  -> world
+```
+
+通用规则：
+
+- `world` 才存在可碰撞 Physics member。
+- `pickup-pending` 只是 authority arbitration，不提前产生最终 owner。
+- `carried/windup` 使用语义 owner + presentation attachment；world body 已 despawn。
+- `released` 以新 generation spawn Physics member；初始 transform/velocity/impulse 来自 authority commit。
+- `spent` 清理 hit memory、fuse、effect 与 physics member；是否回到 world 或 respawn 由 definition 决定。
+- 每个 transition 记录 authority tick、reason 与 correlation id，并且对重复 command 幂等。
+
+Item Authority Runtime 对 instance、command result 和 transition trace 分别设硬上限。Command id 重复且内容相同返回原结果；同 id
+不同内容明确拒绝。Stage generation reset 清空旧 instance/command/trace，dispose 后 retained instance、command 和 trace 必须为零。
+
+## Interaction Targeting 与 Pickup Arbitration
+
+客户端/AI 只提交 `interact` intent，不提交可信 item owner。Authority 在对应 tick：
+
+1. 读取 actor 的 authority position/facing 和可交互状态。
+2. 用 overlap/shape cast 获取有界候选，忽略自己、不可拾取 category 和无效 generation。
+3. 按 view alignment、距离、item priority、instance id 稳定排序。
+4. 对同 tick 多人 claim 按 command tick、sequence、距离和 participant id 稳定裁决。
+5. 验证 winner 的 carry slot、stagger/recovery、item state 和 stage policy。
+6. Commit owner，despawn world member，并发布一次 pickup result/cue。
+
+失败结果必须区分 out-of-range、not-visible、already-claimed、invalid-state、carry-occupied、stage-blocked 和 stale-generation。
+客户端 prediction 可以提前播放 reach/highlight，但 authority reject 必须 cancel，不能留下隐藏 owner 或删除真实 item。
+
+## Carry
+
+- 每名角色默认一个 carry slot。扩展多 slot 需要新的明确 UI/输入设计，不能静默堆叠。
+- Carried item 使用稳定 socket semantic（例如 `hand.primary`），不把 Three bone/native object 写入 gameplay state。
+- Pickup 不删除 item presentation identity；同一个 instance/generation visual 从 world root 转挂到 owner socket，直到 drop/throw
+  生成下一 generation。持有期间只移除 solver body，不能让道具模型消失或另造一件纯装饰复制品。
+- Carry profile 可以修改角色 max speed、acceleration、dive、jump、turn rate 和被击落时 drop policy。
+- Carry modifier 作为 `arena.item-carry` auxiliary command 在 Character Motor 之后执行；它与 Physics checkpoint 同 tick
+  capture/restore/replay。Authority 与 Client 必须从同一 item owner/definition 生成 command，不能只在表现层调移动速度。
+- Carried item 不参与 solver contact。表现 attachment 只消费 owner presented transform；它不能作为命中或遮挡来源。
+- Owner eliminated、disconnect grace 超时、stage 结束或 item action cancel 时执行 definition 的 drop/spent policy，且只执行一次。
+
+## Use、Windup、Throw 与 Drop
+
+Item action 走 GAS execution：`requested → preparing/windup → committed → active → recovering → completed/cancelled`。
+
+Arena authority 通过标准 `createGasRuntime`、`createCombatRuntime` 与
+`createCombatAbilityDeliveryBridge` 组合道具命中，不维护私有 hit/effect 替身。Item Runtime 负责拾取、携带与可见 windup；物品
+进入 active generation 后，authority contact/melee target 生成稳定 delivery request，GAS committed phase 绑定对应 Combat
+delivery。每种 compiled item definition 都生成稳定 ability/effect/delivery/binding，definition 的 `baseImpulse` 与 GAS
+instability delta 分别进入空间响应和属性响应。
+
+- `usePressed/useHeld` 控制 request 与有限 charge；charge 由 authority tick 计算并钳制到 definition 上限。
+- Commit 前被 stagger、eliminated、item owner change 或 stage transition 会 cancel，不生成攻击或 Physics body。
+- Throw commit 解析 authority hand/socket position、normalized aim、charge curve、owner inherited velocity 和 collision-safe spawn。
+- Spawn 先运行 capsule/shape clearance；失败时使用明确 fallback/drop，不把 item 生成在墙后或 owner collider 内。
+- Drop 使用低速 world spawn，不触发 attack delivery；throw 才创建可命中的 active item generation。
+- Drop 与 throw 都递增 item instance generation；drop 回到 `world`，throw 进入 definition 声明的 active state。新 generation
+  的 Physics member id 必须替换旧 carried/world member，旧 generation 的 contact、command 和 result 一律 stale。
+- Melee commit 不生成隐藏物理锤 joint；Combat melee/shape delivery 从 authority actor/socket 空间事实求候选。
+
+## 首组道具
+
+| 道具     | 行为                                 | Physics/Combat 策略                          | 约束                                                  |
+| -------- | ------------------------------------ | -------------------------------------------- | ----------------------------------------------------- |
+| 泡沫球   | 快速拾取、短蓄力、快速投掷、弹跳     | predicted dynamic entity + contact hit       | 有限 bounce/hit/lifetime；轻 impulse                  |
+| 能量块   | 携带降速、长蓄力、重投、可再次拾取   | predicted dynamic entity + directional hit   | CCD、重 impulse、低最大速度                           |
+| 爆破球   | 投掷后首次有效碰撞触发范围外推       | predicted entity + authority radial delivery | 一次 trigger、稳定半径、命中去重                      |
+| 泡沫锤   | carried windup 后近战横扫，也可 drop | GAS phase + directional melee delivery       | 朝向/预兆清晰；无 native joint                        |
+| 引力球   | 投掷后把范围内对手拉向爆心           | predicted entity + authority pull delivery   | 只允许 area action；拉力方向由 authority 空间事实计算 |
+| 弹簧拳套 | 快速近战上挑，把目标打向空中         | GAS phase + launch melee delivery            | launch 只允许 melee；水平力受限，垂直力有硬上限       |
+| 电击棍   | 短距离轻推，但快速累积失衡并延长硬直 | GAS effect + high-stagger melee delivery     | 单次 instability 与 stagger multiplier 均有上限       |
+
+`impulseMode` 决定空间响应：`directional` 沿命中方向、`radial` 从爆心外推、`pull` 反向拉向爆心、`launch`
+以受限水平力和显著垂直力上挑。`instabilityDelta` 与 `staggerMultiplier` 分别驱动 GAS 属性和角色硬直；它们不从
+`baseImpulse` 暗中推导，因此低推力高控制与高推力低控制可以形成不同玩法身份。
+
+所有 hit/bounce/fuse/lifetime、charge curve、carry modifier、impulse/effect profile 和 presentation id 都来自 Data；session、render
+或 input 文件不维护道具 id switch。
+
+## Instability、Stagger 与 Knockback
+
+Arena actor 具有 authority `instability`，范围归一化并随安全时间衰减。成功 impact 计算：
+
+```txt
+base spatial impulse
+  × item / hazard impulse profile
+  × target instability response
+  × charge / relative speed / contact angle factors
+  × stage modifier
+  -> clamped Physics impulse
+```
+
+同时提交有限 instability delta。设计约束：
+
+- Physics contact 提供空间事实，不直接增加 score 或淘汰。
+- Instability 越高，后续有效 impulse 可以越大，但 multiplier、单次 delta 和总值有硬上限。
+- 小接触、持续 resting contact 和同一 hit ticket 不能每 tick 重复叠加。
+- 超过 stagger threshold 时 GAS effect 提交 duration/severity；Character Controller 消费 movement modifier 和 external impulse。
+- Instability 衰减使用 authority tick，并在 stage transition/reset 清理；客户端不能用 UI bar 值反向计算 gameplay。
+- Friendly/self/environment relationship 与 stage rule 由 Arena policy 解释，Combat Core 不内置 player 阵营。
+
+## Hit Pipeline
+
+```txt
+committed item action / active item contact
+  -> stable Combat delivery request
+  -> Physics candidate/contact
+  -> relationship + generation + stage validation
+  -> hit ticket dedupe
+  -> GAS instability/stagger effect
+  -> Physics impulse command
+  -> authority impact ledger
+  -> KO attribution / cue / trace
+```
+
+Effect application 与 Physics impulse 必须共享 correlation/hit ticket，但各自只有一个 owner。Contact、melee query、area query
+不能为同一次 attack 重复结算。被 authority reject 的 speculative impact 只能撤销表现，不能补写 gameplay。
+
+当前 authority bridge 对每个 execution + target 只创建一个 GAS request；GAS request history 与 Combat hit ticket 共同抑制
+duplicate。成功 hit 才向 Physics island 排入下一 tick 的 `linear-impulse` body command，并把一次性
+`staggerDurationMs` 合并进共享 Character Motor contributor。公开 `combat.actors`/`combat.hits` 分别以 64 条为上限；stage reset
+同时清空 instability、stagger、delivery/hit history 和 pending impulse，dispose 后 retained hit/impulse 必须为零。
+
+## KO/Assist 归因
+
+Impact ledger 保留有界窗口，记录 source participant、target、item/action、hit ticket、impulse magnitude/direction、tick 和
+environment cause。淘汰时 Match domain 只读取 ledger 的稳定摘要：
+
+- 最后一个超过 threshold 且未过期的敌对 source 获得 KO。
+- 窗口内其他有效贡献者按 definition 获得有限 assist。
+- 自撞、纯机关、过期影响或无 source 记录为 environment。
+- 归因不改变 elimination 是否成立，只解释结果和积分。
+
+最终排名和 tie-break 见 [`match-flow.md`](./match-flow.md)。
+
+## Multiplayer Prediction
+
+- Continuous move/aim/charge 进入 fixed-step redundant input；pickup/use/throw/drop 走 bounded reliable action lane，携带
+  command/correlation、已消费 input sequence、normalized aim、charge 和可选 item/generation hint。Authority 不信任 hint，仍按
+  authority body 重新 target/validate。
+- Owner 可以预测 pickup despawn、throw spawn 和 trajectory，但 item owner、hit、instability、stagger、KO 与 respawn 由 authority
+  confirm/reject/correct。
+- 可碰撞 released item 与所有潜在 contact actor 在同一 prediction island；不能只在 owner client 模拟 collision。
+- Predicted item spawn 使用 correlation + item instance/generation 匹配 authority member；reject 必须清理 body/history/effect。
+- Carried item 不在 island，remote/client 通过 authority owner/action phase 映射到 presentation attachment。
+- Item member set 变化更新 membership revision 或使用标准 predicted lifecycle；应用不在 network callback 手写 reconcile。
+- Impact/pickup/throw cue 使用 speculative effect journal，重复 replay/duplicate snapshot 不重复播放或累计。
+
+Arena client 把 `use/drop` 的 execution/command id 直接交给标准 Physics Arena descriptor 的
+`registerPredictedMember(...)`，并使用与 authority 相同的 release member builder 计算 generation、socket position、继承速度与
+launch velocity。Authority frame 的 item/action projection 负责 correlation match 与 definition 重建；Physics body `userData`
+不会进入 wire。Pickup/use/drop 与 predicted item contact 分别以稳定 effect id 进入一个有界 journal，authority
+`itemActions`/`combat.hits` 只结算表现，不在客户端补写 owner、instability 或 hit。
+
+更完整的输入、frame、fault 与 budget 规则见 [`multiplayer-and-prediction.md`](./multiplayer-and-prediction.md)。
+
+## Respawn 与 Stage Cleanup
+
+- Item respawn 使用 stage-owned spawn point、item instance 和新 generation；不能与 actor 淘汰/重生混为一套策略。
+- Respawn point 需要 clearance、kill volume、hazard phase 和距离 active actor 的验证。
+- Stage 结束原子 cancel pending claim/execution，despawn active items，清理 hit memory/ledger，并关闭旧 generation。
+- 下一 stage 只创建其 DataPack 声明的 item set；旧 delayed contact/fuse/result 一律 stale。
+
+## 诊断与测试合同
+
+诊断至少公开 item state/owner/generation、last command/result、claim candidates/tie-break、GAS execution phase、active hit ticket、
+Physics member、fuse/lifetime、effect journal、ledger retention 与 cleanup reason。
+
+行为契约覆盖：
+
+- 同 tick 双人 pickup、stale claim、owner disconnect/elimination 和 stage reset。
+- Carry modifier、drop、cancel-before-commit、throw clearance 和 inherited velocity。
+- Predicted spawn match/reject、bounce、fuse、area/melee duplicate suppression。
+- Instability clamp/decay、stagger merge、external impulse 与 KO/assist window。
+- Network loss/duplicate/reorder 下 item 不复制、不丢 owner、不重复 hit/KO/cue。
+- 10 分钟 churn 后 item/member/history/effect/ledger 有界，dispose retained state 为 0。

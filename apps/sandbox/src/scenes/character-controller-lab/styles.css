@@ -1,0 +1,544 @@
+.controller-lab {
+  --cc-bg: #080b0a;
+  --cc-panel: #101512;
+  --cc-panel-soft: #151c18;
+  --cc-line: rgba(227, 232, 216, 0.14);
+  --cc-ink: #f1eee2;
+  --cc-muted: #89958d;
+  --cc-lime: #8ef0b5;
+  --cc-amber: #f4cb5e;
+  --cc-red: #ff6a61;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 72% 12%, rgba(51, 105, 78, 0.18), transparent 31%),
+    linear-gradient(120deg, rgba(244, 203, 94, 0.025), transparent 48%), var(--cc-bg);
+  color: var(--cc-ink);
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.controller-lab::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 100% 4px;
+  content: "";
+  pointer-events: none;
+}
+
+.controller-lab__masthead,
+.controller-lab__workspace,
+.controller-lab__footer {
+  position: relative;
+  z-index: 1;
+}
+
+.controller-lab__masthead {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  min-height: 86px;
+  padding: 18px 26px 16px;
+  border-bottom: 1px solid var(--cc-line);
+  background: rgba(8, 11, 10, 0.88);
+}
+
+.controller-lab__kicker,
+.controller-lab__section-label,
+.controller-lab__protocol span,
+.controller-lab__viewport-hud span,
+.controller-lab__timer > span {
+  color: var(--cc-muted);
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.controller-lab__masthead h1 {
+  margin: 5px 0 0;
+  font-family: "Avenir Next Condensed", "DIN Condensed", sans-serif;
+  font-size: clamp(2rem, 3.3vw, 3.55rem);
+  font-stretch: condensed;
+  letter-spacing: -0.045em;
+  line-height: 0.88;
+  text-transform: uppercase;
+}
+
+.controller-lab__protocol {
+  display: grid;
+  gap: 5px;
+  max-width: 420px;
+  text-align: right;
+}
+
+.controller-lab__protocol strong {
+  color: var(--cc-lime);
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.controller-lab__workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  min-height: 0;
+}
+
+.controller-lab__viewport {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--cc-line);
+  background: #080b0a;
+  cursor: grab;
+  outline: none;
+  touch-action: none;
+}
+
+.controller-lab__viewport[data-camera-dragging="true"] {
+  cursor: grabbing;
+}
+
+.controller-lab__viewport:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--cc-lime);
+}
+
+.controller-lab__viewport canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.controller-lab__loading {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  background: rgba(8, 11, 10, 0.92);
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  letter-spacing: 0.12em;
+}
+
+.controller-lab__loading[hidden] {
+  display: none;
+}
+
+.controller-lab__loading-mark {
+  display: grid;
+  place-content: center;
+  width: 62px;
+  height: 62px;
+  margin-bottom: 8px;
+  border: 1px solid var(--cc-lime);
+  color: var(--cc-lime);
+  font-size: 1.4rem;
+  font-weight: 900;
+  animation: controller-lab-pulse 1.2s steps(2) infinite;
+}
+
+.controller-lab__loading small {
+  color: var(--cc-muted);
+  font-size: 0.6rem;
+}
+
+.controller-lab__reticle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 4;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(142, 240, 181, 0.38);
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.controller-lab__reticle::before,
+.controller-lab__reticle::after {
+  position: absolute;
+  background: rgba(142, 240, 181, 0.54);
+  content: "";
+}
+
+.controller-lab__reticle::before {
+  top: 13px;
+  left: -8px;
+  width: 44px;
+  height: 1px;
+}
+
+.controller-lab__reticle::after {
+  top: -8px;
+  left: 13px;
+  width: 1px;
+  height: 44px;
+}
+
+.controller-lab__viewport-hud {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 6;
+  display: flex;
+  border: 1px solid var(--cc-line);
+  background: rgba(8, 11, 10, 0.78);
+  backdrop-filter: blur(10px);
+}
+
+.controller-lab__viewport-hud > div {
+  display: grid;
+  gap: 4px;
+  min-width: 112px;
+  padding: 10px 13px;
+  border-right: 1px solid var(--cc-line);
+}
+
+.controller-lab__viewport-hud > div:last-child {
+  border-right: 0;
+}
+
+.controller-lab__viewport-hud strong {
+  font-family: "Avenir Next Condensed", "DIN Condensed", sans-serif;
+  font-size: 1.08rem;
+  letter-spacing: 0.04em;
+}
+
+.controller-lab__controls-hint {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid var(--cc-line);
+  background: rgba(8, 11, 10, 0.82);
+  color: var(--cc-muted);
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.54rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.controller-lab__controls-hint kbd {
+  padding: 4px 6px;
+  border: 1px solid rgba(244, 203, 94, 0.42);
+  color: var(--cc-amber);
+  font: inherit;
+}
+
+.controller-lab__console {
+  min-height: 0;
+  overflow-y: auto;
+  background: rgba(13, 18, 15, 0.96);
+}
+
+.controller-lab__readout,
+.controller-lab__diagnostics {
+  padding: 17px;
+  border-bottom: 1px solid var(--cc-line);
+}
+
+.controller-lab__readout--primary {
+  background: linear-gradient(135deg, rgba(142, 240, 181, 0.09), transparent 60%);
+}
+
+.controller-lab__mode-lockup {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  margin: 12px 0 16px;
+}
+
+.controller-lab__mode-lockup strong {
+  color: var(--cc-amber);
+  font-family: "Avenir Next Condensed", "DIN Condensed", sans-serif;
+  font-size: 2.1rem;
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+}
+
+.controller-lab[data-motor-mode="staggered"] .controller-lab__mode-lockup strong,
+.controller-lab[data-motor-mode="staggered"] [data-ui="mode"] {
+  color: var(--cc-red);
+}
+
+.controller-lab__mode-lockup span {
+  padding: 4px 6px;
+  border: 1px solid rgba(142, 240, 181, 0.34);
+  color: var(--cc-lime);
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.52rem;
+}
+
+.controller-lab[data-grounded="false"] .controller-lab__mode-lockup span {
+  border-color: rgba(255, 106, 97, 0.3);
+  color: var(--cc-red);
+}
+
+.controller-lab__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--cc-line);
+  border-left: 1px solid var(--cc-line);
+}
+
+.controller-lab__metrics > div {
+  display: grid;
+  gap: 5px;
+  padding: 9px 7px;
+  border-right: 1px solid var(--cc-line);
+  border-bottom: 1px solid var(--cc-line);
+}
+
+.controller-lab__metrics span {
+  color: var(--cc-muted);
+  font-size: 0.55rem;
+  text-transform: uppercase;
+}
+
+.controller-lab__metrics strong {
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.68rem;
+}
+
+.controller-lab__timer {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr) 50px;
+  align-items: center;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.controller-lab__timer i {
+  height: 3px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.controller-lab__timer b {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--cc-lime);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 60ms linear;
+}
+
+.controller-lab__timer strong {
+  color: var(--cc-muted);
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.53rem;
+  text-align: right;
+}
+
+.controller-lab__button-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.controller-lab__button-grid button {
+  min-height: 38px;
+  border: 1px solid var(--cc-line);
+  background: var(--cc-panel-soft);
+  color: var(--cc-ink);
+  cursor: pointer;
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.controller-lab__button-grid button:hover,
+.controller-lab__button-grid button:focus-visible {
+  border-color: var(--cc-lime);
+  color: var(--cc-lime);
+  outline: none;
+}
+
+.controller-lab__button-grid .controller-lab__reset {
+  grid-column: 1 / -1;
+  border-color: rgba(244, 203, 94, 0.34);
+  color: var(--cc-amber);
+}
+
+.controller-lab__diagnostics summary {
+  color: var(--cc-muted);
+  cursor: pointer;
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.controller-lab__diagnostics pre {
+  max-height: 260px;
+  margin: 14px 0 0;
+  overflow: auto;
+  color: #b7c4bc;
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.58rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.controller-lab__footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  min-height: 105px;
+  border-top: 1px solid var(--cc-line);
+  background: #0c100e;
+}
+
+.controller-lab__stations {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.controller-lab__stations > button {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  gap: 2px 9px;
+  padding: 14px 13px;
+  border: 0;
+  border-right: 1px solid var(--cc-line);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.controller-lab__stations > button:hover,
+.controller-lab__stations > button:focus-visible {
+  outline: none;
+  background: rgb(198 255 31 / 7%);
+  box-shadow: inset 0 2px 0 var(--cc-lime);
+}
+
+.controller-lab__stations span {
+  grid-row: 1 / 3;
+  color: var(--cc-amber);
+  font-family: "Avenir Next Condensed", "DIN Condensed", sans-serif;
+  font-size: 1.6rem;
+  font-weight: 900;
+}
+
+.controller-lab__stations strong {
+  align-self: end;
+  font-family: "Avenir Next Condensed", "DIN Condensed", sans-serif;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+}
+
+.controller-lab__stations small {
+  color: var(--cc-muted);
+  font-size: 0.57rem;
+  line-height: 1.25;
+}
+
+.controller-lab__trace {
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.controller-lab__trace ol {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.controller-lab__trace li {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  color: var(--cc-muted);
+  font-family: "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.54rem;
+  text-transform: uppercase;
+}
+
+.controller-lab__trace li strong {
+  overflow: hidden;
+  color: var(--cc-ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes controller-lab-pulse {
+  50% {
+    box-shadow: 0 0 34px rgba(142, 240, 181, 0.26);
+  }
+}
+
+@media (max-width: 1040px) {
+  .controller-lab__workspace {
+    grid-template-columns: minmax(0, 1fr) 275px;
+  }
+  .controller-lab__footer {
+    grid-template-columns: minmax(0, 1fr) 275px;
+  }
+  .controller-lab__stations small {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .controller-lab {
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow-y: auto;
+  }
+  .controller-lab__masthead {
+    min-height: 70px;
+    padding: 13px 15px;
+  }
+  .controller-lab__masthead h1 {
+    font-size: 1.8rem;
+  }
+  .controller-lab__protocol {
+    display: none;
+  }
+  .controller-lab__workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(420px, 62vh) auto;
+  }
+  .controller-lab__viewport {
+    border-right: 0;
+    border-bottom: 1px solid var(--cc-line);
+  }
+  .controller-lab__console {
+    overflow: visible;
+  }
+  .controller-lab__footer {
+    display: none;
+  }
+  .controller-lab__viewport-hud > div {
+    min-width: 92px;
+  }
+  .controller-lab__controls-hint {
+    right: 10px;
+    bottom: 10px;
+  }
+}

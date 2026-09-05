@@ -355,6 +355,9 @@ client action / input
 - Local authority 不等于绕过 multiplayer contract。它只是把 transport 替换为 in-process delivery，玩法 state 仍由 authority loop 推进，并通过 snapshot/patch/result 驱动 presentation。
 - Provider-native state sync 仍可使用，例如 Colyseus Schema；但必须声明它是否是 authority source，并通过 typed native bridge 或 adapter mapping 暴露 provider-neutral diagnostics。
 - 标准 authority loop 可以把已捕获的 authoritative snapshot 委托给 app 选择的 provider publisher；publisher 只能替换 snapshot delivery，不能绕过固定 tick、app-owned simulation、capture、authority diagnostics 或 error boundary。
+- 标准 authority loop 通过 `snapshotIntervalTicks` 统一控制 snapshot capture/publish cadence，默认每 tick 发布。非到期 tick 仍完整
+  推进 simulation、ack 和 diagnostics；显式 `broadcastSnapshot()` 始终立即 capture/publish，供 initial sync、late join 和 resync。
+  App 不在 loop 外再写 modulo gate，也不为 diagnostics 重复 capture 同一 tick。
 - Client prediction、reconciliation 和 interpolation 是表现层或可回滚缓存，不是 authority state。
 - Backend adapter 不应 hard-code 具体游戏 interpolation。Colyseus、Nakama 等 provider 可以提供 state sync、server tick 和 snapshot/version source；GameKit core 提供 provider-neutral presentation timing、declared `Network*` track projection 与低成本 interpolation primitives；游戏或 demo 负责声明字段映射和 snap policy。
 
@@ -405,6 +408,104 @@ provider-neutral authority time 锚定到本地 presentation time，允许向前
 显示的时间线向后移动；重复 anchor 不反复重锚。离散 simulation 使用整数 `tick()`，逐帧 record reconstruction
 使用 `sampleTick()`。它不估算 transport RTT，也不替代 Snapshot Playback 的 interpolation/jitter policy。
 
+`createMultiplayerPredictedLifecycleDomain(...)` 是事件起点对象和 predicted entity 的标准托管入口。调用方声明
+kind、初始 generation、authority time、local/authority spawn 和硬容量；Core 组合 predicted-spawn registry 与
+authority timeline，统一推进 generation reset、identity index、match/reject/expire、authority binding/prune、
+timeline rewind protection、cleanup hook 和 diagnostics。Combat/Physics/app runtime 通过 typed hook 释放自己的
+speculative record、solver object 或 presentation entry，但不维护第二套 correlation map、binding map 或 expiry loop。
+低层 registry/timeline 继续面向特殊 netcode、标准 domain 实现和测试开放。
+
+`createStandardMultiplayerPhysicsPredictionDomain(...)` 是 predicted entity 与 Physics island 的标准跨模块组合。
+它用同一个 owner lifecycle 先同步 correlation/authority member，再执行 island reconcile；出现 history overflow、
+membership mismatch 或 generation mismatch 时，默认调用 `hardCorrect(...)` 安装完整权威 baseline。首次匹配对象的
+member definition 直接从 managed predicted payload 复用，只有 authority 新增且客户端从未预测/创建过的 member 才由
+app 映射 definition。App 仍负责对象属于哪个 island、权威 payload 到 member/correlation 的 typed mapping 和 gameplay
+command，但不判断哪些 reconcile 状态需要 hard correction，也不平行维护 predicted identity。
+
+标准 Arena adapter 在这条 domain 上额外提供 event-started `registerPredictedMember(...)`。Throw/projectile 等离散事件以稳定
+correlation、prediction tick 和完整 member definition 注册一次，adapter 同时拥有 identity 与 island spawn command；duplicate
+不会再次 spawn。应用从已验证 app snapshot 的 action/item projection 实现 `resolveAuthoritySpawn(...)`，从同一 snapshot 实现
+`resolveMemberDefinition(...)`，不能依赖 authority projection 已明确剥离的 body `userData`。Reject、gap、generation reset 与
+authority member 缺失统一走 reconcile/hard correction，不能在 session callback 手删 ghost body 或重建 history。
+
+多人高互动 arena 使用 Multiplayer GameModule 的 client prediction-domain descriptor 连接 managed replication 与外部
+domain runtime。Descriptor factory 以 authority binding 为生命周期边界，接收已经校验的 snapshot、已编号 input、fixed
+tick 和 frame，并提供 reset、diagnostics、dispose 与只读 output；GameModule bridge 固定 authority → reconcile → input →
+advance → frame writer 顺序。该 descriptor 是 provider-neutral 协议，不包含 Physics、Combat、Renderer 或 backend type，
+也不改变低层 `createMultiplayerClientReplication(...)` 的单 state transition contract。
+
+逐 step prediction 在可能丢包的 delivery 上使用 managed redundant input bundle。Core 每次发送当前 frame 与有限个仍未
+ack 的旧 frame；authority fixed-step inbox 按 peer、binding generation 和 sequence 去重，只消费连续 step，并按显式
+hold-last/neutral gap policy 处理超过等待预算的缺口。App 只编码单帧 gameplay input，不维护 resend window；snapshot ack
+只能推进到已经实际模拟的最高连续 sequence。该 delivery policy 是 additive opt-in，未配置时保持单帧 input 行为。
+
+`createMultiplayerNetworkConditionSimulator(...)` 是 provider-neutral 的确定性故障注入 wrapper。它可以包裹 Memory、
+Colyseus 测试桥或其他 backend，用手动 `advance(...)` / `flush()`、固定 seed、direction/message predicate 和有界 pending
+queue 模拟 latency、jitter、loss 与 duplicate，并输出 scheduled/delivered/drop/duplicate/capacity/error/connection
+diagnostics；delivery 失败同时保留 `lastDeliveryError`，使 listener decode、底层 send 和 session 生命周期错误可定位而不只剩计数。
+Session lifecycle 直接委托底层 backend；reliable ordered lane 中未丢弃的消息保持顺序。该 helper 只服务
+测试、benchmark 和本地调试，不替代真实 provider 的 transport/reconnect 测试，也不拥有 authority 或 prediction clock。
+
+App Host 的 `createStandardMultiplayerPhysicsArenaPrediction(...)` 把 descriptor 与 Physics island、standard Physics
+prediction domain、membership revision、hard correction、可选 island-owned auxiliary contributor、rollback contributor 和
+speculative effect journal 组成默认 arena adapter。应用声明 authority frame mapping、input command mapping、完整交互成员 policy、
+definition resolver、可选 `createAuxiliaryContributors()` 和最终 writer；不手动调用 reconcile/replay 或维护 history/revision/
+effect settlement。Contributor factory 必须为每个 binding baseline 返回新实例，不能跨 generation/membership revision 复用已释放状态。
+对称的 authority projection helper 从显式 membership source 生成
+`islandId + generation + tick + membershipRevision + definitionVersion + members + auxiliary?`；auxiliary envelope 按稳定 id 排序，
+与 body members 一起计入 payload 预算，但 input ack、round/player state 和 provider wire serializer 仍由 app replication schema 拥有。
+
+标准 arena 接入面固定为三段：authority loop 声明 `inputDelivery: { mode: "redundant-bundle" }` 并在 fixed tick 中消费
+typed gameplay input；authority projection 把显式完整 membership 投影进 app snapshot；client 创建一次 Arena prediction
+descriptor，并把它和 replication schema 一起交给 Multiplayer GameModule。新游戏仍需定义共享 body/collider/layout、
+input-to-command mapping、round/score 规则和最终 presentation writer，但不实现 resend/de-dup、binding lifecycle、ack prune、
+checkpoint/history、reconcile/replay、hard correction 或 dispose 调度。普通单主体游戏继续使用 managed state transition 或
+Physics body transition；只有确实存在多人/机关/动态道具因果接触时才升级到完整 arena island。
+
+同 tick Physics command 依赖角色 motor、cooldown 或其他少量确定性状态时，应用把 typed input 映射为 `auxiliary` command，并
+注册 island contributor；island 先按稳定 contributor order 重放 auxiliary command，再推进同一个 solver step。Contributor 只捕获
+生成 Physics command 所必需的窄状态，不能把整个 World、AI blackboard、match state 或 presentation 塞进 arena checkpoint；这些
+跨域状态使用通用 rollback coordinator，或保持 authority-only。没有 contributor 的既有 consumer 保持原 body patch/body command
+路径和 wire shape，不需要迁移。
+
+Arena membership 是相互作用对象的完整因果闭包，不等同于 renderer interest set。Authority 必须发布完整 revision；
+客户端不能根据距离静默猜测。成员或 definition 变化、history/byte/replay work 溢出时安装完整 baseline 或降级
+authority-only。单个完整 arena island 是标准正确性基线；partition/merge/split 只能作为 authority-declared 可选 policy。
+同一 solver state 只能由 arena island 或通用 Physics rollback contributor 之一拥有，不能重复捕获。
+
+`defineMultiplayerReplicationSchema(...)` 是 managed client replication 的可选 typed schema compiler。App 声明一次
+payload decoder、schema id/version、tick/time、local entity selector、ack reader 与 state mapping，`bindClient(...)`
+生成 `readSnapshot`、buffer entry、authoritative state 和 acknowledged sequence binding。Entity presentation 通过
+`defineMultiplayerReplicationEntityPresentation(...)` 声明 identity、generation 和 scalar/angle/vector/quaternion/step
+fields，编译为稳定 key 与 snapshot tracks。Core 在 ingress 隔离 decoder exception、拒绝显式 version mismatch 和
+非法 tick；key 对 schema/field/identity/generation 做 length framing，避免字符串拼接歧义。该层不生成 provider wire
+serializer、不反射任意对象图，也不接管 app payload 校验；低层 callback 仍是合法 escape hatch。
+
+`createMultiplayerSpeculativeEffectJournal(...)` 是 replay 副作用的标准有界入口。Simulation 使用稳定 effect id
+调用 anticipate；同一 id 因 rollback/replay 再次出现时不会重复执行 hook。Authority 以 confirm、cancel 或 replace
+结算一次，先于 prediction 到达的结果也进入有界 resolved index，阻止稍后的本地重复表现。Pending effect 在过期、
+容量淘汰、generation reset 和 dispose 时统一 cancel；hook 异常被隔离并进入 diagnostics。该 journal 只管理可撤销
+的 Renderer、Audio、Camera 或 UI feedback，不接管 damage、cost、inventory、GAS/TCA transition 或其他权威事实。
+
+`createMultiplayerRollbackCoordinator(...)` 用于一个 prediction domain 需要在同一 generation/tick 恢复多个模块的
+场景。World、Physics、RNG、GAS/TCA 或 app contributor 各自声明稳定 id/order、隔离 checkpoint、restore 前 validate、
+deterministic restore、byte measurement 和 state hash；Core 只持有 opaque checkpoint，统一限制单 checkpoint bytes、
+总 history bytes 和 history ticks，并组合 domain hash。Restore 在所有 contributor validate 通过后按稳定顺序执行，
+成功后删除目标 tick 之后的旧 history。由于外部 runtime 的 restore 无法由 Core 通用事务化，任何 contributor restore
+抛错都必须视为 partial restore 风险，并进入完整 hard correction/rebuild，不能继续 replay。Seeded RNG 通过
+`createMultiplayerRngRollbackContributor(...)` 保存精确 stream position；具体 World/Physics adapter 留在 domain 或
+App Host 组合层，Multiplayer Core 不反向依赖它们。标准组合使用
+`createStandardMultiplayerWorldRollbackContributor(...)`、`createMultiplayerRngRollbackContributor(...)` 和
+`createStandardMultiplayerPhysicsRollbackContributor(...)`，默认 order 分别为 100、150、200：World 先恢复稳定
+entity identity 与 gameplay component，Physics 再恢复引用这些 entity 的 body/collider state。World checkpoint 由
+`createWorldCheckpointController(...)` 的显式 component/entity scope 定义，不能把完整 ECS object graph 隐式塞入 Core。
+标准 canonical encoder 对 object key 排序并拒绝非有限 number、循环引用和非 plain object，使 byte measurement 与 hash
+不依赖 property insertion order。
+
+普通 App Host 组合优先调用 `createStandardMultiplayerRollbackDomain(...)`，一次声明 World checkpoint scope、RNG、
+Physics handle、额外 gameplay contributor 与 history/byte budgets。该工厂生成上述默认 contributor 和 coordinator；
+只有自定义 domain ownership/order 时才逐个创建 contributor。
+
 `createMultiplayerTimeAlignedPresentationTransition(...)` 是 predicted lifecycle 接管 authority lifecycle 的标准
 有界 helper。Domain 只声明 stable key/version、predicted/authority deterministic sampler、事实 reconciliation、
 可选 hold policy 和 declarative presentation fields；Core 统一管理 absolute 或 relative-origin 时间对齐、entry
@@ -413,11 +514,11 @@ lifecycle age，再采样 authority；start/commit tick 偏移只作为 origin d
 对齐后的 state divergence 才能进入平滑。它适用于 projectile fire record、移动平台/门的 start record、可重建的
 技能轨迹等事件起点对象，不代替输入 replay、remote snapshot interpolation 或 Physics island resimulation。
 
-App 组合 predicted projectile 时必须实际复用 predicted-spawn registry、authority timeline 和标准 time-aligned
-transition，再把 matched domain payload 交给 Combat/Physics sampler 或 transition。跨 Combat + Multiplayer 的
-常规 kinematic projectile 使用 App Host 标准 helper，不由 app 重写 alignment、entry map 或 correction。App 可以
-拥有内容定义、静态 layout、actor proxy 和 renderer 写入，但不能平行实现 generation、match、expiry、timeline
-rewind protection 或通用 correction lifecycle。
+App 组合 predicted projectile 时通过 managed predicted lifecycle domain 接入 generation、identity、authority
+timeline 和 binding，再把 matched domain payload 交给 Combat/Physics sampler 或 transition。跨 Combat +
+Multiplayer 的常规 kinematic projectile 使用 App Host 标准 helper，不由 app 重写 alignment、entry map 或
+correction。App 可以拥有内容定义、静态 layout、actor proxy 和 renderer 写入，但不能平行实现 generation、
+match、expiry、timeline rewind protection、binding index 或通用 correction lifecycle。
 
 一个 domain 必须显式限制 history tick、对象数、spawn 数、内存和 replay work。Binding/session/generation 改变
 时必须整体释放旧 domain；history overflow 或成员缺失时执行可观察的 hard correction/authority-only 降级，
@@ -631,13 +732,28 @@ Multiplayer diagnostics 应回答：
 - 新增 provider backend 时，先实现 core session/message/diagnostic 协议；provider-specific matchmaking、好友、邀请、房间属性和原生控制通过 typed native bridge 或 app-specific service 扩展。
 - 多人协议变更必须同时考虑 Data schema、Save compatibility、DevTools redaction 和 server/client 版本协商。
 - 接入 realtime game demo 或真实游戏时，优先使用 multiplayer core 的 authority binding / replication helper；只有 provider-native state sync 或特殊 netcode 需求明确时，才通过 typed native bridge 替换默认复制策略。
+- 第二个真实应用已经出现相同 snapshot/tick/local identity/ack/presentation mapping 时，优先定义 typed replication
+  schema 并把生成 binding 交给 managed client replication；decoder 仍在 app provider boundary 做完整不可信输入验证。
+  不为减少几行 accessor 引入 NetworkObject 基类、runtime decorator scan 或深对象反射。
 - 离线单机、local preview 和 multiplayer room 应共享 gameplay orchestration；差异应收敛为 authority endpoint 和 transport/delivery adapter，而不是分叉玩法代码。
 - 多客户端 headless test 不能只断言 peer count；必须断言同一 lifecycle、input 或 snapshot 来自同一个 authority state。
 - Room-owned 物理游戏的多客户端测试应至少覆盖 bounded action、latest continuous state 或 fixed-step predicted input/ack（按实际 contract 选择）、完整 authority begin → GameRuntime/Physics → commit、实体出生/离开清理，以及 leader 离开后剩余 peer 继续读取同一 authority state。Fixed-step predicted input 测试必须证明 burst 到达后 ack 按每个已模拟 step 依次推进。
 - 改动多人高频路径时运行并按需扩展 `bench:multiplayer`。模块级 benchmark 应覆盖 envelope normalization、authority receiver source gate、host/local authority loop、latest-input coalescing、prediction lead backpressure、prediction reconciliation/presentation、snapshot playback 和 presentation projection；定时或手动 performance workflow 使用宽松预算观察数量级回归，并用模拟长时序 + GC 后 retained heap 检查有界缓存，不作为常规 PR merge gate。provider-native backend 可在对应 adapter 包中补独立 benchmark。
+- 逐 step input replay、prediction island 或 authority ack 改动必须用确定性 network-condition simulator 覆盖 baseline、
+  latency+jitter、loss 和 duplicate。分别记录 authority consumed sequence 与 client observed ack；停止发送后推进有限
+  recovery tick，再检查 ack lag、queue 上限和 delivery error。`flush()` 只排空网络 delivery，不能冒充 authority tick。
 - 新增 selective prediction domain 时，conformance 必须覆盖 spawn confirm/reject/duplicate/late result、generation/
   binding reset、history overflow、hard correction 与 dispose；benchmark 分开测 history capture、restore、replay、
   predicted-spawn churn 和 retained bytes。只测 renderer object 数或关闭 prediction 的路径不能作为该能力预算。
+- 会在 prediction/replay 中产生 Audio、Camera、Renderer 或 UI feedback 时，通过 speculative effect journal 使用稳定
+  effect id 执行 anticipate/confirm/cancel/replace；不要在 deterministic transition 内直接提交副作用。测试必须覆盖
+  replay duplicate、authority-before-prediction、容量/过期、generation reset、hook failure isolation 和 dispose cleanup。
+- 跨模块 rollback contributor 必须返回与 live runtime 隔离的 checkpoint，并提供稳定 hash 和可解释 byte measurement。
+  Validate 必须在任何 restore 之前完成；restore 失败后不假设其他 contributor 可逆，直接 hard correction/rebuild。
+  RNG 必须恢复精确 stream position，不能只重建同 seed 后忽略已经消耗的随机数。World 与 Physics contributor
+  不重复捕获相同 component；默认 World → RNG → Physics 顺序只有在自定义 domain 明确证明依赖关系后才覆盖。
+- 修改跨模块 rollback checkpoint 时运行 `corepack pnpm bench:checkpoint:check`；标准用例约束 1,000 个 World/Physics
+  entity 的 capture/hash、restore/rebuild、单 checkpoint bytes、总 history bytes 和 retained checkpoint count。
 - 改动 Colyseus Room runtime bridge 的 tick、ingress、peer index 或 lifecycle cleanup 时运行 `corepack pnpm bench:multiplayer:room:check`；该基准必须同时检查 dispose 后 peer 与 timer 为零。
 - 字段级 provider state model 优先保持 app-owned；只有第二个稳定应用出现相同 mapping、partition 或 interest-management 需求，并通过真实 benchmark 验证后，才评估下沉 backend package 或 core。
 
@@ -648,8 +764,19 @@ Multiplayer diagnostics 应回答：
 - 线上权威玩法默认使用 host/server validation；客户端预测只影响本地表现，不直接写入长期权威状态。
 - 不做逐 input rollback 的连续移动/瞄准按 latest state 复制，并由 authority 在新状态或超时前保持。若 local prediction 明确定义“一个 sequence = 一个 fixed simulation step”，则使用底层 per-source bounded FIFO、authority 每 tick 最多消费一个、snapshot ack 逐 step 推进，并用 client `maxPredictionLeadInputs` 限制领先量；不能让 latest coalescing 的 ack 跨过未模拟 step。必须逐条执行的交互、购买和一次性技能使用独立 action FIFO；不能在 app 中另建无界 command 数组。
 - 普通游戏通过 standard Multiplayer module 的 `clientReplication` 配置连接 authoritative snapshot 和 renderer frame：声明 decoder、timeline、remote `Network*` tracks、deterministic prediction transition、local predicted-state fields 与统一 `applyFrame` writer 后，由底层自动接收、播放、预测、字段插值和校正。只有特殊 netcode、测试或工具才直接调用 low-level playback/projector/prediction factory 或 deprecated custom presentation callbacks。不要让 renderer 直接按低频网络 tick 跳变，不要在 app 层重复实现通用 playback clock/lerp/correction offset，也不要把 presented position 写回 authority state。
+- 结构稳定的普通 snapshot 使用 replication schema binding 取代重复的 `readSnapshot + toBufferEntry +
+readAuthoritativeState + readAcknowledgedSequence + tracks` 回调；app 仍提供 payload decoder、local identity 与最终 frame
+  writer。Provider Schema/Protobuf/JSON wire format 和 GameKit typed binding 是两层边界，不能互相冒充。
 - 本地预测优先只配置 `inputRateHz`，managed runtime 用同一周期推进 prediction step，并用 `maxPredictionLeadInputs`（默认 8，可按 RTT/authority queue 预算调整）阻止未确认序列无限领先；如果 authority tick/ack 使用另一周期，必须显式建立一致的 simulation interval，不能让两个独立数字静默漂移。Prediction field 声明 correction metric、smooth fields、duration 和 max magnitude；managed runtime 自动调用 predict/present/reconcile 并应用 moving-target offset。不要把 prediction buffer `state()` 的 raw endpoint 直接写入 renderer，也不要对 endpoint 再做一整步向前 extrapolate。大 correction、teleport、binding/session change、hard phase transition 和 resync 直接 snap/reset prediction presentation。
 - Authority 使用 Physics backend 时，本地 prediction 不能长期使用 `position += velocity * step` 近似带 damping/碰撞的 solver。优先通过 `createPhysicsBodyPredictionTransition(...)` 复用同一 body/collider/layout definition、backend kind 与 fixed sub-step，并把 transition factory 交给 managed replication；transition 的有界 sequence checkpoint 会在权威基线匹配时复用 replay 结果，避免无意义 rewind 破坏 solver contact cache。游戏只声明 input-to-body patch 和 state binding，不手动推进 solver、调用 replay/interpolation 或释放 prediction scene。
+- 多人拥挤或动态机关持续交互时，使用标准 Physics Arena prediction descriptor，并让 authority 发布完整
+  `islandId/generation/tick/membershipRevision/definitionVersion/members`；若注册 auxiliary contributor，还要发布同 tick 完整
+  `auxiliary` envelope。Client 只映射本地 input、创建 contributor 和 app presentation；
+  不在 snapshot callback 中重建 island、按半径猜成员或在 render loop 中调用 reconcile。首个接入默认使用完整 arena
+  island，只有带 authority revision、保守交互 horizon 和完整性测试的 policy 才允许拆分。
+- Arena 中由离散 action 产生的 predicted entity 使用 descriptor 的 `registerPredictedMember(...)`；correlation 来自 action/
+  execution id，authority matching 与 definition resolver 读取 typed app snapshot。不要把玩法 identity 塞进会被 authority
+  projection 清洗的 Physics `userData`，也不要在 item/projectile session 代码里维护第二个 pending-spawn/ghost cleanup loop。
 - 为网络对象选择最窄且语义完整的策略：瞬时攻击用 lag-compensated hitscan，可重放直线弹丸用有界
   kinematic fire/finish record，复杂动态交互才用 predicted entity + prediction island，非手感关键对象保持
   authority-only。Remote entity 默认 interpolation；只有输入/history 和交互集合都明确时才预测。

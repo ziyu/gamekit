@@ -33,4 +33,18 @@ describe("createSeededRng", () => {
 
     expect([a.next(), a.next(), a.next()]).toEqual([b.next(), b.next(), b.next()]);
   });
+
+  it("captures and restores the exact deterministic stream position", () => {
+    const rng = createSeededRng("rollback-seed");
+    rng.next();
+    const checkpoint = rng.captureState();
+    const expected = [rng.next(), rng.int(0, 100), rng.next()];
+
+    rng.restoreState(checkpoint);
+
+    expect([rng.next(), rng.int(0, 100), rng.next()]).toEqual(expected);
+    expect(() => rng.restoreState({ ...checkpoint, seed: "another-stream" })).toThrowError(
+      "RNG state does not match this seeded stream"
+    );
+  });
 });

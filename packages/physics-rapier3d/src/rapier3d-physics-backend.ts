@@ -3,6 +3,8 @@ import { GameError } from "@gamekit/core";
 import type {
   PhysicsBackendAdapter,
   PhysicsBackendCapabilities,
+  PhysicsBodyCommand,
+  PhysicsBodyCommandResult,
   PhysicsBodyDefinition,
   PhysicsBodyId,
   PhysicsBodyKind,
@@ -118,6 +120,12 @@ export function createRapier3dPhysicsBackend(
           fullScene: true,
           deterministicReplay: true
         },
+        bodyCommands: {
+          linearImpulse: true,
+          applicationPoint: true,
+          angularImpulse: true,
+          wakePolicy: true
+        },
         custom: {
           wasm: "compat",
           backend: "rapier3d",
@@ -181,6 +189,8 @@ function createRapier3dPhysicsScene(
   let nextColliderId = 1;
   let activeContactCount = 0;
   let disposed = false;
+  let checkpointBodies: Rapier3dSceneCheckpointPayload["bodies"] | undefined;
+  let checkpointColliders: Rapier3dSceneCheckpointPayload["colliders"] | undefined;
 
   const assertActive = (): void => {
     if (disposed) {
@@ -211,12 +221,17 @@ function createRapier3dPhysicsScene(
         kind: definition.kind,
         ...(definition.userData === undefined ? {} : { userData: { ...definition.userData } })
       });
+      invalidateCheckpointTopology();
       return id;
     },
-    updateBody(id, patch) {
+    updateBody(id, patch, options) {
       assertActive();
       const record = requireBody(bodies, id);
-      applyBodyPatch(record, patch);
+      applyBodyPatch(record, patch, options?.kinematicTransformMode ?? "target");
+    },
+    applyBodyCommand(command) {
+      assertActive();
+      return applyRapier3dBodyCommand(bodies.get(command.bodyId), command);
     },
     destroyBody(id) {
       assertActive();
@@ -234,6 +249,7 @@ function createRapier3dPhysicsScene(
         colliders.delete(collider.id);
         colliderHandles.delete(collider.collider.handle);
       }
+      invalidateCheckpointTopology();
     },
     createCollider(definition) {
       assertActive();
@@ -258,12 +274,14 @@ function createRapier3dPhysicsScene(
         ...(definition.userData === undefined ? {} : { userData: { ...definition.userData } })
       });
       colliderHandles.set(collider.handle, id);
+      invalidateCheckpointTopology();
       return id;
     },
     updateCollider(id, patch) {
       assertActive();
       const record = requireCollider(colliders, id);
       applyColliderPatch(record, patch, options.groups);
+      invalidateCheckpointTopology();
     },
     destroyCollider(id) {
       assertActive();
@@ -275,6 +293,7 @@ function createRapier3dPhysicsScene(
       world.removeCollider(record.collider, true);
       colliders.delete(id);
       colliderHandles.delete(record.collider.handle);
+      invalidateCheckpointTopology();
     },
     step(deltaMs) {
       assertActive();
@@ -327,23 +346,12 @@ function createRapier3dPhysicsScene(
       const bytes = world.takeSnapshot();
       const payload: Rapier3dSceneCheckpointPayload = {
         version: 1,
-        bytes: bytes.slice(),
+        bytes,
         nextBodyId,
         nextColliderId,
         activeContactCount,
-        bodies: [...bodies.values()].map((record) => ({
-          id: record.id,
-          handle: record.body.handle,
-          kind: record.kind,
-          ...(record.userData === undefined ? {} : { userData: { ...record.userData } })
-        })),
-        colliders: [...colliders.values()].map((record) => ({
-          id: record.id,
-          handle: record.collider.handle,
-          definition: cloneColliderDefinition(record.definition),
-          enabled: record.enabled,
-          ...(record.userData === undefined ? {} : { userData: { ...record.userData } })
-        }))
+        bodies: captureCheckpointBodies(),
+        colliders: captureCheckpointColliders()
       };
       return {
         backend,
@@ -355,7 +363,7 @@ function createRapier3dPhysicsScene(
     restoreCheckpoint(checkpoint) {
       assertActive();
       const payload = requireRapier3dCheckpoint(checkpoint, backend, sceneId);
-      const restoredWorld = RAPIER.World.restoreSnapshot(payload.bytes.slice());
+      const restoredWorld = RAPIER.World.restoreSnapshot(payload.bytes);
       eventQueue.free();
       world.free();
       world = restoredWorld;
@@ -392,6 +400,8 @@ function createRapier3dPhysicsScene(
       nextBodyId = payload.nextBodyId;
       nextColliderId = payload.nextColliderId;
       activeContactCount = payload.activeContactCount;
+      checkpointBodies = payload.bodies;
+      checkpointColliders = payload.colliders;
     },
     native() {
       return {
@@ -414,6 +424,32 @@ function createRapier3dPhysicsScene(
       world.free();
     }
   };
+
+  function invalidateCheckpointTopology(): void {
+    checkpointBodies = undefined;
+    checkpointColliders = undefined;
+  }
+
+  function captureCheckpointBodies(): Rapier3dSceneCheckpointPayload["bodies"] {
+    checkpointBodies ??= [...bodies.values()].map((record) => ({
+      id: record.id,
+      handle: record.body.handle,
+      kind: record.kind,
+      ...(record.userData === undefined ? {} : { userData: { ...record.userData } })
+    }));
+    return checkpointBodies;
+  }
+
+  function captureCheckpointColliders(): Rapier3dSceneCheckpointPayload["colliders"] {
+    checkpointColliders ??= [...colliders.values()].map((record) => ({
+      id: record.id,
+      handle: record.collider.handle,
+      definition: cloneColliderDefinition(record.definition),
+      enabled: record.enabled,
+      ...(record.userData === undefined ? {} : { userData: { ...record.userData } })
+    }));
+    return checkpointColliders;
+  }
 
   function createBodyDesc(definition: PhysicsBodyDefinition): RAPIER.RigidBodyDesc {
     const desc =
@@ -630,10 +666,14 @@ function requireCollider(
   return record;
 }
 
-function applyBodyPatch(record: Rapier3dBodyRecord, patch: PhysicsBodyPatch): void {
+function applyBodyPatch(
+  record: Rapier3dBodyRecord,
+  patch: PhysicsBodyPatch,
+  kinematicTransformMode: "target" | "teleport"
+): void {
   if (patch.position !== undefined) {
     const position = cloneVector3(patch.position, "body.patch.position");
-    if (record.kind === "kinematic") {
+    if (record.kind === "kinematic" && kinematicTransformMode === "target") {
       record.body.setNextKinematicTranslation(position);
     } else {
       record.body.setTranslation(position, true);
@@ -641,7 +681,7 @@ function applyBodyPatch(record: Rapier3dBodyRecord, patch: PhysicsBodyPatch): vo
   }
   if (patch.rotation !== undefined) {
     const rotation = rotationToQuaternion(patch.rotation, "body.patch.rotation");
-    if (record.kind === "kinematic") {
+    if (record.kind === "kinematic" && kinematicTransformMode === "target") {
       record.body.setNextKinematicRotation(rotation);
     } else {
       record.body.setRotation(rotation, true);
@@ -669,6 +709,73 @@ function applyBodyPatch(record: Rapier3dBodyRecord, patch: PhysicsBodyPatch): vo
   if (patch.userData !== undefined) {
     record.userData = { ...patch.userData };
   }
+}
+
+function applyRapier3dBodyCommand(
+  record: Rapier3dBodyRecord | undefined,
+  command: PhysicsBodyCommand
+): PhysicsBodyCommandResult {
+  if (record === undefined) {
+    return bodyCommandResult(command, "body-missing", `Missing physics body: ${command.bodyId}`);
+  }
+  if (record.kind !== "dynamic") {
+    return bodyCommandResult(
+      command,
+      "body-kind-mismatch",
+      `Physics body command requires a dynamic body: ${command.bodyId}`
+    );
+  }
+  const wake = command.wake !== "preserve";
+  try {
+    if (command.type === "linear-impulse") {
+      const impulse = cloneVector3(command.impulse, "body.command.impulse");
+      if (command.point === undefined) {
+        record.body.applyImpulse(impulse, wake);
+      } else {
+        record.body.applyImpulseAtPoint(
+          impulse,
+          cloneVector3(command.point, "body.command.point"),
+          wake
+        );
+      }
+    } else {
+      if (
+        typeof command.impulse === "number" ||
+        "w" in command.impulse ||
+        command.impulse.z === undefined
+      ) {
+        return bodyCommandResult(
+          command,
+          "invalid-command",
+          "Rapier 3D angular impulse must be a three-dimensional vector"
+        );
+      }
+      record.body.applyTorqueImpulse(
+        cloneVector3(command.impulse, "body.command.angularImpulse"),
+        wake
+      );
+    }
+  } catch (error) {
+    return bodyCommandResult(
+      command,
+      "invalid-command",
+      error instanceof Error ? error.message : "Invalid Rapier 3D body command"
+    );
+  }
+  return bodyCommandResult(command, "applied");
+}
+
+function bodyCommandResult(
+  command: PhysicsBodyCommand,
+  status: PhysicsBodyCommandResult["status"],
+  reason?: string
+): PhysicsBodyCommandResult {
+  return {
+    status,
+    bodyId: command.bodyId,
+    commandType: command.type,
+    ...(reason === undefined ? {} : { reason })
+  };
 }
 
 function applyColliderPatch(

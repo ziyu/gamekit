@@ -4,4 +4,7 @@ export * from "./driver-adapters";
 export * from "./gameplay-correlation";
 export * from "./game-modules";
 export * from "./multiplayer-combat-presentation";
+export * from "./multiplayer-physics-prediction";
+export * from "./multiplayer-physics-arena-prediction";
+export * from "./multiplayer-rollback-contributors";
 export * from "./types";
