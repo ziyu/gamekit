@@ -52,7 +52,8 @@
     "@gamekit/navigation-navmesh": "0.1.0-alpha.5",
     "@gamekit/navigation-recast": "0.1.0-alpha.5",
     "multiplayer-physics-arena-demo": "0.1.0",
-    "@gamekit/character-controller": "0.1.0-alpha.6"
+    "@gamekit/character-controller": "0.1.0-alpha.6",
+    "@gamekit/save-indexeddb": "0.1.0-alpha.7"
   },
   "changesets": [
     "ai-core-runtime",
@@ -62,6 +63,7 @@
     "auto-pr-12",
     "auto-pr-14",
     "auto-pr-37",
+    "auto-pr-38",
     "combat-gas-ability-delivery",
     "gameplay-foundation-host-tooling",
     "gas-ability-execution-lifecycle",

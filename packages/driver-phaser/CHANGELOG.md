@@ -1,5 +1,21 @@
 # @gamekit/driver-phaser
 
+## 0.1.0-alpha.8
+
+### Patch Changes
+
+- 0326356: Add scoped assets and transactional save recovery
+- Updated dependencies [0326356]
+  - @gamekit/asset@0.1.0-alpha.8
+  - @gamekit/animator-core@0.1.0-alpha.8
+  - @gamekit/audio-core@0.1.0-alpha.8
+  - @gamekit/renderer-phaser@0.1.0-alpha.8
+  - @gamekit/core@0.1.0-alpha.8
+  - @gamekit/renderer-core@0.1.0-alpha.8
+  - @gamekit/input-core@0.1.0-alpha.8
+  - @gamekit/camera-core@0.1.0-alpha.8
+  - @gamekit/driver-core@0.1.0-alpha.8
+
 ## 0.1.0-alpha.7
 
 ### Patch Changes
