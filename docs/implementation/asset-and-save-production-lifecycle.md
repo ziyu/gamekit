@@ -32,4 +32,4 @@
 
 ## 交付状态
 
-长期 API、所有权与应用集成边界已迁移到 Assets、Save、App Host、Driver 文档及 ADR 0057/0058。本轮交付为工作区改动，尚未提交或发布；后续版本由正常 Auto Changeset / Version PR 流程生成。
+长期 API、所有权与应用集成边界已迁移到 Assets、Save、App Host、Driver 文档及 ADR 0057/0058。实现提交为 `10d2c07`，功能合并与 CI 记录见 [PR #38](https://github.com/ziyu/gamekit/pull/38)。版本由正常 Auto Changeset / Version PR 流程生成，发布结果以关联版本 PR 和 GitHub Release 为准。
