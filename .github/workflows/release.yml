@@ -129,7 +129,13 @@ jobs:
           GAMEKITS_RELEASE_DIR: ${{ runner.temp }}/gamekits-release
 
       - name: Create GitHub Release
-        run: node scripts/create-github-release.mjs
+        shell: bash
+        run: |
+          if gh release view "v$GAMEKITS_RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null; then
+            echo "GitHub Release v$GAMEKITS_RELEASE_VERSION already exists."
+          else
+            node scripts/create-github-release.mjs
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GAMEKITS_RELEASE_VERSION: ${{ steps.version-changes.outputs.release-version }}
