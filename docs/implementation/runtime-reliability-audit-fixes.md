@@ -51,6 +51,8 @@
 
 ## 范围与限制
 
+发布前 CI 补充：主线已有的完整三阶段对局和 gameplay network matrix 分别遇到 30s / 5s 超时；修复 PR 中前者耗时 32.6s，仅超时而无断言差异。为这两类集成用例单独设置 60s / 15s 上限，保留所有玩法、网络与释放断言，性能仍由专用 benchmark 预算约束。浏览器存档往返显示 Saved/Loaded tick 3698，原始 localStorage 已恢复。
+
 - Tauri 已验证 fake driver 的目录参数映射和 platform conformance；仓库没有可直接启动的 Tauri app，本轮未验证真实 Tauri 权限、OS 文件替换或断电持久性。
 - 预校验成功后 contributor restore 自身失败不自动回滚；app 必须使用 staging/重建会话。跨窗口 Storage 并发和多 key 崩溃原子性不在本协议保证内。
 - 审查中尚未量化的 React snapshot/热路径开销、完整 continuation 等价性不在原始审查验证范围，不算作这 16 组缺陷已修复的范围。本轮没有修改这些能力或声称完整 continuation 等价。

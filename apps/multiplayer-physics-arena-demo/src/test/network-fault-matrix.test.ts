@@ -207,6 +207,7 @@ describe("Knockout Arena deterministic network fault matrix", () => {
 });
 
 describe("Knockout Arena gameplay network fault matrix", () => {
+  // These cases run the full gameplay authority, so allow shared CI CPU contention.
   for (const matrixCase of MATRIX) {
     it(`projects gameplay under ${matrixCase.name}`, async () => {
       const result = await runGameplayMatrixCase(matrixCase.profile);
@@ -265,7 +266,7 @@ describe("Knockout Arena gameplay network fault matrix", () => {
         expect(result.networkDiagnostics.duplicatedMessages).toBeGreaterThan(0);
         expect(result.duplicateSnapshots).toBeGreaterThan(0);
       }
-    });
+    }, 15_000);
   }
 
   it("rejects delayed pre-reconnect input and item action epochs while keeping late join spectator-only", async () => {
