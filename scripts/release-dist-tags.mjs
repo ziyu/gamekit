@@ -14,45 +14,24 @@ export function parseAdditionalDistTags(value) {
     .filter(Boolean);
 }
 
-export function resolveRequiredDistTags({
-  additionalDistTags = [],
-  currentDistTags = {},
-  distTag,
-  syncPrereleaseLatest = true,
-  version
-}) {
+export function resolveRequiredDistTags({ additionalDistTags = [], distTag }) {
   const tags = new Set([distTag, ...additionalDistTags]);
-
-  if (shouldMirrorPrereleaseToLatest({ currentDistTags, distTag, syncPrereleaseLatest, version })) {
-    tags.add("latest");
-  }
-
   return [...tags].sort();
 }
 
-export function shouldSyncPrereleaseLatest(value) {
-  if (value === undefined) {
-    return true;
+export function validateDistTagPolicy({ additionalDistTags = [], distTag, version }) {
+  if (!version.includes("-")) {
+    return;
   }
 
-  return !["0", "false", "no"].includes(value.toLowerCase());
+  const requestedTags = new Set([distTag, ...additionalDistTags]);
+  if (requestedTags.has("latest")) {
+    throw new Error(
+      `Refusing to tag prerelease version ${version} as latest. Publish a stable version with dist-tag "latest" instead.`
+    );
+  }
 }
 
 export function prereleaseChannel(version) {
   return version.split("-")[1]?.split(".")[0];
-}
-
-function shouldMirrorPrereleaseToLatest({
-  currentDistTags,
-  distTag,
-  syncPrereleaseLatest,
-  version
-}) {
-  if (!syncPrereleaseLatest || distTag === "latest" || !version.includes("-")) {
-    return false;
-  }
-
-  const channel = prereleaseChannel(version);
-  const currentLatest = currentDistTags.latest;
-  return currentLatest === undefined || prereleaseChannel(currentLatest) === channel;
 }

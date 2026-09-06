@@ -7,7 +7,9 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../animator-core" },
     { "path": "../asset" },
+    { "path": "../audio-core" },
     { "path": "../camera-core" },
     { "path": "../core" },
     { "path": "../driver-core" },

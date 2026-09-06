@@ -27,3 +27,10 @@ export function createInputMissingContextError(contextId: string): GameError {
     contextId
   });
 }
+
+export function createInputInvalidValueError(value: number, inputId: string): GameError {
+  return new GameError("input.invalid_value", "Normalized input value must be finite", {
+    inputId,
+    value
+  });
+}

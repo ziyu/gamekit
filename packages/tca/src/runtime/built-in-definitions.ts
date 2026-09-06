@@ -33,7 +33,10 @@ export function createEventEmitActionDefinition(): TcaActionDefinition {
         throw createTcaError("tca.invalid_action_args", "event.emit action requires eventType");
       }
       const payload = config.args?.payload ?? {};
-      ctx.eventBus.emit(eventType, payload, "tca");
+      ctx.eventBus.emit(eventType, payload, "tca", {
+        correlationId: ctx.correlationId,
+        parentId: ctx.traceId
+      });
     }
   };
 }

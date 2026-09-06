@@ -1,6 +1,6 @@
 {
   "name": "@gamekit/app-host",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.6",
   "private": false,
   "type": "module",
   "main": "./dist/index.js",
@@ -17,8 +17,12 @@
     "lint": "oxlint ."
   },
   "dependencies": {
+    "@gamekit/ai-core": "workspace:*",
+    "@gamekit/animator-core": "workspace:*",
     "@gamekit/asset": "workspace:*",
+    "@gamekit/audio-core": "workspace:*",
     "@gamekit/camera-core": "workspace:*",
+    "@gamekit/combat": "workspace:*",
     "@gamekit/core": "workspace:*",
     "@gamekit/data": "workspace:*",
     "@gamekit/devtools": "workspace:*",
@@ -26,11 +30,15 @@
     "@gamekit/gas": "workspace:*",
     "@gamekit/game-runtime": "workspace:*",
     "@gamekit/input-core": "workspace:*",
+    "@gamekit/multiplayer-core": "workspace:*",
+    "@gamekit/navigation-core": "workspace:*",
+    "@gamekit/physics-core": "workspace:*",
     "@gamekit/platform-core": "workspace:*",
     "@gamekit/renderer-core": "workspace:*",
     "@gamekit/save": "workspace:*",
     "@gamekit/tca": "workspace:*",
-    "@gamekit/ui-core": "workspace:*"
+    "@gamekit/ui-core": "workspace:*",
+    "@gamekit/world": "workspace:*"
   },
   "files": [
     "dist"

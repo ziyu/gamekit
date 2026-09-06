@@ -13,6 +13,11 @@ corepack pnpm build
 corepack pnpm lint
 corepack pnpm format
 corepack pnpm bench:world
+corepack pnpm bench:physics:check
+corepack pnpm bench:multiplayer:check
+corepack pnpm bench:gameplay:check
+corepack pnpm bench:checkpoint:check
+corepack pnpm bench:diagnostics:check
 ```
 
 ## 文档入口

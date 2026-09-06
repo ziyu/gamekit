@@ -85,6 +85,7 @@ export function createInputRouter(options: CreateInputRouterOptions = {}): Input
       return sortInputContexts([...contexts.values()].filter(isInputContextEnabled));
     },
     handle(input) {
+      refreshActiveInput(activeActions, input);
       const emitted: InputActionEvent[] = [];
       const emittedActionIds = new Set<InputActionId>();
 
@@ -277,6 +278,30 @@ function updateActiveAction(
   }
 }
 
+function refreshActiveInput(
+  activeActions: Map<string, InputActionEvent>,
+  input: NormalizedInputEvent
+): void {
+  if (input.phase !== "moved") {
+    return;
+  }
+
+  const inputKey = inputIdentity(input);
+  const value = inputValue(input);
+  for (const [key, event] of activeActions) {
+    if (inputIdentity(event.input) !== inputKey) {
+      continue;
+    }
+    activeActions.set(key, {
+      ...event,
+      value,
+      input,
+      timestamp: input.timestamp,
+      ...(input.source === undefined ? {} : { source: input.source })
+    });
+  }
+}
+
 function actionSupportsHeld(bindings: InputBinding[], input: NormalizedInputEvent): boolean {
   return bindings.some((binding) =>
     matchesInputBinding(binding, {
@@ -292,11 +317,12 @@ function activeActionKey(event: InputActionEvent): string {
 
 function inputIdentity(input: {
   device: string;
+  deviceId?: string;
   code?: string;
   button?: string;
   pointerId?: string;
 }): string {
-  return `${input.device}:${input.code ?? ""}:${input.button ?? ""}:${input.pointerId ?? ""}`;
+  return `${input.device}:${input.deviceId ?? ""}:${input.code ?? ""}:${input.button ?? ""}:${input.pointerId ?? ""}`;
 }
 
 function updateContext(

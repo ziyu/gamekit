@@ -1,0 +1,11 @@
+export type PlaybackInstanceId = string;
+export type AudioOwnerId = string;
+export type AudioEmitterId = string;
+export type AudioListenerId = string;
+export type AudioBusId = string;
+export type AudioParameterId = string;
+export type MusicTrackId = string;
+export type SfxEventId = string;
+export type DialogueLineId = string;
+export type DialogueHandleId = string;
+export type SpeakerId = string;

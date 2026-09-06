@@ -82,6 +82,13 @@ export function renderSandboxShell(
                     ref={rendererRootRef}
                   />
                   <div className="scene-object-overlay" data-ui="scene-object-overlay" />
+                  <aside className="three-preview" aria-label="Three driver preview">
+                    <div className="three-preview__bar">
+                      <span>Three Driver</span>
+                      <strong>Mesh Adapter</strong>
+                    </div>
+                    <div className="three-preview__viewport" data-ui="three-preview-root" />
+                  </aside>
                   <div className="stage-hint">
                     <span>WASD camera</span>
                     <span>Click object to focus</span>
@@ -202,6 +209,7 @@ export function renderSandboxShell(
     stage: readElement(appElement, "stage", HTMLElement),
     devtoolsRoot: readElement(appElement, "devtools-overlay-root", HTMLElement),
     rendererRoot: readElement(appElement, "renderer-root", HTMLDivElement),
+    threePreviewRoot: readElement(appElement, "three-preview-root", HTMLDivElement),
     sceneOverlay: readElement(appElement, "scene-object-overlay", HTMLElement),
     status: readElement(appElement, "status", HTMLDivElement),
     objectiveLabel: readElement(appElement, "objective-label", HTMLElement),

@@ -1,10 +1,12 @@
 import {
   ASSET_SERVICE,
+  AUDIO_SERVICE,
   DATA_SERVICE,
   DEVTOOLS_SERVICE,
   DRIVER_SERVICE,
   GAME_SERVICE,
   INPUT_SERVICE,
+  MULTIPLAYER_SERVICE,
   PLATFORM_SERVICE,
   RENDERER_SERVICE,
   SAVE_SERVICE,
@@ -120,11 +122,17 @@ function assignStandardService(
   if (standard === "assets") {
     registry.assets = binding.service as never;
   }
+  if (standard === "audio") {
+    registry.audio = binding.service as never;
+  }
   if (standard === "renderer") {
     registry.renderer = binding.service as never;
   }
   if (standard === "input") {
     registry.input = binding.service as never;
+  }
+  if (standard === "multiplayer") {
+    registry.multiplayer = binding.service as never;
   }
   if (standard === "game") {
     registry.game = binding.service as never;
@@ -157,11 +165,17 @@ function standardFromKey(key: AppServiceKey<unknown>): AppStandardServiceId | un
   if (key.id === ASSET_SERVICE.id) {
     return "assets";
   }
+  if (key.id === AUDIO_SERVICE.id) {
+    return "audio";
+  }
   if (key.id === RENDERER_SERVICE.id) {
     return "renderer";
   }
   if (key.id === INPUT_SERVICE.id) {
     return "input";
+  }
+  if (key.id === MULTIPLAYER_SERVICE.id) {
+    return "multiplayer";
   }
   if (key.id === GAME_SERVICE.id) {
     return "game";

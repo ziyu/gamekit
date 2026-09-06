@@ -1,0 +1,46 @@
+{
+  "name": "@gamekit/multiplayer-colyseus",
+  "version": "0.1.0-alpha.6",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-library-package.mjs",
+    "test": "vitest run --root ../.. --config vitest.config.ts packages/multiplayer-colyseus/test --passWithNoTests",
+    "lint": "oxlint ."
+  },
+  "dependencies": {
+    "@colyseus/core": "^0.17.44",
+    "@colyseus/schema": "^4.0.27",
+    "@colyseus/sdk": "^0.17.43",
+    "@colyseus/ws-transport": "^0.17.13",
+    "@gamekit/core": "workspace:*",
+    "@gamekit/multiplayer-core": "workspace:*",
+    "express": "^5.2.1"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "gamekitBuild": {
+    "bundleDts": false,
+    "entries": [
+      "src/index.ts",
+      "src/server/index.ts"
+    ]
+  }
+}

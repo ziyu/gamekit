@@ -9,6 +9,7 @@ import { createInputRouter, type InputRouter } from "@gamekit/input-core";
 import { createDomInputAdapter } from "@gamekit/input-dom";
 import { createWebPlatform } from "@gamekit/platform-web";
 import type { RendererAdapter, RendererBootContext } from "@gamekit/renderer-core";
+import { applyPhaserRenderTargetState } from "@gamekit/renderer-phaser";
 import { createPlatformStorageSaveStore, type SaveManager } from "@gamekit/save";
 import type { UiRuntime } from "@gamekit/ui-core";
 import { createKootaWorld } from "@gamekit/world-koota";
@@ -19,6 +20,7 @@ import {
   createAbyssDataRegistry,
   createAbyssRuntime,
   createAbyssSaveContributor,
+  type CreateAbyssRuntimeOptions,
   type AbyssRuntime
 } from "./game";
 
@@ -38,6 +40,12 @@ export type AbyssAppContext = {
   saveManager?: SaveManager | undefined;
   devtools?: DevToolsRuntime | undefined;
   abyss?: AbyssRuntime | undefined;
+};
+
+const applyAbyssPhaserRenderTargetState: NonNullable<
+  CreateAbyssRuntimeOptions["applyRenderTargetState"]
+> = (native, state) => {
+  applyPhaserRenderTargetState(native, state as Parameters<typeof applyPhaserRenderTargetState>[1]);
 };
 
 export function createAbyssWebProfile(): AppProfile<AbyssAppContext> {
@@ -140,6 +148,7 @@ export function createAbyssWebProfile(): AppProfile<AbyssAppContext> {
         createRuntime({ context, state }) {
           const runtime = createAbyssRuntime({
             renderer: requireState(state.renderer, "renderer"),
+            applyRenderTargetState: applyAbyssPhaserRenderTargetState,
             camera,
             cameraAdapter: phaserDriver.adapters().camera,
             dataRegistry: requireState(state.data, "data"),

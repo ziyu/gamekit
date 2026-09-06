@@ -6,8 +6,12 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../ai-core" },
+    { "path": "../animator-core" },
     { "path": "../asset" },
+    { "path": "../audio-core" },
     { "path": "../camera-core" },
+    { "path": "../combat" },
     { "path": "../core" },
     { "path": "../data" },
     { "path": "../devtools" },
@@ -15,10 +19,14 @@
     { "path": "../gas" },
     { "path": "../game-runtime" },
     { "path": "../input-core" },
+    { "path": "../multiplayer-core" },
+    { "path": "../navigation-core" },
+    { "path": "../physics-core" },
     { "path": "../platform-core" },
     { "path": "../renderer-core" },
     { "path": "../save" },
     { "path": "../tca" },
-    { "path": "../ui-core" }
+    { "path": "../ui-core" },
+    { "path": "../world" }
   ]
 }

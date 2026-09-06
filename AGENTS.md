@@ -116,3 +116,59 @@ corepack pnpm dev
 - 提交前查看 `git status --short`。
 - 只提交与当前任务相关的文件。
 - commit message 使用简短祈使句，说明实际完成的工程结果。
+
+## Cursor Cloud specific instructions
+
+These notes are for Cloud Agents starting from an already-provisioned VM (dependencies installed by the update script `corepack pnpm install --frozen-lockfile`). Standard commands live in `README.md` and the `## 验证命令` section above; do not duplicate them here.
+
+- Node/toolchain: CI and this environment target **Node 24** (there is no `.nvmrc`/`engines`; the version is only pinned in `.github/workflows/*.yml`). `nvm` has `default -> 24` set, so login/interactive shells (including `tmux` sessions started with `bash -l`) already resolve to Node 24. Gotcha: a bare non-login exec context can hit an `/exec-daemon/node` shim that is Node 22. If a command unexpectedly runs under Node 22, prepend Node 24 explicitly: `export PATH="$HOME/.nvm/versions/node/v24.19.0/bin:$PATH"`.
+- Package manager is **pnpm via Corepack** (pinned `pnpm@11.1.2`); always invoke as `corepack pnpm ...`. First install runs native postinstalls for `esbuild` and `msgpackr-extract`, which are pre-approved via `allowBuilds` in `pnpm-workspace.yaml` (no interactive `pnpm approve-builds` needed).
+- Build/test/lint/format are Turborepo tasks and are heavily cached; a warm run may report most tasks as `cached`. `pnpm test` also runs a root `node --test` release-state check before the Turbo test graph.
+- No Docker, devcontainer, database, or external broker is required. The two multiplayer demos (`dev:multiplayer`, `dev:outpost`) start a Colyseus authority **in-process** via `tsx` alongside Vite — self-contained, no external service to provision.
+- Local dev apps are Vite (bound to `127.0.0.1`). The sandbox (`corepack pnpm dev:sandbox`) is the primary manual validation surface and serves at `http://127.0.0.1:5173/`; it is a scene explorer (Tiny Camp, Combat Range, AI Lab, Navigation Lab, Animation Lab, etc.). Other surfaces: `dev:game`, `dev:three`, `dev:physics2d`, `dev:physics3d`, `dev:outpost`.
+
+<!-- gitnexus:start -->
+
+# GitNexus — Code Intelligence
+
+This project is indexed by GitNexus as **gamekit** (18624 symbols, 43219 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+
+> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
+
+## Always Do
+
+- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "main"})`.
+- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- When exploring unfamiliar code, use `query({search_query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
+- For security review, `explain({target: "fileOrSymbol"})` lists taint findings (source→sink flows; needs `analyze --pdg`).
+
+## Never Do
+
+- NEVER edit a function, class, or method without first running `impact` on it.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
+- NEVER commit changes without running `detect_changes()` to check affected scope.
+
+## Resources
+
+| Resource                                 | Use for                                  |
+| ---------------------------------------- | ---------------------------------------- |
+| `gitnexus://repo/gamekit/context`        | Codebase overview, check index freshness |
+| `gitnexus://repo/gamekit/clusters`       | All functional areas                     |
+| `gitnexus://repo/gamekit/processes`      | All execution flows                      |
+| `gitnexus://repo/gamekit/process/{name}` | Step-by-step execution trace             |
+
+## CLI
+
+| Task                                         | Read this skill file                                        |
+| -------------------------------------------- | ----------------------------------------------------------- |
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md`       |
+| Blast radius / "What breaks if I change X?"  | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?"             | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md`       |
+| Rename / extract / split / refactor          | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md`     |
+| Tools, resources, schema reference           | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md`           |
+| Index, status, clean, wiki CLI commands      | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md`             |
+
+<!-- gitnexus:end -->

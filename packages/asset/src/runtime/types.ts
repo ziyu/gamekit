@@ -26,6 +26,39 @@ export type SpritesheetFrameConfig = {
   spacing?: number;
 };
 
+export type AtlasAssetMetadata = {
+  dataSource: AssetSource;
+  format?: "json-array" | "json-hash" | undefined;
+};
+
+export type AudioAssetMetadata = {
+  sources?: AssetSource[] | undefined;
+  stream?: boolean | undefined;
+  instances?: number | undefined;
+};
+
+export type AssetVariantDefinition = {
+  source: AssetSource;
+  metadata?: Record<string, unknown> | undefined;
+};
+
+export type AssetAnimationFrameRange = {
+  start: number;
+  end: number;
+  prefix?: string | undefined;
+  suffix?: string | undefined;
+  zeroPad?: number | undefined;
+};
+
+export type AssetAnimationManifest = {
+  id: string;
+  frames: number[] | string[] | AssetAnimationFrameRange;
+  frameRate?: number | undefined;
+  durationMs?: number | undefined;
+  repeat?: number | undefined;
+  yoyo?: boolean | undefined;
+};
+
 export type AssetDefinition = {
   id: string;
   type: AssetType;
@@ -36,6 +69,10 @@ export type AssetDefinition = {
   preload?: boolean;
   lazy?: boolean;
   frame?: SpritesheetFrameConfig;
+  atlas?: AtlasAssetMetadata | undefined;
+  audio?: AudioAssetMetadata | undefined;
+  variants?: Record<string, AssetVariantDefinition> | undefined;
+  animations?: AssetAnimationManifest[] | undefined;
 };
 
 export type AssetRef<TAssetType extends AssetType = AssetType> = {
@@ -70,6 +107,7 @@ export type CreateAssetManagerOptions = {
   adapter: AssetLoaderAdapter;
   clock?: () => number;
   onDiagnostic?: (event: AssetDiagnosticEvent) => void;
+  onDiagnosticError?: (error: unknown, event: AssetDiagnosticEvent) => void;
 };
 
 export type RegisterAssetsFromDataOptions = {

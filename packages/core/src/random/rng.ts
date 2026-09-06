@@ -5,6 +5,14 @@ export type Rng = {
   next(): number;
   int(minInclusive: number, maxExclusive: number): number;
   pick<T>(items: readonly T[]): T;
+  captureState(): RngState;
+  restoreState(snapshot: RngState): void;
+};
+
+export type RngState = {
+  algorithm: "mulberry32";
+  seed: string;
+  state: number;
 };
 
 export function createSeededRng(seed: string): Rng {
@@ -35,6 +43,24 @@ export function createSeededRng(seed: string): Rng {
       }
 
       return items[this.int(0, items.length)] as T;
+    },
+    captureState() {
+      return { algorithm: "mulberry32", seed, state: state >>> 0 };
+    },
+    restoreState(snapshot) {
+      if (
+        snapshot.algorithm !== "mulberry32" ||
+        snapshot.seed !== seed ||
+        !Number.isSafeInteger(snapshot.state) ||
+        snapshot.state < 0 ||
+        snapshot.state > 0xffff_ffff
+      ) {
+        throw new GameError("rng.invalid_state", "RNG state does not match this seeded stream", {
+          seed,
+          snapshot
+        });
+      }
+      state = snapshot.state | 0;
     }
   };
 }

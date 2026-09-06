@@ -169,7 +169,7 @@ export type RendererCameraAdapter = {
 
 Phaser Driver 的 camera adapter 映射到 `Scene.cameras.main`，Three Driver 的 camera adapter 映射到 `PerspectiveCamera` / `OrthographicCamera` 和 controls。
 
-Adapter 映射必须尊重底层渲染器自己的 camera 语义，但不能改变 GameKit 的公共坐标模型。以 Phaser 为例，GameKit 的 `CameraState2D.x/y` 表示 viewport 中心对应的 world point；Phaser 的 screen 映射近似为 `(world - scroll) * zoom`，因此应映射为 `scroll = center - viewport / (2 * zoom)`，再单独设置 zoom。不要按未缩放 viewport 写入 scroll，否则 renderer、picking 和 overlay 会在 zoom 后一起向右下错位。
+Adapter 映射必须尊重底层渲染器自己的 camera 语义，但不能改变 GameKit 的公共坐标模型。以 Phaser 为例，GameKit 的 `CameraState2D.x/y` 表示 viewport 中心对应的 world point；Driver 应先应用 native zoom，再通过 Phaser 的 center operation 把同一个 world point 放到 native viewport 中心。不要把 Camera Core 推导的 world-view top-left 直接当作 Phaser raw `scrollX/scrollY`：Phaser 的 scroll property 还受 native camera viewport 和 zoom 语义影响，在 backing-store pixel ratio 不为 1 时会产生稳定偏移。Legacy runtime 没有 center operation 时才使用经过该 runtime 语义验证的 scroll fallback。
 
 Renderer camera adapter 本身是 bridge，不拥有 gameplay camera state。它可以由 camera module 调用，也可以由 editor/devtools module 调用。
 
@@ -179,7 +179,9 @@ Renderer camera adapter 本身是 bridge，不拥有 gameplay camera state。它
 
 - Camera 是游戏会话能力，优先通过标准 GameModule helper 启动；不要把 camera controller 默认做成 App Host standard service。
 - Camera Core 不依赖 World、Renderer、Input、Phaser、Three 或 DOM。Follow target、input action 和 renderer sync 都通过 helper/profile 注入。
+- Web container 尺寸变化由 platform/app composition 同步给 renderer 与 Camera Core；Camera Core 不直接观察 DOM。集成规则见 [Platform 模块](./platform.md#模块集成)。
 - Camera module 集成负责订阅已经归一化的 input action、解析 follow target、推进 smoothing，并调用 renderer camera adapter sync hook；renderer adapter 只应用传入状态。
+- Fixed-step physics target 应通过 Physics module 提供的 transient interpolation store 解析 display position，使 follow camera 与 RenderObject 使用同一采样时刻；Camera Core 不依赖 Physics，也不拥有该 store。
 - Follow/lookahead/shake 这类依赖游戏语境的行为可以由具体游戏模块组合 CameraController 完成；公共 helper 只提供可复用装配，不应假设所有游戏都有同一套镜头行为。
 - 测试应覆盖 pan、zoom with anchor、screen/world/client/viewport 转换、bounds、follow resolver、smoothing、renderer adapter sync 和 dispose cleanup。
 
@@ -188,5 +190,6 @@ Renderer camera adapter 本身是 bridge，不拥有 gameplay camera state。它
 - 所有坐标转换必须复用 Camera Core 方法。UI overlay、picking、renderer adapter 和 input bridge 不应各写一套转换公式。
 - Zoom anchor 必须是 renderer viewport 坐标。滚轮缩放和平滑插值都要保持 anchor 对应的 world point 稳定，避免看起来从右下角或错误点缩放。
 - Controller 表示目标状态，display camera 可以平滑追赶目标状态或叠加 shake；平滑和 shake 属于 camera module/rig，不属于 renderer adapter。
+- Camera target 的表现插值不能写回 World，也不能替代 multiplayer authority snapshot/prediction；它只消除 simulation cadence 与 render cadence 之间的阶梯移动。
 - Save 默认保存可恢复的目标镜头或用户配置，不保存 transient display state、shake impulse、UI panel open state 或 DevTools state。
 - Camera action 只响应正确 input scope。游戏镜头、编辑器镜头、DevTools preview 镜头应有不同 context/scope。

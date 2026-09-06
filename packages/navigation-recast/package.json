@@ -1,0 +1,30 @@
+{
+  "name": "@gamekit/navigation-recast",
+  "version": "0.1.0-alpha.6",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-library-package.mjs",
+    "test": "vitest run --root ../.. --config vitest.config.ts packages/navigation-recast/test --passWithNoTests",
+    "lint": "oxlint ."
+  },
+  "dependencies": {
+    "@gamekit/navigation-core": "workspace:*",
+    "@gamekit/navigation-navmesh": "workspace:*",
+    "recast-navigation": "^0.43.1"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

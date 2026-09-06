@@ -2,14 +2,11 @@ import { GameError } from "@gamekit/core";
 import type {
   RenderCommand,
   RenderNodePath,
-  RenderNodePatch,
   RenderObjectDefinition,
   RenderObjectHandle,
   RenderObjectId,
   RendererAdapter,
-  RendererBootContext,
-  RendererCapabilities,
-  RenderObjectPatch
+  RendererBootContext
 } from "@gamekit/renderer-core";
 import { applyRenderCommand } from "./command-handlers";
 import {
@@ -18,12 +15,14 @@ import {
   SUPPORTED_OBJECT_TYPES
 } from "./object-factory";
 import { requireRenderRecord, resolveNodePath, type PhaserRenderRecord } from "./object-registry";
-import { applyObjectPatch } from "./patch-handlers";
-import type { PhaserRendererOptions, PhaserRendererRuntime } from "./types";
+import { applyPhaserRenderTargetState } from "./target-state";
+import type { PhaserRendererNative, PhaserRendererOptions, PhaserRendererRuntime } from "./types";
 
 const DEFAULT_DEBUG_TEXTURE_ID = "gamekit.debug.square";
 
-export function createPhaserRenderer(options: PhaserRendererOptions): RendererAdapter {
+export function createPhaserRenderer(
+  options: PhaserRendererOptions
+): RendererAdapter<PhaserRendererNative, unknown> {
   const rendererId = options.id ?? "renderer.phaser";
   const debugTextureId = options.debugTextureId ?? DEFAULT_DEBUG_TEXTURE_ID;
   const liveObjects = new Set<RenderObjectId>();
@@ -62,8 +61,9 @@ export function createPhaserRenderer(options: PhaserRendererOptions): RendererAd
   };
 
   const ensureSupportedType = (definition: RenderObjectDefinition): void => {
-    const capabilities = phaserRendererCapabilities();
-    if (!capabilities.objectTypes.includes(definition.type)) {
+    if (
+      !SUPPORTED_OBJECT_TYPES.includes(definition.type as (typeof SUPPORTED_OBJECT_TYPES)[number])
+    ) {
       throw new GameError(
         "renderer.unsupported_object_type",
         `Renderer does not support render object type: ${definition.type}`,
@@ -81,6 +81,7 @@ export function createPhaserRenderer(options: PhaserRendererOptions): RendererAd
 
   return {
     id: rendererId,
+    kind: "phaser",
     async boot(ctx) {
       if (bootContext) {
         return;
@@ -101,9 +102,6 @@ export function createPhaserRenderer(options: PhaserRendererOptions): RendererAd
     },
     getView() {
       return requireRuntime().view;
-    },
-    capabilities(): RendererCapabilities {
-      return phaserRendererCapabilities();
     },
     resize(width, height) {
       requireRuntime().resize?.(width, height);
@@ -129,24 +127,6 @@ export function createPhaserRenderer(options: PhaserRendererOptions): RendererAd
       emitDiagnostic("renderer.object_created", { rendererId, objectId, type: definition.type });
       return objectId;
     },
-    updateObject(objectId, patch: RenderObjectPatch) {
-      requireObject(objectId);
-      applyObjectPatch(requireRenderRecord(objects, objectId).native, patch);
-    },
-    updateNode(objectId, nodePath: RenderNodePath, patch: RenderNodePatch) {
-      requireObject(objectId);
-      const record = requireRenderRecord(objects, objectId);
-      const resolvedPath = resolveNodePath(nodePath);
-      const node = record.nodes.get(resolvedPath);
-      if (!node) {
-        throw new GameError("renderer.missing_node", `Missing render node: ${resolvedPath}`, {
-          objectId,
-          nodePath: resolvedPath
-        });
-      }
-
-      applyObjectPatch(node, patch);
-    },
     destroyObject(objectId) {
       requireObject(objectId);
       const record = requireRenderRecord(objects, objectId);
@@ -159,6 +139,36 @@ export function createPhaserRenderer(options: PhaserRendererOptions): RendererAd
       requireObject(objectId);
       applyRenderCommand(requireRenderRecord(objects, objectId), command);
     },
+    native(): PhaserRendererNative {
+      const runtime = requireRuntime();
+      return {
+        ...runtime,
+        gameObject(objectId) {
+          return requireRenderRecord(objects, objectId).native;
+        },
+        node(objectId, nodePath) {
+          return requireNode(objects, objectId, nodePath);
+        },
+        applyObjectState(objectId, state) {
+          applyPhaserRenderTargetState(requireRenderRecord(objects, objectId).native, state);
+        },
+        applyNodeState(objectId, nodePath, state) {
+          applyPhaserRenderTargetState(requireNode(objects, objectId, nodePath), state);
+        },
+        applyTargetState(target, state) {
+          applyPhaserRenderTargetState(target, state);
+        },
+        applyBatch(writes) {
+          for (const write of writes) {
+            const target =
+              write.nodePath === undefined
+                ? requireRenderRecord(objects, write.objectId).native
+                : requireNode(objects, write.objectId, write.nodePath);
+            applyPhaserRenderTargetState(target, write.state);
+          }
+        }
+      };
+    },
     getObjectHandle(objectId): RenderObjectHandle<unknown, unknown> {
       requireObject(objectId);
       const record = requireRenderRecord(objects, objectId);
@@ -168,16 +178,45 @@ export function createPhaserRenderer(options: PhaserRendererOptions): RendererAd
         native: record.native,
         escaped: true
       };
+    },
+    getNodeHandle(objectId, nodePath): RenderObjectHandle<unknown, unknown> {
+      requireObject(objectId);
+      const node = requireNode(objects, objectId, nodePath);
+      return {
+        id: objectId,
+        type: readNativeType(node),
+        native: node,
+        escaped: true
+      };
     }
   };
 }
 
-function phaserRendererCapabilities(): RendererCapabilities {
-  return {
-    objectTypes: [...SUPPORTED_OBJECT_TYPES],
-    supportsObjectTree: true,
-    supportsNodeUpdates: true,
-    commandTypes: ["animation.play"],
-    supportsNativeHandles: true
-  };
+function requireNode(
+  objects: Map<string, PhaserRenderRecord>,
+  objectId: RenderObjectId,
+  nodePath: RenderNodePath
+): unknown {
+  const record = requireRenderRecord(objects, objectId);
+  const resolvedPath = resolveNodePath(nodePath);
+  const node = record.nodes.get(resolvedPath);
+  if (!node) {
+    throw new GameError("renderer.missing_node", `Missing render node: ${resolvedPath}`, {
+      objectId,
+      nodePath: resolvedPath
+    });
+  }
+
+  return node;
+}
+
+function readNativeType(native: unknown): string {
+  if (typeof native === "object" && native && "type" in native) {
+    const type = (native as { type?: unknown }).type;
+    if (typeof type === "string") {
+      return type;
+    }
+  }
+
+  return "native";
 }

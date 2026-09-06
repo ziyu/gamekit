@@ -4,6 +4,10 @@
 
 Accepted
 
+Superseded in part by `docs/adr/0009-renderer-native-control-and-minimal-core.md`:
+Driver 仍是外部 runtime owner；但 renderer/driver 不维护完整后端 capability catalog。
+Profile 选择标准服务时以明确 adapter map 为准，后端专属 API 通过 typed native boundary 使用。
+
 ## Context
 
 Phaser、Three.js 这类第三方库不是单一能力库。它们通常同时拥有 renderer、scene、loader、texture/cache、input、camera、animation、particle、plugin 等运行时对象。

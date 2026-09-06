@@ -69,10 +69,17 @@ export type AssetDefinition = {
   metadata?: Record<string, unknown>;
   preload?: boolean;
   lazy?: boolean;
+  frame?: SpritesheetFrameConfig;
+  atlas?: AtlasAssetMetadata;
+  audio?: AudioAssetMetadata;
+  variants?: Record<string, AssetVariantDefinition>;
+  animations?: AssetAnimationManifest[];
 };
 ```
 
 `asset.definition` 是 GameKit 内置 DataType。DataRegistry 负责校验定义、追踪来源和引用关系；AssetManager 负责加载状态。
+
+Atlas metadata 只描述 atlas data source，Audio metadata 只描述可选格式 source 与实例策略，Animation manifest 只描述 clip/frame range；这些字段都保持 backend-neutral。`variants` 可以按 profile 替换 source 和附加 metadata，`resolveAssetVariant(...)` 只解析声明，不加载资源。DataType 必须校验 source、frame、variant key、audio source 和 animation id/range 的有效性，native texture、frame、sound 或 animation object 不进入 AssetDefinition。
 
 ## AssetSource
 
@@ -104,6 +111,8 @@ AssetSource 只描述来源，不直接暴露平台私有 API。具体解析由 
 
 AssetManager 只保存运行时加载状态，例如 registered、loading、loaded、failed。它不替代 DataRegistry，也不保存 Actor、Ability、Rule 等 gameplay definition。
 
+注册时 AssetManager 持有 AssetDefinition 的隔离副本，lookup/snapshot 和 adapter 调用也不暴露内部可变定义。同一 asset 的并发 load 合并为一个 in-flight adapter 请求；diagnostic observer/error reporter 的异常不改变 register/load 结果。
+
 AssetManager 也不是 Content Package manager。它读取资源定义、解析资源来源、委托 adapter 加载资源；实际资源文件可能来自 URL、platform resource、编辑器 workspace、远程 CDN 或未来 Content Package mount。Asset 模块只关心最终可解析的 AssetDefinition / AssetSource，不关心内容包如何被发现、启用或卸载。
 
 ## Preload Plan
@@ -125,7 +134,7 @@ preload plan 的输出应包含：
 - group / tags / priority。
 - source pack metadata where available。
 - content package metadata where available。
-- 预计使用的 adapter capability。
+- 预计使用的 asset adapter 或 driver adapter。
 
 AssetManager 可以按 group 加载资源，例如：
 
@@ -144,7 +153,7 @@ boot
 
 - Phaser Driver 的 asset loader adapter 映射到 Phaser loader / texture manager。
 - Three Driver 的 asset loader adapter 映射到 texture、GLB/glTF、material 和 environment map loader。
-- 音频、字体、shader、bundle 等未来资源通过对应 adapter 接入。
+- 音频、字体、shader、bundle 等资源通过对应 adapter 接入；Phaser 这类共享 runtime 的 audio/atlas loader 仍由同一个 Driver 暴露。
 
 Asset adapter 边界：
 
@@ -168,6 +177,8 @@ DataRegistry
 → renderer/audio/platform backend
 ```
 
+Animation clip/atlas manifest 属于可引用内容 metadata：Asset 负责源与加载状态，Animator Core 负责 clip/graph 语义，Renderer/Driver adapter 负责把 frame/clip 映射到 native runtime。AssetManager 不解析 gameplay animator state，也不保存 native frame 或 audio buffer。
+
 Data 负责：
 
 - 注册 `asset.definition`。
@@ -179,7 +190,7 @@ Asset 负责：
 - 根据 AssetDefinition 加载资源。
 - 根据 preload / group / lazy 策略生成加载计划。
 - 记录加载状态。
-- 报告加载失败、重试、卸载和 adapter capability。
+- 报告加载失败、重试、卸载和 adapter 状态。
 
 App Host 可以编排 Data pipeline 与 Asset preload 的顺序，但 Asset 模块本身仍不读取 DataPack、不解释 gameplay data。
 
@@ -209,7 +220,12 @@ Renderer adapter 可以持有底层资源句柄，但这些句柄不进入 gamep
 
 - App Host/profile 负责按 Data → AssetManager → adapter preload 的顺序集成资源系统；AssetManager 不自己读取 DataPack 或猜测 gameplay document。
 - Phaser、Three 等资源加载必须通过 Driver 暴露的 asset loader adapter，共享同一个外部 runtime cache；不要为 Asset 单独创建另一套 Phaser/Three runtime。
+- 美术源文件与运行时资源必须显式分层：SVG、PSD、Blender 等 authoring source 留在源码目录，由可复现的内容构建步骤生成 PNG/WebP、atlas、压缩纹理或模型产物；`AssetDefinition.source` 只指向当前 profile 实际加载的运行时产物。源文件不应因为位于 Web `public` 目录而被意外发布。
+- 运行时格式由内容构建和目标平台决定，不由 gameplay 或 Renderer 临时猜测。SVG 适合编辑、图标 UI 或确实需要无级缩放的少量内容；大量场景/实体纹理默认应预栅格化或进入 atlas，避免在加载和渲染路径重复解析、栅格化或产生额外纹理切换。
+- 烘焙场景纹理只描述视觉，不隐式拥有 gameplay collision。有关墙体、掩体、trigger 或 nav 区域的数据应进入 Physics/Data 或对应关卡 DataType；AssetManager 不解析或物化碰撞体。对模块化静态场景，优先把有碰撞物拆成可复用的紧边界资源，并让 app-owned scene instance 的单一 transform/footprint 同时派生 RenderObject placement 与 physics companion；内容测试应逐实例对齐，不能只比较整张场景 bounds。
 - Preload group 应面向启动体验和场景切换，不应把所有资源一次性塞进首屏加载。大资源、可选包和编辑器预览应支持 lazy/retry/unload。
+- 有界 group retry 使用 `loadAssetGroupWithRetry(...)`；已成功资源由 AssetManager cache 跳过，只重试 failed member。调用方必须显式设置最大尝试次数并通过 attempt hook 接入进度或诊断，不能在 app 内实现无界重试循环；attempt observer 及其 error reporter 的异常不能改变资源加载结果。
+- 空 group 返回失败结果并产生 `asset.group_missing` diagnostic，不把“没有任何加载目标”当成成功，也不重复空重试。
 
 ### 模块使用
 
@@ -218,5 +234,7 @@ Renderer adapter 可以持有底层资源句柄，但这些句柄不进入 gamep
 - AssetDefinition 是资源声明，AssetManager 是运行时加载状态管理；不要把 gameplay data、DataPack 解析或 renderer native object 放进 AssetManager。
 - 资源引用应使用 AssetRef 或业务数据里的明确资源引用字段，不要求资源定义与使用者处于同一 DataPack。
 - AssetManager 默认只读取 `asset.definition` 或外部显式指定的同形资源定义；不要让它扫描任意 gameplay document 猜测资源。
+- 内容 manifest 应记录运行时资源的格式、尺寸和必要 variant，并用构建或测试校验产物真实存在且与声明一致；对首屏纹理数量、总传输字节和最大单文件建立粗粒度预算，不能只测 AssetManager 的内存注册耗时。
+- 栅格运行时纹理尺寸应接近“最大预期 display footprint × profile pixel ratio”，并为 zoom/atlas/filtering 留出有数据支撑的余量。不要把任意高分辨率 authoring source 原样发布，也不要让同一透明小物体在默认视角长期做大比例 minification；传输字节、纹理内存、fill-rate 和闪烁风险需要一起衡量。
 - 资源加载失败、缺失引用和平台 source 不支持要分成不同 diagnostics，方便编辑器和 DevTools 给出正确修复建议。
 - Renderer 使用 asset id 或 adapter-specific props 取资源句柄；gameplay、DataType 和 Save payload 不保存 texture、image element、WebGL resource 或 Phaser cache object。

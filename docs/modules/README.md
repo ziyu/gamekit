@@ -52,16 +52,23 @@
 
 - `core-runtime.md`：Core、EventBus、GameRuntime、GameModule。
 - `app-host.md`：应用组合层、Service Registry、统一生命周期、配置和诊断。
-- `driver.md`：外部运行时统一集成层、Driver lifecycle、adapter capability。
+- `driver.md`：外部运行时统一集成层、Driver lifecycle、adapter map 和 native boundary。
 - `world.md`：World facade、ECS adapter、系统边界。
 - `renderer.md`：RenderObject、RenderNode、RenderCommand、Renderer Adapter。
 - `input.md`：Input Core、DOM/Phaser/Tauri input adapter、Action Mapping。
 - `camera.md`：Camera Core、Camera Rig、Renderer Camera Adapter。
+- `physics.md`：Physics Core、body/collider/query/contact、Backend Adapter。
+- `combat.md`：Effect delivery、target relationship、hit resolution、projectile executor。
+- `ai.md`：Perception、Utility goal、Task lifecycle、budget scheduler。
+- `navigation.md`：Path/route query、agent profile、dynamic blocker、backend adapter。
+- `animator.md`：Semantic Animator graph、controller、layer、marker、playback adapter。
+- `audio.md`：GameAudio 的 Music/SFX/Dialogue 领域 API、Playback、Mix、Spatial 和 Backend 边界。
 - `platform.md`：Platform Core、Web/Tauri adapter、权限与文件系统。
 - `data.md`：DataType、DataPack、DataRef、自由游戏数据模型、数据校验。
 - `assets.md`：AssetRef、AssetDefinition、AssetManager、资源来源和加载状态。
 - `tca.md`：Trigger / Condition / Action 规则系统。
 - `gas.md`：Actor、Ability、Effect、Cue、Clue。
+- `multiplayer.md`：成熟多人 backend adapter、GameKit facade、authority、命令同步与状态摘要。
 - `ui.md`：UI Core、React UI、游戏样式、组件库、窗口与交互层。
 - `save.md`：Save / Load / Migration、slot、store、codec、contributor。
 - `devtools.md`：Trace、Inspector、Profiler。

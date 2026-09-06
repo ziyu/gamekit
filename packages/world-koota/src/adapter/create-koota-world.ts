@@ -1,9 +1,9 @@
 import { GameError } from "@gamekit/core";
-import type { ComponentDef, EntityId, GameWorld } from "@gamekit/world";
+import type { CheckpointGameWorld, ComponentDef, EntityId } from "@gamekit/world";
 import { createWorld as createKootaNativeWorld, trait } from "koota";
 import type { KootaEntity, KootaNativeWorld, KootaTrait } from "./koota-types";
 
-export function createKootaWorld(): GameWorld {
+export function createKootaWorld(): CheckpointGameWorld {
   const nativeWorld = createKootaNativeWorld() as unknown as KootaNativeWorld;
   const traitByComponentId = new Map<string, KootaTrait>();
   const entityById = new Map<EntityId, KootaEntity>();
@@ -31,14 +31,54 @@ export function createKootaWorld(): GameWorld {
     return entity;
   };
 
+  const spawnEntity = (entityId: EntityId): EntityId => {
+    if (entityById.has(entityId)) {
+      throw new GameError("world.duplicate_entity", `Duplicate entity: ${String(entityId)}`, {
+        entity: entityId
+      });
+    }
+    const entity = nativeWorld.spawn();
+    entityById.set(entityId, entity);
+    idByEntity.set(entity, entityId);
+    reserveGeneratedId(entityId);
+    return entityId;
+  };
+
+  const nextGeneratedId = (): EntityId => {
+    let entityId = `entity-${nextEntityId}`;
+    while (entityById.has(entityId)) {
+      nextEntityId += 1;
+      entityId = `entity-${nextEntityId}`;
+    }
+    nextEntityId += 1;
+    return entityId;
+  };
+
+  const reserveGeneratedId = (entityId: EntityId): void => {
+    if (typeof entityId !== "string") {
+      return;
+    }
+    const match = /^entity-(\d+)$/.exec(entityId);
+    if (match === null) {
+      return;
+    }
+    nextEntityId = Math.max(nextEntityId, Number(match[1]) + 1);
+  };
+
   return {
     spawn() {
-      const entity = nativeWorld.spawn();
-      const entityId = `entity-${nextEntityId}`;
-      nextEntityId += 1;
-      entityById.set(entityId, entity);
-      idByEntity.set(entity, entityId);
-      return entityId;
+      return spawnEntity(nextGeneratedId());
+    },
+    spawnWithId(entityId) {
+      if (
+        (typeof entityId === "string" && entityId.trim().length === 0) ||
+        (typeof entityId === "number" && !Number.isSafeInteger(entityId))
+      ) {
+        throw new GameError("world.invalid_entity_id", "Entity id must be stable and non-empty", {
+          entity: entityId
+        });
+      }
+      return spawnEntity(entityId);
     },
     despawn(entityId) {
       const entity = requireEntity(entityId);

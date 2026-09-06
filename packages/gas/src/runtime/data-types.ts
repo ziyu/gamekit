@@ -1,6 +1,7 @@
 import type { DataDiagnostic, DataTypeDefinition } from "@gamekit/data";
 import type {
   GasAbilityDefinition,
+  GasAbilityExecutionPhase,
   GasActorDefinition,
   GasAttributeDefinition,
   GasCueDefinition,
@@ -14,6 +15,16 @@ export const GAS_ABILITY_TYPE = "gas.ability";
 export const GAS_EFFECT_TYPE = "gas.effect";
 export const GAS_TAG_TYPE = "gas.tag";
 export const GAS_CUE_TYPE = "gas.cue";
+
+const GAS_ABILITY_EXECUTION_PHASES = new Set<GasAbilityExecutionPhase>([
+  "requested",
+  "preparing",
+  "committed",
+  "active",
+  "recovering",
+  "completed",
+  "cancelled"
+]);
 
 export function createGasDataTypes(): Array<DataTypeDefinition<any>> {
   return [
@@ -77,6 +88,15 @@ export function createGasAbilityDataType(): DataTypeDefinition<GasAbilityDefinit
     type: GAS_ABILITY_TYPE,
     getTags: (definition) => definition.tags ?? [],
     references(document) {
+      const phaseCueReferences = Object.entries(document.data.execution?.phaseCues ?? {}).flatMap(
+        ([phase, cueIds]) =>
+          (cueIds ?? []).map((id, index) => ({
+            type: GAS_CUE_TYPE,
+            id,
+            path: `execution.phaseCues.${phase}[${index}]`,
+            optional: true
+          }))
+      );
       return [
         ...(document.data.effects ?? []).map((effect, index) => ({
           type: GAS_EFFECT_TYPE,
@@ -88,7 +108,8 @@ export function createGasAbilityDataType(): DataTypeDefinition<GasAbilityDefinit
           id,
           path: `cues[${index}]`,
           optional: true
-        }))
+        })),
+        ...phaseCueReferences
       ];
     },
     validate(document) {
@@ -116,6 +137,89 @@ export function createGasAbilityDataType(): DataTypeDefinition<GasAbilityDefinit
             key: document,
             path: `costs[${index}]`
           });
+        }
+      }
+
+      const execution = document.data.execution;
+      if (execution !== undefined) {
+        for (const [field, value] of [
+          ["preparingMs", execution.preparingMs],
+          ["activeMs", execution.activeMs],
+          ["recoveringMs", execution.recoveringMs]
+        ] as const) {
+          if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+            diagnostics.push({
+              code: "gas.ability_invalid_execution_duration",
+              message: "Gas ability execution duration must be a non-negative finite number",
+              severity: "error",
+              key: document,
+              path: `execution.${field}`
+            });
+          }
+        }
+        for (const [field, value] of [
+          ["costCommit", execution.costCommit],
+          ["cooldownCommit", execution.cooldownCommit]
+        ] as const) {
+          if (value !== undefined && value !== "requested" && value !== "committed") {
+            diagnostics.push({
+              code: "gas.ability_invalid_execution_commit",
+              message: "Gas ability execution commit policy must be requested or committed",
+              severity: "error",
+              key: document,
+              path: `execution.${field}`
+            });
+          }
+        }
+        for (const [field, value] of [
+          ["beforeCommit", execution.cancellation?.beforeCommit],
+          ["afterCommit", execution.cancellation?.afterCommit]
+        ] as const) {
+          if (value !== undefined && value !== "allow" && value !== "deny") {
+            diagnostics.push({
+              code: "gas.ability_invalid_execution_cancellation",
+              message: "Gas ability cancellation policy must be allow or deny",
+              severity: "error",
+              key: document,
+              path: `execution.cancellation.${field}`
+            });
+          }
+        }
+        if (
+          execution.maxConcurrent !== undefined &&
+          (!Number.isSafeInteger(execution.maxConcurrent) || execution.maxConcurrent <= 0)
+        ) {
+          diagnostics.push({
+            code: "gas.ability_invalid_execution_concurrency",
+            message: "Gas ability maxConcurrent must be a positive integer",
+            severity: "error",
+            key: document,
+            path: "execution.maxConcurrent"
+          });
+        }
+        if (
+          execution.overflow !== undefined &&
+          execution.overflow !== "reject-newest" &&
+          execution.overflow !== "cancel-oldest"
+        ) {
+          diagnostics.push({
+            code: "gas.ability_invalid_execution_overflow",
+            message: "Gas ability overflow must be reject-newest or cancel-oldest",
+            severity: "error",
+            key: document,
+            path: "execution.overflow"
+          });
+        }
+        for (const phase of Object.keys(execution.phaseCues ?? {})) {
+          if (!GAS_ABILITY_EXECUTION_PHASES.has(phase as GasAbilityExecutionPhase)) {
+            diagnostics.push({
+              code: "gas.ability_invalid_execution_phase",
+              message: `Unknown Gas ability execution phase: ${phase}`,
+              severity: "error",
+              key: document,
+              path: `execution.phaseCues.${phase}`
+            });
+          }
         }
       }
 
@@ -157,9 +261,22 @@ export function createGasEffectDataType(): DataTypeDefinition<GasEffectDefinitio
       ) {
         diagnostics.push({
           code: "gas.effect_invalid_period",
-          message: "Gas effect period must be greater than zero",
+          message: "Gas effect period must be positive and finite",
           severity: "error",
           key: document
+        });
+      }
+
+      if (
+        document.data.stacking !== undefined &&
+        (!Number.isInteger(document.data.stacking.limit) || document.data.stacking.limit <= 0)
+      ) {
+        diagnostics.push({
+          code: "gas.effect_invalid_stack_limit",
+          message: "Gas effect stack limit must be a positive integer",
+          severity: "error",
+          key: document,
+          path: "stacking.limit"
         });
       }
 

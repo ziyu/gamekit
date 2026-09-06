@@ -1,12 +1,14 @@
 import { defineGameModule } from "@gamekit/core";
 import type { GameInstallContext } from "@gamekit/game-runtime";
 import type {
-  RenderNodePatch,
   RenderNodePath,
   RenderObjectDefinition,
-  RenderObjectPatch,
   RendererAdapter
 } from "@gamekit/renderer-core";
+import {
+  applyPhaserRenderTargetState,
+  type PhaserRenderTargetState
+} from "@gamekit/renderer-phaser";
 import type { EntityId, GameWorld } from "@gamekit/world";
 import {
   LinkState,
@@ -26,14 +28,14 @@ export type SandboxRenderSize = {
   height: number;
 };
 
-type SandboxRenderTransformPatch = {
+type SandboxRenderTransformState = {
   x: number;
   y: number;
   rotation?: number | undefined;
   width?: number | undefined;
 };
 
-type RenderObjectPatchSignature = {
+type RenderObjectStateSignature = {
   x?: number | undefined;
   y?: number | undefined;
   rotation?: number | undefined;
@@ -43,7 +45,7 @@ type RenderObjectPatchSignature = {
   tintMode?: string | number | undefined;
 };
 
-type RenderNodePatchSignature = {
+type RenderNodeStateSignature = {
   x?: number | undefined;
   y?: number | undefined;
   rotation?: number | undefined;
@@ -56,8 +58,8 @@ type RenderNodePatchSignature = {
 };
 
 type RenderSyncCache = {
-  objectPatches: Map<string, RenderObjectPatchSignature>;
-  nodePatches: Map<string, Map<string, RenderNodePatchSignature>>;
+  objectStates: Map<string, RenderObjectStateSignature>;
+  nodeStates: Map<string, Map<string, RenderNodeStateSignature>>;
   positionsByObjectId: Map<string, { x: number; y: number }>;
 };
 
@@ -79,8 +81,8 @@ export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions)
         "sandbox.render_sync"
       );
       const cache: RenderSyncCache = {
-        objectPatches: new Map(),
-        nodePatches: new Map(),
+        objectStates: new Map(),
+        nodeStates: new Map(),
         positionsByObjectId: new Map()
       };
 
@@ -104,7 +106,7 @@ export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions)
             }
 
             const link = world.get(entity, LinkState);
-            const renderTransform: SandboxRenderTransformPatch = link
+            const renderTransform: SandboxRenderTransformState = link
               ? createLinkTransform(link, cache.positionsByObjectId, options.size)
               : {
                   x: toPixel(position.x, options.size.width),
@@ -134,7 +136,7 @@ export function createSandboxRenderSyncModule(options: SandboxRenderSyncOptions)
               options.renderer,
               cache,
               presentation.renderObjectId,
-              createObjectPatch(renderTransform, link)
+              createObjectState(renderTransform, link)
             );
             applyNodeAnimations(
               options.renderer,
@@ -168,7 +170,7 @@ function applyNodeAnimations(
   presentation: ReturnType<typeof RenderObjectPresentation.create>,
   elapsed: number
 ): void {
-  if (!renderer.updateNode || !presentation.nodeAnimations) {
+  if (!presentation.nodeAnimations) {
     return;
   }
 
@@ -179,12 +181,15 @@ function applyNodeAnimations(
       cache,
       renderObjectId,
       animation.nodePath,
-      createNodePatch(animation, seconds)
+      createNodeState(animation, seconds)
     );
   }
 }
 
-function createNodePatch(animation: SandboxRenderNodeAnimation, seconds: number): RenderNodePatch {
+function createNodeState(
+  animation: SandboxRenderNodeAnimation,
+  seconds: number
+): PhaserRenderTargetState {
   const phase = animation.phase ?? 0;
   const wave = Math.sin(seconds * animation.speed + phase);
 
@@ -201,18 +206,18 @@ function createNodePatch(animation: SandboxRenderNodeAnimation, seconds: number)
 
   if (animation.kind === "pulse") {
     const scale = 1 + wave * animation.scale;
-    const patch: RenderNodePatch = {
+    const state: PhaserRenderTargetState = {
       transform: {
         scale: { x: scale, y: scale }
       }
     };
 
     if (animation.alpha) {
-      patch.alpha =
+      state.alpha =
         animation.alpha.min + ((wave + 1) / 2) * (animation.alpha.max - animation.alpha.min);
     }
 
-    return patch;
+    return state;
   }
 
   return {
@@ -253,11 +258,11 @@ function createObjectDefinition(input: {
   };
 }
 
-function createObjectPatch(
-  transform: SandboxRenderTransformPatch,
+function createObjectState(
+  transform: SandboxRenderTransformState,
   link: ReturnType<typeof LinkState.create> | undefined
-): RenderObjectPatch {
-  const patch: RenderObjectPatch = {
+): PhaserRenderTargetState {
+  const state: PhaserRenderTargetState = {
     transform: {
       position: { x: transform.x, y: transform.y },
       ...(transform.rotation === undefined ? {} : { rotation: { z: transform.rotation } })
@@ -269,10 +274,10 @@ function createObjectPatch(
   };
 
   if (link) {
-    patch.alpha = 0.28 + Math.min(0.65, link.flow * 0.65);
+    state.alpha = 0.28 + Math.min(0.65, link.flow * 0.65);
   }
 
-  return patch;
+  return state;
 }
 
 function createLinkTransform(
@@ -302,7 +307,7 @@ function applySceneNodeState(
   world: GameWorld,
   entity: EntityId
 ): void {
-  if (!renderer.updateNode) {
+  if (!renderer.getNodeHandle) {
     return;
   }
 
@@ -434,14 +439,18 @@ function updateObjectIfChanged(
   renderer: RendererAdapter,
   cache: RenderSyncCache,
   renderObjectId: string,
-  patch: RenderObjectPatch
+  state: PhaserRenderTargetState
 ): void {
-  const signature = createObjectPatchSignature(patch);
-  if (sameObjectSignature(cache.objectPatches.get(renderObjectId), signature)) {
+  const signature = createObjectStateSignature(state);
+  if (sameObjectSignature(cache.objectStates.get(renderObjectId), signature)) {
     return;
   }
-  renderer.updateObject(renderObjectId, patch);
-  cache.objectPatches.set(renderObjectId, signature);
+  const handle = renderer.getObjectHandle?.(renderObjectId);
+  if (!handle) {
+    return;
+  }
+  applyPhaserRenderTargetState(handle.native, state);
+  cache.objectStates.set(renderObjectId, signature);
 }
 
 function updateNodeIfChanged(
@@ -449,83 +458,81 @@ function updateNodeIfChanged(
   cache: RenderSyncCache,
   renderObjectId: string,
   nodePath: RenderNodePath,
-  patch: RenderNodePatch
+  state: PhaserRenderTargetState
 ): void {
-  if (!renderer.updateNode) {
+  if (!renderer.getNodeHandle) {
     return;
   }
 
-  const signature = createNodePatchSignature(patch);
-  const nodePatches = getNodePatchCache(cache, renderObjectId);
+  const signature = createNodeStateSignature(state);
+  const nodeStates = getNodeStateCache(cache, renderObjectId);
   const cacheKey = createNodePathCacheKey(nodePath);
-  if (sameNodeSignature(nodePatches.get(cacheKey), signature)) {
+  if (sameNodeSignature(nodeStates.get(cacheKey), signature)) {
     return;
   }
-  renderer.updateNode(renderObjectId, nodePath, patch);
-  nodePatches.set(cacheKey, signature);
+  applyPhaserRenderTargetState(renderer.getNodeHandle(renderObjectId, nodePath).native, state);
+  nodeStates.set(cacheKey, signature);
 }
 
 function createNodePathCacheKey(nodePath: RenderNodePath): string {
   return Array.isArray(nodePath) ? nodePath.join("/") : nodePath;
 }
 
-function getNodePatchCache(
+function getNodeStateCache(
   cache: RenderSyncCache,
   renderObjectId: string
-): Map<string, RenderNodePatchSignature> {
-  const existing = cache.nodePatches.get(renderObjectId);
+): Map<string, RenderNodeStateSignature> {
+  const existing = cache.nodeStates.get(renderObjectId);
   if (existing) {
     return existing;
   }
-  const nodePatches = new Map<string, RenderNodePatchSignature>();
-  cache.nodePatches.set(renderObjectId, nodePatches);
-  return nodePatches;
+  const nodeStates = new Map<string, RenderNodeStateSignature>();
+  cache.nodeStates.set(renderObjectId, nodeStates);
+  return nodeStates;
 }
 
-function createObjectPatchSignature(patch: RenderObjectPatch): RenderObjectPatchSignature {
+function createObjectStateSignature(state: PhaserRenderTargetState): RenderObjectStateSignature {
   return {
-    x: patch.transform?.position?.x,
-    y: patch.transform?.position?.y,
-    rotation: patch.transform?.rotation?.z,
-    width: readNumberProp(patch.props, "width"),
-    alpha: patch.alpha,
-    tint: readNumberProp(patch.props, "tint"),
-    tintMode: readTintModeProp(patch.props)
+    x: state.transform?.position?.x,
+    y: state.transform?.position?.y,
+    rotation: state.transform?.rotation?.z,
+    width: readNumberProp(state.props, "width"),
+    alpha: state.alpha,
+    tint: readNumberProp(state.props, "tint"),
+    tintMode: readTintModeProp(state.props)
   };
 }
 
-function createNodePatchSignature(patch: RenderNodePatch): RenderNodePatchSignature {
+function createNodeStateSignature(state: PhaserRenderTargetState): RenderNodeStateSignature {
   return {
-    x: patch.transform?.position?.x,
-    y: patch.transform?.position?.y,
-    rotation: patch.transform?.rotation?.z,
-    scaleX: patch.transform?.scale?.x,
-    scaleY: patch.transform?.scale?.y,
-    width: readNumberProp(patch.props, "width"),
-    alpha: patch.alpha,
-    tint: readNumberProp(patch.props, "tint"),
-    tintMode: readTintModeProp(patch.props)
+    x: state.transform?.position?.x,
+    y: state.transform?.position?.y,
+    rotation: state.transform?.rotation?.z,
+    scaleX: state.transform?.scale?.x,
+    scaleY: state.transform?.scale?.y,
+    width: readNumberProp(state.props, "width"),
+    alpha: state.alpha,
+    tint: readNumberProp(state.props, "tint"),
+    tintMode: readTintModeProp(state.props)
   };
 }
 
 function readNumberProp(
-  props: Partial<Record<string, unknown>> | undefined,
+  props: Record<string, unknown> | undefined,
   key: string
 ): number | undefined {
   const value = props?.[key];
   return typeof value === "number" ? value : undefined;
 }
 
-function readTintModeProp(
-  props: Partial<Record<string, unknown>> | undefined
-): string | number | undefined {
+function readTintModeProp(props: Record<string, unknown> | undefined): string | number | undefined {
   const value = props?.tintMode;
   return typeof value === "string" || typeof value === "number" ? value : undefined;
 }
 
 function sameObjectSignature(
-  previous: RenderObjectPatchSignature | undefined,
-  next: RenderObjectPatchSignature
+  previous: RenderObjectStateSignature | undefined,
+  next: RenderObjectStateSignature
 ): boolean {
   return (
     !!previous &&
@@ -540,8 +547,8 @@ function sameObjectSignature(
 }
 
 function sameNodeSignature(
-  previous: RenderNodePatchSignature | undefined,
-  next: RenderNodePatchSignature
+  previous: RenderNodeStateSignature | undefined,
+  next: RenderNodeStateSignature
 ): boolean {
   return (
     !!previous &&

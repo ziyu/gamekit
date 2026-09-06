@@ -5,8 +5,9 @@ import {
   inferDistTag,
   parseAdditionalDistTags,
   resolveRequiredDistTags,
-  shouldSyncPrereleaseLatest
+  validateDistTagPolicy
 } from "./release-dist-tags.mjs";
+import { assertLockstepWorkspaceState } from "./release-workspace-state.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const sentinelManifest = JSON.parse(readFileSync(join(root, "packages/core/package.json"), "utf8"));
@@ -14,9 +15,8 @@ const version = process.env.GAMEKITS_RELEASE_VERSION ?? sentinelManifest.version
 const registry = process.env.GAMEKITS_NPM_REGISTRY ?? "https://registry.npmjs.org";
 const distTag = process.env.GAMEKITS_NPM_TAG ?? inferDistTag(version);
 const additionalDistTags = parseAdditionalDistTags(process.env.GAMEKITS_NPM_ADDITIONAL_TAGS);
-const syncPrereleaseLatest = shouldSyncPrereleaseLatest(
-  process.env.GAMEKITS_NPM_SYNC_PRERELEASE_LATEST
-);
+validateDistTagPolicy({ additionalDistTags, distTag, version });
+assertLockstepWorkspaceState({ releaseVersion: version, root });
 const packageNames = resolvePackageNames();
 
 const missingPackages = [];
@@ -30,9 +30,7 @@ for (const packageName of packageNames) {
 
   const requiredDistTags = resolveRequiredDistTags({
     additionalDistTags,
-    currentDistTags: metadata["dist-tags"],
     distTag,
-    syncPrereleaseLatest,
     version
   });
   const staleTags = requiredDistTags.filter((tag) => metadata["dist-tags"]?.[tag] !== version);

@@ -1,0 +1,798 @@
+.sandbox-scene-mount[data-scene="multiplayer-projectile-lab"] {
+  overflow: auto;
+}
+
+.multiplayer-projectile-lab {
+  --field-ink: #eee1c7;
+  --field-muted: #958b78;
+  --field-paper: #171b19;
+  --field-panel: #111514;
+  --field-line: #3c4039;
+  --field-green: #82e4bf;
+  --field-amber: #ffd166;
+  --field-red: #ed715c;
+  position: relative;
+  min-height: 100vh;
+  padding: 24px clamp(18px, 2.4vw, 42px) 30px;
+  overflow: hidden;
+  color: var(--field-ink);
+  background:
+    radial-gradient(circle at 22% -5%, rgb(123 99 60 / 24%), transparent 32%),
+    radial-gradient(circle at 100% 80%, rgb(29 91 72 / 15%), transparent 34%),
+    linear-gradient(145deg, #131615 0%, #0b0e0d 56%, #111412 100%);
+  font-family: "Avenir Next Condensed", "DIN Condensed", "Franklin Gothic Medium", sans-serif;
+}
+
+.multiplayer-projectile-lab::before {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgb(255 255 255 / 1.8%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 1.2%) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, black, transparent 72%);
+  content: "";
+}
+
+.multiplayer-projectile-lab__scanline {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0.16;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 3px,
+    rgb(0 0 0 / 16%) 4px
+  );
+  mix-blend-mode: multiply;
+}
+
+.multiplayer-projectile-lab__header,
+.multiplayer-projectile-lab__workspace,
+.multiplayer-projectile-lab__telemetry {
+  position: relative;
+  z-index: 1;
+  width: min(1720px, 100%);
+  margin-inline: auto;
+}
+
+.multiplayer-projectile-lab__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 0 0 20px;
+  border-bottom: 1px solid #48483e;
+}
+
+.multiplayer-projectile-lab__eyebrow,
+.multiplayer-projectile-lab__section-label,
+.multiplayer-projectile-lab__session,
+.multiplayer-projectile-lab__stage-header span,
+.multiplayer-projectile-lab__stage-footer span,
+.multiplayer-projectile-lab__telemetry > div > span {
+  font-family: "IBM Plex Mono", "Roboto Mono", "Courier New", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.multiplayer-projectile-lab__eyebrow {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--field-amber);
+}
+
+.multiplayer-projectile-lab__title-lockup h1 {
+  margin: 0;
+  font-size: clamp(34px, 4.5vw, 67px);
+  font-stretch: condensed;
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 0.94;
+  text-transform: uppercase;
+}
+
+.multiplayer-projectile-lab__title-lockup p {
+  max-width: 720px;
+  margin: 10px 0 0;
+  color: #aaa08e;
+  font-size: 14px;
+  letter-spacing: 0.025em;
+}
+
+.multiplayer-projectile-lab__session {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  flex: none;
+  color: #756f62;
+}
+
+.multiplayer-projectile-lab__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #49493e;
+  color: #827d70;
+  background: #111412;
+  font-size: 10px;
+  letter-spacing: 0.13em;
+}
+
+.multiplayer-projectile-lab__status::before {
+  width: 6px;
+  height: 6px;
+  background: currentcolor;
+  content: "";
+}
+
+.multiplayer-projectile-lab__status[data-ready="true"] {
+  border-color: rgb(78 150 124 / 68%);
+  color: var(--field-green);
+}
+
+.multiplayer-projectile-lab__workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.multiplayer-projectile-lab__stage,
+.multiplayer-projectile-lab__command-rail,
+.multiplayer-projectile-lab__telemetry {
+  border: 1px solid var(--field-line);
+  background: rgb(16 20 18 / 92%);
+  box-shadow: 0 28px 80px rgb(0 0 0 / 24%);
+}
+
+.multiplayer-projectile-lab__stage {
+  min-width: 0;
+  padding: 12px;
+}
+
+.multiplayer-projectile-lab__stage-header {
+  display: flex;
+  min-height: 43px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 2px 4px 10px;
+}
+
+.multiplayer-projectile-lab__stage-header > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.multiplayer-projectile-lab__stage-header span {
+  color: #777469;
+}
+
+.multiplayer-projectile-lab__stage-header strong {
+  color: #cfc4ae;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+
+.multiplayer-projectile-lab__truth-legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-top: 3px;
+}
+
+.multiplayer-projectile-lab__truth-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 8px;
+  letter-spacing: 0.09em;
+}
+
+.multiplayer-projectile-lab__truth-legend span::before {
+  width: 7px;
+  height: 7px;
+  border: 1px solid currentcolor;
+  content: "";
+}
+
+.multiplayer-projectile-lab__truth-legend [data-tone="owner"] {
+  color: #82e4bf;
+}
+
+.multiplayer-projectile-lab__truth-legend [data-tone="authority"] {
+  color: #ffad5c;
+}
+
+.multiplayer-projectile-lab__truth-legend [data-tone="remote"] {
+  color: #7ca9ff;
+}
+
+.multiplayer-projectile-lab__viewport-frame {
+  position: relative;
+  padding: 5px;
+  border: 1px solid #484a41;
+  background: #080b0a;
+}
+
+.multiplayer-projectile-lab canvas {
+  display: block;
+  width: 100%;
+  height: clamp(520px, 63vh, 720px);
+  min-height: 520px;
+  outline: none;
+  background: #151917;
+  cursor: crosshair;
+}
+
+.multiplayer-projectile-lab canvas:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--field-amber);
+}
+
+.multiplayer-projectile-lab__corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  pointer-events: none;
+}
+
+.multiplayer-projectile-lab__corner--tl {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid var(--field-amber);
+  border-left: 2px solid var(--field-amber);
+}
+
+.multiplayer-projectile-lab__corner--br {
+  right: -1px;
+  bottom: -1px;
+  border-right: 2px solid var(--field-amber);
+  border-bottom: 2px solid var(--field-amber);
+}
+
+.multiplayer-projectile-lab__stage-footer {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 8px;
+  background: #343830;
+}
+
+.multiplayer-projectile-lab__stage-footer > div {
+  display: grid;
+  gap: 5px;
+  min-height: 50px;
+  padding: 9px 11px;
+  background: #151917;
+}
+
+.multiplayer-projectile-lab__stage-footer span {
+  color: #706e64;
+  font-size: 8px;
+}
+
+.multiplayer-projectile-lab__stage-footer strong {
+  overflow: hidden;
+  color: #d8ceb8;
+  font-family: "IBM Plex Mono", "Roboto Mono", monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multiplayer-projectile-lab__stage-footer strong[data-tone="matched"],
+.multiplayer-projectile-lab__stage-footer strong[data-tone="confirmed"] {
+  color: var(--field-green);
+}
+
+.multiplayer-projectile-lab__stage-footer strong[data-tone="corrected"] {
+  color: #ff826c;
+}
+
+.multiplayer-projectile-lab__command-rail {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.multiplayer-projectile-lab__command-rail > section,
+.multiplayer-projectile-lab__command-rail > details {
+  padding: 15px;
+  border-bottom: 1px solid var(--field-line);
+}
+
+.multiplayer-projectile-lab__section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  color: #969183;
+}
+
+.multiplayer-projectile-lab__section-label small {
+  color: #625f57;
+  font-size: 8px;
+  letter-spacing: 0.09em;
+}
+
+.multiplayer-projectile-lab__unit-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.multiplayer-projectile-lab__unit-glyph {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid #4f8c77;
+  color: #9ce8cd;
+  background:
+    linear-gradient(135deg, transparent 45%, rgb(103 198 168 / 15%) 46% 54%, transparent 55%),
+    #14221e;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.multiplayer-projectile-lab__unit-identity > div:last-child {
+  display: grid;
+  gap: 3px;
+}
+
+.multiplayer-projectile-lab__unit-identity strong {
+  color: #d7eadd;
+  font-size: 16px;
+  letter-spacing: 0.05em;
+}
+
+.multiplayer-projectile-lab__unit-identity span {
+  color: #777f75;
+  font-size: 11px;
+}
+
+.multiplayer-projectile-lab__weapon-list,
+.multiplayer-projectile-lab__target-list {
+  display: grid;
+  gap: 5px;
+}
+
+.multiplayer-projectile-lab__weapon,
+.multiplayer-projectile-lab__target-list button,
+.multiplayer-projectile-lab__network button {
+  appearance: none;
+  border: 1px solid #343830;
+  color: #aaa18e;
+  background: #151917;
+  font: inherit;
+  cursor: pointer;
+}
+
+.multiplayer-projectile-lab__weapon {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 5px;
+  gap: 8px;
+  align-items: center;
+  min-height: 48px;
+  padding: 7px 8px;
+  text-align: left;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+.multiplayer-projectile-lab__weapon:hover {
+  z-index: 1;
+  border-color: #716c5d;
+  background: #1b1f1c;
+  transform: translateX(-3px);
+}
+
+.multiplayer-projectile-lab__weapon[data-selected="true"] {
+  border-color: #ae9555;
+  color: #f1e4c7;
+  background: linear-gradient(90deg, rgb(255 209 102 / 10%), transparent 65%), #1b1e1b;
+}
+
+.multiplayer-projectile-lab__weapon-index {
+  color: #666359;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+}
+
+.multiplayer-projectile-lab__weapon[data-selected="true"]
+  .multiplayer-projectile-lab__weapon-index {
+  color: var(--field-amber);
+}
+
+.multiplayer-projectile-lab__weapon-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.multiplayer-projectile-lab__weapon-copy strong {
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.multiplayer-projectile-lab__weapon-copy small {
+  overflow: hidden;
+  color: #716d63;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.multiplayer-projectile-lab__weapon > i {
+  width: 3px;
+  height: 28px;
+  background: var(--weapon-tone);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--weapon-tone), transparent 35%);
+  opacity: 0.52;
+}
+
+.multiplayer-projectile-lab__weapon[data-selected="true"] > i {
+  opacity: 1;
+}
+
+.multiplayer-projectile-lab__target-list {
+  grid-template-columns: 1fr 1fr;
+}
+
+.multiplayer-projectile-lab__target-list button {
+  display: flex;
+  min-height: 47px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.multiplayer-projectile-lab__target-list button:hover:not(:disabled),
+.multiplayer-projectile-lab__target-list button[data-selected="true"] {
+  border-color: #9b5a49;
+  background: rgb(117 57 47 / 18%);
+}
+
+.multiplayer-projectile-lab__target-list button:disabled {
+  opacity: 0.36;
+  cursor: not-allowed;
+}
+
+.multiplayer-projectile-lab__target-list button > span {
+  display: grid;
+  gap: 2px;
+}
+
+.multiplayer-projectile-lab__target-list strong {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.multiplayer-projectile-lab__target-list small {
+  color: #72695d;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 7px;
+}
+
+.multiplayer-projectile-lab__target-list output {
+  color: #de826e;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+}
+
+.multiplayer-projectile-lab__fire-control > button {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-height: 64px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #c9a54a;
+  color: #17150e;
+  background: var(--field-amber);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    filter 120ms ease,
+    transform 120ms ease;
+}
+
+.multiplayer-projectile-lab__fire-control > button:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.multiplayer-projectile-lab__fire-control > button:disabled {
+  border-color: #514b3b;
+  color: #817a68;
+  background: #282820;
+  cursor: wait;
+}
+
+.multiplayer-projectile-lab__fire-control > button span,
+.multiplayer-projectile-lab__fire-control > button small {
+  position: relative;
+  z-index: 1;
+}
+
+.multiplayer-projectile-lab__fire-control > button span {
+  align-self: end;
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.multiplayer-projectile-lab__fire-control > button small {
+  align-self: start;
+  margin-top: 2px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 7px;
+  letter-spacing: 0.1em;
+}
+
+.multiplayer-projectile-lab__fire-control > button i {
+  position: absolute;
+  inset: auto 0 0;
+  height: 3px;
+  transform: scaleX(1);
+  transform-origin: left;
+  background: #f5e5ac;
+  transition: transform 60ms linear;
+}
+
+.multiplayer-projectile-lab__auto-fire,
+.multiplayer-projectile-lab__toggle {
+  display: grid;
+  grid-template-columns: 17px 1fr;
+  gap: 9px;
+  align-items: start;
+  cursor: pointer;
+}
+
+.multiplayer-projectile-lab__auto-fire {
+  margin-top: 10px;
+}
+
+.multiplayer-projectile-lab__auto-fire input,
+.multiplayer-projectile-lab__toggle input {
+  margin: 2px 0 0;
+  accent-color: var(--field-amber);
+}
+
+.multiplayer-projectile-lab__auto-fire span,
+.multiplayer-projectile-lab__toggle span {
+  display: grid;
+  gap: 2px;
+}
+
+.multiplayer-projectile-lab__auto-fire strong,
+.multiplayer-projectile-lab__toggle strong {
+  color: #aaa18e;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.multiplayer-projectile-lab__auto-fire small,
+.multiplayer-projectile-lab__toggle small {
+  color: #6b685f;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.multiplayer-projectile-lab__network {
+  margin-top: auto;
+}
+
+.multiplayer-projectile-lab__network summary {
+  color: #999285;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+
+.multiplayer-projectile-lab__range {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.multiplayer-projectile-lab__range > span {
+  display: flex;
+  justify-content: space-between;
+  color: #777267;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.multiplayer-projectile-lab__range output {
+  color: var(--field-green);
+}
+
+.multiplayer-projectile-lab__range input {
+  width: 100%;
+  accent-color: var(--field-green);
+}
+
+.multiplayer-projectile-lab__toggle {
+  margin: 12px 0;
+}
+
+.multiplayer-projectile-lab__network > button {
+  width: 100%;
+  min-height: 32px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+}
+
+.multiplayer-projectile-lab__network > button:hover {
+  border-color: #756b55;
+  color: #dfcfae;
+}
+
+.multiplayer-projectile-lab__telemetry {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(108px, 0.65fr)) minmax(250px, 1.4fr);
+  gap: 1px;
+  margin-top: 14px;
+  overflow: hidden;
+  background: var(--field-line);
+}
+
+.multiplayer-projectile-lab__telemetry > div {
+  display: grid;
+  min-height: 62px;
+  align-content: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: #121614;
+}
+
+.multiplayer-projectile-lab__telemetry > div > span {
+  color: #716e65;
+  font-size: 8px;
+}
+
+.multiplayer-projectile-lab__telemetry > div > strong {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  color: #e0d2b7;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 15px;
+}
+
+.multiplayer-projectile-lab__telemetry strong b {
+  font: inherit;
+}
+
+.multiplayer-projectile-lab__telemetry strong small {
+  color: #6f6b62;
+  font-size: 8px;
+}
+
+.multiplayer-projectile-lab__telemetry .multiplayer-projectile-lab__invariant {
+  position: relative;
+  padding-left: 43px;
+  background: linear-gradient(90deg, rgb(73 170 134 / 12%), transparent 68%), #121614;
+}
+
+.multiplayer-projectile-lab__invariant::before {
+  position: absolute;
+  top: 50%;
+  left: 17px;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--field-green);
+  background: var(--field-green);
+  box-shadow: inset 0 0 0 3px #121614;
+  transform: translateY(-50%) rotate(45deg);
+  content: "";
+}
+
+.multiplayer-projectile-lab__telemetry .multiplayer-projectile-lab__invariant strong {
+  color: var(--field-green);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 1180px) {
+  .multiplayer-projectile-lab__workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .multiplayer-projectile-lab__command-rail {
+    display: grid;
+    grid-template-columns: 0.75fr 1.25fr 1.1fr;
+  }
+
+  .multiplayer-projectile-lab__command-rail > section,
+  .multiplayer-projectile-lab__command-rail > details {
+    border-right: 1px solid var(--field-line);
+  }
+
+  .multiplayer-projectile-lab__loadout {
+    grid-row: span 2;
+  }
+
+  .multiplayer-projectile-lab__network {
+    margin-top: 0;
+  }
+
+  .multiplayer-projectile-lab__telemetry {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .multiplayer-projectile-lab__telemetry .multiplayer-projectile-lab__invariant {
+    grid-column: span 1;
+  }
+}
+
+@media (max-width: 820px) {
+  .multiplayer-projectile-lab {
+    padding: 16px 10px 24px;
+  }
+
+  .multiplayer-projectile-lab__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .multiplayer-projectile-lab__session {
+    justify-items: start;
+  }
+
+  .multiplayer-projectile-lab__stage {
+    overflow-x: auto;
+  }
+
+  .multiplayer-projectile-lab canvas {
+    width: 760px;
+  }
+
+  .multiplayer-projectile-lab__stage-header,
+  .multiplayer-projectile-lab__stage-footer {
+    min-width: 760px;
+  }
+
+  .multiplayer-projectile-lab__command-rail {
+    display: flex;
+  }
+
+  .multiplayer-projectile-lab__telemetry {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .multiplayer-projectile-lab__telemetry .multiplayer-projectile-lab__invariant {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .multiplayer-projectile-lab *,
+  .multiplayer-projectile-lab *::before,
+  .multiplayer-projectile-lab *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

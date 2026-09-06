@@ -1,6 +1,6 @@
 import { ChipList, KeyValueGrid, Metric } from "../panel-layout";
 import { formatScalar, readArray, readString } from "../value-format";
-import { enabledCapabilityNames, recordId, records, StatusPill } from "./source-view-utils";
+import { recordId, records, StatusPill } from "./source-view-utils";
 
 export function HostSourceView({ value }: { value: unknown }) {
   const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -78,7 +78,7 @@ export function DriverSourceView({ value }: { value: unknown }) {
             <span>
               {readString(driver.kind)} · {readString(driver.phase)}
             </span>
-            <ChipList items={enabledCapabilityNames(driver.capabilities)} />
+            <ChipList items={readArray(driver.adapters).map((adapter) => readString(adapter))} />
           </article>
         ))}
       </div>

@@ -1,7 +1,7 @@
 import { createGasError } from "./errors";
 import type {
   CreateGasTcaDefinitionsConfig,
-  GasAbilityActivation,
+  GasAbilityExecutionRequest,
   GasAttributeModifier,
   GasEffectApplication,
   GasTcaDefinitionSet
@@ -42,37 +42,74 @@ export function createGasTcaDefinitions(
           const actual = runtime.getActor(actorId).attributes.current[attribute] ?? 0;
           return compare(actual, operator, value);
         }
+      },
+      {
+        type: "gas.execution.phase",
+        description: "Checks the current or recent phase of a GAS ability execution.",
+        evaluate(_ctx, condition) {
+          const executionId = readString(condition.args, "executionId");
+          const phase = readString(condition.args, "phase");
+          if (!executionId || !phase) {
+            return false;
+          }
+          return requireRuntime(config).getAbilityExecution(executionId)?.phase === phase;
+        }
       }
     ],
     actions: [
       {
         type: "gas.activate_ability",
         description: "Activates a GAS ability.",
-        execute(_ctx, action) {
-          requireRuntime(config).activateAbility(readAbilityActivation(action.args));
+        execute(ctx, action) {
+          requireRuntime(config).requestAbilityExecution({
+            ...readAbilityActivation(action.args),
+            ...correlationFromTca(ctx)
+          });
+        }
+      },
+      {
+        type: "gas.cancel_ability_execution",
+        description: "Cancels a GAS ability execution when its definition allows cancellation.",
+        execute(ctx, action) {
+          requireRuntime(config).cancelAbilityExecution({
+            executionId: readRequiredString(action.args, "executionId"),
+            reason: readString(action.args, "reason") ?? "tca",
+            ...correlationFromTca(ctx)
+          });
         }
       },
       {
         type: "gas.apply_effect",
         description: "Applies a GAS effect.",
-        execute(_ctx, action) {
-          requireRuntime(config).applyEffect(readEffectApplication(action.args));
+        execute(ctx, action) {
+          requireRuntime(config).applyEffect({
+            ...readEffectApplication(action.args),
+            ...correlationFromTca(ctx)
+          });
         }
       },
       {
         type: "gas.modify_attribute",
         description: "Modifies a GAS actor attribute.",
-        execute(_ctx, action) {
+        execute(ctx, action) {
           const actorId = readRequiredString(action.args, "actorId");
           const source = readString(action.args, "source") ?? "tca";
           requireRuntime(config).modifyAttribute(
             actorId,
             readAttributeModifier(action.args),
-            source
+            source,
+            correlationFromTca(ctx)
           );
         }
       }
     ]
+  };
+}
+
+function correlationFromTca(ctx: { correlationId?: string | undefined; traceId: string }) {
+  return {
+    ...(ctx.correlationId === undefined ? {} : { correlationId: ctx.correlationId }),
+    parentId: ctx.traceId
   };
 }
 
@@ -85,11 +122,14 @@ function requireRuntime(config: CreateGasTcaDefinitionsConfig) {
   return runtime;
 }
 
-function readAbilityActivation(args: Record<string, unknown> | undefined): GasAbilityActivation {
+function readAbilityActivation(
+  args: Record<string, unknown> | undefined
+): GasAbilityExecutionRequest {
   return {
     actorId: readRequiredString(args, "actorId"),
     abilityId: readRequiredString(args, "abilityId"),
-    targetActorId: readString(args, "targetActorId")
+    targetActorId: readString(args, "targetActorId"),
+    requestId: readString(args, "requestId")
   };
 }
 

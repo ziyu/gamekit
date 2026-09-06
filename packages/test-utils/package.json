@@ -1,6 +1,6 @@
 {
   "name": "@gamekit/test-utils",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.6",
   "private": false,
   "type": "module",
   "main": "./dist/index.js",
@@ -17,7 +17,11 @@
     "lint": "oxlint ."
   },
   "dependencies": {
+    "@gamekit/ai-core": "workspace:*",
+    "@gamekit/animator-core": "workspace:*",
+    "@gamekit/audio-core": "workspace:*",
     "@gamekit/event-bus": "workspace:*",
+    "@gamekit/navigation-core": "workspace:*",
     "@gamekit/platform-core": "workspace:*",
     "@gamekit/renderer-core": "workspace:*",
     "@gamekit/world": "workspace:*"

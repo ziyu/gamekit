@@ -1,0 +1,34 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": true,
+    "types": ["node", "vite/client"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/ai-core" },
+    { "path": "../../packages/animator-core" },
+    { "path": "../../packages/app-host" },
+    { "path": "../../packages/asset" },
+    { "path": "../../packages/audio-core" },
+    { "path": "../../packages/character-controller" },
+    { "path": "../../packages/driver-core" },
+    { "path": "../../packages/driver-three" },
+    { "path": "../../packages/event-bus" },
+    { "path": "../../packages/game-runtime" },
+    { "path": "../../packages/multiplayer-colyseus" },
+    { "path": "../../packages/multiplayer-core" },
+    { "path": "../../packages/multiplayer-memory" },
+    { "path": "../../packages/navigation-core" },
+    { "path": "../../packages/navigation-navmesh" },
+    { "path": "../../packages/navigation-recast" },
+    { "path": "../../packages/physics-core" },
+    { "path": "../../packages/physics-rapier3d" },
+    { "path": "../../packages/platform-core" },
+    { "path": "../../packages/platform-web" },
+    { "path": "../../packages/renderer-core" },
+    { "path": "../../packages/world-koota" }
+  ]
+}

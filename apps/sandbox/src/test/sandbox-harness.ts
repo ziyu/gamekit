@@ -175,6 +175,7 @@ function createFakeUi(): SandboxUiHandles {
         height: SANDBOX_RENDER_SIZE.height
       })
     } as unknown as SandboxUiHandles["rendererRoot"],
+    threePreviewRoot: element as HTMLDivElement,
     sceneOverlay: element,
     status: divElement,
     objectiveLabel: element,

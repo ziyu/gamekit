@@ -34,6 +34,28 @@ describe("createEventBus", () => {
     expect(received).toEqual(["a", "b", "c", "a", "c"]);
   });
 
+  it("carries correlation metadata without putting it in gameplay payload", () => {
+    const bus = createEventBus({ clock: () => 456 });
+    const received: GameEvent[] = [];
+
+    bus.on("ability.requested", (event) => received.push(event));
+    bus.emit("ability.requested", { actorId: "actor-1" }, "multiplayer", {
+      correlationId: "command-7",
+      parentId: "network-trace-3"
+    });
+
+    expect(received).toEqual([
+      {
+        type: "ability.requested",
+        payload: { actorId: "actor-1" },
+        timestamp: 456,
+        source: "multiplayer",
+        correlationId: "command-7",
+        parentId: "network-trace-3"
+      }
+    ]);
+  });
+
   it("supports onAny debug listeners", () => {
     const bus = createEventBus({ clock: () => 0 });
     const received: string[] = [];

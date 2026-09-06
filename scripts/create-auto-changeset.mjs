@@ -10,8 +10,13 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+import { assertLockstepWorkspaceState } from "./release-workspace-state.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const coreVersion = JSON.parse(
+  readFileSync(join(root, "packages", "core", "package.json"), "utf8")
+).version;
+assertLockstepWorkspaceState({ releaseVersion: coreVersion, root });
 const changesetDir = join(root, ".changeset");
 const config = JSON.parse(readFileSync(join(changesetDir, "config.json"), "utf8"));
 const ignoredPackages = new Set(config.ignore ?? []);

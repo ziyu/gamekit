@@ -3,7 +3,12 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { inferDistTag } from "./release-dist-tags.mjs";
+import {
+  inferDistTag,
+  parseAdditionalDistTags,
+  validateDistTagPolicy
+} from "./release-dist-tags.mjs";
+import { assertLockstepWorkspaceState } from "./release-workspace-state.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageVersion = JSON.parse(
@@ -13,6 +18,10 @@ const releaseVersion = process.env.GAMEKITS_RELEASE_VERSION ?? packageVersion;
 const releaseDir =
   process.env.GAMEKITS_RELEASE_DIR ?? mkdtempSync(join(tmpdir(), "gamekits-release-"));
 const distTag = process.env.GAMEKITS_NPM_TAG ?? inferDistTag(releaseVersion);
+const additionalDistTags = parseAdditionalDistTags(process.env.GAMEKITS_NPM_ADDITIONAL_TAGS);
+
+validateDistTagPolicy({ additionalDistTags, distTag, version: releaseVersion });
+assertLockstepWorkspaceState({ releaseVersion, root });
 
 function run(command, args, options = {}) {
   execFileSync(command, args, {

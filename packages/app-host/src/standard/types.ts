@@ -1,5 +1,8 @@
 import type { AssetDiagnosticEvent, AssetLoaderAdapter, AssetManager } from "@gamekit/asset";
+import type { CreateGameAudioOptions, GameAudio } from "@gamekit/audio-core";
+import type { AudioBackend } from "@gamekit/audio-core/backend";
 import type { CameraController, CameraState2D, PointLike } from "@gamekit/camera-core";
+import type { CreateCombatModuleConfig, CombatHandle } from "@gamekit/combat";
 import type { GameModule } from "@gamekit/core";
 import type { DataPack, DataRegistry, DataTypeDefinition } from "@gamekit/data";
 import type {
@@ -11,10 +14,28 @@ import type {
   DevToolsUiOptions
 } from "@gamekit/devtools";
 import type { DriverBootContext, DriverRegistry, GameDriver } from "@gamekit/driver-core";
-import type { GasRuntime, GasTraceStore } from "@gamekit/gas";
+import type { GasHandle, GasRuntime, GasTraceStore } from "@gamekit/gas";
 import type { GameInstallContext, GameRuntime } from "@gamekit/game-runtime";
 import type { InputDevice, InputRouter, InputSourceAdapter } from "@gamekit/input-core";
+import type { CreateAiModuleOptions, AiHandle } from "@gamekit/ai-core";
+import type { CreateAnimatorModuleOptions, AnimatorHandle } from "@gamekit/animator-core";
+import type {
+  MultiplayerClientReplicationOptions,
+  MultiplayerModuleOptions,
+  MultiplayerPresentationBridgeOptions,
+  MultiplayerRuntime
+} from "@gamekit/multiplayer-core";
+import type {
+  PhysicsBackendAdapter,
+  PhysicsEventPolicy,
+  PhysicsHandle,
+  PhysicsInterpolationStore,
+  PhysicsSceneConfig,
+  PhysicsTraceStore,
+  PhysicsWorldBindings
+} from "@gamekit/physics-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
+import type { CreateNavigationModuleOptions, NavigationHandle } from "@gamekit/navigation-core";
 import type { RendererAdapter, RendererBootContext } from "@gamekit/renderer-core";
 import type {
   SaveCodec,
@@ -26,7 +47,7 @@ import type {
   SaveStore,
   SaveVersion
 } from "@gamekit/save";
-import type { TcaDefinitionSet, TcaTraceStore, TcaRuntime } from "@gamekit/tca";
+import type { TcaDefinitionSet, TcaHandle, TcaTraceStore, TcaRuntime } from "@gamekit/tca";
 import type { UiRuntime } from "@gamekit/ui-core";
 import type {
   AppAdapterRegistry,
@@ -40,12 +61,18 @@ export type StandardAppServiceState = {
   drivers?: DriverRegistry;
   data?: DataRegistry;
   assets?: AssetManager;
+  audio?: GameAudio;
   renderer?: RendererAdapter;
   input?: InputRouter;
+  multiplayer?: MultiplayerRuntime;
   game?: GameRuntime;
   ui?: UiRuntime;
   save?: SaveManager;
   devtools?: DevToolsRuntime;
+  combat?: CombatHandle;
+  navigation?: NavigationHandle;
+  ai?: AiHandle;
+  animator?: AnimatorHandle;
 };
 
 export type StandardServiceBuildContext<TContext> = Omit<
@@ -72,7 +99,9 @@ export type StandardAppProfileOptions<TContext> = {
   data?: StandardDataOptions<TContext> | undefined;
   renderer?: StandardRendererOptions<TContext> | undefined;
   assets?: StandardAssetOptions<TContext> | undefined;
+  audio?: StandardAudioOptions<TContext> | undefined;
   input?: StandardInputOptions<TContext> | undefined;
+  multiplayer?: StandardMultiplayerOptions<TContext> | undefined;
   game?: StandardGameOptions<TContext> | undefined;
   ui?: StandardUiOptions<TContext> | undefined;
   save?: StandardSaveOptions<TContext> | undefined;
@@ -116,6 +145,17 @@ export type StandardAssetOptions<TContext> = {
   preloadGroups?(ctx: StandardServiceBuildContext<TContext>): string[] | undefined;
 };
 
+export type StandardAudioOptions<TContext> = {
+  gameAudio?: StandardValue<GameAudio, TContext> | undefined;
+  backend?: StandardValue<AudioBackend, TContext> | undefined;
+  driver?: string | undefined;
+  config?:
+    | StandardValue<Omit<CreateGameAudioOptions, "backend" | "disposeBackend">, TContext>
+    | undefined;
+  disposeBackend?: boolean | undefined;
+  dispose?: boolean | undefined;
+};
+
 export type StandardInputOptions<TContext> = {
   router: StandardValue<InputRouter, TContext>;
   configure?(ctx: StandardServiceBuildContext<TContext>, router: InputRouter): void;
@@ -128,6 +168,11 @@ export type StandardInputDriverSourceOptions = {
   source?: string | undefined;
   scope?: string | undefined;
   devices?: InputDevice[] | undefined;
+};
+
+export type StandardMultiplayerOptions<TContext> = {
+  runtime: StandardValue<MultiplayerRuntime, TContext>;
+  dispose?: boolean | undefined;
 };
 
 export type StandardUiOptions<TContext> = {
@@ -194,9 +239,15 @@ export type StandardDevToolsSourceId =
   | "drivers"
   | "data"
   | "assets"
+  | "audio"
   | "renderer"
   | "input"
+  | "multiplayer"
   | "game"
+  | "combat"
+  | "navigation"
+  | "ai"
+  | "animator"
   | "ui"
   | "save";
 
@@ -214,6 +265,39 @@ export type StandardGameModuleOptions<TContext> = {
   camera?: StandardCameraGameModuleOptions<TContext> | undefined;
   tca?: StandardTcaGameModuleOptions<TContext> | undefined;
   gas?: StandardGasGameModuleOptions<TContext> | undefined;
+  multiplayer?: StandardMultiplayerGameModuleOptions<TContext> | undefined;
+  physics?: StandardPhysicsGameModuleOptions<TContext> | undefined;
+  combat?: StandardValue<CreateCombatModuleConfig, TContext> | undefined;
+  navigation?: StandardValue<CreateNavigationModuleOptions, TContext> | undefined;
+  ai?: StandardValue<CreateAiModuleOptions, TContext> | undefined;
+  animator?: StandardValue<CreateAnimatorModuleOptions, TContext> | undefined;
+};
+
+export type StandardMultiplayerGameModuleOptions<TContext> = {
+  id?: string | undefined;
+  runtime?: StandardValue<MultiplayerRuntime, TContext> | undefined;
+  commandKinds?: string[] | undefined;
+  commandQueue?: MultiplayerModuleOptions<GameInstallContext>["commandQueue"] | undefined;
+  authority?: MultiplayerModuleOptions<GameInstallContext>["authority"] | undefined;
+  handleCommand?: MultiplayerModuleOptions<GameInstallContext>["handleCommand"];
+  presentation?: StandardValue<MultiplayerPresentationBridgeOptions, TContext> | undefined;
+  clientReplication?: StandardValue<
+    MultiplayerClientReplicationOptions<any, any, any, GameInstallContext>,
+    TContext
+  >;
+};
+
+export type StandardPhysicsGameModuleOptions<TContext> = {
+  id?: string | undefined;
+  backend: StandardValue<PhysicsBackendAdapter, TContext>;
+  scene?: StandardValue<PhysicsSceneConfig, TContext> | undefined;
+  fixedDeltaMs?: number | undefined;
+  maxSubSteps?: number | undefined;
+  bindings?: StandardValue<PhysicsWorldBindings, TContext> | undefined;
+  eventPolicy?: StandardValue<PhysicsEventPolicy, TContext> | undefined;
+  traceStore?: StandardValue<PhysicsTraceStore, TContext> | undefined;
+  handle?: StandardValue<PhysicsHandle, TContext> | undefined;
+  interpolationStore?: StandardValue<PhysicsInterpolationStore, TContext> | undefined;
 };
 
 export type StandardCameraGameModuleOptions<TContext> = {
@@ -270,6 +354,7 @@ export type StandardTcaGameModuleOptions<TContext> = {
   ruleKind?: string | undefined;
   definitions?: StandardValue<TcaDefinitionSet, TContext> | undefined;
   traceStore?: StandardValue<TcaTraceStore, TContext> | undefined;
+  handle?: StandardValue<TcaHandle, TContext> | undefined;
   onRuntime?(ctx: StandardServiceBuildContext<TContext>, runtime: TcaRuntime): void;
 };
 
@@ -277,5 +362,6 @@ export type StandardGasGameModuleOptions<TContext> = {
   id?: string | undefined;
   dataRegistry?: ((ctx: StandardServiceBuildContext<TContext>) => DataRegistry) | undefined;
   traceStore?: StandardValue<GasTraceStore, TContext> | undefined;
+  handle?: StandardValue<GasHandle, TContext> | undefined;
   onRuntime?(ctx: StandardServiceBuildContext<TContext>, runtime: GasRuntime): void;
 };

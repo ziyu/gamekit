@@ -6,6 +6,7 @@ import {
 } from "./input-normalizers";
 
 export type PhaserDriverInputRuntime = {
+  coordinateScale?: number;
   on(eventName: string, listener: (...args: unknown[]) => void): void;
   off(eventName: string, listener: (...args: unknown[]) => void): void;
 };
@@ -59,6 +60,9 @@ export function createPhaserDriverInputSource(
           type,
           timestamp: clock(),
           source,
+          ...(runtime?.coordinateScale === undefined
+            ? {}
+            : { coordinateScale: runtime.coordinateScale }),
           originalEvent: event
         })
       );
@@ -71,6 +75,9 @@ export function createPhaserDriverInputSource(
         event: normalizeWheelArgs(args) as never,
         timestamp: clock(),
         source,
+        ...(runtime?.coordinateScale === undefined
+          ? {}
+          : { coordinateScale: runtime.coordinateScale }),
         originalEvent: args[args.length - 1] ?? args[0]
       })
     );

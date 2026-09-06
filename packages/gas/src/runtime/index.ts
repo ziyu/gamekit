@@ -1,8 +1,10 @@
 export * from "./components";
+export { createGasHandle, type GasHandleOptions } from "./create-gas-handle";
 export * from "./create-gas-module";
 export * from "./create-gas-runtime";
 export * from "./data-types";
 export * from "./errors";
+export * from "./save-contributor";
 export * from "./tca-definitions";
 export * from "./trace-store";
 export * from "./types";

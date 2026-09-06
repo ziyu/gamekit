@@ -8,6 +8,7 @@ import { GameError } from "@gamekit/core";
 
 export type PhaserDriverCameraRuntime = {
   setScroll(x: number, y: number): void;
+  centerOn?(x: number, y: number): void;
   setZoom(zoom: number): void;
   setRotation(rotation: number): void;
 };
@@ -39,7 +40,11 @@ export function createPhaserDriverCameraAdapter(options: {
       const scrollY = nextState.y - nextState.viewport.height / (2 * nextState.zoom);
 
       options.runtime.setZoom(nextState.zoom);
-      options.runtime.setScroll(scrollX, scrollY);
+      if (options.runtime.centerOn) {
+        options.runtime.centerOn(nextState.x, nextState.y);
+      } else {
+        options.runtime.setScroll(scrollX, scrollY);
+      }
       options.runtime.setRotation(nextState.rotation);
     },
     getState() {

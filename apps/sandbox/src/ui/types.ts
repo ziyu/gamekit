@@ -35,6 +35,7 @@ export type SandboxUiHandles = {
   stage: HTMLElement;
   devtoolsRoot: HTMLElement;
   rendererRoot: HTMLDivElement;
+  threePreviewRoot: HTMLDivElement;
   sceneOverlay: HTMLElement;
   status: HTMLDivElement;
   objectiveLabel: HTMLElement;

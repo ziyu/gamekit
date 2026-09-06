@@ -1,6 +1,6 @@
 {
   "name": "@gamekit/gas",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.6",
   "private": false,
   "type": "module",
   "main": "./dist/index.js",
@@ -21,6 +21,7 @@
     "@gamekit/data": "workspace:*",
     "@gamekit/event-bus": "workspace:*",
     "@gamekit/game-runtime": "workspace:*",
+    "@gamekit/save": "workspace:*",
     "@gamekit/tca": "workspace:*",
     "@gamekit/world": "workspace:*"
   },

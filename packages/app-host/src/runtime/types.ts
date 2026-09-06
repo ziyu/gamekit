@@ -1,9 +1,11 @@
 import type { AssetManager } from "@gamekit/asset";
+import type { GameAudio } from "@gamekit/audio-core";
 import type { DataRegistry } from "@gamekit/data";
 import type { DevToolsRuntime } from "@gamekit/devtools";
 import type { DriverRegistry } from "@gamekit/driver-core";
 import type { GameRuntime } from "@gamekit/game-runtime";
 import type { InputRouter } from "@gamekit/input-core";
+import type { MultiplayerRuntime } from "@gamekit/multiplayer-core";
 import type { PlatformRuntime } from "@gamekit/platform-core";
 import type { RendererAdapter } from "@gamekit/renderer-core";
 import type { SaveManager } from "@gamekit/save";
@@ -119,8 +121,10 @@ export type AppServiceRegistry = {
   drivers?: DriverRegistry;
   data?: DataRegistry;
   assets?: AssetManager;
+  audio?: GameAudio;
   renderer?: RendererAdapter;
   input?: InputRouter;
+  multiplayer?: MultiplayerRuntime;
   game?: GameRuntime;
   ui?: UiRuntime;
   save?: SaveManager;
@@ -162,8 +166,10 @@ export type AppStandardServiceId =
   | "drivers"
   | "data"
   | "assets"
+  | "audio"
   | "renderer"
   | "input"
+  | "multiplayer"
   | "game"
   | "ui"
   | "save"

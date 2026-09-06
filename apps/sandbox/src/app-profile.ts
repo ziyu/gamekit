@@ -8,7 +8,9 @@ import {
 import type { CameraController } from "@gamekit/camera-core";
 import type { DataRegistry } from "@gamekit/data";
 import type { DevToolsRuntime } from "@gamekit/devtools";
+import type { DriverRegistry, GameDriver } from "@gamekit/driver-core";
 import { createPhaserDriver } from "@gamekit/driver-phaser";
+import { createThreeDriver } from "@gamekit/driver-three";
 import { createEventBus } from "@gamekit/event-bus";
 import { createGasTcaDefinitions, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
 import { createInputRouter, type InputRouter } from "@gamekit/input-core";
@@ -44,6 +46,7 @@ export type SandboxAppContext = {
   uiRuntime: UiRuntime;
   activeInputScope: SandboxInputScope;
   platform?: PlatformRuntime | undefined;
+  drivers?: DriverRegistry | undefined;
   dataRegistry?: DataRegistry | undefined;
   renderer?: RendererAdapter | undefined;
   assetManager?: AssetManager | undefined;
@@ -63,6 +66,11 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
   const platform = createWebPlatform({ appName: "GameKit Sandbox" });
   const dataRegistry = createSandboxDataRegistry();
   const phaserDriver = createPhaserDriver({ id: "sandbox.phaser" });
+  const threeDriver = createThreeDriver({
+    id: "sandbox.three",
+    backgroundColor: "#111513",
+    clearAlpha: 0
+  });
   const camera = createSandboxCameraController(SANDBOX_RENDER_SIZE);
   const inputRouter = createInputRouter();
   const tcaTraceStore = createTcaTraceStore({ limit: 20 });
@@ -75,6 +83,7 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
     },
     expose({ context, state }) {
       context.platform = state.platform;
+      context.drivers = state.drivers;
       context.dataRegistry = state.data;
       context.renderer = state.renderer;
       context.assetManager = state.assets;
@@ -93,9 +102,9 @@ export function createSandboxWebProfile(): AppProfile<SandboxAppContext> {
         adapter: "platform"
       },
       drivers: {
-        drivers: [phaserDriver],
-        boot({ context, requireConfig }) {
-          return createPhaserBootContext(context, requireConfig<SandboxRendererConfig>());
+        drivers: [phaserDriver, threeDriver],
+        boot({ context, requireConfig }, driver) {
+          return createDriverBootContext(context, requireConfig<SandboxRendererConfig>(), driver);
         }
       },
       data: {
@@ -380,10 +389,29 @@ type SandboxRendererConfig = {
   debug?: boolean;
 };
 
-function createPhaserBootContext(
+function createDriverBootContext(
   context: SandboxAppContext,
-  rendererConfig: SandboxRendererConfig
+  rendererConfig: SandboxRendererConfig,
+  driver: GameDriver
 ): RendererBootContext {
+  if (driver.id === "sandbox.three") {
+    const boot: RendererBootContext = {
+      container: context.ui.threePreviewRoot,
+      width: 260,
+      height: 160,
+      onDiagnostic: (event) => {
+        context.sandbox?.runtime.eventBus.emit(event.type, event.payload, event.source);
+      }
+    };
+
+    return rendererConfig.debug === undefined
+      ? boot
+      : {
+          ...boot,
+          debug: rendererConfig.debug
+        };
+  }
+
   const boot: RendererBootContext = {
     container: context.ui.rendererRoot,
     width: rendererConfig.width,

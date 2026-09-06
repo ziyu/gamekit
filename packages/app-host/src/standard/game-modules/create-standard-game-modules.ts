@@ -7,8 +7,14 @@ import type {
   StandardGameOptions,
   StandardServiceBuildContext
 } from "../types";
+import { createStandardAiModule } from "./ai-module";
+import { createStandardAnimatorModule } from "./animator-module";
 import { createStandardCameraModule } from "./camera-module";
+import { createStandardCombatModule } from "./combat-module";
 import { createStandardGasModule } from "./gas-module";
+import { createStandardMultiplayerModule } from "./multiplayer-module";
+import { createStandardNavigationModule } from "./navigation-module";
+import { createStandardPhysicsModule } from "./physics-module";
 import { createStandardTcaModule } from "./tca-module";
 
 export function createStandardGameModules<TContext>(
@@ -24,6 +30,30 @@ export function createStandardGameModules<TContext>(
 
   if (standardModules?.gas) {
     modules.push(createStandardGasModule(ctx, standardModules.gas));
+  }
+
+  if (standardModules?.multiplayer) {
+    modules.push(createStandardMultiplayerModule(ctx, standardModules.multiplayer));
+  }
+
+  if (standardModules?.physics) {
+    modules.push(createStandardPhysicsModule(ctx, standardModules.physics));
+  }
+
+  if (standardModules?.combat) {
+    modules.push(createStandardCombatModule(ctx, standardModules.combat));
+  }
+
+  if (standardModules?.navigation) {
+    modules.push(createStandardNavigationModule(ctx, standardModules.navigation));
+  }
+
+  if (standardModules?.ai) {
+    modules.push(createStandardAiModule(ctx, standardModules.ai));
+  }
+
+  if (standardModules?.animator) {
+    modules.push(createStandardAnimatorModule(ctx, standardModules.animator));
   }
 
   if (standardModules?.camera) {

@@ -1,6 +1,7 @@
 import { compileTcaRules } from "./compiler";
 import { mergeTcaDefinitionSets } from "./definition-set";
 import { createTcaTraceStore } from "./trace-store";
+import { createTcaError } from "./errors";
 import type {
   CreateTcaRuntimeConfig,
   TcaCompiledRule,
@@ -18,6 +19,7 @@ export function createTcaRuntime(config: CreateTcaRuntimeConfig): TcaRuntime {
   const executedOnce = new Set<string>();
   const executingOnce = new Set<string>();
   let disposed = false;
+  let runSequence = 0;
 
   return {
     rules: compiled.rules,
@@ -29,14 +31,34 @@ export function createTcaRuntime(config: CreateTcaRuntimeConfig): TcaRuntime {
 
       const rules = compiled.rulesByEventType.get(event.type) ?? [];
       for (const rule of rules) {
+        runSequence += 1;
+        const traceId = `tca-run-${runSequence}`;
         runRule(rule, {
           event,
           eventBus: config.eventBus,
           dataRegistry: config.dataRegistry,
           game: config.game,
-          rule: rule.rule
+          rule: rule.rule,
+          traceId,
+          correlationId: event.correlationId,
+          parentId: event.parentId
         });
       }
+    },
+    captureCheckpoint() {
+      return {
+        runSequence,
+        executedOnceRuleIds: [...executedOnce].sort()
+      };
+    },
+    restoreCheckpoint(checkpoint) {
+      validateCheckpoint(checkpoint, compiled.rules);
+      runSequence = checkpoint.runSequence;
+      executedOnce.clear();
+      for (const ruleId of checkpoint.executedOnceRuleIds) {
+        executedOnce.add(ruleId);
+      }
+      traceStore.clear();
     },
     dispose() {
       disposed = true;
@@ -126,16 +148,50 @@ export function createTcaRuntime(config: CreateTcaRuntimeConfig): TcaRuntime {
   }
 }
 
+function validateCheckpoint(
+  checkpoint: { runSequence: number; executedOnceRuleIds: string[] },
+  rules: TcaCompiledRule[]
+): void {
+  if (!Number.isInteger(checkpoint.runSequence) || checkpoint.runSequence < 0) {
+    throw createTcaError(
+      "tca.checkpoint_invalid_sequence",
+      "TCA checkpoint runSequence must be a non-negative integer"
+    );
+  }
+  const onceRuleIds = new Set(rules.filter((rule) => rule.rule.once).map((rule) => rule.rule.id));
+  const seen = new Set<string>();
+  for (const ruleId of checkpoint.executedOnceRuleIds) {
+    if (!onceRuleIds.has(ruleId)) {
+      throw createTcaError(
+        "tca.checkpoint_unknown_once_rule",
+        `TCA checkpoint references an unknown once rule: ${ruleId}`,
+        { ruleId }
+      );
+    }
+    if (seen.has(ruleId)) {
+      throw createTcaError(
+        "tca.checkpoint_duplicate_once_rule",
+        `TCA checkpoint contains a duplicate once rule: ${ruleId}`,
+        { ruleId }
+      );
+    }
+    seen.add(ruleId);
+  }
+}
+
 function createTrace(
   rule: TcaCompiledRule,
   ctx: TcaHandlerContext,
   status: TcaTraceEntry["status"],
   reason?: string
-): Omit<TcaTraceEntry, "id"> {
+): TcaTraceEntry {
   return {
+    id: ctx.traceId,
     ruleId: rule.rule.id,
     eventType: ctx.event.type,
     timestamp: ctx.event.timestamp,
+    ...(ctx.correlationId === undefined ? {} : { correlationId: ctx.correlationId }),
+    ...(ctx.parentId === undefined ? {} : { parentId: ctx.parentId }),
     status,
     ...(reason === undefined ? {} : { reason }),
     conditions: [],

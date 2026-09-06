@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -b && vite build",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
     "dev": "vite --host 127.0.0.1",
     "test": "vitest run --root ../.. --config vitest.config.ts apps/abyss-delve/src --passWithNoTests",
     "lint": "oxlint ."
@@ -27,6 +27,7 @@
     "@gamekit/platform-web": "workspace:*",
     "@gamekit/react-ui": "workspace:*",
     "@gamekit/renderer-core": "workspace:*",
+    "@gamekit/renderer-phaser": "workspace:*",
     "@gamekit/save": "workspace:*",
     "@gamekit/tca": "workspace:*",
     "@gamekit/ui-core": "workspace:*",

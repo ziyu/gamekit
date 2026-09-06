@@ -37,17 +37,6 @@ export type RenderObjectDefinition<TProps extends RenderObjectProps = RenderObje
   tags?: string[];
 };
 
-export type RenderObjectPatch<TProps extends RenderObjectProps = RenderObjectProps> = {
-  transform?: RenderTransform;
-  visible?: boolean;
-  alpha?: number;
-  layer?: string;
-  props?: Partial<TProps>;
-};
-
-export type RenderNodePatch<TProps extends RenderObjectProps = RenderObjectProps> =
-  RenderObjectPatch<TProps>;
-
 export type RenderObjectHandle<TNative = unknown, TApi = unknown> = {
   id: RenderObjectId;
   type: RenderObjectType;

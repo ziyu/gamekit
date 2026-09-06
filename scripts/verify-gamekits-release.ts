@@ -13,14 +13,24 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  assertLockstepWorkspaceState,
+  assertPreparedReleaseState
+} from "./release-workspace-state.mjs";
 
 type PackageManifest = {
   name: string;
   version: string;
+  private?: boolean;
   type?: string;
   main?: string;
   types?: string;
   exports?: unknown;
+  repository?: {
+    type: "git";
+    url: string;
+    directory?: string;
+  };
   sideEffects?: boolean | string[];
   dependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
@@ -30,7 +40,12 @@ type PackageManifest = {
 };
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const releaseVersion = process.env.GAMEKITS_RELEASE_VERSION ?? "0.1.0-alpha.0";
+const releaseRepositoryUrl = "https://github.com/ziyu/gamekit";
+const workspaceVersion = (
+  JSON.parse(readFileSync(join(root, "packages/core/package.json"), "utf8")) as PackageManifest
+).version;
+const releaseVersion = process.env.GAMEKITS_RELEASE_VERSION ?? workspaceVersion;
+assertLockstepWorkspaceState({ releaseVersion, root });
 const releaseDir =
   process.env.GAMEKITS_RELEASE_DIR ?? mkdtempSync(join(tmpdir(), "gamekits-release-"));
 const shouldCleanReleaseDir = process.env.GAMEKITS_RELEASE_DIR === undefined;
@@ -49,8 +64,12 @@ const wave1PackageSlugs = [
   "world-koota",
   "game-runtime",
   "data",
+  "save",
   "tca",
   "gas",
+  "multiplayer-core",
+  "multiplayer-memory",
+  "multiplayer-colyseus",
   "test-utils"
 ];
 
@@ -61,15 +80,18 @@ const wave2SupportPackageSlugs = wave1PackageSlugs.filter(
 const wave2PackageSlugs = [
   "input-core",
   "camera-core",
+  "physics-core",
+  "physics-rapier2d",
+  "physics-rapier3d",
   "driver-core",
   "devtools",
   "ui-core",
   "asset",
-  "save",
   "platform-web",
   "input-dom",
   "renderer-phaser",
   "driver-phaser",
+  "driver-three",
   "app-host"
 ];
 
@@ -77,9 +99,9 @@ const wave3SupportPackageSlugs = ["core", "devtools", "ui-core"];
 
 const wave3PackageSlugs = ["react-ui", "devtools-ui"];
 
-const allPackageSlugs = unique([...wave1PackageSlugs, ...wave2PackageSlugs, ...wave3PackageSlugs]);
+const allPackageSlugs = discoverPublishablePackageSlugs();
 
-const releaseWave = process.env.GAMEKITS_RELEASE_WAVE ?? "1";
+const releaseWave = process.env.GAMEKITS_RELEASE_WAVE ?? "all";
 const installOffline = process.env.GAMEKITS_RELEASE_OFFLINE === "1";
 
 const smokeSource = `
@@ -92,6 +114,10 @@ import { createDataRegistry } from "@gamekits/data";
 import { createCoreTcaDefinitions, createTcaRuleDataType, createTcaTraceStore } from "@gamekits/tca";
 import { GasActor, createGasDataTypes, createGasTraceStore } from "@gamekits/gas";
 import { createPlatformServiceRegistry } from "@gamekits/platform-core";
+import { createMultiplayerRuntime } from "@gamekits/multiplayer-core";
+import { createMemoryMultiplayerBackend } from "@gamekits/multiplayer-memory";
+import { createColyseusMultiplayerBackend } from "@gamekits/multiplayer-colyseus";
+import { GameKitColyseusRoom } from "@gamekits/multiplayer-colyseus/server";
 
 const clock = new Clock();
 clock.start();
@@ -124,9 +150,50 @@ createTcaTraceStore();
 createGasTraceStore();
 createPlatformServiceRegistry();
 
+const multiplayerBackend = createMemoryMultiplayerBackend();
+const colyseusBackend = createColyseusMultiplayerBackend({
+  endpoint: "ws://127.0.0.1:1",
+  roomName: "release_smoke"
+});
+if (colyseusBackend.kind !== "colyseus" || typeof GameKitColyseusRoom !== "function") {
+  throw new Error("colyseus multiplayer smoke failed");
+}
+const multiplayerHost = createMultiplayerRuntime({
+  id: "release.host",
+  backend: multiplayerBackend,
+  clock: () => 1
+});
+const multiplayerClient = createMultiplayerRuntime({
+  id: "release.client",
+  backend: multiplayerBackend,
+  clock: () => 1
+});
+const multiplayerMessages = [];
+multiplayerClient.subscribe((message) => {
+  if (message.kind === "game.command") {
+    multiplayerMessages.push(message);
+  }
+});
+await multiplayerHost.createSession({
+  id: "release.session",
+  localPeer: { id: "host" }
+});
+await multiplayerClient.joinSession({
+  sessionId: "release.session",
+  localPeer: { id: "client" }
+});
+await multiplayerHost.send({
+  channel: "reliable",
+  kind: "game.command",
+  payload: { action: "release-smoke" }
+});
+await multiplayerHost.dispose();
+await multiplayerClient.dispose();
+
 if (clock.snapshot().ticks !== 1) throw new Error("clock smoke failed");
 if (world.count() !== 1) throw new Error("world smoke failed");
 if (events[0]?.type !== "release.smoke") throw new Error("event smoke failed");
+if (multiplayerMessages[0]?.kind !== "game.command") throw new Error("multiplayer smoke failed");
 console.log("gamekits wave 1 smoke ok");
 `;
 
@@ -187,13 +254,23 @@ const wave2SmokeSource = `
 import { createWebPlatform } from "@gamekits/platform-web";
 import { createDriverRegistry } from "@gamekits/driver-core";
 import { createPhaserDriver } from "@gamekits/driver-phaser";
+import { createThreeDriver } from "@gamekits/driver-three";
 import { createInputRouter } from "@gamekits/input-core";
 import { createDomInputAdapter } from "@gamekits/input-dom";
 import { createCameraController } from "@gamekits/camera-core";
+import {
+  checkOverlap,
+  createMemoryPhysicsBackend,
+  createPhysicsDataTypes,
+  queryPoint,
+  raycast
+} from "@gamekits/physics-core";
+import { initRapier2dPhysicsBackend } from "@gamekits/physics-rapier2d";
+import { initRapier3dPhysicsBackend } from "@gamekits/physics-rapier3d";
 import { createAssetManager } from "@gamekits/asset";
 import { createMemorySaveStore } from "@gamekits/save";
 import { createDevToolsRuntime } from "@gamekits/devtools";
-import { createUiRuntime as createWave3UiRuntime } from "@gamekits/ui-core";
+import { createUiRuntime as createWave2UiRuntime } from "@gamekits/ui-core";
 import { createHeadlessHost, createStandardAppProfile, defineGameApp } from "@gamekits/app-host";
 
 const platform = createWebPlatform({ appName: "GameKits Wave 2 Smoke" });
@@ -202,9 +279,13 @@ if ((await platform.services.app.name()) !== "GameKits Wave 2 Smoke") {
 }
 
 const phaserDriver = createPhaserDriver({ id: "phaser-smoke" });
-const drivers = createDriverRegistry([phaserDriver]);
+const threeDriver = createThreeDriver({ id: "three-smoke" });
+const drivers = createDriverRegistry([phaserDriver, threeDriver]);
 if (!drivers.has("phaser-smoke") || drivers.require("phaser-smoke").capabilities().renderer !== true) {
   throw new Error("driver smoke failed");
+}
+if (!drivers.has("three-smoke") || drivers.require("three-smoke").capabilities().assets !== true) {
+  throw new Error("three driver smoke failed");
 }
 
 const inputRouter = createInputRouter();
@@ -233,6 +314,96 @@ const camera = createCameraController({ viewport: { width: 800, height: 600 } })
 camera.pan(10, 20);
 if (camera.getState().x <= 400) throw new Error("camera smoke failed");
 
+for (const type of createPhysicsDataTypes()) {
+  data.registerType(type);
+}
+
+function assertPhysicsHit(label, results, colliderId) {
+  if (!results.some((hit) => hit.colliderId === colliderId)) {
+    throw new Error(\`\${label} smoke failed\`);
+  }
+}
+
+const memoryPhysics = createMemoryPhysicsBackend({
+  id: "memory-physics-smoke",
+  dimension: "3d"
+});
+const memoryPhysicsScene = memoryPhysics.createScene({
+  dimension: "3d",
+  gravity: { x: 0, y: 0, z: 0 }
+});
+const memoryPhysicsBody = memoryPhysicsScene.createBody({
+  kind: "static",
+  position: { x: 1, y: 0, z: 0 }
+});
+const memoryPhysicsCollider = memoryPhysicsScene.createCollider({
+  bodyId: memoryPhysicsBody,
+  shape: { type: "sphere", radius: 0.5 },
+  filter: { groups: ["actor"], collidesWith: ["query"] }
+});
+assertPhysicsHit(
+  "memory physics point",
+  queryPoint(memoryPhysicsScene, { x: 1, y: 0, z: 0 }),
+  memoryPhysicsCollider
+);
+assertPhysicsHit(
+  "memory physics raycast",
+  raycast(memoryPhysicsScene, { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, {
+    maxDistance: 5,
+    filter: { groups: ["query"], collidesWith: ["actor"] }
+  }),
+  memoryPhysicsCollider
+);
+if (!checkOverlap(memoryPhysicsScene, { type: "sphere", radius: 0.25 }, { x: 1, y: 0, z: 0 })) {
+  throw new Error("memory physics overlap smoke failed");
+}
+memoryPhysicsScene.dispose();
+
+const rapier2dPhysics = await initRapier2dPhysicsBackend({ id: "rapier2d-smoke" });
+const rapier2dScene = rapier2dPhysics.createScene({ gravity: { x: 0, y: 0 } });
+const rapier2dBody = rapier2dScene.createBody({ kind: "static", position: { x: 1, y: 0 } });
+const rapier2dCollider = rapier2dScene.createCollider({
+  bodyId: rapier2dBody,
+  shape: { type: "circle", radius: 0.5 }
+});
+rapier2dScene.step(1000 / 60);
+assertPhysicsHit("rapier2d point", queryPoint(rapier2dScene, { x: 1, y: 0 }), rapier2dCollider);
+assertPhysicsHit(
+  "rapier2d raycast",
+  raycast(rapier2dScene, { x: 0, y: 0 }, { x: 1, y: 0 }, { maxDistance: 5 }),
+  rapier2dCollider
+);
+if (!checkOverlap(rapier2dScene, { type: "circle", radius: 0.25 }, { x: 1, y: 0 })) {
+  throw new Error("rapier2d overlap smoke failed");
+}
+rapier2dScene.dispose();
+
+const rapier3dPhysics = await initRapier3dPhysicsBackend({ id: "rapier3d-smoke" });
+const rapier3dScene = rapier3dPhysics.createScene({ gravity: { x: 0, y: 0, z: 0 } });
+const rapier3dBody = rapier3dScene.createBody({
+  kind: "static",
+  position: { x: 1, y: 0, z: 0 }
+});
+const rapier3dCollider = rapier3dScene.createCollider({
+  bodyId: rapier3dBody,
+  shape: { type: "sphere", radius: 0.5 }
+});
+rapier3dScene.step(1000 / 60);
+assertPhysicsHit(
+  "rapier3d point",
+  queryPoint(rapier3dScene, { x: 1, y: 0, z: 0 }),
+  rapier3dCollider
+);
+assertPhysicsHit(
+  "rapier3d raycast",
+  raycast(rapier3dScene, { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { maxDistance: 5 }),
+  rapier3dCollider
+);
+if (!checkOverlap(rapier3dScene, { type: "sphere", radius: 0.25 }, { x: 1, y: 0, z: 0 })) {
+  throw new Error("rapier3d overlap smoke failed");
+}
+rapier3dScene.dispose();
+
 const assets = createAssetManager({
   adapter: {
     id: "wave2-memory-assets",
@@ -259,7 +430,7 @@ const devtools = createDevToolsRuntime();
 devtools.pushTrace({ kind: "runtime", label: "wave2.smoke", source: "verify" });
 if (devtools.snapshot().traces.length !== 1) throw new Error("devtools smoke failed");
 
-const ui = createUiRuntime();
+const ui = createWave2UiRuntime();
 ui.registerPanel({ id: "panel.smoke", kind: "panel", title: "Smoke" });
 ui.open("panel.smoke");
 if (ui.openPanels().length !== 1) throw new Error("ui smoke failed");
@@ -277,7 +448,7 @@ console.log("gamekits wave 2 smoke ok");
 const wave3SmokeSource = `
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createUiRuntime } from "@gamekits/ui-core";
+import { createUiRuntime as createWave3UiRuntime } from "@gamekits/ui-core";
 import {
   createGameKitUiAnimator,
   GameKitUiShell,
@@ -363,34 +534,105 @@ function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+function readWorkspacePackageManifest(slug: string): PackageManifest {
+  const manifestPath = join(root, "packages", slug, "package.json");
+  if (!existsSync(manifestPath)) {
+    throw new Error(`Unknown GameKit package: ${slug}`);
+  }
+
+  return JSON.parse(readFileSync(manifestPath, "utf8")) as PackageManifest;
+}
+
+function discoverPublishablePackageSlugs(): string[] {
+  return readdirSync(join(root, "packages"))
+    .filter((slug) => {
+      const manifestPath = join(root, "packages", slug, "package.json");
+      if (!existsSync(manifestPath)) {
+        return false;
+      }
+
+      return (JSON.parse(readFileSync(manifestPath, "utf8")) as PackageManifest).private !== true;
+    })
+    .sort();
+}
+
+function workspaceDependencySlugs(manifest: PackageManifest): string[] {
+  return unique(
+    [
+      ...Object.keys(manifest.dependencies ?? {}),
+      ...Object.keys(manifest.peerDependencies ?? {}),
+      ...Object.keys(manifest.optionalDependencies ?? {}),
+      ...Object.keys(manifest.optionalPeerDependencies ?? {})
+    ]
+      .filter((name) => name.startsWith("@gamekit/"))
+      .map((name) => name.slice("@gamekit/".length))
+  );
+}
+
+function resolveWorkspacePackageClosure(packageSlugs: string[]): string[] {
+  const resolved: string[] = [];
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+
+  const visit = (slug: string): void => {
+    if (visited.has(slug)) {
+      return;
+    }
+    if (visiting.has(slug)) {
+      throw new Error(`Circular GameKit package dependency detected at ${slug}`);
+    }
+
+    const manifest = readWorkspacePackageManifest(slug);
+    if (manifest.private === true) {
+      throw new Error(`Cannot include private GameKit package in release verification: ${slug}`);
+    }
+
+    visiting.add(slug);
+    for (const dependencySlug of workspaceDependencySlugs(manifest)) {
+      visit(dependencySlug);
+    }
+    visiting.delete(slug);
+    visited.add(slug);
+    resolved.push(slug);
+  };
+
+  for (const slug of unique(packageSlugs)) {
+    visit(slug);
+  }
+
+  return resolved;
+}
+
 function resolvePackageSlugs(): string[] {
   const explicitPackages = process.env.GAMEKITS_RELEASE_PACKAGES;
   if (explicitPackages) {
-    return unique(
-      explicitPackages
-        .split(",")
-        .map((slug) => slug.trim())
-        .filter(Boolean)
+    return resolveWorkspacePackageClosure(
+      unique(
+        explicitPackages
+          .split(",")
+          .map((slug) => slug.trim())
+          .filter(Boolean)
+      )
     );
   }
 
   if (releaseWave === "2") {
-    return unique([...wave2SupportPackageSlugs, ...wave2PackageSlugs]);
+    return resolveWorkspacePackageClosure([...wave2SupportPackageSlugs, ...wave2PackageSlugs]);
   }
 
   if (releaseWave === "3") {
-    return unique([...wave3SupportPackageSlugs, ...wave3PackageSlugs]);
+    return resolveWorkspacePackageClosure([...wave3SupportPackageSlugs, ...wave3PackageSlugs]);
   }
 
   if (releaseWave === "all") {
-    return allPackageSlugs;
+    return resolveWorkspacePackageClosure(allPackageSlugs);
   }
 
   if (releaseWave !== "1") {
     throw new Error(`Unknown GAMEKITS_RELEASE_WAVE: ${releaseWave}`);
   }
 
-  return wave1PackageSlugs;
+  return resolveWorkspacePackageClosure(wave1PackageSlugs);
 }
 
 function resolveSmokeSource(): string {
@@ -547,6 +789,20 @@ function assertTarballContents(tarball: string): void {
   }
 }
 
+function assertPublishManifest(manifest: PackageManifest, slug: string): void {
+  if (manifest.repository?.url !== releaseRepositoryUrl) {
+    throw new Error(
+      `${manifest.name} publish manifest repository.url must be ${releaseRepositoryUrl} for npm provenance.`
+    );
+  }
+
+  if (manifest.repository.directory !== `packages/${slug}`) {
+    throw new Error(
+      `${manifest.name} publish manifest repository.directory must be packages/${slug}.`
+    );
+  }
+}
+
 function preparePackage(slug: string, packagesDir: string): string {
   const sourceDir = join(root, "packages", slug);
   const manifestPath = join(sourceDir, "package.json");
@@ -554,6 +810,12 @@ function preparePackage(slug: string, packagesDir: string): string {
   const targetDir = join(packagesDir, slug);
   const sourceDist = join(sourceDir, "dist");
   const targetDist = join(targetDir, "dist");
+
+  if (manifest.version !== releaseVersion) {
+    throw new Error(
+      `${manifest.name} has workspace version ${manifest.version}; expected lockstep release version ${releaseVersion}.`
+    );
+  }
 
   if (!existsSync(sourceDist)) {
     throw new Error(`Missing dist for ${manifest.name}. Run build before release verification.`);
@@ -575,6 +837,11 @@ function preparePackage(slug: string, packagesDir: string): string {
     main: manifest.main,
     types: manifest.types,
     exports: manifest.exports,
+    repository: {
+      type: "git",
+      url: releaseRepositoryUrl,
+      directory: `packages/${slug}`
+    },
     files: ["dist"],
     sideEffects: manifest.sideEffects ?? false,
     publishConfig: { access: "public" },
@@ -597,6 +864,7 @@ function preparePackage(slug: string, packagesDir: string): string {
     }
   }
 
+  assertPublishManifest(publishManifest, slug);
   writeJson(join(targetDir, "package.json"), publishManifest);
   assertNoInternalScope(targetDir);
 
@@ -624,6 +892,11 @@ try {
     const tarball = join(packDir, output.split("\n").at(-1)!);
     assertTarballContents(tarball);
     return tarball;
+  });
+  assertPreparedReleaseState({
+    packageSlugs,
+    releaseDir,
+    releaseVersion
   });
 
   const localTarballDependencies = Object.fromEntries(

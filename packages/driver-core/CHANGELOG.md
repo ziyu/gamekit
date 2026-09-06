@@ -1,5 +1,45 @@
 # @gamekit/driver-core
 
+## 0.1.0-alpha.6
+
+### Patch Changes
+
+- c6fdda9: Add validated atlas, audio, variant, and animation manifest metadata, load those resources through
+  the shared Phaser runtime, expose Animator playback mapping, and support animated sprites,
+  particle emitters, semantic commands, and batched native state writes.
+  Expose the corresponding animation and audio slices through the shared Driver adapter map. Map one
+  logical Audio Event instance to one or more Phaser Sound tracks with scheduled start, fade,
+  pause/resume, seek, volume/rate/pan/loop control, spatial emitter mixing, and deterministic cleanup.
+  Report the shared animation slice through Driver capabilities.
+  Make AssetManager definitions mutation-safe, coalesce concurrent loads, isolate diagnostic observers, and harden metadata validation for malformed external manifests.
+  - @gamekit/core@0.1.0-alpha.6
+
+## 0.1.0-alpha.5
+
+### Patch Changes
+
+- @gamekit/core@0.1.0-alpha.5
+
+## 0.1.0-alpha.4
+
+### Patch Changes
+
+- @gamekit/core@0.1.0-alpha.4
+
+## 0.1.0-alpha.3
+
+### Patch Changes
+
+- 544f137: [codex] Restore driver capabilities release guard
+  - @gamekit/core@0.1.0-alpha.3
+
+## 0.1.0-alpha.2
+
+### Patch Changes
+
+- 3469457: [codex] Make renderer native control explicit
+  - @gamekit/core@0.1.0-alpha.2
+
 ## 0.1.0-alpha.1
 
 ### Patch Changes

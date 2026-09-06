@@ -1,5 +1,19 @@
 # @gamekit/renderer-core
 
+## 0.1.0-alpha.6
+
+## 0.1.0-alpha.5
+
+## 0.1.0-alpha.4
+
+## 0.1.0-alpha.3
+
+## 0.1.0-alpha.2
+
+### Patch Changes
+
+- 3469457: [codex] Make renderer native control explicit
+
 ## 0.1.0-alpha.1
 
 ### Patch Changes

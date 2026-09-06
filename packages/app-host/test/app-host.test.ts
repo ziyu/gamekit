@@ -9,16 +9,35 @@ import {
   type AppProfile,
   type AppServiceBinding
 } from "@gamekit/app-host";
+import { createMemoryAnimationPlaybackAdapter } from "@gamekit/animator-core/testing";
+import { createMemoryAudioBackend } from "@gamekit/audio-core/testing";
 import { createCameraController, screenToWorld } from "@gamekit/camera-core";
 import { createDataRegistry } from "@gamekit/data";
 import type { GameDriver } from "@gamekit/driver-core";
 import { createEventBus } from "@gamekit/event-bus";
-import { createGasDataTypes, createGasTraceStore, type GasRuntime } from "@gamekit/gas";
+import {
+  createGasDataTypes,
+  createGasHandle,
+  createGasTraceStore,
+  type GasRuntime
+} from "@gamekit/gas";
 import { createGame } from "@gamekit/game-runtime";
 import { createInputRouter } from "@gamekit/input-core";
+import {
+  createMultiplayerRuntime,
+  defineSnapshotVector2Track,
+  type NetworkVector2
+} from "@gamekit/multiplayer-core";
+import { createMemoryMultiplayerBackend } from "@gamekit/multiplayer-memory";
+import { createMemoryNavigationBackend } from "@gamekit/navigation-core/testing";
+import {
+  createMemoryPhysicsBackend,
+  createPhysicsHandle,
+  createPhysicsInterpolationStore
+} from "@gamekit/physics-core";
 import { createMemorySaveStore } from "@gamekit/save";
 import { type GameWorld } from "@gamekit/world";
-import { createTcaRuleDataType } from "@gamekit/tca";
+import { createTcaHandle, createTcaRuleDataType } from "@gamekit/tca";
 import { createUiRuntime } from "@gamekit/ui-core";
 
 describe("app host service registry", () => {
@@ -193,6 +212,41 @@ describe("headless host", () => {
       "assets",
       "save"
     ]);
+  });
+
+  it("can expose and dispose an optional standard multiplayer service", async () => {
+    const runtime = createMultiplayerRuntime({
+      id: "headless-multiplayer",
+      backend: createMemoryMultiplayerBackend()
+    });
+    const host = createHeadlessHost({
+      id: "headless-multiplayer",
+      multiplayer: runtime
+    });
+
+    await runtime.createSession({
+      id: "headless-room",
+      localPeer: { id: "host" }
+    });
+    await host.boot();
+
+    expect(host.services.multiplayer).toBe(runtime);
+    expect(host.snapshot().services.map((service) => service.id)).toEqual([
+      "data",
+      "renderer",
+      "assets",
+      "multiplayer"
+    ]);
+    expect(host.snapshot().services.find((service) => service.id === "multiplayer")).toMatchObject({
+      snapshot: {
+        phase: "in-session",
+        session: { id: "headless-room" }
+      }
+    });
+
+    await host.dispose();
+
+    expect(runtime.phase()).toBe("disposed");
   });
 
   it("can expose an optional standard devtools service", async () => {
@@ -448,7 +502,9 @@ describe("configured app host", () => {
   it("ticks standard input and game services from the app host frame", async () => {
     const router = createInputRouter();
     const emitted: string[] = [];
+    const inputLifecycle: string[] = [];
     const runtimeTicks: number[] = [];
+    let polled = false;
     const app = defineGameApp({
       id: "standard-frame",
       services: [{ id: "input" }, { id: "game", dependencies: ["input"] }]
@@ -471,6 +527,35 @@ describe("configured app host", () => {
             input.onAction((event) => {
               emitted.push(`${event.actionId}:${event.phase}:${event.timestamp}`);
             });
+          },
+          adapters(_ctx, input) {
+            return [
+              {
+                start() {
+                  inputLifecycle.push("start");
+                },
+                stop() {
+                  inputLifecycle.push("stop");
+                },
+                poll(frame) {
+                  inputLifecycle.push(`poll:${frame.timestamp}`);
+                  if (polled) {
+                    return;
+                  }
+                  polled = true;
+                  input.handle({
+                    id: "polled-key-down",
+                    device: "keyboard",
+                    code: "KeyD",
+                    phase: "pressed",
+                    timestamp: frame.timestamp
+                  });
+                },
+                destroy() {
+                  inputLifecycle.push("destroy");
+                }
+              }
+            ];
           }
         },
         game: {
@@ -499,17 +584,19 @@ describe("configured app host", () => {
     });
 
     await configured.host.start();
-    router.handle({
-      id: "key-down",
-      device: "keyboard",
-      code: "KeyD",
-      phase: "pressed",
-      timestamp: 1
-    });
     configured.host.tick(16, 17);
 
-    expect(emitted).toEqual(["camera.pan_right:pressed:1", "camera.pan_right:held:17"]);
+    expect(emitted).toEqual(["camera.pan_right:pressed:17", "camera.pan_right:held:17"]);
+    expect(inputLifecycle).toEqual(["start", "poll:17"]);
     expect(runtimeTicks).toEqual([16]);
+
+    await configured.host.stop();
+    configured.host.tick(16, 33);
+    expect(inputLifecycle).toEqual(["start", "poll:17", "stop"]);
+    expect(runtimeTicks).toEqual([16]);
+
+    await configured.host.dispose();
+    expect(inputLifecycle).toEqual(["start", "poll:17", "stop", "destroy"]);
   });
 
   it("boots the standard UI service with panels and snapshot access", async () => {
@@ -579,6 +666,51 @@ describe("configured app host", () => {
     ).toContain("ui");
   });
 
+  it("exposes standard multiplayer services and DevTools source snapshots", async () => {
+    const runtime = createMultiplayerRuntime({
+      id: "standard-multiplayer",
+      backend: createMemoryMultiplayerBackend()
+    });
+    const app = defineGameApp({
+      id: "standard-multiplayer",
+      services: [{ id: "multiplayer" }, { id: "devtools", dependencies: ["multiplayer"] }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        multiplayer: {
+          runtime
+        },
+        devtools: true
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+
+    await configured.host.boot();
+    await runtime.createSession({
+      id: "devtools-room",
+      localPeer: { id: "host" }
+    });
+
+    const snapshot = configured.host.services.devtools?.snapshot({ includeSourceSnapshots: true });
+
+    expect(configured.host.services.multiplayer).toBe(runtime);
+    expect(snapshot?.dataSources.map((source) => source.id)).toContain("multiplayer");
+    expect(snapshot?.sourceSnapshots).toContainEqual(
+      expect.objectContaining({
+        id: "multiplayer",
+        kind: "multiplayer",
+        snapshot: expect.objectContaining({
+          phase: "in-session",
+          session: expect.objectContaining({ id: "devtools-room" })
+        })
+      })
+    );
+
+    await configured.host.dispose();
+  });
+
   it("resolves standard renderer service from a driver capability", async () => {
     const calls: string[] = [];
     const driver = createFakeDriver("phaser", calls);
@@ -637,6 +769,8 @@ describe("configured app host", () => {
     const camera = createCameraController({ viewport: { width: 320, height: 180 } });
     const initialCameraX = camera.getState().x;
     const eventBus = createEventBus({ clock: () => 1 });
+    const gasHandle = createGasHandle({ id: "standard.gas" });
+    const tcaHandle = createTcaHandle({ id: "standard.tca" });
     const derived: string[] = [];
     let gasRuntime: GasRuntime | undefined;
     eventBus.on("test.derived", (event) => {
@@ -653,9 +787,10 @@ describe("configured app host", () => {
         data: { registry },
         game: {
           standardModules: {
-            tca: {},
+            tca: { handle: tcaHandle },
             gas: {
               traceStore: createGasTraceStore(),
+              handle: gasHandle,
               onRuntime(_ctx, runtime) {
                 gasRuntime = runtime;
               }
@@ -690,11 +825,333 @@ describe("configured app host", () => {
     expect(derived).toEqual(["test.derived"]);
     expect(camera.getState().x).toBe(initialCameraX + 12);
     expect(gasRuntime).toBeDefined();
+    expect(tcaHandle.isBound()).toBe(true);
+    expect(gasHandle.isBound()).toBe(true);
     expect(configured.host.services.game?.modules.map((module) => module.id)).toEqual([
       "gamekit.tca",
       "gamekit.gas",
       "gamekit.camera"
     ]);
+
+    await configured.host.dispose();
+    expect(tcaHandle.isBound()).toBe(false);
+    expect(gasHandle.isBound()).toBe(false);
+  });
+
+  it("injects and disposes the standard physics game module", async () => {
+    const physics = createPhysicsHandle({ id: "standard.physics" });
+    const interpolation = createPhysicsInterpolationStore({ id: "standard.interpolation" });
+    const app = defineGameApp({
+      id: "standard-physics-module",
+      services: [{ id: "game" }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        game: {
+          standardModules: {
+            physics: {
+              backend: createMemoryPhysicsBackend(),
+              handle: physics,
+              interpolationStore: interpolation,
+              fixedDeltaMs: 20,
+              scene: { gravity: { x: 0, y: 0 } }
+            }
+          },
+          createRuntime(_ctx, modules) {
+            expect(modules.map((module) => module.id)).toEqual(["gamekit.physics"]);
+            return createGame({
+              modules,
+              world: createMemoryWorld(),
+              eventBus: createEventBus({ clock: () => 1 }),
+              seed: "standard-physics"
+            });
+          }
+        }
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+
+    expect(physics.isBound()).toBe(true);
+    expect(interpolation.isBound()).toBe(true);
+    await configured.host.start();
+    configured.host.tick(20, 20);
+    expect(physics.snapshot()).toMatchObject({ backend: "memory-physics" });
+
+    await configured.host.dispose();
+    expect(physics.isBound()).toBe(false);
+    expect(interpolation.isBound()).toBe(false);
+  });
+
+  it("processes memory multiplayer commands through the standard bridge on runtime ticks", async () => {
+    const backend = createMemoryMultiplayerBackend();
+    const hostMultiplayer = createMultiplayerRuntime({
+      id: "bridge-host",
+      backend
+    });
+    const clientMultiplayer = createMultiplayerRuntime({
+      id: "bridge-client",
+      backend
+    });
+    const eventBus = createEventBus({ clock: () => 1 });
+    const accepted: string[] = [];
+    const handled: string[] = [];
+    eventBus.on("multiplayer.command.accepted", (event) => {
+      if (isRecord(event.payload) && typeof event.payload.messageId === "string") {
+        accepted.push(event.payload.messageId);
+      }
+    });
+
+    await hostMultiplayer.createSession({
+      id: "bridge-room",
+      localPeer: { id: "host" }
+    });
+    await clientMultiplayer.joinSession({
+      sessionId: "bridge-room",
+      localPeer: { id: "client" }
+    });
+
+    const app = defineGameApp({
+      id: "standard-multiplayer-bridge",
+      services: [{ id: "multiplayer" }, { id: "game", dependencies: ["multiplayer"] }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        multiplayer: {
+          runtime: hostMultiplayer
+        },
+        game: {
+          standardModules: {
+            multiplayer: {
+              handleCommand({ message }) {
+                handled.push(`${message.id}:${message.sourcePeerId}`);
+              }
+            }
+          },
+          createRuntime(_ctx, modules) {
+            expect(modules.map((module) => module.id)).toEqual(["gamekit.multiplayer.bridge"]);
+            return createGame({
+              modules,
+              world: createMemoryWorld(),
+              eventBus,
+              seed: "standard-multiplayer"
+            });
+          }
+        }
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+
+    await configured.host.start();
+    await clientMultiplayer.send({
+      id: "move-1",
+      channel: "reliable",
+      kind: "game.command",
+      payload: { action: "move", x: 1, y: 0 }
+    });
+    expect(handled).toEqual([]);
+
+    configured.host.tick(16, 16);
+    expect(accepted).toEqual(["move-1"]);
+    expect(handled).toEqual(["move-1:client"]);
+
+    await configured.host.stop();
+    await clientMultiplayer.send({
+      id: "move-2",
+      channel: "reliable",
+      kind: "game.command",
+      payload: { action: "move", x: 0, y: 1 }
+    });
+    configured.host.tick(16, 32);
+    expect(handled).toEqual(["move-1:client"]);
+
+    await configured.host.start();
+    configured.host.tick(16, 48);
+    expect(handled).toEqual(["move-1:client", "move-2:client"]);
+
+    await configured.host.dispose();
+    await clientMultiplayer.send({
+      id: "move-3",
+      channel: "reliable",
+      kind: "game.command",
+      payload: { action: "move", x: -1, y: 0 }
+    });
+    expect(handled).toEqual(["move-1:client", "move-2:client"]);
+
+    await clientMultiplayer.dispose();
+  });
+
+  it("runs standard multiplayer presentation playback on host game ticks", async () => {
+    const backend = createMemoryMultiplayerBackend();
+    const multiplayer = createMultiplayerRuntime({
+      id: "presentation-runtime",
+      backend
+    });
+    const eventBus = createEventBus({ clock: () => 1 });
+    let latestSnapshot = { tick: 0, position: { x: 0, y: 0 } };
+    const presented: Array<{
+      status: string;
+      tick: number | undefined;
+      position: NetworkVector2;
+    }> = [];
+
+    const app = defineGameApp({
+      id: "standard-multiplayer-presentation",
+      services: [{ id: "multiplayer" }, { id: "game", dependencies: ["multiplayer"] }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        multiplayer: {
+          runtime: multiplayer
+        },
+        game: {
+          standardModules: {
+            multiplayer: {
+              presentation: {
+                interpolationDelayMs: 50,
+                readTime(entry) {
+                  return entry.snapshot.tick * 50;
+                },
+                tracks: [
+                  defineSnapshotVector2Track<typeof latestSnapshot>({
+                    selectInto(snapshot, writer) {
+                      writer.add("avatar:position", snapshot.position);
+                    }
+                  })
+                ],
+                readSnapshot() {
+                  return {
+                    snapshot: latestSnapshot,
+                    tick: latestSnapshot.tick
+                  };
+                },
+                applySample({ sample, presented: values }) {
+                  presented.push({
+                    status: sample.status,
+                    tick: sample.next?.snapshot.tick,
+                    position: values.vector2("avatar:position", { x: -1, y: -1 })
+                  });
+                }
+              }
+            }
+          },
+          createRuntime(_ctx, modules) {
+            expect(modules.map((module) => module.id)).toEqual(["gamekit.multiplayer.bridge"]);
+            return createGame({
+              modules,
+              world: createMemoryWorld(),
+              eventBus,
+              seed: "standard-multiplayer-presentation"
+            });
+          }
+        }
+      }
+    });
+
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+    expect(configured.host.services.game?.systems.values().map((system) => system.id)).toEqual([
+      "gamekit.multiplayer.bridge.presentation"
+    ]);
+
+    await configured.host.start();
+    configured.host.tick(0, 0);
+    latestSnapshot = { tick: 1, position: { x: 50, y: 0 } };
+    configured.host.tick(50, 50);
+    latestSnapshot = { tick: 2, position: { x: 100, y: 0 } };
+    configured.host.tick(50, 100);
+
+    expect(presented).toEqual([
+      { status: "before-first", tick: 0, position: { x: 0, y: 0 } },
+      { status: "exact", tick: 0, position: { x: 0, y: 0 } },
+      { status: "exact", tick: 1, position: { x: 50, y: 0 } }
+    ]);
+
+    await configured.host.dispose();
+  });
+
+  it("installs managed client replication through the standard multiplayer module", async () => {
+    type Snapshot = { tick: number; position: NetworkVector2 };
+    const backend = createMemoryMultiplayerBackend();
+    const server = createMultiplayerRuntime({ id: "managed-server", backend });
+    const client = createMultiplayerRuntime({ id: "managed-client", backend });
+    await server.createSession({
+      id: "managed-room",
+      authority: "server-authoritative",
+      localPeer: { id: "server", role: "server" }
+    });
+    await client.joinSession({
+      sessionId: "managed-room",
+      localPeer: { id: "client", role: "client", playerId: "player.client" }
+    });
+    const applied: number[] = [];
+    const app = defineGameApp({
+      id: "standard-managed-client-replication",
+      services: [{ id: "multiplayer" }, { id: "game", dependencies: ["multiplayer"] }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        multiplayer: { runtime: client },
+        game: {
+          standardModules: {
+            multiplayer: {
+              clientReplication: {
+                playback: { interpolationDelayMs: 50, timeSource: "tick" },
+                readSnapshot(payload) {
+                  return isRecord(payload) &&
+                    typeof payload.tick === "number" &&
+                    isRecord(payload.position) &&
+                    typeof payload.position.x === "number" &&
+                    typeof payload.position.y === "number"
+                    ? {
+                        tick: payload.tick,
+                        position: { x: payload.position.x, y: payload.position.y }
+                      }
+                    : undefined;
+                },
+                toBufferEntry({ snapshot }) {
+                  return { snapshot, tick: snapshot.tick };
+                },
+                applyFrame({ snapshot }) {
+                  applied.push(snapshot.tick);
+                }
+              }
+            }
+          },
+          createRuntime(_ctx, modules) {
+            return createGame({
+              modules,
+              world: createMemoryWorld(),
+              eventBus: createEventBus(),
+              seed: "managed-client-replication"
+            });
+          }
+        }
+      }
+    });
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+
+    await configured.host.boot();
+    await configured.host.start();
+    await server.send<Snapshot>({
+      channel: "reliable",
+      kind: "game.snapshot",
+      tick: 1,
+      payload: { tick: 1, position: { x: 10, y: 20 } }
+    });
+    configured.host.tick(16, 16);
+
+    expect(configured.host.services.game?.systems.values().map((system) => system.id)).toEqual([
+      "gamekit.multiplayer.bridge.client-replication"
+    ]);
+    expect(applied).toEqual([1]);
+
+    await configured.host.dispose();
+    await server.dispose();
   });
 
   it("smooths standard camera module renderer sync over runtime ticks", async () => {
@@ -888,6 +1345,139 @@ describe("configured app host", () => {
   });
 });
 
+describe("gameplay foundation standard composition", () => {
+  it("owns Audio Core as a standard service and exposes its DevTools source", async () => {
+    const backend = createMemoryAudioBackend();
+    const app = defineGameApp({
+      id: "standard-audio",
+      services: [{ id: "audio" }, { id: "devtools", dependencies: ["audio"] }]
+    });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        audio: {
+          backend,
+          config: {
+            sfx: [
+              {
+                id: "sfx.test",
+                layers: [
+                  {
+                    id: "main",
+                    clips: [
+                      {
+                        id: "clip.test",
+                        asset: { assetId: "audio.test", type: "audio" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        devtools: true
+      }
+    });
+    const configured = createConfiguredAppHost({ app, profile, context: {} });
+
+    await configured.host.boot();
+    await configured.host.start();
+    await configured.host.services.audio?.unlock();
+    expect(configured.host.services.audio?.sfx.play("sfx.test")).toMatchObject({
+      status: "playing"
+    });
+    configured.host.tick(16, 16);
+
+    expect(configured.host.services.audio?.snapshot()).toMatchObject({
+      elapsed: 16,
+      activePlaybackInstances: 1,
+      unlock: "unlocked"
+    });
+    const devtoolsSnapshot = configured.host.services.devtools?.snapshot({
+      includeSourceSnapshots: true
+    });
+    expect(devtoolsSnapshot?.dataSources.map((source) => source.id)).toContain("audio");
+    expect(
+      devtoolsSnapshot?.sourceSnapshots?.find((source) => source.id === "audio")
+    ).toMatchObject({ kind: "audio", snapshot: { activePlaybackInstances: 1 } });
+
+    await configured.host.dispose();
+    expect(backend.snapshot().disposed).toBe(true);
+  });
+
+  it("resolves Combat, Navigation, AI and Animator through core-owned module factories", () => {
+    const dataRegistry = createDataRegistry();
+    let moduleIds: string[] = [];
+    let exposed:
+      | {
+          combatBound: boolean;
+          navigationBound: boolean;
+          aiBound: boolean;
+          animatorBound: boolean;
+        }
+      | undefined;
+    const app = defineGameApp({ id: "standard-gameplay-modules", services: [{ id: "game" }] });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: {
+        game: {
+          standardModules: {
+            combat: {
+              physics: createPhysicsHandle(),
+              gas: createGasHandle(),
+              dataRegistry,
+              relationshipResolver: {
+                resolve: () => "neutral",
+                allows: () => true
+              }
+            },
+            navigation: { backend: createMemoryNavigationBackend() },
+            ai: {
+              dataRegistry,
+              intentSink: { emit() {} }
+            },
+            animator: {
+              dataRegistry,
+              adapter: createMemoryAnimationPlaybackAdapter()
+            }
+          },
+          createRuntime(_ctx, modules) {
+            moduleIds = modules.map((module) => module.id);
+            return createGame({
+              modules: [],
+              world: createMemoryWorld(),
+              eventBus: createEventBus(),
+              seed: "standard-gameplay-modules"
+            });
+          }
+        }
+      },
+      expose(ctx) {
+        if (!ctx.state.combat || !ctx.state.navigation || !ctx.state.ai || !ctx.state.animator) {
+          return;
+        }
+        exposed = {
+          combatBound: ctx.state.combat.isBound(),
+          navigationBound: ctx.state.navigation.isBound(),
+          aiBound: ctx.state.ai.isBound(),
+          animatorBound: ctx.state.animator.isBound()
+        };
+      }
+    });
+
+    createConfiguredAppHost({ app, profile, context: {} });
+
+    expect(moduleIds).toEqual(["combat", "navigation", "ai", "animator"]);
+    expect(exposed).toEqual({
+      combatBound: false,
+      navigationBound: false,
+      aiBound: false,
+      animatorBound: false
+    });
+  });
+});
+
 function createLifecycleBinding(
   id: string,
   calls: string[],
@@ -941,26 +1531,26 @@ function createFakeDriver(id: string, calls: string[]): GameDriver {
       phase = "disposed";
     },
     capabilities() {
-      return { renderer: true, assets: true, input: true, camera: true };
+      return { renderer: true };
     },
     adapters() {
       return {
         renderer: {
           id: `${id}.renderer`,
+          kind: "fake",
           async boot() {},
           destroy() {},
           getView() {
             return {} as HTMLElement;
           },
           resize() {},
-          capabilities() {
-            return { objectTypes: [] };
-          },
           createObject() {
             return "object";
           },
-          updateObject() {},
-          destroyObject() {}
+          destroyObject() {},
+          native() {
+            return {};
+          }
         }
       };
     },
@@ -1164,3 +1754,7 @@ it("fails boot when a declared preload group cannot be loaded", async () => {
   await expect(configured.host.boot()).rejects.toThrow(/Asset preload failed/);
   expect(configured.host.snapshot().phase).toBe("failed");
 });
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}

@@ -1,0 +1,42 @@
+name: Multiplayer Performance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multiplayer-performance
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: Multiplayer Performance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Build
+        run: corepack pnpm build
+
+      - name: Performance budgets
+        run: corepack pnpm bench:multiplayer:check
+
+      - name: Retained heap stability
+        run: corepack pnpm bench:multiplayer:stability
