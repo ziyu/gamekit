@@ -1,5 +1,11 @@
 # @gamekit/platform-web
 
+## 0.1.0-alpha.8
+
+### Patch Changes
+
+- @gamekit/platform-core@0.1.0-alpha.8
+
 ## 0.1.0-alpha.7
 
 ### Patch Changes

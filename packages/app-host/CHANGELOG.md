@@ -1,5 +1,34 @@
 # @gamekit/app-host
 
+## 0.1.0-alpha.8
+
+### Patch Changes
+
+- 0326356: Add scoped assets and transactional save recovery
+- Updated dependencies [0326356]
+  - @gamekit/asset@0.1.0-alpha.8
+  - @gamekit/save@0.1.0-alpha.8
+  - @gamekit/animator-core@0.1.0-alpha.8
+  - @gamekit/audio-core@0.1.0-alpha.8
+  - @gamekit/ai-core@0.1.0-alpha.8
+  - @gamekit/combat@0.1.0-alpha.8
+  - @gamekit/gas@0.1.0-alpha.8
+  - @gamekit/physics-core@0.1.0-alpha.8
+  - @gamekit/tca@0.1.0-alpha.8
+  - @gamekit/core@0.1.0-alpha.8
+  - @gamekit/world@0.1.0-alpha.8
+  - @gamekit/platform-core@0.1.0-alpha.8
+  - @gamekit/renderer-core@0.1.0-alpha.8
+  - @gamekit/game-runtime@0.1.0-alpha.8
+  - @gamekit/data@0.1.0-alpha.8
+  - @gamekit/input-core@0.1.0-alpha.8
+  - @gamekit/camera-core@0.1.0-alpha.8
+  - @gamekit/driver-core@0.1.0-alpha.8
+  - @gamekit/devtools@0.1.0-alpha.8
+  - @gamekit/ui-core@0.1.0-alpha.8
+  - @gamekit/multiplayer-core@0.1.0-alpha.8
+  - @gamekit/navigation-core@0.1.0-alpha.8
+
 ## 0.1.0-alpha.7
 
 ### Minor Changes

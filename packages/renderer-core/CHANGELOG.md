@@ -1,5 +1,7 @@
 # @gamekit/renderer-core
 
+## 0.1.0-alpha.8
+
 ## 0.1.0-alpha.7
 
 ## 0.1.0-alpha.6

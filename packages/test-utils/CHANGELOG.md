@@ -1,5 +1,18 @@
 # @gamekit/test-utils
 
+## 0.1.0-alpha.8
+
+### Patch Changes
+
+- @gamekit/animator-core@0.1.0-alpha.8
+- @gamekit/audio-core@0.1.0-alpha.8
+- @gamekit/ai-core@0.1.0-alpha.8
+- @gamekit/event-bus@0.1.0-alpha.8
+- @gamekit/world@0.1.0-alpha.8
+- @gamekit/platform-core@0.1.0-alpha.8
+- @gamekit/renderer-core@0.1.0-alpha.8
+- @gamekit/navigation-core@0.1.0-alpha.8
+
 ## 0.1.0-alpha.7
 
 ### Patch Changes

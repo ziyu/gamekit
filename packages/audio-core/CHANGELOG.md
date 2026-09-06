@@ -1,5 +1,13 @@
 # @gamekit/audio-core
 
+## 0.1.0-alpha.8
+
+### Patch Changes
+
+- Updated dependencies [0326356]
+  - @gamekit/asset@0.1.0-alpha.8
+  - @gamekit/core@0.1.0-alpha.8
+
 ## 0.1.0-alpha.7
 
 ### Patch Changes

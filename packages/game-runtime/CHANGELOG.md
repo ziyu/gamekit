@@ -1,5 +1,13 @@
 # @gamekit/game-runtime
 
+## 0.1.0-alpha.8
+
+### Patch Changes
+
+- @gamekit/core@0.1.0-alpha.8
+- @gamekit/event-bus@0.1.0-alpha.8
+- @gamekit/world@0.1.0-alpha.8
+
 ## 0.1.0-alpha.7
 
 ### Patch Changes
