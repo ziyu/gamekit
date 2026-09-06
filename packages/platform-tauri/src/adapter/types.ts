@@ -8,6 +8,7 @@ export type TauriFsDriver = {
   writeFile(path: string, data: Uint8Array, options?: unknown): Promise<void>;
   exists(path: string, options?: unknown): Promise<boolean>;
   mkdir(path: string, options?: unknown): Promise<void>;
+  rename?(oldPath: string, newPath: string, options?: unknown): Promise<void>;
   remove?(path: string, options?: unknown): Promise<void>;
   readDir(path: string, options?: unknown): Promise<Array<TauriDirEntry>>;
 };

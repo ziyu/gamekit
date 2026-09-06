@@ -70,7 +70,8 @@ describe("createDomInputAdapter", () => {
     adapter.stop();
     target.dispatch("keydown", { code: "Enter" });
 
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({ phase: "cancelled", code: "Enter" });
     expect(events[0]).toMatchObject({
       code: "Enter",
       timestamp: 100
@@ -143,7 +144,9 @@ describe("createDomInputAdapter", () => {
     adapter.start();
     adapter.stop();
 
-    expect(target.listenerOptions).toEqual([
+    expect(
+      target.listenerOptions.filter((entry) => entry.type !== "blur" && entry.type !== "focusin")
+    ).toEqual([
       { type: "keydown", capture: true },
       { type: "keyup", capture: true },
       { type: "pointerdown", capture: true },
@@ -199,3 +202,31 @@ function readCapture(
 ) {
   return typeof options === "boolean" ? options : options?.capture;
 }
+
+it.each(["blur", "focusin"])("cancels pressed keys on %s without resuming stale input", (type) => {
+  const target = new FakeTarget();
+  const phases: string[] = [];
+  const adapter = createDomInputAdapter({ target, onInput: (event) => phases.push(event.phase) });
+  adapter.start();
+  target.dispatch("keydown", { code: "KeyW" });
+  target.dispatch(type, {});
+  adapter.stop();
+  adapter.start();
+  adapter.stop();
+  expect(phases).toEqual(["pressed", "cancelled"]);
+});
+
+it("delivers cancellation when the release is outside the native filter", () => {
+  const target = new FakeTarget();
+  const phases: string[] = [];
+  const adapter = createDomInputAdapter({
+    target,
+    eventFilter: (event) => event.type === "keydown",
+    onInput: (event) => phases.push(event.phase)
+  });
+  adapter.start();
+  target.dispatch("keydown", { type: "keydown", code: "KeyW" });
+  target.dispatch("keyup", { type: "keyup", code: "KeyW" });
+  adapter.stop();
+  expect(phases).toEqual(["pressed", "cancelled"]);
+});

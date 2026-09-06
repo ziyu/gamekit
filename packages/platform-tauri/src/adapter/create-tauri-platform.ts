@@ -59,6 +59,27 @@ export function createTauriPlatformFromDrivers(drivers: TauriPlatformDrivers): P
       writeBinary(path, data, options) {
         return drivers.fs.writeFile(path, data, fsOptions(options));
       },
+      ...(drivers.fs.remove
+        ? {
+            remove: (path: string, options?: FsOptions) =>
+              drivers.fs.remove!(path, fsOptions(options))
+          }
+        : {}),
+      ...(drivers.fs.rename
+        ? {
+            replaceFile: (source: string, target: string, options?: FsOptions) =>
+              drivers.fs.rename!(
+                source,
+                target,
+                options?.baseDir
+                  ? {
+                      oldPathBaseDir: baseDirectoryMap[options.baseDir],
+                      newPathBaseDir: baseDirectoryMap[options.baseDir]
+                    }
+                  : {}
+              )
+          }
+        : {}),
       exists(path, options) {
         return drivers.fs.exists(path, fsOptions(options));
       },

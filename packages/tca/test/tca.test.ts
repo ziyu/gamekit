@@ -388,6 +388,39 @@ describe("TCA module", () => {
   });
 });
 
+describe("TCA reentry", () => {
+  it("reserves once rules during synchronous reentry", () => {
+    const eventBus = createEventBus();
+    let executions = 0;
+    const runtime = createTcaRuntime({
+      eventBus,
+      dataRegistry: createDataRegistry(),
+      rules: [
+        {
+          id: "once",
+          once: true,
+          trigger: { type: "event.type", args: { eventType: "again" } },
+          actions: [{ type: "test.reenter" }]
+        }
+      ],
+      definitions: {
+        actions: [
+          {
+            type: "test.reenter",
+            execute() {
+              executions += 1;
+              if (executions === 1)
+                runtime.handleEvent({ type: "again", payload: {}, timestamp: 1 });
+            }
+          }
+        ]
+      }
+    });
+    runtime.handleEvent({ type: "again", payload: {}, timestamp: 1 });
+    expect(executions).toBe(1);
+  });
+});
+
 function rule(id: string, eventType: string, label: string, priority = 0): TcaRule {
   return {
     id,
@@ -458,3 +491,34 @@ function createMemoryWorld(): GameWorld {
     }
   };
 }
+
+it("releases once reservations after failed conditions and actions", () => {
+  let condition = false;
+  let attempts = 0;
+  const runtime = createTcaRuntime({
+    eventBus: createEventBus(),
+    rules: [
+      { ...rule("once", "again", "ran"), once: true, conditions: [{ type: "test.condition" }] }
+    ],
+    definitions: {
+      conditions: [{ type: "test.condition", evaluate: () => condition }],
+      actions: [
+        {
+          type: "test.record",
+          execute: () => {
+            attempts += 1;
+            if (attempts === 1) throw new Error("retry");
+          }
+        }
+      ]
+    }
+  });
+  const event = { type: "again", timestamp: 0, payload: {} };
+  runtime.handleEvent(event);
+  expect(attempts).toBe(0);
+  condition = true;
+  runtime.handleEvent(event);
+  runtime.handleEvent(event);
+  runtime.handleEvent(event);
+  expect(attempts).toBe(2);
+});

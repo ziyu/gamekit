@@ -240,6 +240,31 @@ describe("GAS runtime", () => {
     expect(runtime.getActor("actor.source").attributes.current.energy).toBe(35);
   });
 
+  it("validates effect periods and targets before charging an ability", () => {
+    const world = createMemoryWorld();
+    const runtime = createTestGasRuntime(world);
+    runtime.createActor({ actorId: "actor.source", definitionId: "actor.scout" });
+    expect(
+      runtime.activateAbility({ actorId: "actor.source", abilityId: "ability.strike" })
+    ).toMatchObject({ status: "rejected", reason: "ability target is required" });
+    expect(runtime.getActor("actor.source").attributes.current.energy).toBe(40);
+    expect(runtime.getActor("actor.source").abilities.cooldowns["ability.strike"]).toBeUndefined();
+  });
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects invalid period %s during data registration",
+    (periodMs) => {
+      const registry = createDataRegistry();
+      for (const type of createGasDataTypes()) registry.registerType(type);
+      expect(() =>
+        registry.registerPack({
+          id: "invalid",
+          entries: [{ type: "gas.effect", id: "bad", data: { id: "bad", periodMs } }]
+        })
+      ).toThrow();
+    }
+  );
+
   it("refreshes lifecycle effects by default and enforces explicit stack limits", () => {
     const world = createMemoryWorld();
     const runtime = createTestGasRuntime(world);
@@ -708,3 +733,57 @@ function requireEntity(
 
   return components;
 }
+
+describe("GAS periodic boundaries", () => {
+  it.each([[1000], [100, 200, 250, 1000]])(
+    "never applies periodic ticks at or beyond expiration: %j",
+    (...times) => {
+      const registry = createDataRegistry();
+      for (const type of createGasDataTypes()) registry.registerType(type);
+      registry.registerPack(testPack);
+      registry.registerPack({
+        id: "boundary",
+        entries: [
+          {
+            type: "gas.effect",
+            id: "poison",
+            data: {
+              id: "poison",
+              periodMs: 100,
+              durationMs: 250,
+              periodicModifiers: [{ attribute: "health", operation: "add", value: -1 }]
+            }
+          }
+        ]
+      });
+      const gas = createGasRuntime({
+        world: createMemoryWorld(),
+        dataRegistry: registry,
+        eventBus: createEventBus()
+      });
+      gas.createActor({ actorId: "a", definitionId: "actor.scout" });
+      gas.applyEffect({ effectId: "poison", sourceActorId: "a", targetActorId: "a" });
+      for (const elapsed of times) gas.update(100, elapsed);
+      expect(gas.getActor("a").attributes.current.health).toBe(98);
+      expect(gas.getActor("a").effects.active).toEqual([]);
+    }
+  );
+
+  it("defensively rejects an invalid effect before runtime mutation", () => {
+    const registry = createDataRegistry();
+    for (const type of createGasDataTypes()) registry.registerType(type);
+    registry.registerPack(testPack);
+    const definition = registry.getValue<{ periodMs?: number }>("gas.effect", "effect.regen");
+    definition.periodMs = 0;
+    const gas = createGasRuntime({
+      world: createMemoryWorld(),
+      dataRegistry: registry,
+      eventBus: createEventBus()
+    });
+    gas.createActor({ actorId: "a", definitionId: "actor.scout" });
+    expect(() =>
+      gas.applyEffect({ effectId: "effect.regen", sourceActorId: "a", targetActorId: "a" })
+    ).toThrow(/positive and finite/);
+    expect(gas.getActor("a").effects.active).toEqual([]);
+  });
+});

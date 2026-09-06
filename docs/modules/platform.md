@@ -99,6 +99,8 @@ export type PlatformFileSystem = {
   writeText(path: string, content: string, options?: FsOptions): Promise<void>;
   readBinary(path: string, options?: FsOptions): Promise<Uint8Array>;
   writeBinary(path: string, data: Uint8Array, options?: FsOptions): Promise<void>;
+  replaceFile?(source: string, target: string, options?: FsOptions): Promise<void>;
+  remove?(path: string, options?: FsOptions): Promise<void>;
   exists(path: string, options?: FsOptions): Promise<boolean>;
   createDir(path: string, options?: FsOptions): Promise<void>;
   listDir(path: string, options?: FsOptions): Promise<PlatformDirEntry[]>;
@@ -178,6 +180,8 @@ Tauri 桌面端需要额外处理：
 ## 最佳实践
 
 ### 模块集成
+
+- 文件存档集成须检查 `fs.replaceFile` 与 `fs.remove`。`replaceFile(source, target, options)` 只用于同目录原子替换，失败保留目标文件，成功移走源文件；adapter 无此保证时应不暴露方法。Web memory 与 Tauri rename 映射均遵守该协议，实际 Tauri 部署需为目标目录授权 rename/remove。原子可见性不代表断电后的持久性，见 ADR 0009。
 
 - Platform service 可以进入 App Host lifecycle，但 GameRuntime 不直接依赖 Platform；需要平台能力的 GameModule 通过 app/profile 注入稳定 bridge。
 - Tauri/Web/Headless adapter 必须实现相同 core protocol，平台私有类型不能泄漏到 Save、Asset、Data、GameRuntime 或 gameplay 包。

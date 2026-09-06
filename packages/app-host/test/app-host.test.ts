@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createAssetManager } from "@gamekit/asset";
 import {
   createAppHost,
   createConfiguredAppHost,
@@ -137,6 +138,28 @@ describe("app host service registry", () => {
     expect(host.snapshot().diagnostics.map((event) => event.type)).toContain(
       "app_host.service_failed"
     );
+  });
+
+  it("awaits asynchronous driver lifecycle hooks and makes boot idempotent", async () => {
+    const calls: string[] = [];
+    const driver = createFakeDriver("async", calls);
+    const originalStart = driver.start;
+    driver.start = async () => {
+      await Promise.resolve();
+      calls.push("async.start.done");
+      await originalStart?.();
+    };
+    const app = defineGameApp({ id: "async-driver", services: [{ id: "drivers" }] });
+    const profile = createStandardAppProfile({
+      id: "standard",
+      services: { drivers: { drivers: [driver], boot: () => ({ width: 320, height: 180 }) } }
+    });
+    const host = createConfiguredAppHost({ app, profile, context: {} }).host;
+    await host.boot();
+    await host.boot();
+    await host.start();
+    expect(calls).toContain("async.start.done");
+    expect(calls.filter((call) => call === "async.boot:320x180")).toHaveLength(1);
   });
 });
 
@@ -1574,6 +1597,163 @@ function createMemoryWorld(): GameWorld {
     }
   };
 }
+
+describe("host lifecycle failure boundaries", () => {
+  it("keeps boot idempotent across concurrent requests and restart", async () => {
+    const calls: string[] = [];
+    const host = createAppHost({ id: "host", services: [createLifecycleBinding("a", calls)] });
+    await Promise.all([host.boot(), host.boot()]);
+    await host.start();
+    await host.stop();
+    await host.boot();
+    await host.start();
+    expect(calls.filter((call) => call === "a.boot")).toHaveLength(1);
+  });
+
+  it("queues disposal behind an in-flight boot and keeps disposed terminal", async () => {
+    const gate = deferred();
+    const entered = deferred();
+    const calls: string[] = [];
+    const binding = createLifecycleBinding("a", calls);
+    binding.lifecycle.boot = async () => {
+      entered.resolve();
+      await gate.promise;
+      calls.push("boot.done");
+    };
+    const host = createAppHost({ id: "host", services: [binding] });
+    const boot = host.boot();
+    await entered.promise;
+    const disposal = host.dispose();
+    gate.resolve();
+    await Promise.all([boot, disposal]);
+    expect(calls).toEqual(["boot.done", "a.dispose"]);
+    expect(host.snapshot().phase).toBe("disposed");
+    await expect(host.start()).rejects.toMatchObject({ code: "app_host.disposed" });
+    await expect(host.boot()).rejects.toMatchObject({ code: "app_host.disposed" });
+  });
+
+  it("fails fast on boot but attempts all services during disposal", async () => {
+    const calls: string[] = [];
+    const a = createLifecycleBinding("a", calls);
+    const b = createLifecycleBinding("b", calls, ["a"]);
+    const c = createLifecycleBinding("c", calls, ["b"]);
+    b.lifecycle.boot = () => {
+      throw new Error("boot failure");
+    };
+    b.lifecycle.dispose = () => {
+      calls.push("b.dispose");
+      throw new Error("dispose failure");
+    };
+    const host = createAppHost({ id: "host", services: [a, b, c] });
+    await expect(host.boot()).rejects.toThrow("boot failure");
+    expect(host.snapshot().phase).toBe("failed");
+    expect(calls).toEqual(["a.boot"]);
+    await expect(host.start()).rejects.toMatchObject({ code: "app_host.failed" });
+    await expect(host.dispose()).rejects.toThrow("dispose failure");
+    expect(calls).toEqual(["a.boot", "c.dispose", "b.dispose", "a.dispose"]);
+    expect(host.snapshot().phase).toBe("disposed");
+  });
+
+  it.each(["start", "stop", "dispose"] as const)(
+    "awaits pending driver %s and surfaces its rejection",
+    async (stage) => {
+      const gate = deferred();
+      const entered = deferred();
+      const calls: string[] = [];
+      const a = createFakeDriver("a", calls);
+      const b = createFakeDriver("b", calls);
+      b[stage] = async () => {
+        entered.resolve();
+        await gate.promise;
+        throw new Error("driver failure");
+      };
+      const app = defineGameApp({ id: "app", services: [{ id: "drivers" }] });
+      const profile = createStandardAppProfile({
+        id: "profile",
+        services: { drivers: { drivers: [a, b] } }
+      });
+      const host = createConfiguredAppHost({ app, profile, context: {} }).host;
+      if (stage === "stop") await host.start();
+      let settled = false;
+      const pending = host[stage]();
+      const checked = expect(pending).rejects.toThrow("driver failure");
+      void pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        }
+      );
+      await entered.promise;
+      // Let all unblocked promise chains drain; only the explicit gate can finish this stage.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(settled).toBe(false);
+      gate.resolve();
+      await checked;
+      expect(calls).toContain(`a.${stage}`);
+      expect(host.snapshot().phase).toBe(stage === "dispose" ? "disposed" : "failed");
+    }
+  );
+
+  it("cancels held input when the standard service stops", async () => {
+    const router = createInputRouter();
+    router.registerAction({
+      id: "move",
+      name: "Move",
+      defaultBindings: [{ device: "keyboard", code: "KeyW" }]
+    });
+    const phases: string[] = [];
+    router.onAction((event) => phases.push(event.phase));
+    const app = defineGameApp({ id: "app", services: [{ id: "input" }] });
+    const profile = createStandardAppProfile({ id: "profile", services: { input: { router } } });
+    const host = createConfiguredAppHost({ app, profile, context: {} }).host;
+    await host.start();
+    router.handle({ id: "down", device: "keyboard", code: "KeyW", phase: "pressed", timestamp: 0 });
+    const stopped = host.stop();
+    host.tick(16);
+    await stopped;
+    await host.start();
+    host.tick(16);
+    expect(phases).toEqual(["pressed", "cancelled"]);
+  });
+});
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+it("fails boot when a declared preload group cannot be loaded", async () => {
+  const manager = createAssetManager({
+    adapter: {
+      id: "failing",
+      supports: () => true,
+      load: async () => {
+        throw new Error("offline");
+      }
+    }
+  });
+  manager.register({
+    id: "texture",
+    type: "image",
+    group: "required",
+    source: { type: "url", url: "/texture.png" }
+  });
+  const configured = createConfiguredAppHost({
+    app: defineGameApp({ id: "app", services: [{ id: "assets" }] }),
+    profile: createStandardAppProfile({
+      id: "profile",
+      services: { assets: { manager, preloadGroups: () => ["required"] } }
+    }),
+    context: {}
+  });
+  await expect(configured.host.boot()).rejects.toThrow(/Asset preload failed/);
+  expect(configured.host.snapshot().phase).toBe("failed");
+});
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

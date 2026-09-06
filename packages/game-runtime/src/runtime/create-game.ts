@@ -29,13 +29,25 @@ export function createGame(config: CreateGameConfig): GameRuntime {
     systems: systemRegistry
   };
 
-  for (const module of config.modules) {
-    installedModules.register(module.id, module);
-    const cleanup = toModuleCleanup(module.install(installContext));
-    if (cleanup) {
-      cleanups.push(cleanup);
+  try {
+    for (const module of config.modules) {
+      installedModules.register(module.id, module);
+      const cleanup = toModuleCleanup(module.install(installContext));
+      if (cleanup) cleanups.push(cleanup);
+      config.eventBus.emit("runtime.module_installed", { moduleId: module.id }, "game-runtime");
     }
-    config.eventBus.emit("runtime.module_installed", { moduleId: module.id }, "game-runtime");
+  } catch (error) {
+    const errors: unknown[] = [error];
+    for (const cleanup of [...cleanups].reverse()) {
+      try {
+        cleanup();
+      } catch (cleanupError) {
+        errors.push(cleanupError);
+      }
+    }
+    if (errors.length > 1)
+      throw new AggregateError(errors, "Module installation and cleanup failed");
+    throw error;
   }
 
   return {
@@ -130,16 +142,23 @@ export function createGame(config: CreateGameConfig): GameRuntime {
       }
 
       disposed = true;
+      const errors: unknown[] = [];
+      const attempt = (operation: () => void): void => {
+        try {
+          operation();
+        } catch (error) {
+          errors.push(error);
+        }
+      };
       if (clock.snapshot().running) {
         clock.stop();
-        config.eventBus.emit("runtime.stopped", {}, "game-runtime");
+        attempt(() => config.eventBus.emit("runtime.stopped", {}, "game-runtime"));
       }
-
-      for (const cleanup of [...cleanups].reverse()) {
-        cleanup();
-      }
+      for (const cleanup of [...cleanups].reverse()) attempt(cleanup);
       cleanups.length = 0;
-      config.eventBus.emit("runtime.disposed", {}, "game-runtime");
+      attempt(() => config.eventBus.emit("runtime.disposed", {}, "game-runtime"));
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, "Game runtime cleanup failed");
     },
     isRunning() {
       return !disposed && clock.snapshot().running;

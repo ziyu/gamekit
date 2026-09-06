@@ -50,6 +50,16 @@ export function createMemoryFileSystem(): PlatformFileSystem {
       ensureParentDirectory(key);
       entries.set(key, { kind: "file", data: new Uint8Array(data) });
     },
+    async replaceFile(source, target, options) {
+      const sourceKey = keyFor(source, options);
+      const entry = entries.get(sourceKey);
+      if (!entry || entry.kind !== "file") throw new Error(`Missing file: ${source}`);
+      entries.set(keyFor(target, options), entry);
+      if (sourceKey !== keyFor(target, options)) entries.delete(sourceKey);
+    },
+    async remove(targetPath, options) {
+      entries.delete(keyFor(targetPath, options));
+    },
     async exists(targetPath, options) {
       return entries.has(keyFor(targetPath, options));
     },

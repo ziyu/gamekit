@@ -60,7 +60,7 @@ function fnv1a(input: string): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-function assertSaveEnvelope(value: unknown): asserts value is SaveEnvelope {
+export function assertSaveEnvelope(value: unknown): asserts value is SaveEnvelope {
   if (!isRecord(value)) {
     throw createCorruptedSaveError("envelope is not an object");
   }
@@ -73,8 +73,34 @@ function assertSaveEnvelope(value: unknown): asserts value is SaveEnvelope {
   if (!isRecord(value.slot) || typeof value.slot.id !== "string") {
     throw createCorruptedSaveError("missing slot metadata");
   }
-  if (!isRecord(value.payload)) {
-    throw createCorruptedSaveError("missing payload");
+  if (
+    typeof value.appId !== "string" ||
+    typeof value.gameId !== "string" ||
+    typeof value.gameVersion !== "string"
+  ) {
+    throw createCorruptedSaveError("missing app or game identity");
+  }
+  if (!isRecord(value.payload) || !isRecord(value.payload.sections)) {
+    throw createCorruptedSaveError("missing payload sections");
+  }
+  for (const [id, section] of Object.entries(value.payload.sections)) {
+    if (!isRecord(section) || section.id !== id || typeof section.version !== "string") {
+      throw createCorruptedSaveError(`invalid section: ${id}`);
+    }
+  }
+  const runtime = value.payload.runtime;
+  if (
+    !isRecord(runtime) ||
+    typeof runtime.seed !== "string" ||
+    !isRecord(runtime.clock) ||
+    typeof runtime.clock.ticks !== "number" ||
+    !Number.isSafeInteger(runtime.clock.ticks) ||
+    runtime.clock.ticks < 0 ||
+    typeof runtime.clock.elapsed !== "number" ||
+    !Number.isFinite(runtime.clock.elapsed) ||
+    runtime.clock.elapsed < 0
+  ) {
+    throw createCorruptedSaveError("invalid runtime clock");
   }
 }
 

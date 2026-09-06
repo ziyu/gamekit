@@ -255,10 +255,13 @@ export function createGasEffectDataType(): DataTypeDefinition<GasEffectDefinitio
           key: document
         });
       }
-      if (document.data.periodMs !== undefined && document.data.periodMs <= 0) {
+      if (
+        document.data.periodMs !== undefined &&
+        (!Number.isFinite(document.data.periodMs) || document.data.periodMs <= 0)
+      ) {
         diagnostics.push({
           code: "gas.effect_invalid_period",
-          message: "Gas effect period must be positive",
+          message: "Gas effect period must be positive and finite",
           severity: "error",
           key: document
         });

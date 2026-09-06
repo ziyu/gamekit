@@ -1,6 +1,7 @@
 import type { DataRegistry } from "@gamekit/data";
-import { GAS_ABILITY_TYPE } from "./data-types";
+import { GAS_ABILITY_TYPE, GAS_EFFECT_TYPE } from "./data-types";
 import { createGasError } from "./errors";
+import { assertGasEffectPeriod } from "./effect-validation";
 import { childGasContext } from "./operation-context";
 import type {
   GasAbilityActivation,
@@ -19,6 +20,7 @@ import type {
   GasAbilityExecutionsComponentState,
   GasActorRuntimeState,
   GasEffectApplicationResult,
+  GasEffectDefinition,
   GasOperationContext,
   GasTraceEntry
 } from "./types";
@@ -165,6 +167,7 @@ export function createGasAbilityExecutionRuntime(
     if (rejection !== undefined) {
       return reject(input, rejection.reason, rejection.message);
     }
+    validateEffects(ability);
 
     let current = currentExecutions(input.actorId);
     const maxConcurrent = ability.execution?.maxConcurrent ?? 1;
@@ -686,6 +689,11 @@ export function createGasAbilityExecutionRuntime(
         return cancelInternal(execution, "target-missing-at-commit", true);
       }
     }
+    try {
+      validateEffects(ability);
+    } catch {
+      return cancelInternal(execution, "effects-invalid-at-commit", true);
+    }
     const actor = options.requireActor(execution.actorId);
     if (!execution.costCommitted) {
       if (!options.canPayCosts(actor, ability)) {
@@ -701,6 +709,14 @@ export function createGasAbilityExecutionRuntime(
     execution.committedAt = transitionAt;
     options.persistActor(actor);
     return enterPhase(execution, ability, "committed", transitionAt);
+  }
+
+  function validateEffects(ability: GasAbilityDefinition): void {
+    for (const effect of ability.effects ?? []) {
+      assertGasEffectPeriod(
+        options.dataRegistry.getValue<GasEffectDefinition>(GAS_EFFECT_TYPE, effect.effectId)
+      );
+    }
   }
 
   function enterActive(

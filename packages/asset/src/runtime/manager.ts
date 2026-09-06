@@ -126,11 +126,10 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
         throw createUnsupportedAssetError(asset, options.adapter.id);
       }
 
-      states.set(id, { id, status: "loading" });
-      emit("asset.loading", id, { assetId: id, assetType: asset.type });
-      let task: Promise<AssetLoadState> | undefined;
-      task = (async (): Promise<AssetLoadState> => {
+      const task = Promise.resolve().then(async (): Promise<AssetLoadState> => {
         try {
+          states.set(id, { id, status: "loading" });
+          emit("asset.loading", id, { assetId: id, assetType: asset.type });
           await options.adapter.load(adapterAsset);
           const loaded: AssetLoadState = {
             id,
@@ -150,11 +149,11 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
           emit("asset.failed", id, { assetId: id, error: failed.error });
           return failed;
         } finally {
-          if (task !== undefined && inFlight.get(id) === task) {
+          if (inFlight.get(id) === task) {
             inFlight.delete(id);
           }
         }
-      })();
+      });
       inFlight.set(id, task);
       return { ...(await task) };
     },

@@ -38,6 +38,7 @@ async function boot(rootElement: HTMLElement): Promise<void> {
     inputBlocked: false
   };
 
+  let unsubscribeFocus: (() => void) | undefined;
   let unsubscribeInput: (() => void) | undefined;
   let saveStatus: string | undefined;
   const devtoolsTraceBridge = createAbyssDevToolsTraceBridge(() => context.devtools);
@@ -104,6 +105,10 @@ async function boot(rootElement: HTMLElement): Promise<void> {
   unsubscribeInput = context.inputRouter.onAction((event) =>
     routeInputAction(context, event, uiRuntime)
   );
+  unsubscribeFocus = uiRuntime.subscribe(() => {
+    const scope = uiRuntime.focus().scope;
+    if (scope !== "game" && scope !== "none") context.inputRouter?.cancelAll();
+  });
   await host.start();
   render();
 
@@ -120,6 +125,7 @@ async function boot(rootElement: HTMLElement): Promise<void> {
   window.addEventListener(
     "beforeunload",
     () => {
+      unsubscribeFocus?.();
       unsubscribeInput?.();
       host.dispose();
     },
@@ -212,7 +218,7 @@ function routeInputAction(
   }
 
   applyAbyssInputAction(context.abyss.input, toAbyssGameInput(context, event));
-  if (event.input.scope === "game") {
+  if (event.input.scope === "game" && event.phase !== "cancelled" && event.phase !== "released") {
     uiRuntime.setFocus({ scope: "game", reason: event.actionId });
   }
   context.abyss.trace({

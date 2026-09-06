@@ -169,6 +169,23 @@ describe("createAssetManager", () => {
     });
   });
 
+  it("coalesces concurrent loads for one asset", async () => {
+    let calls = 0;
+    const manager = createAssetManager({
+      adapter: {
+        id: "test",
+        supports: () => true,
+        async load() {
+          calls += 1;
+          await Promise.resolve();
+        }
+      }
+    });
+    manager.register(asset("asset.hero"));
+    await Promise.all([manager.load("asset.hero"), manager.load("asset.hero")]);
+    expect(calls).toBe(1);
+  });
+
   it("retries failed group members without reloading successful assets", async () => {
     const attempts = new Map<string, number>();
     const observedAttempts: number[] = [];
@@ -344,3 +361,29 @@ function asset(id: string, patch: Partial<AssetDefinition> = {}): AssetDefinitio
     ...patch
   };
 }
+
+it("retries a synchronous loader failure and coalesces a diagnostic reentry", async () => {
+  let calls = 0;
+  let reentered: Promise<unknown> | undefined;
+  const manager = createAssetManager({
+    adapter: {
+      id: "test",
+      supports: () => true,
+      load() {
+        calls += 1;
+        if (calls === 1) throw new Error("sync failure");
+        return Promise.resolve();
+      }
+    },
+    onDiagnostic(event) {
+      if (event.type === "asset.loading") reentered = manager.load("asset.hero");
+    }
+  });
+  manager.register(asset("asset.hero"));
+  expect((await manager.load("asset.hero")).status).toBe("failed");
+  await reentered;
+  expect(calls).toBe(1);
+  expect((await manager.load("asset.hero")).status).toBe("loaded");
+  await reentered;
+  expect(calls).toBe(2);
+});

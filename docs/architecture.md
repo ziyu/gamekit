@@ -391,7 +391,7 @@ Platform 隔离 Web/Tauri/未来平台差异。文件、窗口、权限、路径
 
 `@gamekit/platform-web` 的 memory profile helper 只为 headless、SSR 和 deterministic composition 提供显式隔离的 memory fs/storage；它不读取 browser storage，也不替代未来生产 Node/server platform adapter。调用方可以覆盖 runtime id，并通过同一个 PlatformRuntime 协议注入 AppProfile。
 
-详细设计见 `docs/modules/platform.md`。
+详细设计见 `docs/modules/platform.md`。存档文件替换、加载预检和生命周期失败边界遵循 `docs/adr/0056-runtime-failure-and-save-commit-contracts.md`。
 
 ### UI
 

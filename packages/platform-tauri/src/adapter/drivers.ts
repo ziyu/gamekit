@@ -42,6 +42,7 @@ function createFsDriver(fs: any): TauriFsDriver {
     exists: fs.exists,
     mkdir: fs.mkdir,
     remove: fs.remove,
+    rename: fs.rename,
     readDir: fs.readDir
   };
 }

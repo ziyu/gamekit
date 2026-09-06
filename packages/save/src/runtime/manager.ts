@@ -1,4 +1,4 @@
-import { createJsonSaveCodec } from "./codec";
+import { assertSaveEnvelope, createJsonSaveCodec } from "./codec";
 import { createSaveEntityMap } from "./entity-map";
 import {
   createContributorError,
@@ -59,6 +59,18 @@ export function createSaveManager(options: CreateSaveManagerOptions): SaveManage
     lastOperation = { type, slotId, status, timestamp: clock() };
   };
 
+  function validateIdentity(envelope: SaveEnvelope): void {
+    assertSaveEnvelope(envelope);
+    if (envelope.appId !== options.appId || envelope.gameId !== options.gameId) {
+      throw createSaveError("save.incompatible_app", "Save belongs to a different app or game", {
+        expectedAppId: options.appId,
+        expectedGameId: options.gameId,
+        appId: envelope.appId,
+        gameId: envelope.gameId
+      });
+    }
+  }
+
   return {
     registerContributor(contributor) {
       if (contributors.has(contributor.id)) {
@@ -76,6 +88,7 @@ export function createSaveManager(options: CreateSaveManagerOptions): SaveManage
       return options.store.list();
     },
     async save(slotId, saveOptions) {
+      let phase: SavePhase = "capture";
       emit({ type: "save.started", severity: "info", phase: "capture", slotId });
       try {
         const now = clock();
@@ -122,8 +135,10 @@ export function createSaveManager(options: CreateSaveManagerOptions): SaveManage
           payload
         };
 
+        phase = "encode";
         emit({ type: "save.encoding", severity: "info", phase: "encode", slotId });
         const data = await codec.encode(envelope);
+        phase = "write";
         emit({ type: "save.writing", severity: "info", phase: "write", slotId });
         await options.store.write(slotId, data, createSlotSummary(envelope));
         emit({
@@ -137,11 +152,12 @@ export function createSaveManager(options: CreateSaveManagerOptions): SaveManage
         return { slotId, envelope: await codec.decode(data), bytes: data.byteLength };
       } catch (error) {
         markOperation("save", slotId, "failed");
-        emitError("save.failed", "capture", slotId, error, emit);
+        emitError("save.failed", phase, slotId, error, emit);
         throw error;
       }
     },
     async load(slotId, loadOptions: LoadOptions = {}) {
+      let phase: SavePhase = "read";
       emit({ type: "load.started", severity: "info", phase: "read", slotId });
       try {
         if (!(await options.store.exists(slotId))) {
@@ -149,15 +165,22 @@ export function createSaveManager(options: CreateSaveManagerOptions): SaveManage
         }
 
         const data = await options.store.read(slotId);
+        phase = "decode";
         let envelope = await codec.decode(data);
+        phase = "validate";
+        validateIdentity(envelope);
         let migrated = false;
         const shouldMigrate = loadOptions.migrate !== false;
         if (envelope.formatVersion !== options.formatVersion) {
           if (!shouldMigrate) {
             throw createUnsupportedVersionError(envelope.formatVersion);
           }
+          phase = "migrate";
           emit({ type: "save.migrating", severity: "info", phase: "migrate", slotId });
           envelope = await migrations.migrate(envelope, options.formatVersion);
+          validateIdentity(envelope);
+          if (envelope.formatVersion !== options.formatVersion)
+            throw createUnsupportedVersionError(envelope.formatVersion);
           migrated = true;
           emit({
             type: "save.migration_applied",
@@ -175,7 +198,11 @@ export function createSaveManager(options: CreateSaveManagerOptions): SaveManage
             options.contributorPolicy,
             loadOptions.contributors
           );
-          await restoreContributors(envelope, selectedContributors, options.services?.(), clock());
+          const services = options.services?.();
+          phase = "validate";
+          validateContributors(envelope, selectedContributors, services);
+          phase = "restore";
+          await restoreContributors(envelope, selectedContributors, services, clock());
         }
 
         emit({ type: "load.completed", severity: "info", phase: "restore", slotId });
@@ -183,7 +210,7 @@ export function createSaveManager(options: CreateSaveManagerOptions): SaveManage
         return { slotId, envelope, restored, migrated };
       } catch (error) {
         markOperation("load", slotId, "failed");
-        emitError("load.failed", "restore", slotId, error, emit);
+        emitError("load.failed", phase, slotId, error, emit);
         throw error;
       }
     },
@@ -250,14 +277,6 @@ async function restoreContributors(
       }
       continue;
     }
-    if (contributor.validate) {
-      const validationContext = services === undefined ? {} : { services };
-      const result = contributor.validate(section, validationContext);
-      const error = result.issues.find((issue) => issue.severity === "error");
-      if (error) {
-        throw createSaveError(error.code, error.message, { contributorId: contributor.id });
-      }
-    }
     if (contributor.restore) {
       try {
         const restoreContext =
@@ -266,6 +285,37 @@ async function restoreContributors(
       } catch (error) {
         throw createContributorError("restore", contributor.id, error);
       }
+    }
+  }
+}
+
+function validateContributors(
+  envelope: SaveEnvelope,
+  contributors: SaveContributor[],
+  services: Record<string, unknown> | undefined
+): void {
+  for (const contributor of contributors) {
+    const section = envelope.payload.sections[contributor.id];
+    if (!section) {
+      if (contributor.required === true) throw createMissingContributorError(contributor.id);
+      continue;
+    }
+    if (section.id !== contributor.id || section.version !== contributor.version) {
+      throw createSaveError(
+        "save.section_version_mismatch",
+        `Incompatible save section: ${contributor.id}`,
+        {
+          contributorId: contributor.id,
+          expectedVersion: contributor.version,
+          actualVersion: section.version
+        }
+      );
+    }
+    if (contributor.validate) {
+      const result = contributor.validate(section, services === undefined ? {} : { services });
+      const error = result.issues.find((issue) => issue.severity === "error");
+      if (error)
+        throw createSaveError(error.code, error.message, { contributorId: contributor.id });
     }
   }
 }

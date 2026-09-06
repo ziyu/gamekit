@@ -173,3 +173,54 @@ describe("createGame", () => {
     expect(calls).toEqual(["cleanup"]);
   });
 });
+
+describe("runtime failure cleanup", () => {
+  it("releases previous module subscriptions when installation fails", () => {
+    const eventBus = createEventBus();
+    const calls: string[] = [];
+    expect(() =>
+      createGame({
+        world: createMemoryWorld(),
+        eventBus,
+        seed: "seed",
+        modules: [
+          { id: "a", install: (ctx) => ctx.eventBus.on("test", () => calls.push("leaked")) },
+          {
+            id: "b",
+            install: () => {
+              throw new Error("install failed");
+            }
+          }
+        ]
+      })
+    ).toThrow("install failed");
+    eventBus.emit("test", {});
+    expect(calls).toEqual([]);
+  });
+
+  it("attempts all cleanups even when stopped listeners and module disposal throw", () => {
+    const calls: string[] = [];
+    const eventBus = createEventBus();
+    eventBus.on("runtime.stopped", () => {
+      throw new Error("listener failed");
+    });
+    const runtime = createGame({
+      world: createMemoryWorld(),
+      eventBus,
+      seed: "seed",
+      modules: ["a", "b", "c"].map((id) => ({
+        id,
+        install: () => () => {
+          calls.push(id);
+          if (id === "b") throw new Error("cleanup failed");
+        }
+      }))
+    });
+    runtime.start();
+    expect(() => runtime.dispose()).toThrow(AggregateError);
+    expect(calls).toEqual(["c", "b", "a"]);
+    expect(runtime.isRunning()).toBe(false);
+    runtime.dispose();
+    expect(calls).toHaveLength(3);
+  });
+});

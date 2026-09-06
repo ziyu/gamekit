@@ -216,6 +216,8 @@ Renderer adapter 可以持有底层资源句柄，但这些句柄不进入 gamep
 
 ### 模块集成
 
+- App Host 声明的 preloadGroups 是启动必需组，任一资源加载失败使 boot 失败；可选资源应在启动后按需加载并由 app 处理 failed 状态。
+
 - App Host/profile 负责按 Data → AssetManager → adapter preload 的顺序集成资源系统；AssetManager 不自己读取 DataPack 或猜测 gameplay document。
 - Phaser、Three 等资源加载必须通过 Driver 暴露的 asset loader adapter，共享同一个外部 runtime cache；不要为 Asset 单独创建另一套 Phaser/Three runtime。
 - 美术源文件与运行时资源必须显式分层：SVG、PSD、Blender 等 authoring source 留在源码目录，由可复现的内容构建步骤生成 PNG/WebP、atlas、压缩纹理或模型产物；`AssetDefinition.source` 只指向当前 profile 实际加载的运行时产物。源文件不应因为位于 Web `public` 目录而被意外发布。
@@ -226,6 +228,8 @@ Renderer adapter 可以持有底层资源句柄，但这些句柄不进入 gamep
 - 空 group 返回失败结果并产生 `asset.group_missing` diagnostic，不把“没有任何加载目标”当成成功，也不重复空重试。
 
 ### 模块使用
+
+- 同一 asset ID 的并发 load 共享进行中的加载；loaded 状态复用，失败状态允许下次调用重试。同步抛错与异步拒绝都进入 failed 状态，并清理进行中的请求。
 
 - AssetDefinition 是资源声明，AssetManager 是运行时加载状态管理；不要把 gameplay data、DataPack 解析或 renderer native object 放进 AssetManager。
 - 资源引用应使用 AssetRef 或业务数据里的明确资源引用字段，不要求资源定义与使用者处于同一 DataPack。

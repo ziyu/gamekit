@@ -11,6 +11,8 @@ import {
   createGasModule,
   createGasTcaDefinitions,
   GasAbilityExecutions,
+  type GasAbilityDefinition,
+  type GasEffectDefinition,
   type GasAbilityExecutionState,
   type GasRuntime
 } from "../src";
@@ -56,6 +58,76 @@ describe("GAS ability execution data", () => {
 });
 
 describe("GAS ability execution runtime", () => {
+  it.each(["missing-reference", "invalid-period"])(
+    "preflights every effect before accepting a request: %s",
+    (failure) => {
+      const dataRegistry = createRegistry(false);
+      dataRegistry.registerPack(structuredClone(EXECUTION_PACK));
+      const ability = dataRegistry.getValue<GasAbilityDefinition>("gas.ability", "ability.timed");
+      ability.execution = {
+        preparingMs: 100,
+        costCommit: "requested",
+        cooldownCommit: "requested"
+      };
+      ability.effects = [
+        { effectId: "effect.progress", target: "self" },
+        {
+          effectId: failure === "missing-reference" ? "effect.missing" : "effect.damage",
+          target: "target"
+        }
+      ];
+      if (failure === "invalid-period") {
+        dataRegistry.getValue<GasEffectDefinition>("gas.effect", "effect.damage").periodMs = 0;
+      }
+      const eventBus = createEventBus();
+      const activated: unknown[] = [];
+      eventBus.on("gas.ability_activated", (event) => activated.push(event));
+      const runtime = createGasRuntime({ world: createMemoryWorld(), dataRegistry, eventBus });
+      runtime.createActor({ actorId: "source", definitionId: "actor.executor" });
+      runtime.createActor({ actorId: "target", definitionId: "actor.executor" });
+      const before = runtime.captureCheckpoint();
+
+      expect(() =>
+        runtime.requestAbilityExecution({
+          actorId: "source",
+          targetActorId: "target",
+          abilityId: "ability.timed"
+        })
+      ).toThrow();
+
+      expect(runtime.captureCheckpoint()).toEqual(before);
+      expect(activated).toEqual([]);
+    }
+  );
+
+  it("cancels a prepared execution if an effect becomes invalid before commit", () => {
+    const dataRegistry = createRegistry(false);
+    dataRegistry.registerPack(structuredClone(EXECUTION_PACK));
+    const runtime = createGasRuntime({
+      world: createMemoryWorld(),
+      dataRegistry,
+      eventBus: createEventBus()
+    });
+    runtime.createActor({ actorId: "source", definitionId: "actor.executor" });
+    runtime.createActor({ actorId: "target", definitionId: "actor.executor" });
+    const requested = runtime.requestAbilityExecution({
+      actorId: "source",
+      targetActorId: "target",
+      abilityId: "ability.timed"
+    });
+    expect(requested.status).toBe("accepted");
+    dataRegistry.getValue<GasEffectDefinition>("gas.effect", "effect.damage").periodMs = 0;
+
+    runtime.update(100, 100);
+
+    expect(runtime.getActor("source").attributes.current.energy).toBe(100);
+    expect(runtime.getActor("source").abilities.cooldowns).toEqual({});
+    expect(runtime.getActor("target").attributes.current.health).toBe(100);
+    expect(runtime.listAbilityExecutions({ includeRecent: true })).toMatchObject([
+      { phase: "cancelled", cancellationReason: "effects-invalid-at-commit", costCommitted: false }
+    ]);
+  });
+
   it("advances ordered phases and commits cost, cooldown and effects at the boundary", () => {
     const world = createMemoryWorld();
     const eventBus = createEventBus();

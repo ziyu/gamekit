@@ -92,6 +92,14 @@ function createFakeDrivers(): TauriPlatformDrivers {
       async mkdir(path, options) {
         directories.add(keyFor(path, options));
       },
+      async rename(source, target, options) {
+        const dirs = options as { oldPathBaseDir: unknown; newPathBaseDir: unknown };
+        const sourceKey = keyFor(source, { baseDir: dirs.oldPathBaseDir });
+        const data = files.get(sourceKey);
+        if (!data) throw new Error("Missing source");
+        files.set(keyFor(target, { baseDir: dirs.newPathBaseDir }), data);
+        files.delete(sourceKey);
+      },
       async remove(path, options) {
         files.delete(keyFor(path, options));
       },
@@ -159,3 +167,24 @@ function createFakeDrivers(): TauriPlatformDrivers {
 function driversLog(drivers: TauriPlatformDrivers): string[] {
   return (drivers as TauriPlatformDrivers & { _log: string[] })._log;
 }
+
+it("maps both rename base directories without changing absolute-path semantics", async () => {
+  const drivers = createFakeDrivers();
+  const calls: unknown[] = [];
+  drivers.fs.rename = async (source, target, options) => {
+    calls.push({ source, target, options });
+  };
+  const {
+    services: { fs }
+  } = createTauriPlatformFromDrivers(drivers);
+  await fs.replaceFile!("slot.tmp", "slot", { baseDir: "appData" });
+  await fs.replaceFile!("/tmp/slot.tmp", "/tmp/slot");
+  expect(calls).toEqual([
+    {
+      source: "slot.tmp",
+      target: "slot",
+      options: { oldPathBaseDir: "appData", newPathBaseDir: "appData" }
+    },
+    { source: "/tmp/slot.tmp", target: "/tmp/slot", options: {} }
+  ]);
+});

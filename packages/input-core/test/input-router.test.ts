@@ -170,6 +170,36 @@ describe("createInputRouter", () => {
     ]);
   });
 
+  it("stops held actions when their context or action is removed", () => {
+    const router = createInputRouter({ defaultContexts: [{ id: "game", priority: 10 }] });
+    router.registerAction({
+      id: "move",
+      name: "Move",
+      defaultBindings: [{ device: "keyboard", code: "KeyW" }]
+    });
+    router.handle(input({ id: "down", code: "KeyW" }));
+    router.disableContext("game");
+    expect(router.tick({ timestamp: 20 })).toEqual([]);
+    router.enableContext("game");
+    router.handle(input({ id: "down-2", code: "KeyW" }));
+    router.unregisterAction("move");
+    expect(router.tick({ timestamp: 30 })).toEqual([]);
+  });
+
+  it("keeps held event ids bounded over long presses", () => {
+    const router = createInputRouter();
+    router.registerAction({
+      id: "move",
+      name: "Move",
+      defaultBindings: [{ device: "keyboard", code: "KeyW" }]
+    });
+    router.handle(input({ id: "down", code: "KeyW" }));
+    let id = "";
+    for (let index = 0; index < 3600; index += 1)
+      id = router.tick({ timestamp: index })[0]?.input.id ?? id;
+    expect(id.length).toBeLessThan(64);
+  });
+
   it("refreshes active analog values from moved input before the held tick", () => {
     const router = createInputRouter();
     router.registerAction({
@@ -274,3 +304,62 @@ function input(patch: Partial<NormalizedInputEvent> = {}): NormalizedInputEvent 
     ...patch
   };
 }
+
+describe("input cancellation", () => {
+  it.each(["disable", "removeContext", "unregister", "rebind", "cancelAll", "scopeRelease"])(
+    "clears consumer state on %s",
+    (reason) => {
+      const router = createInputRouter({
+        defaultContexts: [{ id: "game", priority: 10, scopes: ["game"] }]
+      });
+      router.registerAction({
+        id: "move",
+        name: "Move",
+        scopes: ["game"],
+        defaultBindings: [{ device: "keyboard", code: "KeyW" }]
+      });
+      const phases: string[] = [];
+      let held = false;
+      router.onAction((event) => {
+        phases.push(event.phase);
+        held = event.value !== 0;
+      });
+      router.handle(input({ code: "KeyW", scope: "game" }));
+      expect(held).toBe(true);
+      if (reason === "disable") {
+        router.disableContext("game");
+        router.enableContext("game");
+      }
+      if (reason === "removeContext") router.removeContext("game");
+      if (reason === "unregister") router.unregisterAction("move");
+      if (reason === "rebind")
+        router.setActionBindings("move", [{ device: "keyboard", code: "KeyS" }]);
+      if (reason === "cancelAll") router.cancelAll();
+      if (reason === "scopeRelease")
+        router.handle(input({ code: "KeyW", phase: "released", scope: "ui" }));
+      expect(held).toBe(false);
+      expect(phases).toEqual(["pressed", "cancelled"]);
+      expect(router.tick({ timestamp: 20 })).toEqual([]);
+    }
+  );
+});
+
+it("notifies remaining cancellation consumers even when one listener throws", () => {
+  const router = createInputRouter();
+  router.registerAction({
+    id: "move",
+    name: "Move",
+    defaultBindings: [{ device: "keyboard", code: "KeyW" }]
+  });
+  let released = false;
+  router.onAction((event) => {
+    if (event.phase === "cancelled") throw new Error("listener failed");
+  });
+  router.onAction((event) => {
+    if (event.phase === "cancelled") released = true;
+  });
+  router.handle(input({ code: "KeyW" }));
+  expect(() => router.cancelAll()).toThrow("listener failed");
+  expect(released).toBe(true);
+  expect(router.tick({ timestamp: 20 })).toEqual([]);
+});

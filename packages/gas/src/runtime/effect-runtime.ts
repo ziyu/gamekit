@@ -1,5 +1,7 @@
 import type { DataRegistry } from "@gamekit/data";
 import { GAS_EFFECT_TYPE } from "./data-types";
+import { createGasError } from "./errors";
+import { assertGasEffectPeriod } from "./effect-validation";
 import { activeEffectContext, childGasContext } from "./operation-context";
 import type {
   GasActiveEffectState,
@@ -88,6 +90,7 @@ export function createGasEffectRuntime(options: GasEffectRuntimeOptions): GasEff
       GAS_EFFECT_TYPE,
       input.effectId
     );
+    assertGasEffectPeriod(effect);
     const hasLifecycle = effect.durationMs !== undefined || effect.periodMs !== undefined;
     const stacking = normalizeStacking(effect);
     const matching = hasLifecycle ? matchingEffects(state, input, stacking.source) : [];
@@ -220,12 +223,25 @@ export function createGasEffectRuntime(options: GasEffectRuntimeOptions): GasEff
         active.effectId
       );
       const operationContext = activeEffectContext(active);
+      assertGasEffectPeriod(definition);
       let nextTickAt = active.nextTickAt;
-      while (nextTickAt !== undefined && nextTickAt <= now) {
+      while (
+        nextTickAt !== undefined &&
+        nextTickAt <= now &&
+        (active.expiresAt === undefined || nextTickAt < active.expiresAt)
+      ) {
+        const followingTick = nextTickAt + (definition.periodMs ?? Number.POSITIVE_INFINITY);
+        if (followingTick <= nextTickAt) {
+          throw createGasError(
+            "gas.invalid_effect_period",
+            "Effect period cannot advance the clock",
+            { effectId: active.effectId }
+          );
+        }
         for (const modifier of definition.periodicModifiers ?? []) {
           options.modifyAttribute(state, modifier, active.effectId, operationContext);
         }
-        nextTickAt += definition.periodMs ?? Number.POSITIVE_INFINITY;
+        nextTickAt = followingTick;
         changed = true;
       }
 

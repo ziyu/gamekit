@@ -1,3 +1,4 @@
+import { createAppHostError } from "../runtime/errors";
 import type { AppProfile, AppServiceFactory } from "../definition/types";
 import { createAssetManager } from "@gamekit/asset";
 import { createGameAudio } from "@gamekit/audio-core";
@@ -126,20 +127,35 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
                 }
               }
             },
-            start() {
+            async start() {
               for (const driver of registry.list()) {
-                driver.start?.();
+                await driver.start?.();
               }
             },
-            stop() {
+            async stop() {
+              const errors: unknown[] = [];
               for (const driver of [...registry.list()].reverse()) {
-                driver.stop?.();
+                try {
+                  await driver.stop?.();
+                } catch (error) {
+                  errors.push(error);
+                }
               }
+              if (errors.length === 1) throw errors[0];
+              if (errors.length > 1) throw new AggregateError(errors, "Drivers failed during stop");
             },
-            dispose() {
+            async dispose() {
+              const errors: unknown[] = [];
               for (const driver of [...registry.list()].reverse()) {
-                driver.dispose();
+                try {
+                  await driver.dispose();
+                } catch (error) {
+                  errors.push(error);
+                }
               }
+              if (errors.length === 1) throw errors[0];
+              if (errors.length > 1)
+                throw new AggregateError(errors, "Drivers failed during dispose");
             },
             snapshot() {
               return registry.snapshot();
@@ -271,7 +287,14 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
                 options.preloadGroups?.(ctx) ??
                 ctx.resolveConfig<{ preloadGroups?: string[] }>()?.preloadGroups;
               for (const group of preloadGroups ?? []) {
-                await manager.loadGroup(group);
+                const states = await manager.loadGroup(group);
+                const failed = states.filter((state) => state.status === "failed");
+                if (failed.length > 0)
+                  throw createAppHostError(
+                    "app_host.asset_preload_failed",
+                    `Asset preload failed for group: ${group}`,
+                    { group, assets: failed }
+                  );
               }
             },
             snapshot() {
@@ -360,9 +383,22 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
               }
             },
             stop() {
-              for (const adapter of adapters) {
-                adapter.stop();
+              const errors: unknown[] = [];
+              try {
+                router.cancelAll();
+              } catch (error) {
+                errors.push(error);
               }
+              for (const adapter of [...adapters].reverse()) {
+                try {
+                  adapter.stop();
+                } catch (error) {
+                  errors.push(error);
+                }
+              }
+              if (errors.length === 1) throw errors[0];
+              if (errors.length > 1)
+                throw new AggregateError(errors, "Input sources failed during stop");
             },
             tick(_ctx, frame) {
               for (const adapter of adapters) {
@@ -371,9 +407,22 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
               router.tick({ delta: frame.delta, timestamp: frame.timestamp });
             },
             dispose() {
-              for (const adapter of adapters) {
-                adapter.destroy();
+              const errors: unknown[] = [];
+              try {
+                router.cancelAll();
+              } catch (error) {
+                errors.push(error);
               }
+              for (const adapter of [...adapters].reverse()) {
+                try {
+                  adapter.destroy();
+                } catch (error) {
+                  errors.push(error);
+                }
+              }
+              if (errors.length === 1) throw errors[0];
+              if (errors.length > 1)
+                throw new AggregateError(errors, "Input sources failed during dispose");
             },
             snapshot() {
               return {

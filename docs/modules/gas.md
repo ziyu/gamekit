@@ -205,6 +205,9 @@ GAS 不要求游戏必须按 GAS 类型组织内容文件。真实项目可以�
 
 ### 模块使用
 
+- periodMs 必须为有限正数，Data 校验和 Runtime 均执行检查。周期 tick 只发生在到期前（tickTime < expiresAt），大 delta 补 tick 不得越过到期边界。
+- Ability 在支付成本、写入冷却、发送成功事件前解析全部 effect 目标和引用。准备中的 execution 在 commit 前再次检查目标和 effect 定义，失效时取消且不提交尚未支付的成本/冷却。显式 requested commit 已经支付的成本，以及业务回调在提交后的副作用，都不自动回滚。
+
 - GAS 是通用 actor/ability/effect runtime，不写死 RPG、卡牌、塔防或动作游戏概念。Attribute、Tag、Ability、Effect 都使用游戏可定义 key。
 - Actor 可以绑定 EntityId。热状态应尽量落在 World component 上，让系统查询和批量更新利用 ECS 性能；Data definitions 保留配置自由度。
 - `actorId` 不必须等于 `entityId`。需要 save/load、spawn/despawn、场景迁移时，使用稳定 actor id 和 entity mapping 明确恢复关系。

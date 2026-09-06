@@ -9,6 +9,7 @@ import { createArenaAuthorityRuntime } from "../server/arena-authority";
 import { arenaPlayerMemberId } from "../shared/config";
 
 describe("Knockout Arena multi-stage authority", () => {
+  // Full AI-driven rounds exceed 30s on shared CI runners; performance has separate budgets.
   it("keeps eliminated actors out of later generations and publishes all stage results", async () => {
     const fixture = await createAuthorityFixture("arena-stage-authority", true);
     try {
@@ -174,7 +175,7 @@ describe("Knockout Arena multi-stage authority", () => {
     } finally {
       await fixture.dispose();
     }
-  }, 30_000);
+  }, 60_000);
 
   it("projects late join as next-match spectator and restores a disconnected active peer", async () => {
     const fixture = await createAuthorityFixture("arena-presence-authority");
