@@ -1,5 +1,12 @@
 # @gamekit/world-koota
 
+## 0.1.0-alpha.7
+
+### Patch Changes
+
+- @gamekit/core@0.1.0-alpha.7
+- @gamekit/world@0.1.0-alpha.7
+
 ## 0.1.0-alpha.6
 
 ### Patch Changes

@@ -1,5 +1,20 @@
 # @gamekit/physics-core
 
+## 0.1.0-alpha.7
+
+### Minor Changes
+
+- ce209d8: Add provider-neutral client prediction domains, bounded redundant fixed-step input delivery, deterministic network-condition simulation, and the standard full-island multiplayer Physics Arena prediction and authority projection workflow.
+
+### Patch Changes
+
+- Updated dependencies [398165e]
+  - @gamekit/game-runtime@0.1.0-alpha.7
+  - @gamekit/save@0.1.0-alpha.7
+  - @gamekit/core@0.1.0-alpha.7
+  - @gamekit/world@0.1.0-alpha.7
+  - @gamekit/data@0.1.0-alpha.7
+
 ## 0.1.0-alpha.6
 
 ### Minor Changes

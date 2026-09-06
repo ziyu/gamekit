@@ -1,5 +1,13 @@
 # @gamekit/input-dom
 
+## 0.1.0-alpha.7
+
+### Patch Changes
+
+- 398165e: Fix runtime failure and persistence contracts
+- Updated dependencies [398165e]
+  - @gamekit/input-core@0.1.0-alpha.7
+
 ## 0.1.0-alpha.6
 
 ### Patch Changes

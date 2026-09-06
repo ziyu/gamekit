@@ -1,5 +1,20 @@
 # @gamekit/test-utils
 
+## 0.1.0-alpha.7
+
+### Patch Changes
+
+- 398165e: Fix runtime failure and persistence contracts
+- Updated dependencies [398165e]
+  - @gamekit/platform-core@0.1.0-alpha.7
+  - @gamekit/animator-core@0.1.0-alpha.7
+  - @gamekit/audio-core@0.1.0-alpha.7
+  - @gamekit/ai-core@0.1.0-alpha.7
+  - @gamekit/navigation-core@0.1.0-alpha.7
+  - @gamekit/event-bus@0.1.0-alpha.7
+  - @gamekit/world@0.1.0-alpha.7
+  - @gamekit/renderer-core@0.1.0-alpha.7
+
 ## 0.1.0-alpha.6
 
 ### Minor Changes

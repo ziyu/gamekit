@@ -1,5 +1,14 @@
 # @gamekit/game-runtime
 
+## 0.1.0-alpha.7
+
+### Patch Changes
+
+- 398165e: Fix runtime failure and persistence contracts
+  - @gamekit/core@0.1.0-alpha.7
+  - @gamekit/event-bus@0.1.0-alpha.7
+  - @gamekit/world@0.1.0-alpha.7
+
 ## 0.1.0-alpha.6
 
 ### Patch Changes

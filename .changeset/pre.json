@@ -50,7 +50,9 @@
     "@gamekit/navigation-graph": "0.1.0-alpha.5",
     "@gamekit/navigation-grid": "0.1.0-alpha.5",
     "@gamekit/navigation-navmesh": "0.1.0-alpha.5",
-    "@gamekit/navigation-recast": "0.1.0-alpha.5"
+    "@gamekit/navigation-recast": "0.1.0-alpha.5",
+    "multiplayer-physics-arena-demo": "0.1.0",
+    "@gamekit/character-controller": "0.1.0-alpha.6"
   },
   "changesets": [
     "ai-core-runtime",
@@ -59,6 +61,7 @@
     "auto-4124991c",
     "auto-pr-12",
     "auto-pr-14",
+    "auto-pr-37",
     "combat-gas-ability-delivery",
     "gameplay-foundation-host-tooling",
     "gas-ability-execution-lifecycle",
@@ -67,6 +70,7 @@
     "multiplayer-authority-peer-release",
     "multiplayer-authority-snapshot-publisher",
     "multiplayer-colyseus-schema-state",
+    "multiplayer-physics-arena",
     "multiplayer-prediction-buffer",
     "multiplayer-presentation-helper",
     "multiplayer-usable-baseline",

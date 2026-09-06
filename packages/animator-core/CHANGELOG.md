@@ -1,5 +1,17 @@
 # @gamekit/animator-core
 
+## 0.1.0-alpha.7
+
+### Patch Changes
+
+- Updated dependencies [398165e]
+  - @gamekit/asset@0.1.0-alpha.7
+  - @gamekit/game-runtime@0.1.0-alpha.7
+  - @gamekit/core@0.1.0-alpha.7
+  - @gamekit/event-bus@0.1.0-alpha.7
+  - @gamekit/renderer-core@0.1.0-alpha.7
+  - @gamekit/data@0.1.0-alpha.7
+
 ## 0.1.0-alpha.6
 
 ### Minor Changes

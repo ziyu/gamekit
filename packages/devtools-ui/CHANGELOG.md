@@ -1,5 +1,13 @@
 # @gamekit/devtools-ui
 
+## 0.1.0-alpha.7
+
+### Patch Changes
+
+- @gamekit/devtools@0.1.0-alpha.7
+- @gamekit/ui-core@0.1.0-alpha.7
+- @gamekit/react-ui@0.1.0-alpha.7
+
 ## 0.1.0-alpha.6
 
 ### Patch Changes
