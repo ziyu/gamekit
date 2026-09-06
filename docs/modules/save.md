@@ -538,3 +538,28 @@ Event payload 不应包含完整存档数据、敏感内容或大对象。详细
 - 不保存当前选中目标、hover/focus target、confirm UI 交互上下文、held input、Timeline 日志、React component state、renderer native handle、adapter cache 或 pathfinding cache。
 - 每个 contributor 必须有稳定 id、version、scope、tags、validate 和可定位 diagnostics；capture/restore 失败必须能定位到 contributor、section 和 path。
 - Save payload 引用 Data、Asset、Content Package 时使用 id/version/compatibility metadata，不复制完整 DataPack、Asset binary 或内容包 payload。
+
+## IndexedDB adapter 与可恢复进度
+
+`@gamekit/save-indexeddb` 提供 `createIndexedDbSaveStore({ databaseName, indexedDB?, maxSaveBytes?, onDiagnostic? })`。它只在首次操作时打开数据库，使用原生事务保存 slot 的 current、metadata、backup 和 revision；`dispose()` 关闭连接，versionchange 自动释放旧连接。
+
+所有写入/删除在 readwrite transaction 内比较实际 revision。新槽可直接写；已有槽覆盖前必须 read/load/inspect，list/exists 不更新已接受的 revision。其他窗口提交后，旧连接写入返回 `save.write_conflict`，调用方必须重新读取并由应用决定采用哪个进度。同一 store 内修改串行化；失败写入不会推进已接受的 revision。
+
+完整性摘要覆盖 bytes 和 metadata。主版本损坏时 read/list 选择上一有效版本并发出 `save.backup_recovered`，不会在读取时覆盖数据库；下次提交只保留有效备份。两个版本都损坏时，该槽读取失败且不影响其他可读槽的列表。`SaveStore.readBackup` 是可选扩展，`SaveManager.load(id, { backup: true })` 显式读取上一版；没有能力时返回 `save.backup_unsupported`。
+
+`save.size_exceeded` 表示超过配置的单份字节上限；`save.quota_exceeded` 表示平台空间不足。两者都保留旧记录，应用应提供可见反馈，不能无限重试。备份只保留一代；浏览器持久性、导出及云同步策略由应用选择，旧 storage/file 槽位不自动迁移。
+
+`SaveManager.restore(envelope, { contributors? })` 对隔离副本执行身份、目标 formatVersion、完整 contributor 预校验和恢复。它复用 load 的恢复链路，不再读取 store，也不隐式迁移。候选会话通常接收来源 manager 用 `load(..., { restore: false })` 已经读取并迁移的 envelope。App Host 的切换组合见 `docs/modules/app-host.md`。
+
+### 模块集成
+
+- IndexedDB adapter 是独立具体包；通过标准 Save service 的 store 选项注入，并由 owning app 关闭连接，不能把 IDBFactory/transaction 暴露给 contributor。
+- 候选会话必须拥有独立 World/Physics/GAS/TCA 可变状态；存储连接可以由应用共享，但不能共享 SaveManager。候选构造期间失败的局部资源由工厂自行清理。
+- `onDiagnostic` 和 `onDiagnosticError` 都是旁路，失败不改变提交结果。SaveManager diagnosticLimit 默认 200，诊断存储有界。
+- 迁移 storage/file 到 IndexedDB 时，先读取和验证旧数据，成功提交新槽后再由应用显式决定是否删除旧槽。
+
+### 模块使用
+
+- 写入冲突代表当前会话落后于存储进度；重新读取前不要自动重试覆盖。备份恢复也应向玩家显示发生了进度回退。
+- 用 backup 选项恢复逻辑上不需要的最近一次保存；它与完整性损坏后的自动回退是不同入口。
+- 从已有游戏恢复时优先使用候选会话 helper；直接向当前会话 restore 仍可能发生部分副作用，不承诺事务回滚。

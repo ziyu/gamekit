@@ -39,6 +39,17 @@ export function createAssetDataType(
     validate(document) {
       const diagnostics = [];
       const asset = document.data;
+      if (
+        asset.estimatedBytes !== undefined &&
+        (!Number.isSafeInteger(asset.estimatedBytes) || asset.estimatedBytes < 0)
+      ) {
+        diagnostics.push({
+          code: "asset.invalid_size",
+          message: "estimatedBytes must be a nonnegative safe integer",
+          severity: "error" as const,
+          key: document
+        });
+      }
 
       if (!supportedTypes.has(asset.type)) {
         diagnostics.push({

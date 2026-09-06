@@ -11,22 +11,26 @@ export function createThreeDriverAssetLoader(options: {
     supports(asset) {
       return asset.source.type === "url" && (asset.type === "model" || asset.type === "texture");
     },
-    async load(asset) {
+    async load(asset, loadOptions) {
+      loadOptions?.signal?.throwIfAborted();
       if (asset.source.type !== "url") {
         throw unsupported(asset);
       }
 
       const runtime = options.runtime();
       if (asset.type === "texture") {
-        await runtime.resources.loadTexture(asset.id, asset.source.url);
+        await runtime.resources.loadTexture(asset.id, asset.source.url, loadOptions?.signal);
         return;
       }
       if (asset.type === "model") {
-        await runtime.resources.loadModel(asset.id, asset.source.url);
+        await runtime.resources.loadModel(asset.id, asset.source.url, loadOptions?.signal);
         return;
       }
 
       throw unsupported(asset);
+    },
+    unload(asset) {
+      options.runtime().resources.unload(asset.id);
     }
   };
 }

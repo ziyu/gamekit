@@ -153,6 +153,7 @@ export type SaveContributor<TData = unknown> = {
 export type SaveStore = {
   list(): Promise<SaveSlotSummary[]>;
   read(slotId: SaveSlotId): Promise<Uint8Array>;
+  readBackup?(slotId: SaveSlotId): Promise<Uint8Array>;
   write(slotId: SaveSlotId, data: Uint8Array, metadata: SaveSlotSummary): Promise<void>;
   delete(slotId: SaveSlotId): Promise<void>;
   exists(slotId: SaveSlotId): Promise<boolean>;
@@ -188,6 +189,8 @@ export type SaveOptions = {
 export type LoadOptions = {
   restore?: boolean;
   migrate?: boolean;
+  /** Explicitly read the previous revision, when the store supports it. */
+  backup?: boolean;
   contributors?: SaveContributorSelection | undefined;
 };
 
@@ -233,6 +236,8 @@ export type SaveManager = {
   list(): Promise<SaveSlotSummary[]>;
   save(slotId: SaveSlotId, options: SaveOptions): Promise<SaveResult>;
   load(slotId: SaveSlotId, options?: LoadOptions): Promise<LoadResult>;
+  /** Restore an already decoded/migrated snapshot, e.g. into an isolated candidate session. */
+  restore(envelope: SaveEnvelope, options?: Pick<LoadOptions, "contributors">): Promise<void>;
   delete(slotId: SaveSlotId): Promise<void>;
   inspect(slotId: SaveSlotId): Promise<SaveInspection>;
   snapshot(): SaveManagerSnapshot;
@@ -251,4 +256,6 @@ export type CreateSaveManagerOptions = {
   contributorPolicy?: SaveContributorPolicy | undefined;
   services?: () => SaveContributorServices;
   onDiagnostic?: (event: SaveDiagnosticEvent) => void;
+  onDiagnosticError?: (error: unknown, event: SaveDiagnosticEvent) => void;
+  diagnosticLimit?: number;
 };

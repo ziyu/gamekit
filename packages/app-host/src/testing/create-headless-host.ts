@@ -110,7 +110,8 @@ export function createMemoryAssetAdapter(): AssetLoaderAdapter {
     },
     async load(_asset: AssetDefinition) {
       return undefined;
-    }
+    },
+    unload() {}
   };
 }
 

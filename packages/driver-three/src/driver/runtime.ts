@@ -23,8 +23,9 @@ export type ThreeRuntimeResources = {
   createModelInstance(id: string): Object3D | undefined;
   clipNames(id: string): string[];
   summaries(): ThreeResourceSummary[];
-  loadTexture(id: string, url: string): Promise<ThreeResourceSummary>;
-  loadModel(id: string, url: string): Promise<ThreeResourceSummary>;
+  loadTexture(id: string, url: string, signal?: AbortSignal): Promise<ThreeResourceSummary>;
+  loadModel(id: string, url: string, signal?: AbortSignal): Promise<ThreeResourceSummary>;
+  unload(id: string): void;
   dispose(): void;
 };
 
@@ -168,6 +169,7 @@ type ThreeModelResource = {
   id: string;
   url: string;
   scene: import("three").Object3D;
+  scenes: import("three").Object3D[];
   animations: import("three").AnimationClip[];
   cloneModel(): import("three").Object3D;
   summary: ThreeResourceSummary;
@@ -180,16 +182,18 @@ type ThreeTextureResource = {
   summary: ThreeResourceSummary;
 };
 
-function createThreeRuntimeResources(
+export function createThreeRuntimeResources(
   THREE: typeof import("three"),
   options: { assetLoadTimeoutMs: number; dracoDecoderPath: string }
 ): ThreeRuntimeResources {
+  const lifetime = new AbortController();
   const models = new Map<string, ThreeModelResource>();
   const textures = new Map<string, ThreeTextureResource>();
   let gltfLoader:
     | {
         loadAsync(url: string): Promise<{
           scene: import("three").Object3D;
+          scenes?: import("three").Object3D[];
           animations: import("three").AnimationClip[];
         }>;
         setDRACOLoader?(loader: unknown): void;
@@ -197,6 +201,7 @@ function createThreeRuntimeResources(
       }
     | undefined;
   let dracoLoader: { dispose?(): void } | undefined;
+  let loaderSetup: Promise<void> | undefined;
 
   return {
     has(id) {
@@ -224,7 +229,11 @@ function createThreeRuntimeResources(
         ...[...textures.values()].map((resource) => resource.summary)
       ].sort((left, right) => left.id.localeCompare(right.id));
     },
-    async loadTexture(id, url) {
+    async loadTexture(id, url, callerSignal) {
+      const signal = callerSignal
+        ? AbortSignal.any([lifetime.signal, callerSignal])
+        : lifetime.signal;
+      signal.throwIfAborted();
       const loaded = textures.get(id);
       if (loaded) {
         return loaded.summary;
@@ -234,9 +243,15 @@ function createThreeRuntimeResources(
       const texture = await withAssetLoadTimeout(loader.loadAsync(url), {
         id,
         kind: "texture",
+        signal,
+        onLate: (value) => value.dispose(),
         timeoutMs: options.assetLoadTimeoutMs,
         url
       });
+      if (signal.aborted) {
+        texture.dispose();
+        signal.throwIfAborted();
+      }
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.wrapS = THREE.RepeatWrapping;
       texture.wrapT = THREE.RepeatWrapping;
@@ -250,29 +265,53 @@ function createThreeRuntimeResources(
       textures.set(id, { id, url, texture, summary });
       return summary;
     },
-    async loadModel(id, url) {
+    async loadModel(id, url, callerSignal) {
+      const signal = callerSignal
+        ? AbortSignal.any([lifetime.signal, callerSignal])
+        : lifetime.signal;
+      signal.throwIfAborted();
       const loaded = models.get(id);
       if (loaded) {
         return loaded.summary;
       }
 
-      if (!gltfLoader) {
-        const module = await import("three/examples/jsm/loaders/GLTFLoader.js");
-        gltfLoader = new module.GLTFLoader();
-        const dracoModule = await import("three/examples/jsm/loaders/DRACOLoader.js");
-        const loader = new dracoModule.DRACOLoader();
-        loader.setDecoderPath(options.dracoDecoderPath);
-        gltfLoader.setDRACOLoader?.(loader);
-        dracoLoader = loader;
-        const meshoptModule = await import("three/examples/jsm/libs/meshopt_decoder.module.js");
-        gltfLoader.setMeshoptDecoder?.(meshoptModule.MeshoptDecoder);
+      if (!loaderSetup) {
+        loaderSetup = (async () => {
+          const module = await import("three/examples/jsm/loaders/GLTFLoader.js");
+          gltfLoader = new module.GLTFLoader();
+          const dracoModule = await import("three/examples/jsm/loaders/DRACOLoader.js");
+          const loader = new dracoModule.DRACOLoader();
+          loader.setDecoderPath(options.dracoDecoderPath);
+          gltfLoader.setDRACOLoader?.(loader);
+          dracoLoader = loader;
+          const meshoptModule = await import("three/examples/jsm/libs/meshopt_decoder.module.js");
+          gltfLoader.setMeshoptDecoder?.(meshoptModule.MeshoptDecoder);
+          if (lifetime.signal.aborted) {
+            dracoLoader?.dispose?.();
+            lifetime.signal.throwIfAborted();
+          }
+        })().catch((error) => {
+          dracoLoader?.dispose?.();
+          dracoLoader = undefined;
+          loaderSetup = undefined;
+          gltfLoader = undefined;
+          throw error;
+        });
       }
-      const gltf = await withAssetLoadTimeout(gltfLoader.loadAsync(url), {
+      await loaderSetup;
+      signal.throwIfAborted();
+      const gltf = await withAssetLoadTimeout(gltfLoader!.loadAsync(url), {
         id,
         kind: "model",
+        signal,
+        onLate: (value) => disposeLoadedModel(value.scene, value.scenes),
         timeoutMs: options.assetLoadTimeoutMs,
         url
       });
+      if (signal.aborted) {
+        disposeLoadedModel(gltf.scene, gltf.scenes);
+        signal.throwIfAborted();
+      }
       const animations = [...gltf.animations];
       const summary: ThreeResourceSummary = {
         id,
@@ -286,6 +325,7 @@ function createThreeRuntimeResources(
         id,
         url,
         scene,
+        scenes: [...(gltf.scenes ?? [scene])],
         animations,
         cloneModel() {
           const instance = scene.clone(true);
@@ -296,18 +336,22 @@ function createThreeRuntimeResources(
       });
       return summary;
     },
+    unload(id) {
+      const model = models.get(id);
+      if (model) {
+        disposeLoadedModel(model.scene, model.scenes);
+        models.delete(id);
+      }
+      const texture = textures.get(id);
+      if (texture) {
+        texture.texture.dispose();
+        textures.delete(id);
+      }
+    },
     dispose() {
-      for (const resource of models.values()) {
-        disposeObjectTree(resource.scene as unknown as ThreeObjectTarget, {
-          forceNativeResourceDispose: true
-        });
-      }
-      for (const resource of textures.values()) {
-        resource.texture.dispose();
-      }
+      lifetime.abort();
+      for (const id of [...models.keys(), ...textures.keys()]) this.unload(id);
       dracoLoader?.dispose?.();
-      models.clear();
-      textures.clear();
     }
   };
 }
@@ -584,28 +628,81 @@ function readOptionalString(value: unknown): string | undefined {
 
 function withAssetLoadTimeout<TValue>(
   promise: Promise<TValue>,
-  options: { id: string; kind: ThreeResourceKind; timeoutMs: number; url: string }
-): Promise<TValue> {
-  if (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0) {
-    return promise;
+  options: {
+    id: string;
+    kind: ThreeResourceKind;
+    timeoutMs: number;
+    url: string;
+    signal: AbortSignal;
+    onLate(value: TValue): void;
   }
-
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<TValue>((_resolve, reject) => {
-    timer = setTimeout(() => {
-      reject(
-        new Error(
-          `Timed out loading Three ${options.kind} asset ${options.id} after ${options.timeoutMs}ms: ${options.url}`
-        )
-      );
-    }, options.timeoutMs);
-  });
-
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timer) {
+): Promise<TValue> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
       clearTimeout(timer);
+      options.signal.removeEventListener("abort", abort);
+    };
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const abort = () => fail(options.signal.reason);
+    options.signal.addEventListener("abort", abort, { once: true });
+    if (options.signal.aborted) abort();
+    if (!settled && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0) {
+      timer = setTimeout(
+        () => fail(new Error(`Timed out loading Three ${options.kind} asset ${options.id}`)),
+        options.timeoutMs
+      );
     }
+    promise
+      .then((value) => {
+        if (settled) {
+          options.onLate(value);
+          return;
+        }
+        settled = true;
+        cleanup();
+        resolve(value);
+      }, fail)
+      .catch(() => {
+        /* Native late cleanup cannot create an unhandled rejection. */
+      });
   });
+}
+
+function disposeLoadedModel(
+  scene: import("three").Object3D,
+  scenes: import("three").Object3D[] = []
+): void {
+  const roots = new Set([scene, ...scenes]);
+  const textures = new Set<import("three").Texture>();
+  for (const root of roots)
+    root.traverse((object) => {
+      const mesh = object as import("three").Mesh;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const material of materials) {
+        if (!material) continue;
+        for (const value of Object.values(material)) {
+          if (value && typeof value === "object" && value.isTexture === true) textures.add(value);
+        }
+      }
+    });
+  for (const root of roots)
+    disposeObjectTree(root as unknown as ThreeObjectTarget, { forceNativeResourceDispose: true });
+  const images = new Set<unknown>();
+  for (const texture of textures) {
+    texture.dispose();
+    if (texture.image && !images.has(texture.image)) {
+      images.add(texture.image);
+      const image = texture.image as { close?: () => void };
+      image.close?.();
+    }
+  }
 }
 
 function isAppendable(value: unknown): value is { append(child: HTMLElement): void } {

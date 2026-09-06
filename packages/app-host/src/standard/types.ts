@@ -138,6 +138,10 @@ export type StandardRendererOptions<TContext> = {
 
 export type StandardAssetOptions<TContext> = {
   manager?: StandardValue<AssetManager, TContext> | undefined;
+  maxConcurrentLoads?: number;
+  maxResidentAssets?: number;
+  maxResidentBytes?: number;
+  dispose?: boolean;
   adapter?: StandardValue<AssetLoaderAdapter, TContext> | undefined;
   driver?: string | undefined;
   onDiagnostic?(event: AssetDiagnosticEvent): void;

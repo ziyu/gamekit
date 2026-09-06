@@ -34,6 +34,9 @@ export function createSaveManager(options: CreateSaveManagerOptions): SaveManage
   const contributors = new Map<string, SaveContributor>();
   const diagnostics: SaveDiagnosticEvent[] = [];
   const clock = options.clock ?? (() => Date.now());
+  const diagnosticLimit = options.diagnosticLimit ?? 200;
+  if (!Number.isSafeInteger(diagnosticLimit) || diagnosticLimit < 0)
+    throw new RangeError("diagnosticLimit must be a nonnegative safe integer");
   let lastOperation: SaveManagerSnapshot["lastOperation"];
 
   const emit = (
@@ -48,7 +51,16 @@ export function createSaveManager(options: CreateSaveManagerOptions): SaveManage
       payload: event.payload ?? {}
     };
     diagnostics.push(diagnostic);
-    options.onDiagnostic?.(diagnostic);
+    if (diagnostics.length > diagnosticLimit) diagnostics.shift();
+    try {
+      options.onDiagnostic?.(structuredClone(diagnostic));
+    } catch (error) {
+      try {
+        options.onDiagnosticError?.(error, structuredClone(diagnostic));
+      } catch {
+        /* Diagnostic failures cannot change save results. */
+      }
+    }
   };
 
   const markOperation = (
@@ -69,6 +81,27 @@ export function createSaveManager(options: CreateSaveManagerOptions): SaveManage
         gameId: envelope.gameId
       });
     }
+  }
+
+  async function applyEnvelope(
+    input: SaveEnvelope,
+    selection?: SaveContributorSelection,
+    onPhase?: (phase: SavePhase) => void
+  ): Promise<void> {
+    const envelope = structuredClone(input);
+    onPhase?.("validate");
+    validateIdentity(envelope);
+    if (envelope.formatVersion !== options.formatVersion)
+      throw createUnsupportedVersionError(envelope.formatVersion);
+    const selected = selectContributors(
+      sortedContributors(contributors),
+      options.contributorPolicy,
+      selection
+    );
+    const services = options.services?.();
+    validateContributors(envelope, selected, services);
+    onPhase?.("restore");
+    await restoreContributors(envelope, selected, services, clock());
   }
 
   return {
@@ -164,7 +197,11 @@ export function createSaveManager(options: CreateSaveManagerOptions): SaveManage
           throw createMissingSlotError(slotId);
         }
 
-        const data = await options.store.read(slotId);
+        if (loadOptions.backup && !options.store.readBackup)
+          throw createSaveError("save.backup_unsupported", "This store does not support backups");
+        const data = loadOptions.backup
+          ? await options.store.readBackup!(slotId)
+          : await options.store.read(slotId);
         phase = "decode";
         let envelope = await codec.decode(data);
         phase = "validate";
@@ -193,16 +230,9 @@ export function createSaveManager(options: CreateSaveManagerOptions): SaveManage
 
         const restored = loadOptions.restore !== false;
         if (restored) {
-          const selectedContributors = selectContributors(
-            sortedContributors(contributors),
-            options.contributorPolicy,
-            loadOptions.contributors
-          );
-          const services = options.services?.();
-          phase = "validate";
-          validateContributors(envelope, selectedContributors, services);
-          phase = "restore";
-          await restoreContributors(envelope, selectedContributors, services, clock());
+          await applyEnvelope(envelope, loadOptions.contributors, (nextPhase) => {
+            phase = nextPhase;
+          });
         }
 
         emit({ type: "load.completed", severity: "info", phase: "restore", slotId });
@@ -211,6 +241,23 @@ export function createSaveManager(options: CreateSaveManagerOptions): SaveManage
       } catch (error) {
         markOperation("load", slotId, "failed");
         emitError("load.failed", phase, slotId, error, emit);
+        throw error;
+      }
+    },
+    async restore(envelope, restoreOptions = {}) {
+      let phase: SavePhase = "validate";
+      try {
+        await applyEnvelope(envelope, restoreOptions.contributors, (nextPhase) => {
+          phase = nextPhase;
+        });
+        emit({
+          type: "restore.completed",
+          severity: "info",
+          phase: "restore",
+          slotId: envelope.slot.id
+        });
+      } catch (error) {
+        emitError("restore.failed", phase, envelope?.slot?.id, error, emit);
         throw error;
       }
     },

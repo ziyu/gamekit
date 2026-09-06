@@ -69,7 +69,8 @@
       "@gamekit/save": ["packages/save/src/index.ts"],
       "@gamekit/devtools": ["packages/devtools/src/index.ts"],
       "@gamekit/devtools-ui": ["packages/devtools-ui/src/index.ts"],
-      "@gamekit/test-utils": ["packages/test-utils/src/index.ts"]
+      "@gamekit/test-utils": ["packages/test-utils/src/index.ts"],
+      "@gamekit/save-indexeddb": ["packages/save-indexeddb/src/index.ts"]
     }
   }
 }

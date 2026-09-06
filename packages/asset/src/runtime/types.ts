@@ -68,6 +68,8 @@ export type AssetDefinition = {
   metadata?: Record<string, unknown>;
   preload?: boolean;
   lazy?: boolean;
+  /** Estimated resident bytes, required when a byte budget is configured. */
+  estimatedBytes?: number;
   frame?: SpritesheetFrameConfig;
   atlas?: AtlasAssetMetadata | undefined;
   audio?: AudioAssetMetadata | undefined;
@@ -100,7 +102,28 @@ export type AssetDiagnosticEvent = {
 export type AssetLoaderAdapter = {
   id: string;
   supports(asset: AssetDefinition): boolean;
-  load(asset: AssetDefinition): Promise<void>;
+  load(asset: AssetDefinition, options?: AssetLoadOptions): Promise<void>;
+  /** Release native resources. Repeated calls and absent resources must be safe. */
+  unload?(asset: AssetDefinition): void | Promise<void>;
+};
+
+export type AssetLoadOptions = { signal?: AbortSignal | undefined };
+
+export type AssetScope = {
+  readonly id: string;
+  load(id: string): Promise<AssetLoadState>;
+  loadGroup(group: string): Promise<AssetLoadState[]>;
+  release(id: string): Promise<void>;
+  dispose(): Promise<void>;
+};
+
+export type AssetLifecycleSnapshot = {
+  disposed: boolean;
+  activeLoads: number;
+  queuedLoads: number;
+  residentAssets: number;
+  estimatedResidentBytes: number;
+  references: Array<{ assetId: string; owners: number }>;
 };
 
 export type CreateAssetManagerOptions = {
@@ -108,6 +131,9 @@ export type CreateAssetManagerOptions = {
   clock?: () => number;
   onDiagnostic?: (event: AssetDiagnosticEvent) => void;
   onDiagnosticError?: (error: unknown, event: AssetDiagnosticEvent) => void;
+  maxConcurrentLoads?: number;
+  maxResidentAssets?: number;
+  maxResidentBytes?: number;
 };
 
 export type RegisterAssetsFromDataOptions = {
@@ -126,6 +152,10 @@ export type AssetManager = {
   assets(): AssetDefinition[];
   state(id: string): AssetLoadState;
   states(): AssetLoadState[];
-  load(id: string): Promise<AssetLoadState>;
-  loadGroup(group: string): Promise<AssetLoadState[]>;
+  load(id: string, options?: AssetLoadOptions): Promise<AssetLoadState>;
+  loadGroup(group: string, options?: AssetLoadOptions): Promise<AssetLoadState[]>;
+  createScope(id: string): AssetScope;
+  unload(id: string): Promise<void>;
+  dispose(): Promise<void>;
+  lifecycleSnapshot(): AssetLifecycleSnapshot;
 };

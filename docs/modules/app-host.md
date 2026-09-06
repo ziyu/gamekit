@@ -592,3 +592,33 @@ Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务�
 - App Host diagnostics 记录 service phase、dependencies、driver capabilities、recent errors 和 snapshot summary，不记录大 payload、native object 或每帧状态。
 - 游戏和工具通过 `services.xxx` 读取应用级能力，通过 GameRuntime/standard GameModule helper 消费玩法会话能力；不要在业务代码里重新组装 Host 内部 service binding。
 - 业务代码不要把 Host 当全局上帝对象。能通过 Data、World、EventBus、RendererAdapter、Input action、SaveContributor 等局部 facade 完成的事，不扩大到 Host 依赖。
+
+## 候选会话恢复组合
+
+`createSaveSessionController({ initial, createCandidate, onCleanupError? })` 是可选应用组合 helper。Session 提供自己的 SaveManager、可选 activate 和 dispose；helper 不拥有 renderer/platform/asset 的实现，也不把会话恢复塞入 GameRuntime。
+
+```ts
+const sessions = createSaveSessionController({
+  initial: activeSession,
+  createCandidate: (envelope) => createIsolatedSession(envelope)
+});
+// Frame loop 和 UI 使用 sessions.current() 获取当前会话。
+const result = await sessions.load("checkpoint");
+// result.cleanupError 表示已经切换成功，但旧会话清理存在问题。
+await sessions.dispose();
+```
+
+读取/迁移、候选构造、恢复、activate、切换指针、旧会话清理顺序固定。候选 restore/activate 失败时释放候选并保留旧会话；候选不得复用旧 session 或 SaveManager。工厂必须隔离可变状态，未返回前的局部清理由工厂负责。Activation 的外部副作用仍需应用设计 staging 边界，不具备通用回滚语义。
+
+操作串行化，dispose 为终态。切换后旧会话 dispose 失败通过 result.cleanupError 和可选旁路 reporter 暴露，不撤销成功的切换。构造和恢复使用同一个已捕获 envelope，不能在新会话中重新读取可能已变化的槽位。
+
+### 模块集成
+
+- 将 createCandidate 绑定到同一 GameAppDefinition 的独立 context/profile 装配，按 envelope 初始化 runtime seed/clock；共享内容只能是不可变数据或受显式 scope 保护的应用资源。
+- 同一应用的候选和当前 SaveManager 共享应用持有的 IndexedDB store，以延续已读取的 revision；不同窗口使用各自的 store。App 拥有 store 的关闭，候选失败只销毁候选拥有的对象；不要销毁仍被当前会话使用的 store/driver。
+
+### 模块使用
+
+- Tick、UI command 和 Save 操作都从 current() 获取会话，避免切换后继续操作旧 World。
+- load 期间由应用暂停自动保存和手动保存入口，避免旧会话继续向共享 store 写入；helper 的串行队列只覆盖其 load/dispose，不拦截直接调用 SaveManager 的操作。
+- load 返回成功后再显示恢复完成；cleanupError 单独进入诊断，不能提示“存档加载失败”并再次应用同一进度。

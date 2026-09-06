@@ -99,7 +99,13 @@ function createFakeThreeRuntime(): FakeRuntime {
         resourceSummaries.push(summary);
         return summary;
       },
-      dispose() {}
+      unload(id: string) {
+        const index = resourceSummaries.findIndex((summary) => summary.id === id);
+        if (index >= 0) resourceSummaries.splice(index, 1);
+      },
+      dispose() {
+        resourceSummaries.length = 0;
+      }
     },
     factories: {
       createGroup() {

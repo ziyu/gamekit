@@ -1,9 +1,6 @@
+import { createAssetLifecycle } from "./lifecycle";
 import type { DataRegistry } from "@gamekit/data";
-import {
-  createDuplicateAssetError,
-  createMissingAssetError,
-  createUnsupportedAssetError
-} from "./errors";
+import { createDuplicateAssetError, createMissingAssetError } from "./errors";
 import { DEFAULT_ASSET_DATA_TYPE } from "./asset-data-type";
 import type {
   AssetAnimationManifest,
@@ -18,8 +15,6 @@ import type {
 export function createAssetManager(options: CreateAssetManagerOptions): AssetManager {
   const assets = new Map<string, AssetDefinition>();
   const states = new Map<string, AssetLoadState>();
-  const inFlight = new Map<string, Promise<AssetLoadState>>();
-  const clock = options.clock ?? (() => Date.now());
 
   const emit = (
     type: string,
@@ -57,8 +52,16 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
     return asset;
   };
 
+  const lifecycle = createAssetLifecycle(options, {
+    get: (id) => cloneAssetDefinition(requireAsset(id)),
+    assets: () => [...assets.values()].map(cloneAssetDefinition),
+    states,
+    emit
+  });
+
   return {
     register(asset) {
+      lifecycle.assertActive();
       if (assets.has(asset.id)) {
         throw createDuplicateAssetError(asset.id);
       }
@@ -110,60 +113,18 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
     states() {
       return [...states.values()].map((state) => ({ ...state }));
     },
-    async load(id) {
-      const asset = requireAsset(id);
-      const current = states.get(id);
-      if (current?.status === "loaded") {
-        return { ...current };
+    load: lifecycle.load,
+    loadGroup: lifecycle.loadGroup,
+    unload: lifecycle.unload,
+    createScope: lifecycle.createScope,
+    lifecycleSnapshot: lifecycle.lifecycleSnapshot,
+    async dispose() {
+      try {
+        await lifecycle.dispose();
+      } finally {
+        assets.clear();
+        states.clear();
       }
-      const pending = inFlight.get(id);
-      if (pending !== undefined) {
-        return { ...(await pending) };
-      }
-
-      const adapterAsset = cloneAssetDefinition(asset);
-      if (!options.adapter.supports(cloneAssetDefinition(adapterAsset))) {
-        throw createUnsupportedAssetError(asset, options.adapter.id);
-      }
-
-      const task = Promise.resolve().then(async (): Promise<AssetLoadState> => {
-        try {
-          states.set(id, { id, status: "loading" });
-          emit("asset.loading", id, { assetId: id, assetType: asset.type });
-          await options.adapter.load(adapterAsset);
-          const loaded: AssetLoadState = {
-            id,
-            status: "loaded",
-            loadedAt: clock()
-          };
-          states.set(id, loaded);
-          emit("asset.loaded", id, { assetId: id, assetType: asset.type });
-          return loaded;
-        } catch (error) {
-          const failed: AssetLoadState = {
-            id,
-            status: "failed",
-            error: error instanceof Error ? error.message : String(error)
-          };
-          states.set(id, failed);
-          emit("asset.failed", id, { assetId: id, error: failed.error });
-          return failed;
-        } finally {
-          if (inFlight.get(id) === task) {
-            inFlight.delete(id);
-          }
-        }
-      });
-      inFlight.set(id, task);
-      return { ...(await task) };
-    },
-    async loadGroup(group) {
-      const targets = [...assets.values()].filter((asset) => asset.group === group);
-      if (targets.length === 0) {
-        emit("asset.group_missing", undefined, { group });
-        return [];
-      }
-      return Promise.all(targets.map((asset) => this.load(asset.id)));
     }
   };
 }
