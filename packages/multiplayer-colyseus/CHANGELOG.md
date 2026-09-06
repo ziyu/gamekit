@@ -1,5 +1,13 @@
 # @gamekit/multiplayer-colyseus
 
+## 0.1.0-alpha.7
+
+### Patch Changes
+
+- Updated dependencies [ce209d8]
+  - @gamekit/multiplayer-core@0.1.0-alpha.7
+  - @gamekit/core@0.1.0-alpha.7
+
 ## 0.1.0-alpha.6
 
 ### Patch Changes

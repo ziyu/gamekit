@@ -1,5 +1,12 @@
 # @gamekit/renderer-phaser
 
+## 0.1.0-alpha.7
+
+### Patch Changes
+
+- @gamekit/core@0.1.0-alpha.7
+- @gamekit/renderer-core@0.1.0-alpha.7
+
 ## 0.1.0-alpha.6
 
 ### Minor Changes

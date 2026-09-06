@@ -1,5 +1,12 @@
 # @gamekit/navigation-graph
 
+## 0.1.0-alpha.7
+
+### Patch Changes
+
+- @gamekit/navigation-core@0.1.0-alpha.7
+- @gamekit/data@0.1.0-alpha.7
+
 ## 0.1.0-alpha.6
 
 ### Minor Changes

@@ -1,5 +1,39 @@
 # @gamekit/app-host
 
+## 0.1.0-alpha.7
+
+### Minor Changes
+
+- ce209d8: Add provider-neutral client prediction domains, bounded redundant fixed-step input delivery, deterministic network-condition simulation, and the standard full-island multiplayer Physics Arena prediction and authority projection workflow.
+
+### Patch Changes
+
+- 398165e: Fix runtime failure and persistence contracts
+- Updated dependencies [398165e]
+- Updated dependencies [ce209d8]
+  - @gamekit/asset@0.1.0-alpha.7
+  - @gamekit/game-runtime@0.1.0-alpha.7
+  - @gamekit/gas@0.1.0-alpha.7
+  - @gamekit/input-core@0.1.0-alpha.7
+  - @gamekit/platform-core@0.1.0-alpha.7
+  - @gamekit/save@0.1.0-alpha.7
+  - @gamekit/tca@0.1.0-alpha.7
+  - @gamekit/multiplayer-core@0.1.0-alpha.7
+  - @gamekit/physics-core@0.1.0-alpha.7
+  - @gamekit/animator-core@0.1.0-alpha.7
+  - @gamekit/audio-core@0.1.0-alpha.7
+  - @gamekit/ai-core@0.1.0-alpha.7
+  - @gamekit/combat@0.1.0-alpha.7
+  - @gamekit/navigation-core@0.1.0-alpha.7
+  - @gamekit/core@0.1.0-alpha.7
+  - @gamekit/world@0.1.0-alpha.7
+  - @gamekit/renderer-core@0.1.0-alpha.7
+  - @gamekit/data@0.1.0-alpha.7
+  - @gamekit/camera-core@0.1.0-alpha.7
+  - @gamekit/driver-core@0.1.0-alpha.7
+  - @gamekit/devtools@0.1.0-alpha.7
+  - @gamekit/ui-core@0.1.0-alpha.7
+
 ## 0.1.0-alpha.6
 
 ### Minor Changes

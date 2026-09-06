@@ -1,5 +1,13 @@
 # @gamekit/asset
 
+## 0.1.0-alpha.7
+
+### Patch Changes
+
+- 398165e: Fix runtime failure and persistence contracts
+  - @gamekit/core@0.1.0-alpha.7
+  - @gamekit/data@0.1.0-alpha.7
+
 ## 0.1.0-alpha.6
 
 ### Minor Changes
