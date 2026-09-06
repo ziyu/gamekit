@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AssetDefinition, AssetLoadState, AssetManager } from "@gamekit/asset";
+import { createAssetManager, type AssetDefinition } from "@gamekit/asset";
 import type { ThreeRendererNative, ThreeRenderTargetState } from "@gamekit/driver-three";
 import type {
   RenderNodePath,
@@ -47,9 +47,20 @@ describe("three demo assets", () => {
 });
 
 describe("createThreeDemoScene", () => {
-  it("creates an object tree and updates scene modes through Three native state", () => {
+  it("creates an object tree and updates scene modes through Three native state", async () => {
     const renderer = new FakeRenderer();
-    const assets = new FakeAssetManager(listThreeDemoAssetDefinitions());
+    const assets = createAssetManager({
+      adapter: {
+        id: "test",
+        supports: () => true,
+        async load(asset) {
+          if (asset.id === THREE_DEMO_ASSET_IDS.flamingo) throw new Error("model unavailable");
+        },
+        unload() {}
+      }
+    });
+    assets.registerMany(listThreeDemoAssetDefinitions());
+    await Promise.all(assets.assets().map((asset) => assets.load(asset.id)));
     const scene = createThreeDemoScene(renderer, { assets });
 
     scene.boot();
@@ -261,56 +272,4 @@ function createFakeThreeNative(renderer: FakeRenderer): ThreeRendererNative {
     },
     applyTargetState(_target: unknown, _state: ThreeRenderTargetState) {}
   } as unknown as ThreeRendererNative;
-}
-
-class FakeAssetManager implements AssetManager {
-  private readonly definitions: AssetDefinition[];
-
-  constructor(definitions: AssetDefinition[]) {
-    this.definitions = definitions;
-  }
-
-  register(_asset: AssetDefinition): void {}
-
-  registerMany(_assets: AssetDefinition[]): void {}
-
-  registerFromDataRegistry(): AssetDefinition[] {
-    return [];
-  }
-
-  has(id: string): boolean {
-    return this.definitions.some((asset) => asset.id === id);
-  }
-
-  get(id: string): AssetDefinition {
-    const asset = this.definitions.find((entry) => entry.id === id);
-    if (!asset) {
-      throw new Error(`Missing fake asset: ${id}`);
-    }
-    return asset;
-  }
-
-  assets(): AssetDefinition[] {
-    return this.definitions;
-  }
-
-  state(id: string): AssetLoadState {
-    return {
-      id,
-      status: id === THREE_DEMO_ASSET_IDS.flamingo ? "failed" : "loaded",
-      loadedAt: 1
-    };
-  }
-
-  states(): AssetLoadState[] {
-    return this.definitions.map((asset) => this.state(asset.id));
-  }
-
-  async load(id: string): Promise<AssetLoadState> {
-    return this.state(id);
-  }
-
-  async loadGroup(_group: string): Promise<AssetLoadState[]> {
-    return this.states();
-  }
 }

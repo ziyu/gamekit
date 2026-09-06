@@ -255,6 +255,7 @@ Driver diagnostic 是低频应用事实，进入 App Host diagnostics 或 DevToo
 
 - 只要第三方库同时影响 renderer、asset、input、camera、physics 或 scene lifecycle，就优先建 Driver，而不是散落多个独立 adapter。
 - Driver 是外部 runtime owner：负责 boot、resize、pause/resume、dispose、diagnostics 和 adapter 暴露；Adapter 是协议映射者，不重新创建 runtime。
+- Asset adapter 的单资源释放、取消和晚到结果清理遵循 [Assets 的作用域与驻留预算](./assets.md#作用域与驻留预算)；音频资源释放还必须结束引用它的播放实例并移除对应 tween/监听器。
 - Profile 必须显式选择标准服务使用哪个 driver adapter。多 Driver 并存时不要靠默认顺序或包名猜测。
 - 新增 Three、Pixi、Godot bridge 等 Driver 时，先复用现有 Renderer/Input/Asset/Camera/Physics 协议，不够用再通过 ADR 调整协议。
 - Driver 调整 render density 时必须把 backing store、camera、input/picking 和 resize 作为一个坐标契约测试；profile 对 pixel ratio 设置设备上限，默认值保持 1 以避免让所有应用承担额外 fill-rate。

@@ -18,6 +18,7 @@ export type PhaserDriverAssetRuntime = {
   hasAudio(id: string): boolean;
   loadAudio(assetId: string, urls: string[]): Promise<void>;
   createAnimations(textureId: string, animations: AssetAnimationManifest[]): void;
+  unloadAsset(assetId: string, type: AssetDefinition["type"]): void;
 };
 
 export function createPhaserDriverAssetLoader(options: {
@@ -41,8 +42,15 @@ export function createPhaserDriverAssetLoader(options: {
       }
       return false;
     },
-    async load(asset) {
+    async load(asset, loadOptions) {
+      loadOptions?.signal?.throwIfAborted();
       const runtime = options.runtime();
+      const finish = () => {
+        if (loadOptions?.signal?.aborted) {
+          runtime.unloadAsset(asset.id, asset.type);
+          loadOptions.signal.throwIfAborted();
+        }
+      };
       if (asset.source.type !== "url") {
         throw unsupported(asset);
       }
@@ -50,7 +58,7 @@ export function createPhaserDriverAssetLoader(options: {
         if (!runtime.hasTexture(asset.id)) {
           await runtime.loadImage(asset.id, asset.source.url);
         }
-        return;
+        return finish();
       }
 
       if (asset.type === "spritesheet") {
@@ -67,7 +75,7 @@ export function createPhaserDriverAssetLoader(options: {
         if (asset.animations && asset.animations.length > 0) {
           runtime.createAnimations(asset.id, asset.animations);
         }
-        return;
+        return finish();
       }
 
       if (asset.type === "atlas") {
@@ -86,7 +94,7 @@ export function createPhaserDriverAssetLoader(options: {
         if (asset.animations && asset.animations.length > 0) {
           runtime.createAnimations(asset.id, asset.animations);
         }
-        return;
+        return finish();
       }
 
       if (asset.type === "audio") {
@@ -98,10 +106,13 @@ export function createPhaserDriverAssetLoader(options: {
         if (!runtime.hasAudio(asset.id)) {
           await runtime.loadAudio(asset.id, urls);
         }
-        return;
+        return finish();
       }
 
       throw unsupported(asset);
+    },
+    unload(asset) {
+      options.runtime().unloadAsset(asset.id, asset.type);
     }
   };
 }

@@ -8,3 +8,4 @@ export * from "./multiplayer-physics-prediction";
 export * from "./multiplayer-physics-arena-prediction";
 export * from "./multiplayer-rollback-contributors";
 export * from "./types";
+export * from "./save-session";

@@ -98,6 +98,7 @@ packages/
   ui-core/
   react-ui/
   save/
+  save-indexeddb/
   devtools/
   devtools-ui/
   test-utils/
@@ -161,6 +162,7 @@ multiplayer backend packages → multiplayer-core / platform-core / backend-owne
 react-ui → ui-core
 devtools-ui → devtools / ui-core / react-ui
 save → core / platform-core
+save-indexeddb → save / core / native IndexedDB
 ```
 
 禁止方向：
@@ -494,3 +496,9 @@ Room-side backend bridge 可以把已经由 provider Room 拥有的 session 映�
 - 小型单职责包可以保持扁平；是否拆目录由职责和依赖决定，不由文件数量或其他 package 的外观决定。
 
 具体包必须在对应 `docs/modules/<module>.md` 维护长期包内架构。Animator、Audio 和 Navigation Core 的领域目录、subpath export 与依赖图分别见 `docs/modules/animator.md`、`docs/modules/audio.md`、`docs/modules/navigation.md` 以及 ADR 0042、ADR 0043、ADR 0035、ADR 0037。
+
+## 资源与存档的生产生命周期边界
+
+Asset scope、加载调度和驻留预算由 AssetManager 统一维护，Driver 只执行原生资源加载/释放；App Host 持有 preload scope 并管理释放顺序。Scope 不查询 World 或 Renderer 推断所有权，见 `docs/modules/assets.md` 和 ADR 0057。
+
+`save-indexeddb` 是浏览器 SaveStore adapter，原生事务与修订冲突检查不进入 Save core。候选会话恢复由 App Host 组合 helper 持有，SaveManager 只提供同一 envelope 的预校验与恢复；框架不回滚任意业务副作用。见 `docs/modules/save.md`、`docs/modules/app-host.md` 和 ADR 0058。

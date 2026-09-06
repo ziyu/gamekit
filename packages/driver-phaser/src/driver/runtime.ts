@@ -95,6 +95,7 @@ export async function createPhaserDriverRuntime(
   const view = gameRef.canvas as HTMLCanvasElement;
   applyLogicalCanvasSize(gameRef, view, ctx.width, ctx.height);
   const audioRuntime = createPhaserAudioRuntime(sceneRef);
+  const ownedAnimations = new Map<string, Set<string>>();
 
   return {
     view,
@@ -116,7 +117,7 @@ export async function createPhaserDriverRuntime(
           assetId,
           () => sceneRef.textures.exists(assetId),
           () => {
-            sceneRef.load.image(assetId, url);
+            sceneRef.load.image(assetId, url, { timeout: 30_000 });
           }
         );
       },
@@ -126,12 +127,17 @@ export async function createPhaserDriverRuntime(
           assetId,
           () => sceneRef.textures.exists(assetId),
           () => {
-            sceneRef.load.spritesheet(assetId, url, {
-              frameWidth: frame.width,
-              frameHeight: frame.height,
-              margin: frame.margin ?? 0,
-              spacing: frame.spacing ?? 0
-            });
+            sceneRef.load.spritesheet(
+              assetId,
+              url,
+              {
+                frameWidth: frame.width,
+                frameHeight: frame.height,
+                margin: frame.margin ?? 0,
+                spacing: frame.spacing ?? 0
+              },
+              { timeout: 30_000 }
+            );
           }
         );
       },
@@ -141,7 +147,13 @@ export async function createPhaserDriverRuntime(
           assetId,
           () => sceneRef.textures.exists(assetId),
           () => {
-            sceneRef.load.atlas(assetId, textureUrl, dataUrl);
+            sceneRef.load.atlas(
+              assetId,
+              textureUrl,
+              dataUrl,
+              { timeout: 30_000 },
+              { timeout: 30_000 }
+            );
           }
         );
       },
@@ -154,7 +166,7 @@ export async function createPhaserDriverRuntime(
           assetId,
           () => sceneRef.cache.audio.exists(assetId),
           () => {
-            sceneRef.load.audio(assetId, urls);
+            sceneRef.load.audio(assetId, urls, undefined, { timeout: 30_000 });
           }
         );
       },
@@ -163,6 +175,9 @@ export async function createPhaserDriverRuntime(
           if (sceneRef.anims.exists(animation.id)) {
             continue;
           }
+          const keys = ownedAnimations.get(textureId) ?? new Set<string>();
+          keys.add(animation.id);
+          ownedAnimations.set(textureId, keys);
           const frames = animationFrames(sceneRef, textureId, animation.frames);
           sceneRef.anims.create({
             key: animation.id,
@@ -174,6 +189,10 @@ export async function createPhaserDriverRuntime(
             yoyo: animation.yoyo ?? false
           });
         }
+      },
+      unloadAsset(assetId, type) {
+        if (type === "audio") audioRuntime.releaseAsset(assetId);
+        releasePhaserAsset(sceneRef, ownedAnimations, assetId, type);
       }
     },
     audio: audioRuntime,
@@ -225,8 +244,11 @@ export async function createPhaserDriverRuntime(
   };
 }
 
-function createPhaserAudioRuntime(scene: any): PhaserDriverAudioRuntime {
+export function createPhaserAudioRuntime(scene: any): PhaserDriverAudioRuntime & {
+  releaseAsset(assetId: string): void;
+} {
   type NativeTrack = {
+    assetId: string;
     sound: any;
     baseVolume: number;
     basePitch: number;
@@ -289,6 +311,7 @@ function createPhaserAudioRuntime(scene: any): PhaserDriverAudioRuntime {
           return false;
         }
         instance.tracks.set(track.id, {
+          assetId: track.asset.assetId,
           sound,
           baseVolume: track.volume,
           basePitch: track.pitch,
@@ -306,6 +329,14 @@ function createPhaserAudioRuntime(scene: any): PhaserDriverAudioRuntime {
         }
       }
       return true;
+    },
+    releaseAsset(assetId) {
+      this.stop(
+        [...instances].flatMap(([id, instance]) =>
+          [...instance.tracks.values()].some((track) => track.assetId === assetId) ? [id] : []
+        ),
+        0
+      );
     },
     stop(instanceIds, fadeMs) {
       for (const instanceId of instanceIds) {
@@ -588,7 +619,7 @@ function inputEmitter(
   return scene.input;
 }
 
-function loadPhaserAsset(
+export function loadPhaserAsset(
   scene: any,
   assetId: string,
   exists: () => boolean,
@@ -600,26 +631,38 @@ function loadPhaserAsset(
 
   return new Promise((resolve, reject) => {
     const loader = scene.load;
+    const onShutdown = () => {
+      cleanup();
+      reject(new Error(`Phaser scene shut down while loading ${assetId}`));
+    };
+    let failed = false;
     const cleanup = () => {
       loader.off("complete", onComplete);
       loader.off("loaderror", onError);
+      scene.events?.off("shutdown", onShutdown);
     };
     const onComplete = () => {
       cleanup();
-      resolve();
+      if (failed || !exists()) reject(new Error(`Failed to load Phaser asset: ${assetId}`));
+      else resolve();
     };
     const onError = (file: { key?: string }) => {
       if (file.key !== undefined && file.key !== assetId) {
         return;
       }
-      cleanup();
-      reject(new Error(`Failed to load Phaser asset: ${assetId}`));
+      failed = true;
     };
 
+    scene.events?.once("shutdown", onShutdown);
     loader.once("complete", onComplete);
     loader.on("loaderror", onError);
-    enqueue();
-    loader.start();
+    try {
+      enqueue();
+      loader.start();
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
   });
 }
 
@@ -653,4 +696,20 @@ function animationFrames(
     start: frames.start,
     end: frames.end
   });
+}
+
+export function releasePhaserAsset(
+  scene: any,
+  ownedAnimations: Map<string, Set<string>>,
+  assetId: string,
+  type: string
+): void {
+  if (type === "audio") {
+    for (const sound of scene.sound.getAll(assetId)) sound.destroy();
+    scene.cache.audio.remove(assetId);
+  } else {
+    for (const id of ownedAnimations.get(assetId) ?? []) scene.anims.remove(id);
+    ownedAnimations.delete(assetId);
+    if (scene.textures.exists(assetId)) scene.textures.remove(assetId);
+  }
 }

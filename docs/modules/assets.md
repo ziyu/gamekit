@@ -238,3 +238,33 @@ Renderer adapter 可以持有底层资源句柄，但这些句柄不进入 gamep
 - 栅格运行时纹理尺寸应接近“最大预期 display footprint × profile pixel ratio”，并为 zoom/atlas/filtering 留出有数据支撑的余量。不要把任意高分辨率 authoring source 原样发布，也不要让同一透明小物体在默认视角长期做大比例 minification；传输字节、纹理内存、fill-rate 和闪烁风险需要一起衡量。
 - 资源加载失败、缺失引用和平台 source 不支持要分成不同 diagnostics，方便编辑器和 DevTools 给出正确修复建议。
 - Renderer 使用 asset id 或 adapter-specific props 取资源句柄；gameplay、DataType 和 Save payload 不保存 texture、image element、WebGL resource 或 Phaser cache object。
+
+## 作用域与驻留预算
+
+`createScope(id)` 创建独立资源所有者。`scope.load(id)` / `loadGroup(group)` 同时加载并持有，每个 scope/id 只计一次；同名 scope 也是不同所有者。`release(id)` 释放一个引用，`dispose()` 释放全部引用并关闭作用域。没有其他 scope 或 legacy load 保留时，资源通过 adapter.unload 回收。
+
+```ts
+const sceneAssets = manager.createScope("level");
+await sceneAssets.loadGroup("level-1");
+// 创建并使用 render object / audio playback。
+// 离开场景时先移除这些对象、停止播放，再释放资源。
+await sceneAssets.dispose();
+```
+
+普通 `load/loadGroup` 保持缓存语义；`unload(id)` 显式回收无主资源，有主资源返回 `asset.in_use`。`dispose()` 终止 manager、取消任务、尝试所有清理并清空声明/状态。自定义 AssetManager 必须实现这些新增方法；加载 adapter 可以没有 unload，但不能创建 scope。
+
+`load(id, { signal })` 取消当前等待者。共享请求仍有等待者时继续加载，最后一个等待者退出才取消底层请求；取消结果为 AbortError，状态回到 registered。重载同一 id 必须等待旧请求清理完成。无法终止 IO 的 adapter 必须负责晚到结果；Phaser 等共享 loader 不通过重置整个 runtime 来取消单个资源。
+
+`maxConcurrentLoads` 默认 4；`maxResidentAssets/maxResidentBytes` 是显式 opt-in 的驻留预算。预算包含正在加载的预留，只能淘汰无主 LRU 缓存；有主资源占满预算时新加载失败。字节预算必须提供非负安全整数 `AssetDefinition.estimatedBytes`，该数字描述内容估算而非 GPU 实测。`lifecycleSnapshot()` 暴露排队/活跃加载数、驻留数/字节与引用计数；诊断区分 retained/released/unloaded/cancelled/failed。
+
+### 模块集成
+
+- 使用 Driver 提供的 unload 实现；Three 释放模型几何、材质、纹理及拥有的 image bitmap，Phaser 释放对应 texture/audio 和本资源创建的 animation。不要用卸载单资源替代整个 Driver dispose。
+- 标准 Host 的 preload scope 在 Host 生命周期内保留启动资源。自定义生命周期必须按“游戏对象和播放实例 → scope → manager → Driver”的顺序清理；共享外部 manager 的 Host 可以显式配置 `dispose: false`，但仍释放自身 preload scope。
+- 开启驻留预算后，所有持续使用的资源都应由 scope 持有；legacy load 的无主缓存允许淘汰。使用确定性的资源数量和字节估算预算测试，并另外测真实设备 GPU/内存。
+
+### 模块使用
+
+- 作用域只持有显式加载的资源，不自动推断材质或模型之间的业务依赖；声明资源集时应包含场景需要的全部资源。
+- 同一资源被多个 scene/UI 使用时分别持有 scope；释放其中一个不能破坏其他消费者。不要手动从 native cache 删除仍被 scope 持有的资源。
+- 取消后等待 scope.dispose/unload 完成再复用同一资源身份；无法释放的 native 资源不能被报告为成功回收。

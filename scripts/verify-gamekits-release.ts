@@ -78,6 +78,7 @@ const wave2SupportPackageSlugs = wave1PackageSlugs.filter(
 );
 
 const wave2PackageSlugs = [
+  "save-indexeddb",
   "input-core",
   "camera-core",
   "physics-core",
@@ -269,11 +270,17 @@ import { initRapier2dPhysicsBackend } from "@gamekits/physics-rapier2d";
 import { initRapier3dPhysicsBackend } from "@gamekits/physics-rapier3d";
 import { createAssetManager } from "@gamekits/asset";
 import { createMemorySaveStore } from "@gamekits/save";
+import { createIndexedDbSaveStore } from "@gamekits/save-indexeddb";
 import { createDevToolsRuntime } from "@gamekits/devtools";
 import { createUiRuntime as createWave2UiRuntime } from "@gamekits/ui-core";
 import { createHeadlessHost, createStandardAppProfile, defineGameApp } from "@gamekits/app-host";
 
 const platform = createWebPlatform({ appName: "GameKits Wave 2 Smoke" });
+const indexedDbStore = createIndexedDbSaveStore({
+  databaseName: "release-smoke",
+  indexedDB: { open() { throw new Error("Lazy store must not open during construction"); } }
+});
+await indexedDbStore.dispose();
 if ((await platform.services.app.name()) !== "GameKits Wave 2 Smoke") {
   throw new Error("platform smoke failed");
 }

@@ -98,8 +98,7 @@ describe("createAssetManager", () => {
     definition.tags?.push("external-mutation");
     const first = manager.load(definition.id);
     const second = manager.load(definition.id);
-    await Promise.resolve();
-    expect(loads).toBe(1);
+    await expect.poll(() => loads).toBe(1);
     resolveLoad?.();
     await expect(Promise.all([first, second])).resolves.toEqual([
       expect.objectContaining({ status: "loaded" }),

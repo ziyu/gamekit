@@ -1,6 +1,6 @@
 import { createAppHostError } from "../runtime/errors";
 import type { AppProfile, AppServiceFactory } from "../definition/types";
-import { createAssetManager } from "@gamekit/asset";
+import { createAssetManager, type AssetScope } from "@gamekit/asset";
 import { createGameAudio } from "@gamekit/audio-core";
 import { createDevToolsRuntime, type DevToolsRuntime } from "@gamekit/devtools";
 import { createDriverRegistry } from "@gamekit/driver-core";
@@ -258,6 +258,15 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
         const manager =
           options.manager === undefined
             ? createAssetManager({
+                ...(options.maxConcurrentLoads === undefined
+                  ? {}
+                  : { maxConcurrentLoads: options.maxConcurrentLoads }),
+                ...(options.maxResidentAssets === undefined
+                  ? {}
+                  : { maxResidentAssets: options.maxResidentAssets }),
+                ...(options.maxResidentBytes === undefined
+                  ? {}
+                  : { maxResidentBytes: options.maxResidentBytes }),
                 adapter:
                   (options.adapter === undefined
                     ? undefined
@@ -269,15 +278,17 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
               })
             : resolveStandardValue(ctx, options.manager);
         ctx.state.assets = manager;
+        let preloadScope: AssetScope | undefined;
         return {
           key: ASSET_SERVICE,
           service: manager,
           standard: "assets",
           lifecycle: {
             id: ASSET_SERVICE.id,
-            dependencies:
-              ctx.service.dependencies ??
-              ((options.dataRegistry?.(ctx) ?? ctx.state.data) ? ["data"] : []),
+            dependencies: ctx.service.dependencies ?? [
+              ...((options.dataRegistry?.(ctx) ?? ctx.state.data) ? ["data"] : []),
+              ...(options.manager === undefined && options.adapter === undefined ? ["drivers"] : [])
+            ],
             async boot() {
               const dataRegistry = options.dataRegistry?.(ctx) ?? ctx.state.data;
               if (dataRegistry?.hasType("asset.definition")) {
@@ -286,8 +297,20 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
               const preloadGroups =
                 options.preloadGroups?.(ctx) ??
                 ctx.resolveConfig<{ preloadGroups?: string[] }>()?.preloadGroups;
+              if (preloadGroups?.length) {
+                try {
+                  preloadScope = manager.createScope("app.preload");
+                } catch (error) {
+                  if (
+                    !(error instanceof Error) ||
+                    !("code" in error) ||
+                    error.code !== "asset.unload_unsupported"
+                  )
+                    throw error;
+                }
+              }
               for (const group of preloadGroups ?? []) {
-                const states = await manager.loadGroup(group);
+                const states = await (preloadScope ?? manager).loadGroup(group);
                 const failed = states.filter((state) => state.status === "failed");
                 if (failed.length > 0)
                   throw createAppHostError(
@@ -297,10 +320,27 @@ const standardServiceDefinitions: Record<string, StandardServiceFactoryCreator |
                   );
               }
             },
+            async dispose() {
+              const errors: unknown[] = [];
+              try {
+                await preloadScope?.dispose();
+              } catch (error) {
+                errors.push(error);
+              }
+              if (options.dispose !== false) {
+                try {
+                  await manager.dispose();
+                } catch (error) {
+                  errors.push(error);
+                }
+              }
+              if (errors.length) throw new AggregateError(errors, "Asset service cleanup failed");
+            },
             snapshot() {
               return {
                 assets: manager.assets(),
-                states: manager.states()
+                states: manager.states(),
+                lifecycle: manager.lifecycleSnapshot()
               };
             }
           }

@@ -486,6 +486,7 @@ describe("createPhaserDriverAssetLoader", () => {
   it("loads atlas and audio assets and registers animation manifests", async () => {
     const calls: string[] = [];
     const runtime: PhaserDriverAssetRuntime = {
+      unloadAsset() {},
       hasTexture: () => false,
       async loadImage() {
         calls.push("image");
@@ -551,6 +552,7 @@ describe("createPhaserDriverAssetLoader", () => {
   it("does not reload cached textures but still ensures native animations", async () => {
     const calls: string[] = [];
     const runtime: PhaserDriverAssetRuntime = {
+      unloadAsset() {},
       hasTexture: () => true,
       async loadImage() {
         calls.push("image");

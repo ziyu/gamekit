@@ -27,6 +27,7 @@
       "@gamekit/ui-core",
       "@gamekit/asset",
       "@gamekit/save",
+      "@gamekit/save-indexeddb",
       "@gamekit/platform-web",
       "@gamekit/input-dom",
       "@gamekit/renderer-phaser",
