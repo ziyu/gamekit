@@ -43,7 +43,9 @@ GameKit 使用多包 lockstep 发布。仓库内部包名仍是 `@gamekit/*`，�
 
 只改 docs、apps、root scripts、workflow 或 release automation 本身时，不会自动生成包版本
 changeset。这样的 PR 合并后 Release workflow 仍会运行 registry 状态检查；如果没有缺失版本
-或过期 dist-tag，它会跳过发布。
+或过期 dist-tag，它会跳过 npm 发布。自动流程也会跳过已经存在的 GitHub Release；仅在 Release
+缺失时调用创建脚本，保留 npm 已发布后的补建能力。已发布 tag 始终保留在原始发布 commit，
+不会随普通主线提交移动。
 
 ## Version PR 合并前检查
 

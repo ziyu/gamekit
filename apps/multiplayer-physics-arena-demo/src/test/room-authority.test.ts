@@ -46,11 +46,13 @@ describe("Knockout Arena Room authority", () => {
         localPeer: { id: "bean-b", displayName: "Bean B", role: "client" }
       });
       await waitFor(() =>
-        snapshotsA.some(
-          (snapshot) =>
-            snapshot.playerIdsByPeerId["bean-a"] === arenaPlayerMemberId(0) &&
+        [snapshotsA, snapshotsB].every((snapshots) => {
+          const snapshot = snapshots.at(-1);
+          return (
+            snapshot?.playerIdsByPeerId["bean-a"] === arenaPlayerMemberId(0) &&
             snapshot.playerIdsByPeerId["bean-b"] === arenaPlayerMemberId(1)
-        )
+          );
+        })
       );
       const inputEpochA = commandEpoch(snapshotsA.at(-1)!, "bean-a");
       const inputEpochB = commandEpoch(snapshotsB.at(-1)!, "bean-b");

@@ -30,7 +30,7 @@ jobs:
         run: corepack pnpm install --frozen-lockfile
 
       - name: Test
-        run: corepack pnpm test
+        run: corepack pnpm test --concurrency=2 -- --maxWorkers=2
 
       - name: Build
         run: corepack pnpm build
