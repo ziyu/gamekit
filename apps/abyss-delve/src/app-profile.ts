@@ -108,7 +108,7 @@ export function createAbyssWebProfile(): AppProfile<AbyssAppContext> {
               capture: true,
               source: "abyss.dom",
               scope: (event) => resolveInputScope(context, event),
-              eventFilter: (event) => isKeyboardEvent(event) || isPointerInRenderer(context, event),
+              eventFilter: isKeyboardEvent,
               onInput(event) {
                 router.handle(event);
               }
@@ -217,7 +217,17 @@ function createRendererBootContext(
   return boot;
 }
 
-function resolveInputScope(context: AbyssAppContext, event: Event): "game" | "ui" {
+function resolveInputScope(context: AbyssAppContext, event: Event): string {
+  if (isKeyboardEvent(event)) {
+    if (
+      event.target instanceof HTMLElement &&
+      (event.target.isContentEditable || event.target.closest("input, textarea, select"))
+    )
+      return "text-input";
+    const focus = context.uiRuntime.focus().scope;
+    if (focus === "devtools" || focus === "text-input" || focus === "ui" || focus === "modal")
+      return focus;
+  }
   if (context.inputBlocked) {
     return isKeyboardEvent(event) ? "game" : "ui";
   }

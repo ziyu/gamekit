@@ -102,7 +102,6 @@ Effect 支持：
 - periodic effect
 - attribute modifier
 - granted / removed tags
-- stack policy
 - expire cleanup
 
 首层协议不绑定具体战斗类型。伤害、治疗、建筑增益、区域 aura、生产效率、剧情标记、天气影响都应能用同一套 Effect 模型表达。
@@ -162,9 +161,12 @@ GAS 不要求游戏必须按 GAS 类型组织内容文件。真实项目可以�
 
 - GAS module 集成负责从 DataRegistry 读取 definitions、创建 ECS-backed runtime、注册 effect tick system、合并 TCA definitions、写 trace，并在 GameRuntime dispose 时清理。
 - Actor 与 EntityId 的绑定、save/load entity mapping、spawn/despawn 策略由 game module 或 Save contributor 明确处理，不由 GAS core 猜测。
-- 测试应覆盖 cost/cooldown/tag requirement、effect stack/expire/periodic、attribute modifier、cue dispatch、entity binding、save/restore 边界和 TCA integration。
+- 测试应覆盖 cost/cooldown/tag requirement、effect expire/periodic、attribute modifier、cue dispatch、entity binding、save/restore 边界和 TCA integration。
 
 ### 模块使用
+
+- periodMs 必须为有限正数，Data 校验和 Runtime 均执行检查。周期 tick 只发生在到期前（tickTime < expiresAt），大 delta 补 tick 不得越过到期边界。
+- Ability 在支付成本、写入冷却、发送成功事件前解析全部 effect 目标和引用。目标缺失或不存在时不提交消耗；业务回调在提交后异常不等于自动回滚整个技能。
 
 - GAS 是通用 actor/ability/effect runtime，不写死 RPG、卡牌、塔防或动作游戏概念。Attribute、Tag、Ability、Effect 都使用游戏可定义 key。
 - Actor 可以绑定 EntityId。热状态应尽量落在 World component 上，让系统查询和批量更新利用 ECS 性能；Data definitions 保留配置自由度。

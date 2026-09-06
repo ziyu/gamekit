@@ -229,6 +229,8 @@ GAS 不重新实现一套规则引擎。
 
 ### 模块使用
 
+- once 规则在进入 trigger/condition/action 前预留执行状态，同步派生事件不能重入同一规则。全部 actions 成功才记录完成；条件不通过或 action 失败会释放预留，允许后续事件重试。已执行 action 的副作用不会自动回滚，业务应让重试安全。
+
 - TCA 负责低频、可解释、可追踪的规则链路，不负责 movement、camera smoothing、render sync、pathfinding 等每帧高频逻辑。
 - Handler 只通过 TcaHandlerContext 访问稳定 facade。需要表现或 UI 时发低频 event/command，不直接 import Phaser、DOM、React 或具体 app。
 - Condition/action 的 value resolver 尽量在 compile 阶段准备，运行时减少字符串 path 解析和临时对象。

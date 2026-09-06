@@ -214,6 +214,9 @@ UI 不直接改 gameplay 状态。UI 应输出焦点/scope 信号，Input adapte
 
 ### 模块集成
 
+- DOM 来源在 window blur、document 隐藏、target focusin 和 stop 时取消其已按下输入；keyup 即使落在过滤范围之外也必须完成原按键的取消。App Host 停止或释放 Input 服务时调用 `router.cancelAll()`。
+- 同一物理输入只装配一个来源；例如 DOM 负责键盘，Phaser Driver 负责 viewport 指针，避免双重动作和坐标系混用。UI focus 切到文本框/DevTools 时取消 held，新的键盘事件按实际交互域路由。
+
 - Source adapter 只负责把 DOM、Driver、Touch、Gamepad、Tauri menu 等 raw input 归一化，不直接改 World、Camera、Renderer 或 UI state。
 - Input service 集成应由 App Host/app shell 统一推进 held tick、scope gate、source cleanup 和 EventBus bridge，业务代码不直接调用 router 内部刷新细节。
 - UI focus、modal、text input、game viewport 和 DevTools 应由 app shell 或 UI bridge 转成 scope/context 状态，再交给 input-core 路由。

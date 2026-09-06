@@ -244,7 +244,7 @@ Camera 是 gameplay/session 能力，不是 App Host 标准服务，也不是 Ph
 
 Platform 隔离 Web/Tauri/未来平台差异。文件、窗口、权限、路径、存储和系统能力都通过 platform-core。
 
-详细设计见 `docs/modules/platform.md`。
+详细设计见 `docs/modules/platform.md`。存档文件替换、加载预检和生命周期失败边界遵循 `docs/adr/0009-runtime-failure-and-save-commit-contracts.md`。
 
 ### UI
 

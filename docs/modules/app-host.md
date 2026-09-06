@@ -545,6 +545,9 @@ Save 的边界是混合型：`services.save` 可以作为 App Host 标准服务�
 
 ### 模块集成
 
+- Lifecycle 请求串行执行，成功 boot 不重复装配，stop 后可 start；boot/start 失败后应 dispose 并重新创建 Host。dispose 终态不允许重新启动，等待中的启动操作不能在 dispose 完成后复活 Host。
+- boot/start 对失败依赖立即中止；stop/dispose 反序尝试所有服务再报告错误。标准 Driver 服务等待每个异步 hook，清理中的单个 Driver 失败不能阻止其他 Driver 释放。Host dispose 完成尝试后保持 disposed，各失败服务仍通过 diagnostics 和 snapshot 标明失败。
+
 - App 应优先通过 GameAppDefinition + AppProfile 启动。Definition 描述需要什么能力，Profile 描述当前运行环境提供哪些 adapter、driver 和少量参数。
 - 标准 service binding 由 App Host 内部定义表创建，profile 不应手写一大坨 service factory。扩展 service 使用同一套 registry/lifecycle，不走特殊分支。
 - `services.xxx` 只暴露 App Service，例如 platform、data、assets、drivers、renderer、input、ui、save、devtools；Camera/TCA/GAS 等玩法会话能力通过标准 GameModule helper 注入 GameRuntime。

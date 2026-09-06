@@ -53,12 +53,14 @@ export function createInputRouter(options: CreateInputRouterOptions = {}): Input
         throw createInputMissingActionError(actionId);
       }
       actionBindings.delete(actionId);
+      cancelActive((active) => active.actionId === actionId);
     },
     setActionBindings(actionId, bindings) {
       if (!actions.has(actionId)) {
         throw createInputMissingActionError(actionId);
       }
       actionBindings.set(actionId, [...bindings]);
+      cancelActive((active) => active.actionId === actionId);
     },
     addContext(context) {
       if (contexts.has(context.id)) {
@@ -70,12 +72,14 @@ export function createInputRouter(options: CreateInputRouterOptions = {}): Input
       if (!contexts.delete(contextId)) {
         throw createInputMissingContextError(contextId);
       }
+      cancelActive((active) => active.contextId === contextId);
     },
     enableContext(contextId) {
       updateContext(contexts, contextId, true);
     },
     disableContext(contextId) {
       updateContext(contexts, contextId, false);
+      cancelActive((active) => active.contextId === contextId);
     },
     activeContexts() {
       return sortInputContexts([...contexts.values()].filter(isInputContextEnabled));
@@ -132,13 +136,30 @@ export function createInputRouter(options: CreateInputRouterOptions = {}): Input
         }
       }
 
-      clearReleasedInputs(activeActions, input);
+      if (input.phase === "released" || input.phase === "cancelled") {
+        emitted.push(
+          ...cancelActive(
+            (active) => inputIdentity(active.input) === inputIdentity(input),
+            input.timestamp
+          )
+        );
+      }
       return emitted;
     },
     tick(frame) {
       const events: InputActionEvent[] = [];
 
       for (const active of activeActions.values()) {
+        const context = contexts.get(active.contextId);
+        if (
+          !context ||
+          !isInputContextEnabled(context) ||
+          !contextAcceptsAction(context, active.actionId) ||
+          !actionAcceptsInputScope(actions.get(active.actionId), active.input)
+        ) {
+          activeActions.delete(activeActionKey(active));
+          continue;
+        }
         const input: NormalizedInputEvent = {
           ...active.input,
           id: `${active.input.id}:held:${++heldSequence}`,
@@ -154,7 +175,6 @@ export function createInputRouter(options: CreateInputRouterOptions = {}): Input
           timestamp: frame.timestamp
         };
 
-        activeActions.set(activeActionKey(event), event);
         events.push(event);
         for (const listener of listeners) {
           listener(event);
@@ -163,6 +183,9 @@ export function createInputRouter(options: CreateInputRouterOptions = {}): Input
 
       return events;
     },
+    cancelAll() {
+      return cancelActive(() => true);
+    },
     onAction(listener) {
       listeners.add(listener);
       return () => {
@@ -170,6 +193,44 @@ export function createInputRouter(options: CreateInputRouterOptions = {}): Input
       };
     }
   };
+
+  function cancelActive(
+    matches: (active: InputActionEvent) => boolean,
+    timestamp?: number
+  ): InputActionEvent[] {
+    const cancelled = [...activeActions.entries()].filter(([, active]) => matches(active));
+    for (const [key] of cancelled) activeActions.delete(key);
+    const events = cancelled.map(([, active]) => {
+      const input: NormalizedInputEvent = {
+        ...active.input,
+        id: `${active.input.id}:cancelled:${++heldSequence}`,
+        phase: "cancelled",
+        timestamp: timestamp ?? active.timestamp
+      };
+      const event: InputActionEvent = {
+        ...active,
+        id: createInputActionEventId(input, active.actionId),
+        input,
+        phase: "cancelled",
+        value: 0,
+        timestamp: input.timestamp
+      };
+      return event;
+    });
+    const errors: unknown[] = [];
+    for (const event of events) {
+      for (const listener of listeners) {
+        try {
+          listener(event);
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, "Input cancellation failed");
+    return events;
+  }
 }
 
 const DEFAULT_GLOBAL_CONTEXT: InputContext = {
@@ -187,9 +248,10 @@ function contextAcceptsInputScope(context: InputContext, input: { scope?: string
 }
 
 function actionAcceptsInputScope(
-  action: InputActionDefinition,
+  action: InputActionDefinition | undefined,
   input: { scope?: string }
 ): boolean {
+  if (!action) return false;
   if (!action.scopes) {
     return true;
   }
@@ -222,22 +284,6 @@ function actionSupportsHeld(bindings: InputBinding[], input: NormalizedInputEven
       phase: "held"
     })
   );
-}
-
-function clearReleasedInputs(
-  activeActions: Map<string, InputActionEvent>,
-  input: { phase: string; device: string; code?: string; button?: string; pointerId?: string }
-): void {
-  if (input.phase !== "released" && input.phase !== "cancelled") {
-    return;
-  }
-
-  const inputKey = inputIdentity(input);
-  for (const [key, event] of activeActions) {
-    if (inputIdentity(event.input) === inputKey) {
-      activeActions.delete(key);
-    }
-  }
 }
 
 function activeActionKey(event: InputActionEvent): string {

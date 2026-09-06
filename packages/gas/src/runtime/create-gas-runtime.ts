@@ -187,6 +187,27 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
       return rejectAbility(input, "ability costs cannot be paid");
     }
 
+    const plannedEffects = (ability.effects ?? []).map((effect) => {
+      const targetActorId = effect.target === "self" ? input.actorId : input.targetActorId;
+      if (!targetActorId) {
+        throw createGasError(
+          "gas.missing_effect_target",
+          "GAS effect application requires target",
+          {
+            abilityId: input.abilityId,
+            effectId: effect.effectId
+          }
+        );
+      }
+      requireMutableActor(targetActorId);
+      const definition = config.dataRegistry.getValue<GasEffectDefinition>(
+        GAS_EFFECT_TYPE,
+        effect.effectId
+      );
+      assertEffectPeriod(definition);
+      return { effect, targetActorId };
+    });
+
     payCosts(state, ability);
     const resultEffects: GasEffectApplication[] = [];
     const cooldownUntil =
@@ -210,18 +231,7 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
       targetActorId: input.targetActorId
     });
 
-    for (const effect of ability.effects ?? []) {
-      const targetActorId = effect.target === "self" ? input.actorId : input.targetActorId;
-      if (!targetActorId) {
-        throw createGasError(
-          "gas.missing_effect_target",
-          "GAS effect application requires target",
-          {
-            abilityId: input.abilityId,
-            effectId: effect.effectId
-          }
-        );
-      }
+    for (const { effect, targetActorId } of plannedEffects) {
       applyEffect({
         sourceActorId: input.actorId,
         targetActorId,
@@ -276,6 +286,7 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
       GAS_EFFECT_TYPE,
       input.effectId
     );
+    assertEffectPeriod(effect);
 
     for (const modifier of effect.attributeModifiers ?? []) {
       modifyAttributeState(state, modifier, input.effectId);
@@ -323,12 +334,24 @@ export function createGasRuntime(config: CreateGasRuntimeConfig): GasRuntime {
         GAS_EFFECT_TYPE,
         active.effectId
       );
+      assertEffectPeriod(definition);
       let nextTickAt = active.nextTickAt;
-      while (nextTickAt !== undefined && nextTickAt <= elapsedNow) {
+      while (
+        nextTickAt !== undefined &&
+        nextTickAt <= elapsedNow &&
+        (active.expiresAt === undefined || nextTickAt < active.expiresAt)
+      ) {
         for (const modifier of definition.periodicModifiers ?? []) {
           modifyAttributeState(state, modifier, active.effectId);
         }
-        nextTickAt += definition.periodMs ?? Number.POSITIVE_INFINITY;
+        const followingTick = nextTickAt + (definition.periodMs ?? Number.POSITIVE_INFINITY);
+        if (followingTick <= nextTickAt)
+          throw createGasError(
+            "gas.invalid_effect_period",
+            "Effect period cannot advance the clock",
+            { effectId: active.effectId }
+          );
+        nextTickAt = followingTick;
       }
 
       if (active.expiresAt !== undefined && active.expiresAt <= elapsedNow) {
@@ -590,4 +613,17 @@ function cloneAttributes(
 
 function unique(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function assertEffectPeriod(effect: GasEffectDefinition): void {
+  if (
+    effect.periodMs !== undefined &&
+    (!Number.isFinite(effect.periodMs) || effect.periodMs <= 0)
+  ) {
+    throw createGasError(
+      "gas.invalid_effect_period",
+      "GAS effect period must be positive and finite",
+      { effectId: effect.id }
+    );
+  }
 }

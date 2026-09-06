@@ -87,6 +87,8 @@ export type InputRouter = {
   activeContexts(): InputContext[];
   handle(input: NormalizedInputEvent): InputActionEvent[];
   tick(frame: InputFrame): InputActionEvent[];
+  /** Cancel held actions and notify their original consumers. */
+  cancelAll(): InputActionEvent[];
   onAction(listener: InputActionListener): InputUnsubscribe;
 };
 

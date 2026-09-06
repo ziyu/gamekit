@@ -192,6 +192,8 @@ Profiler 接入规则：
 
 ### 模块集成
 
+- GameModule install 成功返回的 cleanup 在后续模块安装失败时反序执行；install 内部在返回 cleanup 前失败的局部资源由该模块自己释放。dispose 尝试全部 cleanup，即使 runtime.stopped listener 抛错也不跳过资源释放；错误在全部尝试后报告。
+
 - GameRuntime 集成只负责模块安装、clock、system tick、start/stop/dispose 和低频 runtime event，不负责 boot App Service 或创建外部 runtime。
 - 标准 GameModule helper 应隐藏重复装配，例如 TCA 的 EventBus 订阅和 trace store lifecycle、Camera 的 input action 绑定和 renderer adapter sync。
 - GameRuntime 的 system 注册顺序是行为契约。新增标准模块 helper 时，如果顺序影响结果，必须用测试固定，并在模块设计中说明依赖。

@@ -205,11 +205,15 @@ Renderer adapter 可以持有底层资源句柄，但这些句柄不进入 gamep
 
 ### 模块集成
 
+- App Host 声明的 preloadGroups 是启动必需组，任一资源加载失败使 boot 失败；可选资源应在启动后按需加载并由 app 处理 failed 状态。
+
 - App Host/profile 负责按 Data → AssetManager → adapter preload 的顺序集成资源系统；AssetManager 不自己读取 DataPack 或猜测 gameplay document。
 - Phaser、Three 等资源加载必须通过 Driver 暴露的 asset loader adapter，共享同一个外部 runtime cache；不要为 Asset 单独创建另一套 Phaser/Three runtime。
 - Preload group 应面向启动体验和场景切换，不应把所有资源一次性塞进首屏加载。大资源、可选包和编辑器预览应支持 lazy/retry/unload。
 
 ### 模块使用
+
+- 同一 asset ID 的并发 load 共享进行中的加载；loaded 状态复用，失败状态允许下次调用重试。同步抛错与异步拒绝都进入 failed 状态，并清理进行中的请求。
 
 - AssetDefinition 是资源声明，AssetManager 是运行时加载状态管理；不要把 gameplay data、DataPack 解析或 renderer native object 放进 AssetManager。
 - 资源引用应使用 AssetRef 或业务数据里的明确资源引用字段，不要求资源定义与使用者处于同一 DataPack。

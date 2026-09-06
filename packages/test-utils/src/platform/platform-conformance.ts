@@ -28,6 +28,24 @@ export function definePlatformConformanceTests(
       ).resolves.toEqual(new Uint8Array([1, 2, 3]));
     });
 
+    it("atomically replaces files and durably removes them when supported", async () => {
+      const {
+        services: { fs }
+      } = await createPlatform();
+      if (!fs.replaceFile || !fs.remove) return;
+      const options = { baseDir: "appData" as const };
+      await fs.createDir("saves", { ...options, recursive: true });
+      await fs.writeText("saves/slot", "old", options);
+      await fs.writeText("saves/temp", "new", options);
+      await fs.replaceFile("saves/temp", "saves/slot", options);
+      expect(await fs.readText("saves/slot", options)).toBe("new");
+      expect(await fs.exists("saves/temp", options)).toBe(false);
+      await expect(fs.replaceFile("saves/missing", "saves/slot", options)).rejects.toThrow();
+      expect(await fs.readText("saves/slot", options)).toBe("new");
+      await fs.remove("saves/slot", options);
+      expect(await fs.exists("saves/slot", options)).toBe(false);
+    });
+
     it("lists directory entries", async () => {
       const platform = await createPlatform();
 

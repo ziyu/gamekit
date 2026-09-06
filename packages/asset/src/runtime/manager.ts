@@ -16,6 +16,7 @@ import type {
 export function createAssetManager(options: CreateAssetManagerOptions): AssetManager {
   const assets = new Map<string, AssetDefinition>();
   const states = new Map<string, AssetLoadState>();
+  const inFlight = new Map<string, Promise<AssetLoadState>>();
   const clock = options.clock ?? (() => Date.now());
 
   const emit = (
@@ -94,34 +95,41 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
       if (current?.status === "loaded") {
         return { ...current };
       }
+      const pending = inFlight.get(id);
+      if (pending) return pending;
 
       if (!options.adapter.supports(asset)) {
         throw createUnsupportedAssetError(asset, options.adapter.id);
       }
 
-      states.set(id, { id, status: "loading" });
-      emit("asset.loading", id, { assetId: id, assetType: asset.type });
-
-      try {
-        await options.adapter.load(asset);
-        const loaded: AssetLoadState = {
-          id,
-          status: "loaded",
-          loadedAt: clock()
-        };
-        states.set(id, loaded);
-        emit("asset.loaded", id, { assetId: id, assetType: asset.type });
-        return { ...loaded };
-      } catch (error) {
-        const failed: AssetLoadState = {
-          id,
-          status: "failed",
-          error: error instanceof Error ? error.message : String(error)
-        };
-        states.set(id, failed);
-        emit("asset.failed", id, { assetId: id, error: failed.error });
-        return { ...failed };
-      }
+      const request = Promise.resolve().then(async (): Promise<AssetLoadState> => {
+        try {
+          states.set(id, { id, status: "loading" });
+          emit("asset.loading", id, { assetId: id, assetType: asset.type });
+          await options.adapter.load(asset);
+          const loaded: AssetLoadState = {
+            id,
+            status: "loaded",
+            loadedAt: clock()
+          };
+          states.set(id, loaded);
+          emit("asset.loaded", id, { assetId: id, assetType: asset.type });
+          return { ...loaded };
+        } catch (error) {
+          const failed: AssetLoadState = {
+            id,
+            status: "failed",
+            error: error instanceof Error ? error.message : String(error)
+          };
+          states.set(id, failed);
+          emit("asset.failed", id, { assetId: id, error: failed.error });
+          return { ...failed };
+        } finally {
+          inFlight.delete(id);
+        }
+      });
+      inFlight.set(id, request);
+      return request;
     },
     async loadGroup(group) {
       const targets = [...assets.values()].filter((asset) => asset.group === group);

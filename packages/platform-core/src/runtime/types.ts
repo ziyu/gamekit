@@ -68,6 +68,9 @@ export type PlatformFileSystem = {
   writeText(path: string, content: string, options?: FsOptions): Promise<void>;
   readBinary(path: string, options?: FsOptions): Promise<Uint8Array>;
   writeBinary(path: string, data: Uint8Array, options?: FsOptions): Promise<void>;
+  /** Atomically replace target with source in the same directory. Failure preserves target. */
+  replaceFile?(source: string, target: string, options?: FsOptions): Promise<void>;
+  remove?(path: string, options?: FsOptions): Promise<void>;
   exists(path: string, options?: FsOptions): Promise<boolean>;
   createDir(path: string, options?: FsOptions): Promise<void>;
   listDir(path: string, options?: FsOptions): Promise<PlatformDirEntry[]>;

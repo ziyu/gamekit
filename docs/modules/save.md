@@ -294,8 +294,8 @@ export type SaveStore = {
 
 写入规则：
 
-- 支持 atomic write：先写临时文件，再替换目标。
-- 写入失败不能破坏已有可读存档。
+- File store 使用单个 `.slot` 记录封装 opaque bytes 与 summary，先写临时文件，再通过 Platform 原子替换同时提交数据和 metadata。缺少 replaceFile/remove 能力时在写入前报错。旧 `.save` / `.json` 保持读取兼容，新记录优先；删除同时清理旧副本。
+- File store 写入/替换失败不能破坏已有可读存档。PlatformStorage store 的修改在共享平台对象的包装实例间串行化，但多 key 存储不提供崩溃或跨窗口事务保证。
 - Store 层报告权限、容量、路径不可用、编码失败等稳定错误。
 
 ## Codec
@@ -523,6 +523,9 @@ Event payload 不应包含完整存档数据、敏感内容或大对象。详细
 - 测试必须覆盖固定 seed save/load/tick continuation、corrupted payload、missing slot、unsupported version、missing migration、contributor selection/policy 和 excluded UI/transient state。
 
 ### 模块使用
+
+- Load 在任何 restore 前完整预检选中 contributor：envelope 结构、appId/gameId、迁移结果、必需 section、section id/version 和 validate。section 版本必须精确匹配，升级通过迁移显式完成；未选中 contributor 不参与恢复校验。业务内容包与平台 capability 的兼容策略由 app/contributor 校验提供。
+- 预校验失败不调用任何 restore；restore 自身异常不保证全局回滚。需要事务性恢复的 app 应在隔离会话中 staging，或销毁失败会话后重建，不能继续使用半恢复的游戏。
 
 - 普通继续游戏存档保存长期玩法事实和 runtime clock。tick 1587 保存后，加载同一 slot 应回到 tick 1587，再从后续 tick 继续推进。
 - 不保存当前选中目标、hover/focus target、confirm UI 交互上下文、held input、Timeline 日志、React component state、renderer native handle、adapter cache 或 pathfinding cache。

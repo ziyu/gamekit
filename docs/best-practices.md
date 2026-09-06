@@ -84,6 +84,9 @@
 
 ## 测试策略
 
+- 异步生命周期等待测试使用可控 deferred gate 验证 Promise 尚未结束，不能只等待一个微任务后断言最终状态。清理测试在中间模块抛错并验证其余资源全部尝试释放。
+- 持久化测试注入部分写入/原子替换失败，并新建 store 验证旧数据、metadata 与删除结果；并发测试覆盖共享底层 store 的不同包装实例。加载测试以所有 validate 完成前没有 restore 为契约。
+
 - Facade 要有契约测试；Adapter 先跑 facade conformance，再补底层库专属行为测试。
 - 数据驱动模块必须覆盖 duplicate、unknown type、missing reference、schema/path error、trace/diagnostic。
 - GameRuntime、Camera、Input、TCA、GAS、Save 等有顺序语义的模块必须覆盖顺序、幂等、stop/dispose 和 cleanup。

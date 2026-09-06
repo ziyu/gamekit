@@ -218,6 +218,32 @@ describe("save manager", () => {
     await expect(manager.load("old")).rejects.toMatchObject({ code: "save.migration_missing" });
   });
 
+  it("rejects saves from another app and section versions", async () => {
+    const store = createMemorySaveStore();
+    const source = createSaveManager({
+      appId: "source",
+      gameId: "game",
+      gameVersion: "1",
+      formatVersion: "1",
+      store
+    });
+    source.registerContributor({
+      id: "state",
+      version: "9",
+      capture: () => ({ id: "state", version: "9", data: true })
+    });
+    await source.save("slot", { runtime: runtime() });
+    const target = createSaveManager({
+      appId: "target",
+      gameId: "game",
+      gameVersion: "1",
+      formatVersion: "1",
+      store
+    });
+    target.registerContributor({ id: "state", version: "1", capture: () => undefined });
+    await expect(target.load("slot")).rejects.toMatchObject({ code: "save.incompatible_app" });
+  });
+
   it("stores slots through platform storage without exposing platform details", async () => {
     const values = new Map<string, string>();
     const store = createPlatformStorageSaveStore({
@@ -267,3 +293,100 @@ function createContributor(id: string, calls: string[], order: number): SaveCont
     }
   };
 }
+
+describe("save load preflight", () => {
+  it.each(["invalid", "missing", "version"])(
+    "checks every selected section before restore: %s",
+    async (failure) => {
+      const calls: string[] = [];
+      const store = createMemorySaveStore();
+      const manager = createSaveManager({
+        appId: "app",
+        gameId: "game",
+        gameVersion: "1",
+        formatVersion: "1",
+        store
+      });
+      manager.registerContributor(createContributor("a", calls, 0));
+      manager.registerContributor(createContributor("b", calls, 1));
+      await manager.save("slot", { runtime: runtime() });
+      const id = failure === "missing" ? "c" : "b";
+      manager.unregisterContributor(id);
+      manager.registerContributor({
+        ...createContributor(id, calls, 1),
+        required: true,
+        version: failure === "version" ? "2" : "1.0.0",
+        validate: () => ({
+          issues:
+            failure === "invalid"
+              ? [{ code: "test.invalid", message: "Invalid state", severity: "error" }]
+              : []
+        })
+      });
+      calls.length = 0;
+      await expect(manager.load("slot")).rejects.toThrow();
+      expect(calls).toEqual([]);
+      await manager.load("slot", { contributors: { excludeIds: [id] } });
+      expect(calls).toContain("a.restore");
+    }
+  );
+
+  it("rejects malformed payloads and migrations that do not reach their declared version", async () => {
+    const store = createMemorySaveStore();
+    const manager = createSaveManager({
+      appId: "app",
+      gameId: "game",
+      gameVersion: "1",
+      formatVersion: "1",
+      store
+    });
+    const { envelope } = await manager.save("slot", { runtime: runtime() });
+    const malformed = { ...envelope, checksum: undefined, payload: { runtime: runtime() } };
+    const codec = createJsonSaveCodec();
+    expect(() => codec.decode(new TextEncoder().encode(JSON.stringify(malformed)))).toThrow(
+      /sections/
+    );
+    const migrations = createSaveMigrationRegistry([
+      { id: "broken", from: "1", to: "2", migrate: (value) => value }
+    ]);
+    await expect(migrations.migrate(envelope, "2")).rejects.toMatchObject({
+      code: "save.migration_failed"
+    });
+  });
+
+  it("migrates section versions before preflight", async () => {
+    const store = createMemorySaveStore();
+    const calls: string[] = [];
+    const source = createSaveManager({
+      appId: "app",
+      gameId: "game",
+      gameVersion: "1",
+      formatVersion: "1",
+      store
+    });
+    source.registerContributor(createContributor("a", calls, 0));
+    await source.save("slot", { runtime: runtime() });
+    const target = createSaveManager({
+      appId: "app",
+      gameId: "game",
+      gameVersion: "2",
+      formatVersion: "2",
+      store,
+      migrations: createSaveMigrationRegistry([
+        {
+          id: "upgrade",
+          from: "1",
+          to: "2",
+          migrate: (value) => ({
+            ...value,
+            formatVersion: "2",
+            payload: { ...value.payload, sections: { a: { id: "a", version: "2", data: {} } } }
+          })
+        }
+      ])
+    });
+    target.registerContributor({ ...createContributor("a", calls, 0), version: "2" });
+    await target.load("slot");
+    expect(calls).toEqual(["a.capture", "a.restore"]);
+  });
+});

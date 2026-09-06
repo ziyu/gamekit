@@ -18,12 +18,28 @@ export async function runLifecycleStage(
   ctx: AppHostContext,
   stage: AppLifecycleStage
 ): Promise<void> {
-  const bindings = orderBindings(registry.bindings());
-  const ordered = stage === "stop" || stage === "dispose" ? bindings.reverse() : bindings;
+  const teardown = stage === "stop" || stage === "dispose";
+  const errors: unknown[] = [];
+  let bindings: AppServiceBinding[];
+  try {
+    bindings = orderBindings(registry.bindings());
+  } catch (error) {
+    if (!teardown) throw error;
+    errors.push(error);
+    bindings = registry.bindings();
+  }
+  const ordered = teardown ? bindings.reverse() : bindings;
 
   for (const binding of ordered) {
-    await runBindingStage(registry, ctx, binding, stage);
+    try {
+      await runBindingStage(registry, ctx, binding, stage);
+    } catch (error) {
+      if (stage === "boot" || stage === "start") throw error;
+      errors.push(error);
+    }
   }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) throw new AggregateError(errors, `App services failed during ${stage}`);
 }
 
 export function runLifecycleTick(

@@ -16,6 +16,7 @@ export function createTcaRuntime(config: CreateTcaRuntimeConfig): TcaRuntime {
   );
   const traceStore = config.traceStore ?? createTcaTraceStore();
   const executedOnce = new Set<string>();
+  const executingOnce = new Set<string>();
   let disposed = false;
 
   return {
@@ -40,15 +41,25 @@ export function createTcaRuntime(config: CreateTcaRuntimeConfig): TcaRuntime {
     dispose() {
       disposed = true;
       executedOnce.clear();
+      executingOnce.clear();
     }
   };
 
   function runRule(rule: TcaCompiledRule, ctx: TcaHandlerContext): void {
-    if (rule.rule.once && executedOnce.has(rule.rule.id)) {
+    if (rule.rule.once && (executedOnce.has(rule.rule.id) || executingOnce.has(rule.rule.id))) {
       traceStore.add(createTrace(rule, ctx, "skipped", "once rule already executed"));
       return;
     }
 
+    if (rule.rule.once) executingOnce.add(rule.rule.id);
+    try {
+      executeRule(rule, ctx);
+    } finally {
+      executingOnce.delete(rule.rule.id);
+    }
+  }
+
+  function executeRule(rule: TcaCompiledRule, ctx: TcaHandlerContext): void {
     if (!rule.trigger.matches(ctx, rule.rule.trigger)) {
       traceStore.add(createTrace(rule, ctx, "skipped", "trigger did not match"));
       return;

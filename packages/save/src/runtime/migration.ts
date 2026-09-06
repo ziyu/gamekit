@@ -1,3 +1,4 @@
+import { assertSaveEnvelope } from "./codec";
 import {
   createDuplicateMigrationError,
   createMigrationError,
@@ -35,6 +36,9 @@ export function createSaveMigrationRegistry(
       for (const migration of this.plan(envelope.formatVersion, to)) {
         try {
           current = await migration.migrate(current);
+          assertSaveEnvelope(current);
+          if (current.formatVersion !== migration.to)
+            throw new Error(`Migration must produce version ${migration.to}`);
         } catch (error) {
           throw createMigrationError(migration.id, error);
         }
